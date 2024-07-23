@@ -1,13 +1,15 @@
 use axum::{Json, response::Html, Router, routing::get};
 use axum::http::StatusCode;
-use serde::Serialize;
+use axum::routing::put;
+use serde::{Deserialize, Serialize};
 use tokio::signal;
 
 #[tokio::main]
 async fn main() {
     let app = Router::new()
         .route("/", get(handler))
-        .route("/json", get(test_json));
+        .route("/json", get(test_json))
+        .route("/hello", put(hello_json));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
@@ -57,7 +59,82 @@ async fn test_json() -> (StatusCode, Json<Foo>) {
     (StatusCode::OK, Json(foo))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Foo {
     bar: String,
+}
+
+async fn hello_json(Json(payload): Json<Name>) -> (StatusCode, Json<Greeting>) {
+    let greeting = Greeting {
+        text: format!("Hello, {}!", payload.name)
+    };
+
+    (StatusCode::CREATED, Json(greeting))
+}
+
+#[derive(Deserialize)]
+struct Name {
+    name: String,
+}
+#[derive(Serialize, Deserialize)]
+struct Greeting {
+    text: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::Router;
+    use axum::routing::{get, put};
+    use axum_test::TestServer;
+    use serde_json::json;
+
+    use crate::{Foo, Greeting, handler, hello_json, test_json};
+
+    #[tokio::test]
+    async fn test_root() {
+        let app = Router::new()
+            .route("/", get(handler));
+
+        let server = TestServer::new(app)
+            .expect("Could not create test server.");
+
+        let response = server.get("/")
+            .await;
+
+        response.assert_status_ok();
+    }
+
+    #[tokio::test]
+    async fn test_get_json() {
+        let app = Router::new()
+            .route("/json", get(test_json));
+
+        let server = TestServer::new(app)
+            .expect("Could not create test server.");
+
+        let response = server.get("/json")
+            .await
+            .json::<Foo>();
+
+        assert_eq!(response.bar, "baz");
+    }
+
+    #[tokio::test]
+    async fn test_post_json() {
+        let app = Router::new()
+            .route("/hello", put(hello_json));
+
+        let server = TestServer::new(app)
+            .expect("Could not create test server.");
+
+        let response = server.put("/hello")
+            .content_type(&"application/json")
+            .json(&json!({
+                "name": "World",
+            }))
+            .await
+            .json::<Greeting>();
+
+        assert_eq!(response.text, "Hello, World!");
+    }
 }
