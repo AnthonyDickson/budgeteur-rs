@@ -1,9 +1,13 @@
-use axum::{response::Html, Router, routing::get};
+use axum::{Json, response::Html, Router, routing::get};
+use axum::http::StatusCode;
+use serde::Serialize;
 use tokio::signal;
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/", get(handler));
+    let app = Router::new()
+        .route("/", get(handler))
+        .route("/json", get(test_json));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
@@ -15,10 +19,6 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
-}
-
-async fn handler() -> Html<&'static str> {
-    Html("<h1>Hello, World!</h1>")
 }
 
 async fn shutdown_signal() {
@@ -43,4 +43,21 @@ async fn shutdown_signal() {
         _ = ctrl_c => {},
         _ = terminate => {},
     }
+}
+
+async fn handler() -> Html<&'static str> {
+    Html("<h1>Hello, World!</h1>")
+}
+
+async fn test_json() -> (StatusCode, Json<Foo>) {
+    let foo = Foo {
+        bar: "baz".to_string()
+    };
+
+    (StatusCode::OK, Json(foo))
+}
+
+#[derive(Serialize)]
+struct Foo {
+    bar: String,
 }
