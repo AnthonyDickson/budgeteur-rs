@@ -83,6 +83,7 @@ struct Greeting {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::StatusCode;
     use axum::Router;
     use axum::routing::{get, put};
     use axum_test::TestServer;
@@ -113,10 +114,11 @@ mod tests {
             .expect("Could not create test server.");
 
         let response = server.get("/json")
-            .await
-            .json::<Foo>();
+            .await;
+        response.assert_status_ok();
 
-        assert_eq!(response.bar, "baz");
+        let response_json = response.json::<Foo>();
+        assert_eq!(response_json.bar, "baz");
     }
 
     #[tokio::test]
@@ -132,9 +134,10 @@ mod tests {
             .json(&json!({
                 "name": "World",
             }))
-            .await
-            .json::<Greeting>();
+            .await;
+        response.assert_status(StatusCode::CREATED);
 
-        assert_eq!(response.text, "Hello, World!");
+        let response_json = response.json::<Greeting>();
+        assert_eq!(response_json.text, "Hello, World!");
     }
 }
