@@ -4,6 +4,10 @@ use axum::routing::put;
 use serde::{Deserialize, Serialize};
 use tokio::signal;
 
+// TODO: Implement HTTPS and redirect HTTP requests to HTTPS
+// TODO: Add route for creating user (email + password). Hash passwords with a salt which is stored alongside the hashed and salted password.
+// TODO: Add route for login which issues a JWT on success (What happens on failure?).
+// TODO: Add middleware that checks for valid JWT before providing access to protected routes.
 #[tokio::main]
 async fn main() {
     let app = Router::new()
