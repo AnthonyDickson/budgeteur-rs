@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::PathBuf, time::Duration};
+use std::{env, env::VarError, net::SocketAddr, path::PathBuf, time::Duration};
 
 use axum::{
     BoxError,
@@ -15,6 +15,55 @@ use serde::{Deserialize, Serialize};
 use tokio::signal;
 use tracing_subscriber::{filter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
+/// Get a port number from the environment variable `env_key` if set, otherwise return `default_port`.
+///
+/// # Panics
+/// This function may panic if the environment variable `env_key` is not valid unicode.
+///
+/// This function may panic if the environment variable `env_key` cannot be parsed as an integer.
+///
+/// ```rust,should_panic
+/// use std::env;
+///
+/// env::set_var("FOO", "123s");
+/// // This will panic!
+/// let port = parse_port_or_default("FOO", 1234);
+/// ```
+///
+/// # Examples
+///
+/// ```
+/// use std::env;
+///
+/// assert_eq!(parse_port_or_default("FOO", 1234), 1234);
+///
+/// env::set_var("FOO", 4321);
+/// assert_eq!(parse_port_or_default("FOO", 1234), 4321);
+/// # env::remove_var("FOO");
+/// ```
+fn parse_port_or_default(env_key: &str, default_port: u16) -> u16 {
+    let port_string = match env::var(env_key) {
+        Ok(string) => string,
+        Err(e) if e == VarError::NotPresent => {
+            tracing::debug!("The environment variable '{}' was not set, using the default port {}.", env_key, default_port);
+            return default_port;
+        }
+        Err(e) => {
+            tracing::error!("An error occurred retrieving the environment variable '{}': {}", env_key, e);
+            panic!();
+        }
+    };
+
+    match port_string.parse() {
+        Ok(port_number) => port_number,
+        Err(e) => {
+            tracing::error!("An error occurred parsing the port number '{}' from the environment variable '{}': {}", port_string, env_key, e);
+            panic!();
+        }
+    }
+}
+
+// TODO: Move application code to `lib.rs` file.
 // TODO: Add route for creating user (email + password). Hash passwords with a salt which is stored alongside the hashed and salted password.
 // TODO: Add route for login which issues a JWT on success (What happens on failure?).
 // TODO: Add middleware that checks for valid JWT before providing access to protected routes.
@@ -30,8 +79,8 @@ async fn main() {
         .init();
 
     let ports = Ports {
-        http: 7878,
-        https: 3000,
+        http: parse_port_or_default("HTTP_PORT", 3000),
+        https: parse_port_or_default("HTTPS_PORT", 3001),
     };
 
     // Spawn a second server to redirect http requests to this server
@@ -60,7 +109,7 @@ async fn main() {
 
     // run https server
     let addr = SocketAddr::from(([127, 0, 0, 1], ports.https));
-    tracing::debug!("HTTPS server listening on {}", addr);
+    tracing::info!("HTTPS server listening on {}", addr);
     axum_server::bind_rustls(addr, config)
         .handle(handle)
         .serve(app.into_make_service())
@@ -126,7 +175,7 @@ async fn redirect_http_to_https(ports: Ports) {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], ports.http));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    tracing::debug!("HTTPS redirect server listening on {}", listener.local_addr().unwrap());
+    tracing::info!("HTTPS redirect server listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, redirect.into_make_service())
         .await
         .unwrap();
