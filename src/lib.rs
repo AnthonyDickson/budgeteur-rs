@@ -64,6 +64,10 @@ pub fn parse_port_or_default(env_key: &str, default_port: u16) -> u16 {
     }
 }
 
+/// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
+/// then signals the server to shut down gracefully.
+///
+/// `handle` is a handle to an Axum `Server`.
 pub async fn graceful_shutdown(handle: Handle) {
     let ctrl_c = async {
         signal::ctrl_c()
@@ -94,6 +98,9 @@ pub async fn graceful_shutdown(handle: Handle) {
     }
 }
 
+/// Spawn an HTTP server that redirects requests to an HTTPS server.
+///
+/// The servers are assumed to have the same domain use the ports defined in the parameter `ports`.
 pub async fn redirect_http_to_https(ports: Ports) {
     fn make_https(host: String, uri: Uri, ports: Ports) -> Result<Uri, BoxError> {
         let mut parts = uri.into_parts();
