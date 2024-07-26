@@ -1,17 +1,18 @@
 use std::{env, env::VarError, net::SocketAddr, time::Duration};
 
-use axum::{
-    BoxError,
-    extract::Host,
-    handler::HandlerWithoutStateExt,
-    http::{StatusCode, Uri},
-    Json,
-    response::{Html, Redirect},
-};
-use axum_server::{Handle};
+use axum::{BoxError, extract::Host, handler::HandlerWithoutStateExt, http::{StatusCode, Uri}, Json, response::{Html, Redirect}, Router, routing::{get, put}};
+use axum_server::Handle;
 use serde::{Deserialize, Serialize};
 use tokio::signal;
 use tracing;
+
+/// Return a router with all the app's routes.
+pub fn build_app() -> Router {
+    Router::new()
+        .route("/", get(handler))
+        .route("/json", get(test_json))
+        .route("/hello", put(hello_json))
+}
 
 /// Get a port number from the environment variable `env_key` if set, otherwise return `default_port`.
 ///

@@ -1,14 +1,10 @@
 use std::{env, net::SocketAddr, path::PathBuf};
 
-use axum::{
-    Router,
-    routing::{get, put},
-};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 use tracing;
 use tracing_subscriber::{filter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
-use backrooms_rs::{graceful_shutdown, handler, hello_json, parse_port_or_default, Ports, redirect_http_to_https, test_json};
+use backrooms_rs::{build_app, graceful_shutdown, parse_port_or_default, Ports, redirect_http_to_https};
 
 // TODO: Add route for creating user (email + password). Hash passwords with a salt which is stored alongside the hashed and salted password.
 // TODO: Add route for login which issues a JWT on success (What happens on failure?).
@@ -28,8 +24,6 @@ async fn main() {
         https: parse_port_or_default("HTTPS_PORT", 3001),
     };
 
-    tokio::spawn(redirect_http_to_https(ports));
-
     // configure certificate and private key used by https
     let config = RustlsConfig::from_pem_file(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -42,19 +36,15 @@ async fn main() {
         .await
         .unwrap();
 
-    let app = Router::new()
-        .route("/", get(handler))
-        .route("/json", get(test_json))
-        .route("/hello", put(hello_json));
-
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));
+    tokio::spawn(redirect_http_to_https(ports));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], ports.https));
     tracing::info!("HTTPS server listening on {}", addr);
     axum_server::bind_rustls(addr, config)
         .handle(handle)
-        .serve(app.into_make_service())
+        .serve(build_app().into_make_service())
         .await
         .unwrap();
 }
