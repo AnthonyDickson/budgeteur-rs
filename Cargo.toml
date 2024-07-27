@@ -7,6 +7,9 @@ edition = "2021"
 axum = "0.7.5"
 axum-server = { version = "0.6.0", features = ["tls-rustls"] }
 axum-test = "15.3.0"
+bcrypt = "0.15.1"
+chrono = { version = "0.4.38", features = ["serde"] }
+jsonwebtoken = "9.3.0"
 tokio = { version = "1.38.1", features = ["full"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

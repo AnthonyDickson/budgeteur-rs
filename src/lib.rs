@@ -1,10 +1,21 @@
 use std::{env, env::VarError, net::SocketAddr, time::Duration};
 
-use axum::{BoxError, extract::Host, handler::HandlerWithoutStateExt, http::{StatusCode, Uri}, Json, response::{Html, Redirect}, Router, routing::{get, put}};
+use axum::{
+    extract::Host,
+    handler::HandlerWithoutStateExt,
+    http::{StatusCode, Uri},
+    middleware,
+    response::{Html, Redirect},
+    routing::{get, post, put},
+    BoxError, Json, Router,
+};
 use axum_server::Handle;
 use serde::{Deserialize, Serialize};
 use tokio::signal;
 use tracing;
+
+mod auth;
+mod services;
 
 /// Return a router with all the app's routes.
 pub fn build_app() -> Router {
@@ -12,6 +23,11 @@ pub fn build_app() -> Router {
         .route("/", get(handler))
         .route("/json", get(test_json))
         .route("/hello", put(hello_json))
+        .route("/signin", post(auth::sign_in))
+        .route(
+            "/protected/",
+            get(services::hello).layer(middleware::from_fn(auth::authorize)),
+        )
 }
 
 /// Get a port number from the environment variable `env_key` if set, otherwise return `default_port`.
@@ -46,11 +62,19 @@ pub fn parse_port_or_default(env_key: &str, default_port: u16) -> u16 {
     let port_string = match env::var(env_key) {
         Ok(string) => string,
         Err(e) if e == VarError::NotPresent => {
-            tracing::debug!("The environment variable '{}' was not set, using the default port {}.", env_key, default_port);
+            tracing::debug!(
+                "The environment variable '{}' was not set, using the default port {}.",
+                env_key,
+                default_port
+            );
             return default_port;
         }
         Err(e) => {
-            tracing::error!("An error occurred retrieving the environment variable '{}': {}", env_key, e);
+            tracing::error!(
+                "An error occurred retrieving the environment variable '{}': {}",
+                env_key,
+                e
+            );
             panic!();
         }
     };
@@ -129,7 +153,10 @@ pub async fn redirect_http_to_https(ports: Ports) {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], ports.http));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    tracing::info!("HTTPS redirect server listening on {}", listener.local_addr().unwrap());
+    tracing::info!(
+        "HTTPS redirect server listening on {}",
+        listener.local_addr().unwrap()
+    );
     axum::serve(listener, redirect.into_make_service())
         .await
         .unwrap();
@@ -147,7 +174,7 @@ pub async fn handler() -> Html<&'static str> {
 
 pub async fn test_json() -> (StatusCode, Json<Foo>) {
     let foo = Foo {
-        bar: "baz".to_string()
+        bar: "baz".to_string(),
     };
 
     (StatusCode::OK, Json(foo))
@@ -160,7 +187,7 @@ pub struct Foo {
 
 pub async fn hello_json(Json(payload): Json<Name>) -> (StatusCode, Json<Greeting>) {
     let greeting = Greeting {
-        text: format!("Hello, {}!", payload.name)
+        text: format!("Hello, {}!", payload.name),
     };
 
     (StatusCode::CREATED, Json(greeting))
@@ -179,37 +206,31 @@ pub struct Greeting {
 #[cfg(test)]
 mod tests {
     use axum::http::StatusCode;
-    use axum::Router;
     use axum::routing::{get, put};
+    use axum::Router;
     use axum_test::TestServer;
     use serde_json::json;
 
-    use crate::{Foo, Greeting, handler, hello_json, test_json};
+    use crate::{handler, hello_json, test_json, Foo, Greeting};
 
     #[tokio::test]
     async fn test_root() {
-        let app = Router::new()
-            .route("/", get(handler));
+        let app = Router::new().route("/", get(handler));
 
-        let server = TestServer::new(app)
-            .expect("Could not create test server.");
+        let server = TestServer::new(app).expect("Could not create test server.");
 
-        let response = server.get("/")
-            .await;
+        let response = server.get("/").await;
 
         response.assert_status_ok();
     }
 
     #[tokio::test]
     async fn test_get_json() {
-        let app = Router::new()
-            .route("/json", get(test_json));
+        let app = Router::new().route("/json", get(test_json));
 
-        let server = TestServer::new(app)
-            .expect("Could not create test server.");
+        let server = TestServer::new(app).expect("Could not create test server.");
 
-        let response = server.get("/json")
-            .await;
+        let response = server.get("/json").await;
         response.assert_status_ok();
 
         let response_json = response.json::<Foo>();
@@ -218,13 +239,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_post_json() {
-        let app = Router::new()
-            .route("/hello", put(hello_json));
+        let app = Router::new().route("/hello", put(hello_json));
 
-        let server = TestServer::new(app)
-            .expect("Could not create test server.");
+        let server = TestServer::new(app).expect("Could not create test server.");
 
-        let response = server.put("/hello")
+        let response = server
+            .put("/hello")
             .content_type(&"application/json")
             .json(&json!({
                 "name": "World",
