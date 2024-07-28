@@ -25,7 +25,7 @@ pub fn build_app() -> Router {
         .route("/hello", put(hello_json))
         .route("/signin", post(auth::sign_in))
         .route(
-            "/protected/",
+            "/protected",
             get(services::hello).layer(middleware::from_fn(auth::authorize)),
         )
 }
