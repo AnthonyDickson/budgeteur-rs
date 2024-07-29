@@ -41,7 +41,7 @@ pub fn build_app() -> Router {
 /// use std::env;
 /// use backrooms_rs::parse_port_or_default;
 ///
-/// env::set_var("FOO", "123s");
+/// unsafe { env::set_var("FOO", "123s"); }
 /// // This will panic!
 /// let port = parse_port_or_default("FOO", 1234);
 /// ```
@@ -54,9 +54,9 @@ pub fn build_app() -> Router {
 ///
 /// assert_eq!(parse_port_or_default("FOO", 1234), 1234);
 ///
-/// env::set_var("FOO", "4321");
+/// unsafe { env::set_var("FOO", "4321"); }
 /// assert_eq!(parse_port_or_default("FOO", 1234), 4321);
-/// # env::remove_var("FOO");
+/// # unsafe { env::remove_var("FOO"); }
 /// ```
 pub fn parse_port_or_default(env_key: &str, default_port: u16) -> u16 {
     let port_string = match env::var(env_key) {
