@@ -17,8 +17,14 @@ use tracing;
 mod auth;
 mod services;
 
+#[derive(Clone)]
+pub struct AppConfig {
+    pub ports: Ports,
+    pub jwt_secret: String,
+}
+
 /// Return a router with all the app's routes.
-pub fn build_app() -> Router {
+pub fn build_router(app_config: AppConfig) -> Router {
     Router::new()
         .route("/", get(handler))
         .route("/json", get(test_json))
@@ -26,8 +32,12 @@ pub fn build_app() -> Router {
         .route("/signin", post(auth::sign_in))
         .route(
             "/protected",
-            get(services::hello).layer(middleware::from_fn(auth::authorize)),
+            get(services::hello).layer(middleware::from_fn_with_state(
+                app_config.clone(),
+                auth::authorize,
+            )),
         )
+        .with_state(app_config.clone())
 }
 
 /// Get a port number from the environment variable `env_key` if set, otherwise return `default_port`.
@@ -162,6 +172,7 @@ pub async fn redirect_http_to_https(ports: Ports) {
         .unwrap();
 }
 
+// TODO: Ensure that ports are always different.
 #[derive(Clone, Copy)]
 pub struct Ports {
     pub http: u16,

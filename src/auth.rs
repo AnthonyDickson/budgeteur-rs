@@ -1,18 +1,18 @@
-use std::env;
-
-use axum::response::IntoResponse;
 use axum::{
     body::Body,
-    extract::{Json, Request},
+    extract::{Json, Request, State},
     http,
     http::{Response, StatusCode},
     middleware::Next,
+    response::IntoResponse,
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::AppConfig;
 
 // Code in this module is adapted from https://github.com/ezesundayeze/axum--auth
 
@@ -59,7 +59,10 @@ impl IntoResponse for AuthError {
 }
 
 /// Handle sign-in requests.
-pub async fn sign_in(Json(user_data): Json<SignInData>) -> Result<Json<String>, StatusCode> {
+pub async fn sign_in(
+    State(state): State<AppConfig>,
+    Json(user_data): Json<SignInData>,
+) -> Result<Json<String>, StatusCode> {
     let user = match retrieve_user_by_email(&user_data.email) {
         Some(user) => user,
         None => return Err(StatusCode::UNAUTHORIZED),
@@ -72,7 +75,8 @@ pub async fn sign_in(Json(user_data): Json<SignInData>) -> Result<Json<String>, 
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let token = encode_jwt(user.email).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?; // Handle JWT encoding errors
+    let token =
+        encode_jwt(user.email, &state.jwt_secret).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?; // Handle JWT encoding errors
 
     Ok(Json(token))
 }
@@ -102,9 +106,7 @@ fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
     Ok(hash)
 }
 
-fn encode_jwt(email: String) -> Result<String, StatusCode> {
-    let secret =
-        env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set.");
+fn encode_jwt(email: String, jwt_secret: &str) -> Result<String, StatusCode> {
     let now = Utc::now();
     let exp = (now + Duration::hours(24)).timestamp() as usize;
     let iat = now.timestamp() as usize;
@@ -113,17 +115,15 @@ fn encode_jwt(email: String) -> Result<String, StatusCode> {
     encode(
         &Header::default(),
         &claim,
-        &EncodingKey::from_secret(secret.as_ref()),
+        &EncodingKey::from_secret(jwt_secret.as_ref()),
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-fn decode_jwt(jwt_token: String) -> Result<TokenData<Claims>, StatusCode> {
-    let secret =
-        env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set.");
+fn decode_jwt(jwt_token: String, jwt_secret: &str) -> Result<TokenData<Claims>, StatusCode> {
     let result = decode(
         &jwt_token,
-        &DecodingKey::from_secret(secret.as_ref()),
+        &DecodingKey::from_secret(jwt_secret.as_ref()),
         &Validation::default(),
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
@@ -131,7 +131,11 @@ fn decode_jwt(jwt_token: String) -> Result<TokenData<Claims>, StatusCode> {
     result
 }
 
-pub async fn authorize(mut req: Request, next: Next) -> Result<Response<Body>, AuthError> {
+pub async fn authorize(
+    State(state): State<AppConfig>,
+    mut req: Request,
+    next: Next,
+) -> Result<Response<Body>, AuthError> {
     let auth_header = req.headers_mut().get(http::header::AUTHORIZATION);
     let auth_header = match auth_header {
         Some(header) => header.to_str().map_err(|_| AuthError {
@@ -147,7 +151,7 @@ pub async fn authorize(mut req: Request, next: Next) -> Result<Response<Body>, A
     };
     let mut header = auth_header.split_whitespace();
     let (_bearer, token) = (header.next(), header.next());
-    let token_data = match decode_jwt(token.unwrap().to_string()) {
+    let token_data = match decode_jwt(token.unwrap().to_string(), &state.jwt_secret) {
         Ok(data) => data,
         Err(_) => {
             return Err(AuthError {
@@ -172,8 +176,6 @@ pub async fn authorize(mut req: Request, next: Next) -> Result<Response<Body>, A
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-
     use axum::http::{HeaderValue, StatusCode};
     use axum::response::Html;
     use axum::routing::{get, post};
@@ -182,7 +184,7 @@ mod tests {
     use bcrypt::BcryptError;
     use serde_json::json;
 
-    use crate::auth;
+    use crate::{auth, AppConfig, Ports};
 
     #[test]
     fn test_retrieve_user_by_email_valid() {
@@ -225,29 +227,31 @@ mod tests {
         }
     }
 
-    fn set_jwt_env_var() {
-        unsafe {
-            env::set_var("JWT_SECRET", "foo");
+    const JWT_SECRET: &str = "foobar";
+
+    fn get_test_app_config() -> AppConfig {
+        AppConfig {
+            ports: Ports {
+                http: 3000,
+                https: 3001,
+            },
+            jwt_secret: JWT_SECRET.to_string(),
         }
     }
 
     #[test]
     fn test_jwt_encode() -> Result<(), StatusCode> {
-        set_jwt_env_var();
-
         let email = "averyemail@email.com".to_string();
-        let _ = auth::encode_jwt(email.clone())?;
+        let _ = auth::encode_jwt(email.clone(), JWT_SECRET)?;
 
         Ok(())
     }
 
     #[test]
     fn test_jwt_email() -> Result<(), StatusCode> {
-        set_jwt_env_var();
-
         let email = "averyemail@email.com".to_string();
-        let jwt = auth::encode_jwt(email.clone())?;
-        let claims = auth::decode_jwt(jwt)?.claims;
+        let jwt = auth::encode_jwt(email.clone(), JWT_SECRET)?;
+        let claims = auth::decode_jwt(jwt, JWT_SECRET)?.claims;
 
         assert_eq!(email, claims.email);
 
@@ -256,7 +260,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_valid_sign_in() {
-        let app = Router::new().route("/signin", post(auth::sign_in));
+        let app = Router::new()
+            .route("/signin", post(auth::sign_in))
+            .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
@@ -273,7 +279,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_sign_in() {
-        let app = Router::new().route("/signin", post(auth::sign_in));
+        let app = Router::new()
+            .route("/signin", post(auth::sign_in))
+            .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
@@ -294,14 +302,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_auth_protected_route() {
-        let app = Router::new().route("/signin", post(auth::sign_in)).route(
-            "/protected",
-            get(handler).layer(middleware::from_fn(auth::authorize)),
-        );
+        let app_config = get_test_app_config();
+
+        let app = Router::new()
+            .route("/signin", post(auth::sign_in))
+            .route(
+                "/protected",
+                get(handler).layer(middleware::from_fn_with_state(
+                    app_config.clone(),
+                    auth::authorize,
+                )),
+            )
+            .with_state(app_config.clone());
 
         let server = TestServer::new(app).expect("Could not create test server.");
-
-        set_jwt_env_var();
 
         let response = server
             .post("/signin")
