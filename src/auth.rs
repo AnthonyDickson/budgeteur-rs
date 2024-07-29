@@ -1,3 +1,5 @@
+use std::env;
+
 use axum::response::IntoResponse;
 use axum::{
     body::Body,
@@ -101,8 +103,8 @@ fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
 }
 
 fn encode_jwt(email: String) -> Result<String, StatusCode> {
-    // TODO: Replace hard-coded secret with environment variable.
-    let secret = "randomStringTypicallyFromEnv".to_string();
+    let secret =
+        env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set.");
     let now = Utc::now();
     let exp = (now + Duration::hours(24)).timestamp() as usize;
     let iat = now.timestamp() as usize;
@@ -117,8 +119,8 @@ fn encode_jwt(email: String) -> Result<String, StatusCode> {
 }
 
 fn decode_jwt(jwt_token: String) -> Result<TokenData<Claims>, StatusCode> {
-    // TODO: Replace hard-coded secret with environment variable.
-    let secret = "randomStringTypicallyFromEnv".to_string();
+    let secret =
+        env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set.");
     let result = decode(
         &jwt_token,
         &DecodingKey::from_secret(secret.as_ref()),
@@ -170,6 +172,8 @@ pub async fn authorize(mut req: Request, next: Next) -> Result<Response<Body>, A
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use axum::http::{HeaderValue, StatusCode};
     use axum::response::Html;
     use axum::routing::{get, post};
@@ -221,8 +225,16 @@ mod tests {
         }
     }
 
+    fn set_jwt_env_var() {
+        unsafe {
+            env::set_var("JWT_SECRET", "foo");
+        }
+    }
+
     #[test]
     fn test_jwt_encode() -> Result<(), StatusCode> {
+        set_jwt_env_var();
+
         let email = "averyemail@email.com".to_string();
         let _ = auth::encode_jwt(email.clone())?;
 
@@ -231,6 +243,8 @@ mod tests {
 
     #[test]
     fn test_jwt_email() -> Result<(), StatusCode> {
+        set_jwt_env_var();
+
         let email = "averyemail@email.com".to_string();
         let jwt = auth::encode_jwt(email.clone())?;
         let claims = auth::decode_jwt(jwt)?.claims;
@@ -286,6 +300,8 @@ mod tests {
         );
 
         let server = TestServer::new(app).expect("Could not create test server.");
+
+        set_jwt_env_var();
 
         let response = server
             .post("/signin")
