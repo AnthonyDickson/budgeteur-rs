@@ -16,13 +16,13 @@ use serde_json::json;
 
 /// The contents of a JSON Web Token.
 #[derive(Serialize, Deserialize)]
-pub struct Claims {
+struct Claims {
     /// The expiry time of the token.
-    pub exp: usize,
+    exp: usize,
     /// The time the token was issued.
-    pub iat: usize,
+    iat: usize,
     /// Email associated with the token.
-    pub email: String,
+    email: String,
 }
 
 #[derive(Deserialize)]
@@ -31,6 +31,29 @@ pub struct SignInData {
     pub email: String,
     /// Password entered during sign-in.
     pub password: String,
+}
+
+#[derive(Clone)]
+pub struct CurrentUser {
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub password_hash: String,
+}
+
+pub struct AuthError {
+    message: String,
+    status_code: StatusCode,
+}
+
+impl IntoResponse for AuthError {
+    fn into_response(self) -> Response<Body> {
+        let body = Json(json!({
+            "error": self.message,
+        }));
+
+        (self.status_code, body).into_response()
+    }
 }
 
 /// Handle sign-in requests.
@@ -50,14 +73,6 @@ pub async fn sign_in(Json(user_data): Json<SignInData>) -> Result<Json<String>, 
     let token = encode_jwt(user.email).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?; // Handle JWT encoding errors
 
     Ok(Json(token))
-}
-
-#[derive(Clone)]
-pub struct CurrentUser {
-    pub email: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub password_hash: String,
 }
 
 fn retrieve_user_by_email(email: &str) -> Option<CurrentUser> {
@@ -112,21 +127,6 @@ fn decode_jwt(jwt_token: String) -> Result<TokenData<Claims>, StatusCode> {
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
 
     result
-}
-
-pub struct AuthError {
-    message: String,
-    status_code: StatusCode,
-}
-
-impl IntoResponse for AuthError {
-    fn into_response(self) -> Response<Body> {
-        let body = Json(json!({
-            "error": self.message,
-        }));
-
-        (self.status_code, body).into_response()
-    }
 }
 
 pub async fn authorize(mut req: Request, next: Next) -> Result<Response<Body>, AuthError> {
