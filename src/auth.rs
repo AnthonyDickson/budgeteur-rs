@@ -108,7 +108,7 @@ fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
 
 fn encode_jwt(email: String, jwt_secret: &str) -> Result<String, StatusCode> {
     let now = Utc::now();
-    let exp = (now + Duration::hours(24)).timestamp() as usize;
+    let exp = (now + Duration::minutes(15)).timestamp() as usize;
     let iat = now.timestamp() as usize;
     let claim = Claims { exp, iat, email };
 
