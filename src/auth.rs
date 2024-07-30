@@ -77,7 +77,7 @@ where
 }
 
 #[derive(Deserialize)]
-pub struct SignInData {
+pub struct Credentials {
     /// Email entered during sign-in.
     pub email: String,
     /// Password entered during sign-in.
@@ -98,6 +98,7 @@ pub enum AuthError {
     MissingCredentials,
     TokenCreation,
     InvalidToken,
+    InternalError,
 }
 
 impl IntoResponse for AuthError {
@@ -107,6 +108,9 @@ impl IntoResponse for AuthError {
             AuthError::MissingCredentials => (StatusCode::BAD_REQUEST, "Missing credentials"),
             AuthError::TokenCreation => (StatusCode::INTERNAL_SERVER_ERROR, "Token creation error"),
             AuthError::InvalidToken => (StatusCode::BAD_REQUEST, "Invalid token"),
+            AuthError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
         };
 
         let body = Json(json!({
@@ -120,22 +124,25 @@ impl IntoResponse for AuthError {
 /// Handle sign-in requests.
 pub async fn sign_in(
     State(state): State<AppConfig>,
-    Json(user_data): Json<SignInData>,
-) -> Result<Json<String>, StatusCode> {
-    let user = match retrieve_user_by_email(&user_data.email) {
-        Some(user) => user,
-        None => return Err(StatusCode::UNAUTHORIZED),
-    };
-
-    if !verify_password(&user_data.password, &user.password_hash)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    {
-        // Handle bcrypt errors
-        return Err(StatusCode::UNAUTHORIZED);
+    Json(user_data): Json<Credentials>,
+) -> Result<Json<String>, AuthError> {
+    if user_data.email.is_empty() || user_data.password.is_empty() {
+        return Err(AuthError::MissingCredentials);
     }
 
-    let token =
-        encode_jwt(user.email, &state.jwt_secret).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?; // Handle JWT encoding errors
+    let user = match retrieve_user_by_email(&user_data.email) {
+        Some(user) => user,
+        None => return Err(AuthError::WrongCredentials),
+    };
+
+    if !verify_password(&user_data.password, &user.password_hash).map_err(|e| {
+        tracing::debug!("Error verifying password: {}", e);
+        AuthError::InternalError
+    })? {
+        return Err(AuthError::WrongCredentials);
+    }
+
+    let token = encode_jwt(user.email, &state.jwt_secret)?;
 
     Ok(Json(token))
 }
