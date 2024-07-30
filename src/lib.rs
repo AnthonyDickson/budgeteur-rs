@@ -11,9 +11,10 @@ use serde::{Deserialize, Serialize};
 use tokio::signal;
 use tracing;
 
-use crate::auth::AppConfig;
+pub use config::AppConfig;
 
 pub mod auth;
+mod config;
 mod services;
 
 /// Return a router with all the app's routes.

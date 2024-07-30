@@ -19,26 +19,9 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::config::AppConfig;
+
 // Code in this module is adapted from https://github.com/ezesundayeze/axum--auth and https://github.com/tokio-rs/axum/blob/main/examples/jwt/src/main.rs
-
-#[derive(Clone)]
-pub struct AppConfig {
-    // TODO: Construct and store JWT encode and decode keys in AppConfig.
-    pub jwt_secret: String,
-}
-
-#[async_trait]
-impl<S> FromRequestParts<S> for AppConfig
-where
-    Self: FromRef<S>,
-    S: Send + Sync,
-{
-    type Rejection = AuthError;
-
-    async fn from_request_parts(_: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        Ok(Self::from_ref(state))
-    }
-}
 
 /// The contents of a JSON Web Token.
 #[derive(Serialize, Deserialize)]
@@ -208,7 +191,8 @@ mod tests {
     use serde_json::json;
 
     use crate::auth;
-    use crate::auth::{AppConfig, AuthError, Claims};
+    use crate::auth::{AuthError, Claims};
+    use crate::config::AppConfig;
 
     #[test]
     fn test_retrieve_user_by_email_valid() {

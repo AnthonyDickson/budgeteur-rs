@@ -4,7 +4,7 @@ use axum_server::{tls_rustls::RustlsConfig, Handle};
 use tracing;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-use backrooms_rs::{auth::AppConfig, build_router, graceful_shutdown, parse_port_or_default};
+use backrooms_rs::{build_router, graceful_shutdown, parse_port_or_default, AppConfig};
 
 // TODO: Add route for creating user (email + password). Hash passwords with a salt which is stored alongside the hashed and salted password.
 // TODO: Add route for login which issues a JWT on success (What happens on failure?).
