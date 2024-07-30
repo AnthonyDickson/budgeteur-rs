@@ -2,7 +2,6 @@ use std::{env, env::VarError, time::Duration};
 
 use axum::{
     http::StatusCode,
-    middleware,
     response::Html,
     routing::{get, post, put},
     Json, Router,
@@ -12,29 +11,19 @@ use serde::{Deserialize, Serialize};
 use tokio::signal;
 use tracing;
 
-mod auth;
+use crate::auth::AppConfig;
+
+pub mod auth;
 mod services;
 
-#[derive(Clone)]
-pub struct AppConfig {
-    pub jwt_secret: String,
-}
-
 /// Return a router with all the app's routes.
-pub fn build_router(app_config: AppConfig) -> Router {
+pub fn build_router() -> Router<AppConfig> {
     Router::new()
         .route("/", get(handler))
         .route("/json", get(test_json))
         .route("/hello", put(hello_json))
         .route("/signin", post(auth::sign_in))
-        .route(
-            "/protected",
-            get(services::hello).layer(middleware::from_fn_with_state(
-                app_config.clone(),
-                auth::authorize,
-            )),
-        )
-        .with_state(app_config.clone())
+        .route("/protected", get(services::hello))
 }
 
 /// Get a port number from the environment variable `env_key` if set, otherwise return `default_port`.

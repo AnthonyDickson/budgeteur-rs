@@ -1,10 +1,17 @@
+use std::fmt::Debug;
+
 use axum::{
+    async_trait,
     body::Body,
-    extract::{Json, Request, State},
-    http,
+    extract::{FromRef, FromRequestParts, Json, State},
+    http::request::Parts,
     http::{Response, StatusCode},
-    middleware::Next,
     response::IntoResponse,
+    RequestPartsExt,
+};
+use axum_extra::{
+    headers::{authorization::Bearer, Authorization},
+    TypedHeader,
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::{Duration, Utc};
@@ -12,19 +19,61 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::AppConfig;
+// Code in this module is adapted from https://github.com/ezesundayeze/axum--auth and https://github.com/tokio-rs/axum/blob/main/examples/jwt/src/main.rs
 
-// Code in this module is adapted from https://github.com/ezesundayeze/axum--auth
+#[derive(Clone)]
+pub struct AppConfig {
+    // TODO: Construct and store JWT encode and decode keys in AppConfig.
+    pub jwt_secret: String,
+}
+
+#[async_trait]
+impl<S> FromRequestParts<S> for AppConfig
+where
+    Self: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = AuthError;
+
+    async fn from_request_parts(_: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        Ok(Self::from_ref(state))
+    }
+}
 
 /// The contents of a JSON Web Token.
 #[derive(Serialize, Deserialize)]
-struct Claims {
+pub struct Claims {
     /// The expiry time of the token.
-    exp: usize,
+    pub exp: usize,
     /// The time the token was issued.
-    iat: usize,
+    pub iat: usize,
     /// Email associated with the token.
-    email: String,
+    pub email: String,
+}
+
+#[async_trait]
+impl<S> FromRequestParts<S> for Claims
+where
+    AppConfig: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = AuthError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let TypedHeader(Authorization(bearer)) = parts
+            .extract::<TypedHeader<Authorization<Bearer>>>()
+            .await
+            .map_err(|_| AuthError::InvalidToken)?;
+
+        let app_config = parts
+            .extract_with_state::<AppConfig, _>(state)
+            .await
+            .map_err(|_| AuthError::InvalidToken)?;
+
+        let token_data = decode_jwt(bearer.token(), &app_config.jwt_secret)?;
+
+        Ok(token_data.claims)
+    }
 }
 
 #[derive(Deserialize)]
@@ -43,6 +92,7 @@ pub struct CurrentUser {
     pub password_hash: String,
 }
 
+#[derive(Debug)]
 pub enum AuthError {
     WrongCredentials,
     MissingCredentials,
@@ -115,7 +165,7 @@ fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
     Ok(hash)
 }
 
-fn encode_jwt(email: String, jwt_secret: &str) -> Result<String, StatusCode> {
+fn encode_jwt(email: String, jwt_secret: &str) -> Result<String, AuthError> {
     let now = Utc::now();
     let exp = (now + Duration::minutes(15)).timestamp() as usize;
     let iat = now.timestamp() as usize;
@@ -126,56 +176,32 @@ fn encode_jwt(email: String, jwt_secret: &str) -> Result<String, StatusCode> {
         &claim,
         &EncodingKey::from_secret(jwt_secret.as_ref()),
     )
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    .map_err(|_| AuthError::TokenCreation)
 }
 
-fn decode_jwt(jwt_token: String, jwt_secret: &str) -> Result<TokenData<Claims>, StatusCode> {
-    let result = decode(
+fn decode_jwt(jwt_token: &str, jwt_secret: &str) -> Result<TokenData<Claims>, AuthError> {
+    decode(
         &jwt_token,
         &DecodingKey::from_secret(jwt_secret.as_ref()),
         &Validation::default(),
     )
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
-
-    result
-}
-
-pub async fn authorize(
-    State(state): State<AppConfig>,
-    mut req: Request,
-    next: Next,
-) -> Result<Response<Body>, AuthError> {
-    let auth_header = req.headers_mut().get(http::header::AUTHORIZATION);
-    let auth_header = match auth_header {
-        Some(header) => header.to_str().map_err(|_| AuthError::InvalidToken)?,
-        None => return Err(AuthError::InvalidToken),
-    };
-    let mut header = auth_header.split_whitespace();
-    let (_bearer, token) = (header.next(), header.next());
-    let token_data = match decode_jwt(token.unwrap().to_string(), &state.jwt_secret) {
-        Ok(data) => data,
-        Err(_) => return Err(AuthError::InvalidToken),
-    };
-    let current_user = match retrieve_user_by_email(&token_data.claims.email) {
-        Some(user) => user,
-        None => return Err(AuthError::WrongCredentials),
-    };
-    req.extensions_mut().insert(current_user);
-
-    Ok(next.run(req).await)
+    .map_err(|_| AuthError::InvalidToken)
 }
 
 #[cfg(test)]
 mod tests {
-    use axum::http::StatusCode;
-    use axum::response::Html;
-    use axum::routing::{get, post};
-    use axum::{middleware, Router};
+    use axum::{
+        http::StatusCode,
+        response::Html,
+        routing::{get, post},
+        Router,
+    };
     use axum_test::TestServer;
     use bcrypt::BcryptError;
     use serde_json::json;
 
-    use crate::{auth, AppConfig};
+    use crate::auth;
+    use crate::auth::{AppConfig, AuthError, Claims};
 
     #[test]
     fn test_retrieve_user_by_email_valid() {
@@ -227,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn test_jwt_encode() -> Result<(), StatusCode> {
+    fn test_jwt_encode() -> Result<(), AuthError> {
         let email = "averyemail@email.com".to_string();
         let _ = auth::encode_jwt(email.clone(), JWT_SECRET)?;
 
@@ -235,10 +261,10 @@ mod tests {
     }
 
     #[test]
-    fn test_jwt_email() -> Result<(), StatusCode> {
+    fn test_jwt_email() -> Result<(), AuthError> {
         let email = "averyemail@email.com".to_string();
         let jwt = auth::encode_jwt(email.clone(), JWT_SECRET)?;
-        let claims = auth::decode_jwt(jwt, JWT_SECRET)?.claims;
+        let claims = auth::decode_jwt(&jwt, JWT_SECRET)?.claims;
 
         assert_eq!(email, claims.email);
 
@@ -253,15 +279,15 @@ mod tests {
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
-        let response = server
+        server
             .post("/signin")
             .content_type(&"application/json")
             .json(&json!({
                 "email": "myemail@gmail.com",
                 "password": "okon",
             }))
-            .await;
-        response.assert_status_ok();
+            .await
+            .assert_status_ok();
     }
 
     #[tokio::test]
@@ -272,35 +298,27 @@ mod tests {
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
-        let response = server
+        server
             .post("/signin")
             .content_type(&"application/json")
             .json(&json!({
                 "email": "wrongemail@gmail.com",
                 "password": "definitelyNotTheCorrectPassword",
             }))
-            .await;
-        response.assert_status_not_ok();
+            .await
+            .assert_status_not_ok();
     }
 
-    async fn handler() -> Html<&'static str> {
+    async fn handler(_: Claims) -> Html<&'static str> {
         Html("<h1>Hello, World!</h1>")
     }
 
     #[tokio::test]
     async fn test_auth_protected_route() {
-        let app_config = get_test_app_config();
-
         let app = Router::new()
             .route("/signin", post(auth::sign_in))
-            .route(
-                "/protected",
-                get(handler).layer(middleware::from_fn_with_state(
-                    app_config.clone(),
-                    auth::authorize,
-                )),
-            )
-            .with_state(app_config.clone());
+            .route("/protected", get(handler))
+            .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
@@ -316,7 +334,43 @@ mod tests {
 
         let token = response.json::<String>();
 
-        let response = server.get("/protected").authorization_bearer(token).await;
-        response.assert_status_ok();
+        server
+            .get("/protected")
+            .authorization_bearer(token)
+            .await
+            .assert_status_ok();
+    }
+
+    #[tokio::test]
+    async fn test_protected_route_missing_header() {
+        let app_config = get_test_app_config();
+
+        let app = Router::new()
+            .route("/protected", get(handler))
+            .with_state(app_config.clone());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        server
+            .get("/protected")
+            .await
+            .assert_status(StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_protected_route_empty_token() {
+        let app_config = get_test_app_config();
+
+        let app = Router::new()
+            .route("/protected", get(handler))
+            .with_state(app_config.clone());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        server
+            .get("/protected")
+            .authorization_bearer("")
+            .await
+            .assert_status(StatusCode::BAD_REQUEST);
     }
 }

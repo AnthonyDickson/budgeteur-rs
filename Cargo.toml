@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 axum = "0.7.5"
+axum-extra = { version = "0.9.3", features = ["typed-header"] }
 axum-server = { version = "0.6.0", features = ["tls-rustls"] }
 axum-test = "15.3.0"
 bcrypt = "0.15.1"
