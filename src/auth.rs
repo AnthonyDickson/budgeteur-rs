@@ -43,18 +43,27 @@ pub struct CurrentUser {
     pub password_hash: String,
 }
 
-pub struct AuthError {
-    message: String,
-    status_code: StatusCode,
+pub enum AuthError {
+    WrongCredentials,
+    MissingCredentials,
+    TokenCreation,
+    InvalidToken,
 }
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response<Body> {
+        let (status, error_message) = match self {
+            AuthError::WrongCredentials => (StatusCode::UNAUTHORIZED, "Wrong credentials"),
+            AuthError::MissingCredentials => (StatusCode::BAD_REQUEST, "Missing credentials"),
+            AuthError::TokenCreation => (StatusCode::INTERNAL_SERVER_ERROR, "Token creation error"),
+            AuthError::InvalidToken => (StatusCode::BAD_REQUEST, "Invalid token"),
+        };
+
         let body = Json(json!({
-            "error": self.message,
+            "error": error_message,
         }));
 
-        (self.status_code, body).into_response()
+        (status, body).into_response()
     }
 }
 
@@ -138,36 +147,18 @@ pub async fn authorize(
 ) -> Result<Response<Body>, AuthError> {
     let auth_header = req.headers_mut().get(http::header::AUTHORIZATION);
     let auth_header = match auth_header {
-        Some(header) => header.to_str().map_err(|_| AuthError {
-            message: "Empty header is not allowed".to_string(),
-            status_code: StatusCode::FORBIDDEN,
-        })?,
-        None => {
-            return Err(AuthError {
-                message: "Please add the JWT token to the header".to_string(),
-                status_code: StatusCode::FORBIDDEN,
-            })
-        }
+        Some(header) => header.to_str().map_err(|_| AuthError::InvalidToken)?,
+        None => return Err(AuthError::InvalidToken),
     };
     let mut header = auth_header.split_whitespace();
     let (_bearer, token) = (header.next(), header.next());
     let token_data = match decode_jwt(token.unwrap().to_string(), &state.jwt_secret) {
         Ok(data) => data,
-        Err(_) => {
-            return Err(AuthError {
-                message: "Unable to decode token".to_string(),
-                status_code: StatusCode::UNAUTHORIZED,
-            })
-        }
+        Err(_) => return Err(AuthError::InvalidToken),
     };
     let current_user = match retrieve_user_by_email(&token_data.claims.email) {
         Some(user) => user,
-        None => {
-            return Err(AuthError {
-                message: "You are not an authorized user".to_string(),
-                status_code: StatusCode::UNAUTHORIZED,
-            })
-        }
+        None => return Err(AuthError::WrongCredentials),
     };
     req.extensions_mut().insert(current_user);
 
