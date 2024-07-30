@@ -53,7 +53,7 @@ where
             .await
             .map_err(|_| AuthError::InvalidToken)?;
 
-        let token_data = decode_jwt(bearer.token(), &app_config.jwt_secret)?;
+        let token_data = decode_jwt(bearer.token(), app_config.decoding_key())?;
 
         Ok(token_data.claims)
     }
@@ -125,7 +125,7 @@ pub async fn sign_in(
         return Err(AuthError::WrongCredentials);
     }
 
-    let token = encode_jwt(user.email, &state.jwt_secret)?;
+    let token = encode_jwt(user.email, state.encoding_key())?;
 
     Ok(Json(token))
 }
@@ -155,27 +155,17 @@ fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
     Ok(hash)
 }
 
-fn encode_jwt(email: String, jwt_secret: &str) -> Result<String, AuthError> {
+fn encode_jwt(email: String, encoding_key: &EncodingKey) -> Result<String, AuthError> {
     let now = Utc::now();
     let exp = (now + Duration::minutes(15)).timestamp() as usize;
     let iat = now.timestamp() as usize;
     let claim = Claims { exp, iat, email };
 
-    encode(
-        &Header::default(),
-        &claim,
-        &EncodingKey::from_secret(jwt_secret.as_ref()),
-    )
-    .map_err(|_| AuthError::TokenCreation)
+    encode(&Header::default(), &claim, encoding_key).map_err(|_| AuthError::TokenCreation)
 }
 
-fn decode_jwt(jwt_token: &str, jwt_secret: &str) -> Result<TokenData<Claims>, AuthError> {
-    decode(
-        &jwt_token,
-        &DecodingKey::from_secret(jwt_secret.as_ref()),
-        &Validation::default(),
-    )
-    .map_err(|_| AuthError::InvalidToken)
+fn decode_jwt(jwt_token: &str, decoding_key: &DecodingKey) -> Result<TokenData<Claims>, AuthError> {
+    decode(&jwt_token, decoding_key, &Validation::default()).map_err(|_| AuthError::InvalidToken)
 }
 
 #[cfg(test)]
@@ -238,24 +228,23 @@ mod tests {
     const JWT_SECRET: &str = "foobar";
 
     fn get_test_app_config() -> AppConfig {
-        AppConfig {
-            jwt_secret: JWT_SECRET.to_string(),
-        }
+        AppConfig::new(JWT_SECRET.to_string())
     }
 
     #[test]
     fn test_jwt_encode() -> Result<(), AuthError> {
         let email = "averyemail@email.com".to_string();
-        let _ = auth::encode_jwt(email.clone(), JWT_SECRET)?;
+        let _ = auth::encode_jwt(email.clone(), get_test_app_config().encoding_key())?;
 
         Ok(())
     }
 
     #[test]
     fn test_jwt_email() -> Result<(), AuthError> {
+        let config = get_test_app_config();
         let email = "averyemail@email.com".to_string();
-        let jwt = auth::encode_jwt(email.clone(), JWT_SECRET)?;
-        let claims = auth::decode_jwt(&jwt, JWT_SECRET)?.claims;
+        let jwt = auth::encode_jwt(email.clone(), config.encoding_key())?;
+        let claims = auth::decode_jwt(&jwt, config.decoding_key())?.claims;
 
         assert_eq!(email, claims.email);
 

@@ -36,10 +36,10 @@ async fn main() {
     .await
     .unwrap();
 
-    let app_config = AppConfig {
-        jwt_secret: env::var("JWT_SECRET")
-            .expect("The environment variable 'JWT_SECRET' must be set."),
-    };
+    let jwt_secret =
+        env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set.");
+
+    let app_config = AppConfig::new(jwt_secret);
 
     tracing::info!("HTTPS server listening on {}", addr);
     axum_server::bind_rustls(addr, tls_config)
