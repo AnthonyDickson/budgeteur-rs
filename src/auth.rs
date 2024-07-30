@@ -176,10 +176,10 @@ pub async fn authorize(
 
 #[cfg(test)]
 mod tests {
-    use axum::http::{HeaderValue, StatusCode};
+    use axum::http::StatusCode;
     use axum::response::Html;
     use axum::routing::{get, post};
-    use axum::{http, middleware, Router};
+    use axum::{middleware, Router};
     use axum_test::TestServer;
     use bcrypt::BcryptError;
     use serde_json::json;
@@ -324,12 +324,8 @@ mod tests {
         response.assert_status_ok();
 
         let token = response.json::<String>();
-        let header_value = HeaderValue::from_str(&format!("Bearer {}", token)).unwrap();
 
-        let response = server
-            .get("/protected")
-            .add_header(http::header::AUTHORIZATION, header_value)
-            .await;
+        let response = server.get("/protected").authorization_bearer(token).await;
         response.assert_status_ok();
     }
 }
