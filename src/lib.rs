@@ -1,13 +1,11 @@
-use std::{env, env::VarError, net::SocketAddr, time::Duration};
+use std::{env, env::VarError, time::Duration};
 
 use axum::{
-    extract::Host,
-    handler::HandlerWithoutStateExt,
-    http::{StatusCode, Uri},
+    http::StatusCode,
     middleware,
-    response::{Html, Redirect},
+    response::Html,
     routing::{get, post, put},
-    BoxError, Json, Router,
+    Json, Router,
 };
 use axum_server::Handle;
 use serde::{Deserialize, Serialize};
@@ -19,7 +17,6 @@ mod services;
 
 #[derive(Clone)]
 pub struct AppConfig {
-    pub ports: Ports,
     pub jwt_secret: String,
 }
 
@@ -130,53 +127,6 @@ pub async fn graceful_shutdown(handle: Handle) {
             handle.graceful_shutdown(Some(Duration::from_secs(1)));
         },
     }
-}
-
-/// Spawn an HTTP server that redirects requests to an HTTPS server.
-///
-/// The servers are assumed to have the same domain use the ports defined in the parameter `ports`.
-pub async fn redirect_http_to_https(ports: Ports) {
-    fn make_https(host: String, uri: Uri, ports: Ports) -> Result<Uri, BoxError> {
-        let mut parts = uri.into_parts();
-
-        parts.scheme = Some(axum::http::uri::Scheme::HTTPS);
-
-        if parts.path_and_query.is_none() {
-            parts.path_and_query = Some("/".parse().unwrap());
-        }
-
-        let https_host = host.replace(&ports.http.to_string(), &ports.https.to_string());
-        parts.authority = Some(https_host.parse()?);
-
-        Ok(Uri::from_parts(parts)?)
-    }
-
-    let redirect = move |Host(host): Host, uri: Uri| async move {
-        match make_https(host, uri, ports) {
-            Ok(uri) => Ok(Redirect::permanent(&uri.to_string())),
-            Err(error) => {
-                tracing::warn!(%error, "failed to convert URI to HTTPS");
-                Err(StatusCode::BAD_REQUEST)
-            }
-        }
-    };
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], ports.http));
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    tracing::info!(
-        "HTTPS redirect server listening on {}",
-        listener.local_addr().unwrap()
-    );
-    axum::serve(listener, redirect.into_make_service())
-        .await
-        .unwrap();
-}
-
-// TODO: Ensure that ports are always different.
-#[derive(Clone, Copy)]
-pub struct Ports {
-    pub http: u16,
-    pub https: u16,
 }
 
 pub async fn handler() -> Html<&'static str> {

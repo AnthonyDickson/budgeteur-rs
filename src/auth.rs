@@ -184,7 +184,7 @@ mod tests {
     use bcrypt::BcryptError;
     use serde_json::json;
 
-    use crate::{auth, AppConfig, Ports};
+    use crate::{auth, AppConfig};
 
     #[test]
     fn test_retrieve_user_by_email_valid() {
@@ -231,10 +231,6 @@ mod tests {
 
     fn get_test_app_config() -> AppConfig {
         AppConfig {
-            ports: Ports {
-                http: 3000,
-                https: 3001,
-            },
             jwt_secret: JWT_SECRET.to_string(),
         }
     }
