@@ -217,6 +217,18 @@ mod tests {
     }
 
     #[test]
+    fn test_hash_dupe_password() -> Result<(), BcryptError> {
+        let password = "password1234";
+        let hash = auth::hash_password(password)?;
+
+        let dupe_password = "password1234";
+        let dupe_hash = auth::hash_password(dupe_password)?;
+
+        assert_ne!(hash, dupe_hash);
+        Ok(())
+    }
+
+    #[test]
     fn test_retrieve_user_by_email_does_not_exist() {
         let email = "notavalidemail";
 

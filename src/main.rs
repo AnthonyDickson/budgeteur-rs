@@ -7,8 +7,6 @@ use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, 
 use backrooms_rs::{build_router, graceful_shutdown, parse_port_or_default, AppConfig};
 
 // TODO: Add route for creating user (email + password). Hash passwords with a salt which is stored alongside the hashed and salted password.
-// TODO: Add route for login which issues a JWT on success (What happens on failure?).
-// TODO: Add middleware that checks for valid JWT before providing access to protected routes.
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
