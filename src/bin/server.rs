@@ -1,6 +1,7 @@
-use std::{env, net::SocketAddr, path::PathBuf};
+use std::{env, env::args, net::SocketAddr, path::PathBuf, process::exit};
 
 use axum_server::{tls_rustls::RustlsConfig, Handle};
+use rusqlite::Connection;
 use tracing;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
@@ -24,12 +25,8 @@ async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
     let tls_config = RustlsConfig::from_pem_file(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("self_signed_certs")
-            .join("../self_signed_certs/cert.pem"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("self_signed_certs")
-            .join("../self_signed_certs/key.pem"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs/cert.pem"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs/key.pem"),
     )
     .await
     .unwrap();
@@ -37,7 +34,7 @@ async fn main() {
     let jwt_secret =
         env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set.");
 
-    // TODO: Load database into memory or create it if it does not exist.
+    let conn = Connection::open(get_database_path_from_args()).unwrap();
     // TODO: Add database connection to app state.
     let app_config = AppConfig::new(jwt_secret);
 
@@ -47,4 +44,16 @@ async fn main() {
         .serve(build_router().with_state(app_config).into_make_service())
         .await
         .unwrap();
+}
+
+fn get_database_path_from_args() -> PathBuf {
+    let args: Vec<String> = args().into_iter().collect();
+
+    if args.len() < 2 {
+        let program_name = args[0].clone();
+        eprintln!("Usage: {program_name:?} <database_path>");
+        exit(1);
+    }
+
+    PathBuf::from(&args[1])
 }

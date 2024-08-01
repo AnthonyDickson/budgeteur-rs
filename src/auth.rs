@@ -140,7 +140,7 @@ fn verify_password(password: &str, hash: &str) -> Result<bool, bcrypt::BcryptErr
     verify(password, hash)
 }
 
-fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
+pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
     let hash = hash(password, DEFAULT_COST)?;
     Ok(hash)
 }

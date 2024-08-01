@@ -15,6 +15,7 @@ Cargo.lock
 
 # Certs for HTTPS on dev server.
 self_signed_certs
+test.db
 
 # Added by cargo
 /target

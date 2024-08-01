@@ -15,7 +15,7 @@ pub use config::AppConfig;
 
 pub mod auth;
 mod config;
-mod db;
+pub mod db;
 mod services;
 
 /// Return a router with all the app's routes.
