@@ -67,14 +67,6 @@ pub struct Credentials {
     pub password: String,
 }
 
-#[derive(Clone)]
-pub struct CurrentUser {
-    pub email: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub password_hash: String,
-}
-
 #[derive(Debug)]
 pub enum AuthError {
     WrongCredentials,
@@ -118,7 +110,7 @@ pub async fn sign_in(
         None => return Err(AuthError::WrongCredentials),
     };
 
-    if !verify_password(&user_data.password, &user.password_hash).map_err(|e| {
+    if !verify_password(&user_data.password, &user.password).map_err(|e| {
         tracing::debug!("Error verifying password: {}", e);
         AuthError::InternalError
     })? {
@@ -130,20 +122,18 @@ pub async fn sign_in(
     Ok(Json(token))
 }
 
-fn retrieve_user_by_email(email: &str) -> Option<CurrentUser> {
+fn retrieve_user_by_email(email: &str) -> Option<Credentials> {
     if email != "myemail@gmail.com" {
         return None;
     }
 
     // TODO: Replace this with database.
-    let current_user = CurrentUser {
+    let user = Credentials {
         email: "myemail@gmail.com".to_string(),
-        first_name: "Eze".to_string(),
-        last_name: "Sunday".to_string(),
-        password_hash: "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_string(),
+        password: "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_string(),
     };
 
-    Some(current_user)
+    Some(user)
 }
 
 fn verify_password(password: &str, hash: &str) -> Result<bool, bcrypt::BcryptError> {
