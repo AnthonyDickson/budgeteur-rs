@@ -37,6 +37,8 @@ async fn main() {
     let jwt_secret =
         env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set.");
 
+    // TODO: Load database into memory or create it if it does not exist.
+    // TODO: Add database connection to app state.
     let app_config = AppConfig::new(jwt_secret);
 
     tracing::info!("HTTPS server listening on {}", addr);

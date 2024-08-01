@@ -11,6 +11,7 @@ axum-test = "15.3.0"
 bcrypt = "0.15.1"
 chrono = { version = "0.4.38", features = ["serde"] }
 jsonwebtoken = "9.3.0"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
 tokio = { version = "1.39.2", features = ["full"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
