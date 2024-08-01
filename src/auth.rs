@@ -67,13 +67,6 @@ pub struct Credentials {
     pub password: String,
 }
 
-// TODO: Move to 'database' module.
-struct User {
-    id: i32,
-    email: String,
-    password: String,
-}
-
 #[derive(Clone)]
 pub struct CurrentUser {
     pub email: String,
@@ -181,15 +174,14 @@ mod tests {
         http::StatusCode,
         response::Html,
         routing::{get, post},
-        BoxError, Router,
+        Router,
     };
     use axum_test::TestServer;
     use bcrypt::BcryptError;
-    use rusqlite::Connection;
     use serde_json::json;
 
     use crate::auth;
-    use crate::auth::{AuthError, Claims, Credentials, User};
+    use crate::auth::{AuthError, Claims};
     use crate::config::AppConfig;
 
     #[test]
@@ -267,49 +259,6 @@ mod tests {
         let claims = auth::decode_jwt(&jwt, config.decoding_key())?.claims;
 
         assert_eq!(email, claims.email);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_create_and_retrieve_user_from_db() -> Result<(), BoxError> {
-        let conn = Connection::open_in_memory()?;
-
-        // TODO: Add 'database' module with function to initialise the application database.
-        conn.execute(
-            "CREATE TABLE user (\
-                id INTEGER PRIMARY KEY,\
-                email TEXT UNIQUE NOT NULL,\
-                password TEXT UNIQUE NOT NULL\
-                )",
-            (),
-        )?;
-
-        let credentials = Credentials {
-            email: "hello@world.com".to_string(),
-            password: auth::hash_password("hunter2")?,
-        };
-
-        conn.execute(
-            "INSERT INTO user (email, password) VALUES (?1, ?2)",
-            (&credentials.email, &credentials.password),
-        )?;
-
-        let mut stmt = conn.prepare("SELECT id, email, password FROM user")?;
-        let user_iter = stmt.query_map([], |row| {
-            Ok(User {
-                id: row.get(0)?,
-                email: row.get(1)?,
-                password: row.get(2)?,
-            })
-        })?;
-
-        if let Some(Ok(user)) = user_iter.into_iter().next() {
-            assert_eq!(user.email, credentials.email);
-            assert_eq!(user.password, credentials.password);
-        } else {
-            panic!();
-        }
 
         Ok(())
     }
