@@ -41,25 +41,24 @@ pub fn build_router() -> Router<AppConfig> {
 /// This function may panic if the environment variable `env_key` cannot be parsed as an integer.
 ///
 /// ```rust,should_panic
-/// use std::env;
 /// use backrooms_rs::parse_port_or_default;
 ///
-/// unsafe { env::set_var("FOO", "123s"); }
+/// unsafe { std::env::set_var("FOO", "123s"); }
 /// // This will panic!
 /// let port = parse_port_or_default("FOO", 1234);
+/// # unsafe { std::env::remove_var("FOO"); }
 /// ```
 ///
 /// # Examples
 ///
 /// ```
-/// use std::env;
 /// use backrooms_rs::parse_port_or_default;
 ///
 /// assert_eq!(parse_port_or_default("FOO", 1234), 1234);
 ///
-/// unsafe { env::set_var("FOO", "4321"); }
+/// unsafe { std::env::set_var("FOO", "4321"); }
 /// assert_eq!(parse_port_or_default("FOO", 1234), 4321);
-/// # unsafe { env::remove_var("FOO"); }
+/// # unsafe { std::env::remove_var("FOO"); }
 /// ```
 pub fn parse_port_or_default(env_key: &str, default_port: u16) -> u16 {
     let port_string = match env::var(env_key) {
