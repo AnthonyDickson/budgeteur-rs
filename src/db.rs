@@ -42,6 +42,17 @@ pub fn initialize(connection: &Connection) -> Result<(), Error> {
     Ok(())
 }
 
+/// Errors originating from operations on the app's database.
+#[derive(Debug)]
+pub enum DbError {
+    /// The user's email already exists in the database. The client should try again with a different email address.
+    DuplicateEmail,
+    /// The password hash clashed with an existing password hash (should be extremely rare), the caller should rehash the password and try again.
+    DuplicatePassword,
+    /// Wrapper for Sqlite errors not handled by the other enum entries.
+    UnspecifiedSqlError(Error),
+}
+
 /// Create a new user in the database.
 ///
 /// It is up to the caller to ensure the password being passed in is properly hashed.
@@ -55,11 +66,24 @@ pub fn insert_user(
     email: &str,
     password_hash: &str,
     connection: &Connection,
-) -> Result<User, Error> {
+) -> Result<User, DbError> {
     // TODO: Check for empty email, invalid email format, invalid password (e.g., too short).
-    let mut stmt = connection.prepare("INSERT INTO user (email, password) VALUES (?1, ?2)")?;
-    // TODO: Give descriptive error message, e.g, 'email already used'.
-    stmt.execute((email, password_hash))?;
+    let mut stmt = connection
+        .prepare("INSERT INTO user (email, password) VALUES (?1, ?2)")
+        .map_err(DbError::UnspecifiedSqlError)?;
+
+    stmt.execute((email, password_hash)).map_err(|e| match e {
+        Error::SqliteFailure(error, Some(ref desc)) if error.extended_code == 2067 => {
+            if desc.contains("email") {
+                DbError::DuplicateEmail
+            } else if desc.contains("password") {
+                DbError::DuplicatePassword
+            } else {
+                DbError::UnspecifiedSqlError(e)
+            }
+        }
+        _ => DbError::UnspecifiedSqlError(e),
+    })?;
 
     let id = connection.last_insert_rowid();
 

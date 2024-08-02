@@ -133,8 +133,7 @@ async fn create_user(
     let connection = match connection_lock.lock() {
         Ok(connection_mutex) => connection_mutex,
         Err(e) => {
-            tracing::error!("{e:#?}");
-
+            tracing::error!("Error acquiring lock for db connection: {e:#?}");
             return AppError::InternalError.into_response();
         }
     };
