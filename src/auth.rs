@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::config::AppConfig;
+use crate::db::retrieve_user_by_email;
 
 // Code in this module is adapted from https://github.com/ezesundayeze/axum--auth and https://github.com/tokio-rs/axum/blob/main/examples/jwt/src/main.rs
 
@@ -105,35 +106,22 @@ pub async fn sign_in(
         return Err(AuthError::MissingCredentials);
     }
 
-    let user = match retrieve_user_by_email(&user_data.email) {
-        Some(user) => user,
-        None => return Err(AuthError::WrongCredentials),
-    };
+    let user =
+        match retrieve_user_by_email(&user_data.email, &state.db_connection().lock().unwrap()) {
+            Some(user) => user,
+            None => return Err(AuthError::WrongCredentials),
+        };
 
-    if !verify_password(&user_data.password, &user.password).map_err(|e| {
+    if !verify_password(&user_data.password, user.password()).map_err(|e| {
         tracing::debug!("Error verifying password: {}", e);
         AuthError::InternalError
     })? {
         return Err(AuthError::WrongCredentials);
     }
 
-    let token = encode_jwt(user.email, state.encoding_key())?;
+    let token = encode_jwt(user.email(), state.encoding_key())?;
 
     Ok(Json(token))
-}
-
-fn retrieve_user_by_email(email: &str) -> Option<Credentials> {
-    if email != "myemail@gmail.com" {
-        return None;
-    }
-
-    // TODO: Replace this with database.
-    let user = Credentials {
-        email: "myemail@gmail.com".to_string(),
-        password: "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_string(),
-    };
-
-    Some(user)
 }
 
 fn verify_password(password: &str, hash: &str) -> Result<bool, bcrypt::BcryptError> {
@@ -145,11 +133,15 @@ pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
     Ok(hash)
 }
 
-fn encode_jwt(email: String, encoding_key: &EncodingKey) -> Result<String, AuthError> {
+fn encode_jwt(email: &str, encoding_key: &EncodingKey) -> Result<String, AuthError> {
     let now = Utc::now();
     let exp = (now + Duration::minutes(15)).timestamp() as usize;
     let iat = now.timestamp() as usize;
-    let claim = Claims { exp, iat, email };
+    let claim = Claims {
+        exp,
+        iat,
+        email: email.to_string(),
+    };
 
     encode(&Header::default(), &claim, encoding_key).map_err(|_| AuthError::TokenCreation)
 }
@@ -172,20 +164,9 @@ mod tests {
     use serde_json::json;
 
     use crate::auth;
-    use crate::auth::{AuthError, Claims};
+    use crate::auth::{hash_password, AuthError, Claims};
     use crate::config::AppConfig;
-    use crate::db::initialize;
-
-    #[test]
-    fn test_retrieve_user_by_email_valid() {
-        let email = "myemail@gmail.com";
-
-        if let Some(user) = auth::retrieve_user_by_email(email) {
-            assert_eq!(user.email, email);
-        } else {
-            panic!();
-        }
-    }
+    use crate::db::{initialize, insert_user};
 
     #[test]
     fn test_verify_password() {
@@ -220,15 +201,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_retrieve_user_by_email_does_not_exist() {
-        let email = "notavalidemail";
-
-        if let Some(_) = auth::retrieve_user_by_email(email) {
-            panic!();
-        }
-    }
-
     const JWT_SECRET: &str = "foobar";
 
     fn get_test_app_config() -> AppConfig {
@@ -241,8 +213,8 @@ mod tests {
 
     #[test]
     fn test_jwt_encode() -> Result<(), AuthError> {
-        let email = "averyemail@email.com".to_string();
-        let _ = auth::encode_jwt(email.clone(), get_test_app_config().encoding_key())?;
+        let email = "averyemail@email.com";
+        let _ = auth::encode_jwt(email, get_test_app_config().encoding_key())?;
 
         Ok(())
     }
@@ -250,8 +222,8 @@ mod tests {
     #[test]
     fn test_jwt_email() -> Result<(), AuthError> {
         let config = get_test_app_config();
-        let email = "averyemail@email.com".to_string();
-        let jwt = auth::encode_jwt(email.clone(), config.encoding_key())?;
+        let email = "averyemail@email.com";
+        let jwt = auth::encode_jwt(email, config.encoding_key())?;
         let claims = auth::decode_jwt(&jwt, config.decoding_key())?.claims;
 
         assert_eq!(email, claims.email);
@@ -261,9 +233,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_valid_sign_in() {
+        let app_config = get_test_app_config();
+
+        let raw_password = "hunter2";
+        let test_user = insert_user(
+            "foo@bar.baz",
+            &hash_password(raw_password).unwrap(),
+            &app_config.db_connection().lock().unwrap(),
+        )
+        .unwrap();
+
         let app = Router::new()
             .route("/signin", post(auth::sign_in))
-            .with_state(get_test_app_config());
+            .with_state(app_config);
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
@@ -271,8 +253,8 @@ mod tests {
             .post("/signin")
             .content_type(&"application/json")
             .json(&json!({
-                "email": "myemail@gmail.com",
-                "password": "okon",
+                "email": &test_user.email(),
+                "password": raw_password,
             }))
             .await
             .assert_status_ok();
@@ -303,10 +285,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_auth_protected_route() {
+        let app_config = get_test_app_config();
+
+        let raw_password = "hunter2";
+        let test_user = insert_user(
+            "foo@bar.baz",
+            &hash_password(raw_password).unwrap(),
+            &app_config.db_connection().lock().unwrap(),
+        )
+        .unwrap();
+
         let app = Router::new()
             .route("/signin", post(auth::sign_in))
             .route("/protected", get(handler))
-            .with_state(get_test_app_config());
+            .with_state(app_config);
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
@@ -314,10 +306,11 @@ mod tests {
             .post("/signin")
             .content_type(&"application/json")
             .json(&json!({
-                "email": "myemail@gmail.com",
-                "password": "okon",
+                "email": &test_user.email(),
+                "password": raw_password,
             }))
             .await;
+
         response.assert_status_ok();
 
         let token = response.json::<String>();

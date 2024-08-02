@@ -33,8 +33,8 @@ impl AppConfig {
         }
     }
 
-    pub fn db_connection(&self) -> &Mutex<Connection> {
-        &self.db_connection
+    pub fn db_connection(&self) -> Arc<Mutex<Connection>> {
+        Arc::clone(&self.db_connection)
     }
 
     /// The encoding key for JWTs.
