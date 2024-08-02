@@ -168,11 +168,13 @@ mod tests {
     };
     use axum_test::TestServer;
     use bcrypt::BcryptError;
+    use rusqlite::Connection;
     use serde_json::json;
 
     use crate::auth;
     use crate::auth::{AuthError, Claims};
     use crate::config::AppConfig;
+    use crate::db::initialize;
 
     #[test]
     fn test_retrieve_user_by_email_valid() {
@@ -230,7 +232,11 @@ mod tests {
     const JWT_SECRET: &str = "foobar";
 
     fn get_test_app_config() -> AppConfig {
-        AppConfig::new(JWT_SECRET.to_string())
+        let db_connection =
+            Connection::open_in_memory().expect("Could not open database in memory.");
+        initialize(&db_connection).expect("Could not initialize database.");
+
+        AppConfig::new(db_connection, JWT_SECRET.to_string())
     }
 
     #[test]

@@ -35,8 +35,7 @@ async fn main() {
         env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set.");
 
     let conn = Connection::open(get_database_path_from_args()).unwrap();
-    // TODO: Add database connection to app state.
-    let app_config = AppConfig::new(jwt_secret);
+    let app_config = AppConfig::new(conn, jwt_secret);
 
     tracing::info!("HTTPS server listening on {}", addr);
     axum_server::bind_rustls(addr, tls_config)

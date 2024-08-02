@@ -1,7 +1,12 @@
-use axum::async_trait;
-use axum::extract::{FromRef, FromRequestParts};
-use axum::http::request::Parts;
+use std::sync::{Arc, Mutex};
+
+use axum::{
+    async_trait,
+    extract::{FromRef, FromRequestParts},
+    http::request::Parts,
+};
 use jsonwebtoken::{DecodingKey, EncodingKey};
+use rusqlite::Connection;
 
 use crate::auth::AuthError;
 
@@ -13,17 +18,23 @@ struct JwtKeys {
 
 #[derive(Clone)]
 pub struct AppConfig {
+    db_connection: Arc<Mutex<Connection>>,
     jwt_keys: JwtKeys,
 }
 
 impl AppConfig {
-    pub fn new(jwt_secret: String) -> AppConfig {
+    pub fn new(db_connection: Connection, jwt_secret: String) -> AppConfig {
         AppConfig {
+            db_connection: Arc::new(Mutex::new(db_connection)),
             jwt_keys: JwtKeys {
                 encoding_key: EncodingKey::from_secret(jwt_secret.as_ref()),
                 decoding_key: DecodingKey::from_secret(jwt_secret.as_ref()),
             },
         }
+    }
+
+    pub fn db_connection(&self) -> &Mutex<Connection> {
+        &self.db_connection
     }
 
     /// The encoding key for JWTs.
