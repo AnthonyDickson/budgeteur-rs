@@ -100,6 +100,19 @@ mod tests {
         assert_eq!(inserted_user.password, password);
     }
 
+    #[tokio::test]
+    async fn test_create_user_duplicate_email_password() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+
+        let email = "hello@world.com";
+        let password = "hunter2";
+
+        assert!(insert_user(email, password, &conn).is_ok());
+        assert!(insert_user(email, "hunter3", &conn).is_err());
+        assert!(insert_user("bye@world.com", password, &conn).is_err());
+    }
+
     #[test]
     fn test_retrieve_user_by_email_does_not_exist() {
         let conn = Connection::open_in_memory().unwrap();
