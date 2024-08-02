@@ -1,17 +1,23 @@
 use std::{env, env::VarError, time::Duration};
 
 use axum::{
+    extract::State,
     http::StatusCode,
-    response::Html,
-    routing::{get, post, put},
+    response::{IntoResponse, Response},
+    routing::{get, post},
     Json, Router,
 };
 use axum_server::Handle;
-use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::signal;
 use tracing;
 
 pub use config::AppConfig;
+
+use crate::{
+    auth::{hash_password, Credentials},
+    db::insert_user,
+};
 
 pub mod auth;
 mod config;
@@ -20,11 +26,11 @@ mod services;
 
 /// Return a router with all the app's routes.
 pub fn build_router() -> Router<AppConfig> {
+    // TODO: Have each module build routes and compose the routes here.
     Router::new()
-        .route("/", get(handler))
-        .route("/json", get(test_json))
-        .route("/hello", put(hello_json))
-        .route("/signin", post(auth::sign_in))
+        .route("/", get(|| async { StatusCode::IM_A_TEAPOT }))
+        .route("/user", post(create_user))
+        .route("/sign_in", post(auth::sign_in))
         .route("/protected", get(services::hello))
 }
 
@@ -120,91 +126,103 @@ pub async fn graceful_shutdown(handle: Handle) {
     }
 }
 
-pub async fn handler() -> Html<&'static str> {
-    Html("<h1>Hello, World!</h1>")
-}
+async fn create_user(
+    State(state): State<AppConfig>,
+    Json(user_data): Json<Credentials>,
+) -> Response {
+    let connection_lock = state.db_connection();
+    let connection = match connection_lock.lock() {
+        Ok(connection_mutex) => connection_mutex,
+        Err(e) => {
+            tracing::error!("{e:#?}");
 
-pub async fn test_json() -> (StatusCode, Json<Foo>) {
-    let foo = Foo {
-        bar: "baz".to_string(),
+            return AppError::InternalError.into_response();
+        }
     };
 
-    (StatusCode::OK, Json(foo))
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Foo {
-    bar: String,
-}
-
-pub async fn hello_json(Json(payload): Json<Name>) -> (StatusCode, Json<Greeting>) {
-    let greeting = Greeting {
-        text: format!("Hello, {}!", payload.name),
+    let password_hash = match hash_password(&user_data.password) {
+        Ok(password_hash) => password_hash,
+        Err(e) => {
+            tracing::error!("Error hashing password: {e:?}");
+            return AppError::InternalError.into_response();
+        }
     };
 
-    (StatusCode::CREATED, Json(greeting))
+    match insert_user(&user_data.email, &password_hash, &connection) {
+        Ok(user) => (StatusCode::CREATED, Json(user)).into_response(),
+        Err(e) => AppError::UserCreation(format!("Could not create user: {e:?}")).into_response(),
+    }
 }
 
-#[derive(Deserialize)]
-pub struct Name {
-    name: String,
+enum AppError {
+    InternalError,
+    UserCreation(String),
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Greeting {
-    text: String,
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let (status, error_message) = match self {
+            AppError::InternalError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            ),
+            AppError::UserCreation(description) => (StatusCode::OK, description),
+        };
+
+        let body = Json(json!({
+            "error": error_message,
+        }));
+
+        (status, body).into_response()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use axum::http::StatusCode;
-    use axum::routing::{get, put};
-    use axum::Router;
+    use axum::{http::StatusCode, routing::post, Router};
     use axum_test::TestServer;
+    use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::{handler, hello_json, test_json, Foo, Greeting};
+    use crate::auth::verify_password;
+    use crate::{
+        create_user,
+        db::{initialize, User},
+        AppConfig,
+    };
 
-    #[tokio::test]
-    async fn test_root() {
-        let app = Router::new().route("/", get(handler));
+    fn get_test_app_config() -> AppConfig {
+        let db_connection =
+            Connection::open_in_memory().expect("Could not open database in memory.");
+        initialize(&db_connection).expect("Could not initialize database.");
 
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        let response = server.get("/").await;
-
-        response.assert_status_ok();
+        AppConfig::new(db_connection, "42".to_string())
     }
 
     #[tokio::test]
-    async fn test_get_json() {
-        let app = Router::new().route("/json", get(test_json));
+    async fn test_create_user() {
+        let app = Router::new()
+            .route("/user", post(create_user))
+            .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
-        let response = server.get("/json").await;
-        response.assert_status_ok();
-
-        let response_json = response.json::<Foo>();
-        assert_eq!(response_json.bar, "baz");
-    }
-
-    #[tokio::test]
-    async fn test_post_json() {
-        let app = Router::new().route("/hello", put(hello_json));
-
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let email = "test@test.com";
+        let password = "hunter2";
 
         let response = server
-            .put("/hello")
-            .content_type(&"application/json")
+            .post("/user")
+            .content_type("application/json")
             .json(&json!({
-                "name": "World",
+                "email": email,
+                "password": password
             }))
             .await;
+
         response.assert_status(StatusCode::CREATED);
 
-        let response_json = response.json::<Greeting>();
-        assert_eq!(response_json.text, "Hello, World!");
+        let user = response.json::<User>();
+        assert_eq!(user.email(), email);
+        assert!(verify_password(password, user.password()).unwrap());
     }
 }

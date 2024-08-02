@@ -124,7 +124,7 @@ pub async fn sign_in(
     Ok(Json(token))
 }
 
-fn verify_password(password: &str, hash: &str) -> Result<bool, bcrypt::BcryptError> {
+pub fn verify_password(password: &str, hash: &str) -> Result<bool, bcrypt::BcryptError> {
     verify(password, hash)
 }
 
@@ -201,14 +201,12 @@ mod tests {
         Ok(())
     }
 
-    const JWT_SECRET: &str = "foobar";
-
     fn get_test_app_config() -> AppConfig {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppConfig::new(db_connection, JWT_SECRET.to_string())
+        AppConfig::new(db_connection, "foobar".to_string())
     }
 
     #[test]

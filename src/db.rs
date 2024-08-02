@@ -1,6 +1,7 @@
 use rusqlite::{Connection, Error};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct User {
     id: i64,
     email: String,
@@ -41,15 +42,24 @@ pub fn initialize(connection: &Connection) -> Result<(), Error> {
     Ok(())
 }
 
+/// Create a new user in the database.
+///
+/// It is up to the caller to ensure the password being passed in is properly hashed.
+///
+/// # Error
+/// Will return an error if there was a problem executing the SQL query. This could be due to:
+/// - a syntax error in the SQL string,
+/// - the email is already in use, or
+/// - the password hash is not unique.
 pub fn insert_user(
     email: &str,
     password_hash: &str,
     connection: &Connection,
 ) -> Result<User, Error> {
-    connection.execute(
-        "INSERT INTO user (email, password) VALUES (?1, ?2)",
-        (email, password_hash),
-    )?;
+    // TODO: Check for empty email, invalid email format, invalid password (e.g., too short).
+    let mut stmt = connection.prepare("INSERT INTO user (email, password) VALUES (?1, ?2)")?;
+    // TODO: Give descriptive error message, e.g, 'email already used'.
+    stmt.execute((email, password_hash))?;
 
     let id = connection.last_insert_rowid();
 
