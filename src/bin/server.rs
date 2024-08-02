@@ -2,7 +2,6 @@ use std::{env, env::args, net::SocketAddr, path::PathBuf, process::exit};
 
 use axum_server::{tls_rustls::RustlsConfig, Handle};
 use rusqlite::Connection;
-use tracing;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 use backrooms_rs::{build_router, graceful_shutdown, parse_port_or_default, AppConfig};
@@ -31,7 +30,7 @@ async fn main() {
     .unwrap();
 
     let jwt_secret =
-        env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set.");
+        env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set");
 
     let conn = Connection::open(get_database_path_from_args()).unwrap();
     let app_config = AppConfig::new(conn, jwt_secret);
@@ -46,7 +45,7 @@ async fn main() {
 }
 
 fn get_database_path_from_args() -> PathBuf {
-    let args: Vec<String> = args().into_iter().collect();
+    let args: Vec<String> = args().collect();
 
     if args.len() < 2 {
         let program_name = args[0].clone();

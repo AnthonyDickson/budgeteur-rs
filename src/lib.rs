@@ -10,7 +10,6 @@ use axum::{
 use axum_server::Handle;
 use serde_json::json;
 use tokio::signal;
-use tracing;
 
 pub use config::AppConfig;
 
@@ -65,7 +64,7 @@ pub fn build_router() -> Router<AppConfig> {
 pub fn parse_port_or_default(env_key: &str, default_port: u16) -> u16 {
     let port_string = match env::var(env_key) {
         Ok(string) => string,
-        Err(e) if e == VarError::NotPresent => {
+        Err(VarError::NotPresent) => {
             tracing::debug!(
                 "The environment variable '{}' was not set, using the default port {}.",
                 env_key,

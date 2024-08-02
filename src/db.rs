@@ -10,11 +10,11 @@ pub struct User {
 
 impl User {
     pub fn new(id: i64, email: String, password: String) -> User {
-        return User {
+        User {
             id,
             email,
             password,
-        };
+        }
     }
 
     pub fn id(&self) -> i64 {

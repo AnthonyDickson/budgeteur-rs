@@ -112,10 +112,12 @@ pub async fn sign_in(
             None => return Err(AuthError::WrongCredentials),
         };
 
-    if !verify_password(&user_data.password, user.password()).map_err(|e| {
+    let is_valid = verify_password(&user_data.password, user.password()).map_err(|e| {
         tracing::debug!("Error verifying password: {}", e);
         AuthError::InternalError
-    })? {
+    })?;
+
+    if !is_valid {
         return Err(AuthError::WrongCredentials);
     }
 
@@ -147,7 +149,7 @@ fn encode_jwt(email: &str, encoding_key: &EncodingKey) -> Result<String, AuthErr
 }
 
 fn decode_jwt(jwt_token: &str, decoding_key: &DecodingKey) -> Result<TokenData<Claims>, AuthError> {
-    decode(&jwt_token, decoding_key, &Validation::default()).map_err(|_| AuthError::InvalidToken)
+    decode(jwt_token, decoding_key, &Validation::default()).map_err(|_| AuthError::InvalidToken)
 }
 
 #[cfg(test)]
@@ -174,8 +176,8 @@ mod tests {
         let password = "okon";
         let wrong_password = "thewrongpassword";
 
-        assert!(auth::verify_password(password, hash).is_ok_and(|value| value == true));
-        assert!(auth::verify_password(wrong_password, hash).is_ok_and(|value| value == false));
+        assert!(auth::verify_password(password, hash).is_ok_and(|value| value));
+        assert!(auth::verify_password(wrong_password, hash).is_ok_and(|value| !value));
     }
 
     #[test]
@@ -249,7 +251,7 @@ mod tests {
 
         server
             .post("/signin")
-            .content_type(&"application/json")
+            .content_type("application/json")
             .json(&json!({
                 "email": &test_user.email(),
                 "password": raw_password,
@@ -268,7 +270,7 @@ mod tests {
 
         server
             .post("/signin")
-            .content_type(&"application/json")
+            .content_type("application/json")
             .json(&json!({
                 "email": "wrongemail@gmail.com",
                 "password": "definitelyNotTheCorrectPassword",
@@ -302,7 +304,7 @@ mod tests {
 
         let response = server
             .post("/signin")
-            .content_type(&"application/json")
+            .content_type("application/json")
             .json(&json!({
                 "email": &test_user.email(),
                 "password": raw_password,
