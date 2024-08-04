@@ -25,7 +25,6 @@ mod services;
 
 /// Return a router with all the app's routes.
 pub fn build_router() -> Router<AppConfig> {
-    // TODO: Have each module build routes and compose the routes here.
     Router::new()
         .route("/", get(|| async { StatusCode::IM_A_TEAPOT }))
         .route("/user", post(create_user))

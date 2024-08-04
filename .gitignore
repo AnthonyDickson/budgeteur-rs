@@ -18,5 +18,8 @@ self_signed_certs/
 test.db
 debug.log
 
+# Zed Editor Settings
+.zed/
+
 # Added by cargo
 /target

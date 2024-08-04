@@ -7,7 +7,10 @@ use std::{
     sync::Arc,
 };
 
-use axum::extract::{MatchedPath, Request};
+use axum::{
+    extract::{MatchedPath, Request},
+    Router,
+};
 use axum_server::{tls_rustls::RustlsConfig, Handle};
 use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
@@ -75,7 +78,8 @@ async fn main() {
     axum_server::bind_rustls(addr, tls_config)
         .handle(handle)
         .serve(
-            build_router()
+            Router::new()
+                .nest("/api", build_router())
                 .with_state(app_config)
                 .layer(tracing_layer)
                 .into_make_service(),
