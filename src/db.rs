@@ -43,7 +43,7 @@ pub fn initialize(connection: &Connection) -> Result<(), Error> {
 }
 
 /// Errors originating from operations on the app's database.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum DbError {
     /// An empty email was given. The client should try again with a non-empty email address.
     EmptyEmail,
@@ -59,7 +59,7 @@ pub enum DbError {
 
 /// Create a new user in the database.
 ///
-/// It is up to the caller to ensure the password being passed in is properly hashed.
+/// It is up to the caller to ensure the password is properly hashed.
 ///
 /// # Error
 /// Will return an error if there was a problem executing the SQL query. This could be due to:
@@ -80,22 +80,23 @@ pub fn insert_user(
         return Err(DbError::EmptyPassword);
     }
 
-    let mut stmt = connection
-        .prepare("INSERT INTO user (email, password) VALUES (?1, ?2)")
-        .map_err(DbError::UnspecifiedSqlError)?;
-
-    stmt.execute((email, password_hash)).map_err(|e| match e {
-        Error::SqliteFailure(error, Some(ref desc)) if error.extended_code == 2067 => {
-            if desc.contains("email") {
-                DbError::DuplicateEmail
-            } else if desc.contains("password") {
-                DbError::DuplicatePassword
-            } else {
-                DbError::UnspecifiedSqlError(e)
+    connection
+        .execute(
+            "INSERT INTO user (email, password) VALUES (?1, ?2)",
+            (email, password_hash),
+        )
+        .map_err(|e| match e {
+            Error::SqliteFailure(error, Some(ref desc)) if error.extended_code == 2067 => {
+                if desc.contains("email") {
+                    DbError::DuplicateEmail
+                } else if desc.contains("password") {
+                    DbError::DuplicatePassword
+                } else {
+                    DbError::UnspecifiedSqlError(e)
+                }
             }
-        }
-        _ => DbError::UnspecifiedSqlError(e),
-    })?;
+            _ => DbError::UnspecifiedSqlError(e),
+        })?;
 
     let id = connection.last_insert_rowid();
 
@@ -129,7 +130,7 @@ pub fn retrieve_user_by_email(email: &str, db_connection: &Connection) -> Option
 mod tests {
     use rusqlite::Connection;
 
-    use crate::db::{initialize, insert_user, retrieve_user_by_email};
+    use crate::db::{initialize, insert_user, retrieve_user_by_email, DbError};
 
     #[test]
     fn create_user() {
@@ -151,7 +152,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
-        assert!(insert_user("", "hunter2", &conn).is_err());
+        assert_eq!(insert_user("", "hunter2", &conn), Err(DbError::EmptyEmail));
     }
 
     #[test]
@@ -159,7 +160,10 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
-        assert!(insert_user("foo@bar.baz", "", &conn).is_err());
+        assert_eq!(
+            insert_user("foo@bar.baz", "", &conn),
+            Err(DbError::EmptyPassword)
+        );
     }
 
     #[test]
@@ -171,7 +175,10 @@ mod tests {
         let password = "hunter2";
 
         assert!(insert_user(email, password, &conn).is_ok());
-        assert!(insert_user(email, "hunter3", &conn).is_err());
+        assert_eq!(
+            insert_user(email, "hunter3", &conn),
+            Err(DbError::DuplicateEmail)
+        );
     }
 
     #[test]
@@ -183,7 +190,10 @@ mod tests {
         let password = "hunter2";
 
         assert!(insert_user(email, password, &conn).is_ok());
-        assert!(insert_user("bye@world.com", password, &conn).is_err());
+        assert_eq!(
+            insert_user("bye@world.com", password, &conn),
+            Err(DbError::DuplicatePassword)
+        );
     }
 
     #[test]
