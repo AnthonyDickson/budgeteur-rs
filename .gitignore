@@ -13,9 +13,10 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
-# Certs for HTTPS on dev server.
-self_signed_certs
+# Project files & artifacts that should not be added to version control.
+self_signed_certs/
 test.db
+debug.log
 
 # Added by cargo
 /target

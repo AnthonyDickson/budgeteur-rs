@@ -1,4 +1,11 @@
-use std::{env, env::args, net::SocketAddr, path::PathBuf, process::exit};
+use std::{
+    env::{self, args},
+    fs::File,
+    net::SocketAddr,
+    path::PathBuf,
+    process::exit,
+    sync::Arc,
+};
 
 use axum::extract::{MatchedPath, Request};
 use axum_server::{tls_rustls::RustlsConfig, Handle};
@@ -10,11 +17,18 @@ use backrooms_rs::{build_router, graceful_shutdown, parse_port_or_default, AppCo
 
 #[tokio::main]
 async fn main() {
+    let stdout_log = tracing_subscriber::fmt::layer().pretty();
+    let log_file = File::create("debug.log").expect("Could not create log file.");
+    let debug_log = tracing_subscriber::fmt::layer()
+        .pretty()
+        .with_writer(Arc::new(log_file));
+
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::fmt::layer()
-                .pretty()
-                .with_filter(filter::LevelFilter::INFO),
+            stdout_log
+                .with_filter(filter::LevelFilter::INFO)
+                .and_then(debug_log)
+                .with_filter(filter::LevelFilter::DEBUG),
         )
         .init();
 
