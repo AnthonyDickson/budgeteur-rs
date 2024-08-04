@@ -1,7 +1,9 @@
 use std::{env, env::args, net::SocketAddr, path::PathBuf, process::exit};
 
+use axum::extract::{MatchedPath, Request};
 use axum_server::{tls_rustls::RustlsConfig, Handle};
 use rusqlite::Connection;
+use tower_http::trace::TraceLayer;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 use backrooms_rs::{build_router, graceful_shutdown, parse_port_or_default, AppConfig};
@@ -15,6 +17,22 @@ async fn main() {
                 .with_filter(filter::LevelFilter::INFO),
         )
         .init();
+
+    let tracing_layer = TraceLayer::new_for_http()
+        .make_span_with(|req: &Request| {
+            let method = req.method();
+            let uri = req.uri();
+
+            let matched_path = req
+                .extensions()
+                .get::<MatchedPath>()
+                .map(|matched_path| matched_path.as_str());
+
+            tracing::debug_span!("request", %method, %uri, matched_path)
+        })
+        // By default `TraceLayer` will log 5xx responses but we're doing our specific
+        // logging of errors so disable that
+        .on_failure(());
 
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));
@@ -38,8 +56,12 @@ async fn main() {
     tracing::info!("HTTPS server listening on {}", addr);
     axum_server::bind_rustls(addr, tls_config)
         .handle(handle)
-        // TODO: Add more context to tracing: https://github.com/tokio-rs/axum/blob/8dc371e9a275623bb839b7ebde08b997bc794859/examples/error-handling/src/main.rs#L60
-        .serve(build_router().with_state(app_config).into_make_service())
+        .serve(
+            build_router()
+                .with_state(app_config)
+                .layer(tracing_layer)
+                .into_make_service(),
+        )
         .await
         .unwrap();
 }
