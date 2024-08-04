@@ -1,6 +1,6 @@
 use std::{
     env::{self, args},
-    fs::File,
+    fs::OpenOptions,
     net::SocketAddr,
     path::PathBuf,
     process::exit,
@@ -18,7 +18,11 @@ use backrooms_rs::{build_router, graceful_shutdown, parse_port_or_default, AppCo
 #[tokio::main]
 async fn main() {
     let stdout_log = tracing_subscriber::fmt::layer().pretty();
-    let log_file = File::create("debug.log").expect("Could not create log file.");
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("debug.log")
+        .expect("Could not create log file");
     let debug_log = tracing_subscriber::fmt::layer()
         .pretty()
         .with_writer(Arc::new(log_file));
