@@ -97,7 +97,16 @@ impl IntoResponse for AuthError {
     }
 }
 
-/// Handle sign-in requests.
+/// Handler for sign-in requests.
+///
+/// # Errors
+///
+/// This function will return an error in a few situtations.
+/// - The email is empty.
+/// - The email does not belong to a registered user.
+/// - The password is empty.
+/// - The password is not correct.
+/// - An internal error occurred when verifying the password.
 pub async fn sign_in(
     State(state): State<AppConfig>,
     Json(user_data): Json<Credentials>,
@@ -106,14 +115,11 @@ pub async fn sign_in(
         return Err(AuthError::MissingCredentials);
     }
 
-    let user =
-        match retrieve_user_by_email(&user_data.email, &state.db_connection().lock().unwrap()) {
-            Some(user) => user,
-            None => return Err(AuthError::WrongCredentials),
-        };
+    let user = retrieve_user_by_email(&user_data.email, &state.db_connection().lock().unwrap())
+        .ok_or(AuthError::WrongCredentials)?;
 
     let is_valid = verify_password(&user_data.password, user.password()).map_err(|e| {
-        tracing::debug!("Error verifying password: {}", e);
+        tracing::error!("Error verifying password: {}", e);
         AuthError::InternalError
     })?;
 
@@ -121,7 +127,7 @@ pub async fn sign_in(
         return Err(AuthError::WrongCredentials);
     }
 
-    let token = encode_jwt(user.email(), state.encoding_key())?;
+    let token = encode_jwt(user.email(), state.encoding_key());
 
     Ok(Json(token))
 }
@@ -131,11 +137,10 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool, bcrypt::Bcryp
 }
 
 pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
-    let hash = hash(password, DEFAULT_COST)?;
-    Ok(hash)
+    hash(password, DEFAULT_COST)
 }
 
-fn encode_jwt(email: &str, encoding_key: &EncodingKey) -> Result<String, AuthError> {
+fn encode_jwt(email: &str, encoding_key: &EncodingKey) -> String {
     let now = Utc::now();
     let exp = (now + Duration::minutes(15)).timestamp() as usize;
     let iat = now.timestamp() as usize;
@@ -145,7 +150,7 @@ fn encode_jwt(email: &str, encoding_key: &EncodingKey) -> Result<String, AuthErr
         email: email.to_string(),
     };
 
-    encode(&Header::default(), &claim, encoding_key).map_err(|_| AuthError::TokenCreation)
+    encode(&Header::default(), &claim, encoding_key).unwrap()
 }
 
 fn decode_jwt(jwt_token: &str, decoding_key: &DecodingKey) -> Result<TokenData<Claims>, AuthError> {
@@ -165,7 +170,6 @@ mod tests {
     use serde_json::json;
 
     use crate::auth;
-    use crate::auth::{hash_password, Claims};
     use crate::config::AppConfig;
     use crate::db::{initialize, insert_user};
 
@@ -215,14 +219,14 @@ mod tests {
     #[test]
     fn jwt_encode_does_not_panic() {
         let email = "averyemail@email.com";
-        auth::encode_jwt(email, get_test_app_config().encoding_key()).unwrap();
+        auth::encode_jwt(email, get_test_app_config().encoding_key());
     }
 
     #[test]
     fn decode_jwt_gives_correct_email_address() {
         let config = get_test_app_config();
         let email = "averyemail@email.com";
-        let jwt = auth::encode_jwt(email, config.encoding_key()).unwrap();
+        let jwt = auth::encode_jwt(email, config.encoding_key());
         let claims = auth::decode_jwt(&jwt, config.decoding_key())
             .unwrap()
             .claims;
@@ -237,19 +241,19 @@ mod tests {
         let raw_password = "hunter2";
         let test_user = insert_user(
             "foo@bar.baz",
-            &hash_password(raw_password).unwrap(),
+            &auth::hash_password(raw_password).unwrap(),
             &app_config.db_connection().lock().unwrap(),
         )
         .unwrap();
 
         let app = Router::new()
-            .route("/signin", post(auth::sign_in))
+            .route("/sign_in", post(auth::sign_in))
             .with_state(app_config);
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
         server
-            .post("/signin")
+            .post("/sign_in")
             .content_type("application/json")
             .json(&json!({
                 "email": &test_user.email(),
@@ -293,7 +297,7 @@ mod tests {
             .assert_status(StatusCode::UNAUTHORIZED);
     }
 
-    async fn handler_with_auth(_: Claims) -> Html<&'static str> {
+    async fn handler_with_auth(_: auth::Claims) -> Html<&'static str> {
         Html("<h1>Hello, World!</h1>")
     }
 
@@ -304,7 +308,7 @@ mod tests {
         let raw_password = "hunter2";
         let test_user = insert_user(
             "foo@bar.baz",
-            &hash_password(raw_password).unwrap(),
+            &auth::hash_password(raw_password).unwrap(),
             &app_config.db_connection().lock().unwrap(),
         )
         .unwrap();
