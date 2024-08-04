@@ -128,27 +128,21 @@ async fn create_user(
     State(state): State<AppConfig>,
     Json(user_data): Json<Credentials>,
 ) -> Response {
-    let connection_lock = state.db_connection();
-    let connection = match connection_lock.lock() {
-        Ok(connection_mutex) => connection_mutex,
-        Err(e) => {
-            tracing::error!("Error acquiring lock for db connection: {e:#?}");
-            return AppError::InternalError.into_response();
-        }
-    };
-
-    let password_hash = match hash_password(&user_data.password) {
-        Ok(password_hash) => password_hash,
-        Err(e) => {
+    hash_password(&user_data.password)
+        .map_err(|e| {
             tracing::error!("Error hashing password: {e:?}");
-            return AppError::InternalError.into_response();
-        }
-    };
-
-    match insert_user(&user_data.email, &password_hash, &connection) {
-        Ok(user) => (StatusCode::CREATED, Json(user)).into_response(),
-        Err(e) => AppError::UserCreation(format!("Could not create user: {e:?}")).into_response(),
-    }
+            AppError::InternalError
+        })
+        .and_then(|password_hash| {
+            insert_user(
+                &user_data.email,
+                &password_hash,
+                &state.db_connection().lock().unwrap(),
+            )
+            .map(|user| (StatusCode::CREATED, Json(user)))
+            .map_err(|e| AppError::UserCreation(format!("Could not create user: {e:?}")))
+        })
+        .into_response()
 }
 
 enum AppError {
