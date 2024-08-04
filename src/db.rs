@@ -45,6 +45,10 @@ pub fn initialize(connection: &Connection) -> Result<(), Error> {
 /// Errors originating from operations on the app's database.
 #[derive(Debug)]
 pub enum DbError {
+    /// An empty email was given. The client should try again with a non-empty email address.
+    EmptyEmail,
+    /// An empty password hash was given. The client should try again with a non-empty password hash.
+    EmptyPassword,
     /// The user's email already exists in the database. The client should try again with a different email address.
     DuplicateEmail,
     /// The password hash clashed with an existing password hash (should be extremely rare), the caller should rehash the password and try again.
@@ -67,7 +71,15 @@ pub fn insert_user(
     password_hash: &str,
     connection: &Connection,
 ) -> Result<User, DbError> {
-    // TODO: Check for empty email, invalid email format, invalid password (e.g., too short).
+    // TODO: Check for invalid email format.
+    if email.is_empty() {
+        return Err(DbError::EmptyEmail);
+    }
+
+    if password_hash.is_empty() {
+        return Err(DbError::EmptyPassword);
+    }
+
     let mut stmt = connection
         .prepare("INSERT INTO user (email, password) VALUES (?1, ?2)")
         .map_err(DbError::UnspecifiedSqlError)?;
@@ -135,7 +147,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_user_duplicate_email_password() {
+    async fn test_create_user_empty_email() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+
+        assert!(insert_user("", "hunter2", &conn).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_create_user_empty_password() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+
+        assert!(insert_user("foo@bar.baz", "", &conn).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_create_user_duplicate_email() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
@@ -144,6 +172,17 @@ mod tests {
 
         assert!(insert_user(email, password, &conn).is_ok());
         assert!(insert_user(email, "hunter3", &conn).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_create_user_duplicate_password() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+
+        let email = "hello@world.com";
+        let password = "hunter2";
+
+        assert!(insert_user(email, password, &conn).is_ok());
         assert!(insert_user("bye@world.com", password, &conn).is_err());
     }
 
