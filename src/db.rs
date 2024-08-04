@@ -131,8 +131,8 @@ mod tests {
 
     use crate::db::{initialize, insert_user, retrieve_user_by_email};
 
-    #[tokio::test]
-    async fn test_create_user() {
+    #[test]
+    fn create_user() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
@@ -146,24 +146,24 @@ mod tests {
         assert_eq!(inserted_user.password, password);
     }
 
-    #[tokio::test]
-    async fn test_create_user_empty_email() {
+    #[test]
+    fn create_user_empty_email() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
         assert!(insert_user("", "hunter2", &conn).is_err());
     }
 
-    #[tokio::test]
-    async fn test_create_user_empty_password() {
+    #[test]
+    fn create_user_empty_password() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
         assert!(insert_user("foo@bar.baz", "", &conn).is_err());
     }
 
-    #[tokio::test]
-    async fn test_create_user_duplicate_email() {
+    #[test]
+    fn create_user_duplicate_email() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
@@ -174,8 +174,8 @@ mod tests {
         assert!(insert_user(email, "hunter3", &conn).is_err());
     }
 
-    #[tokio::test]
-    async fn test_create_user_duplicate_password() {
+    #[test]
+    fn create_user_duplicate_password() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn test_retrieve_user_by_email_does_not_exist() {
+    fn retrieve_user_by_invalid_email() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
         insert_user("foo@bar.baz", "hunter2", &conn).unwrap();
@@ -198,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn test_retrieve_user_by_email_valid() {
+    fn retrieve_user_by_valid_email() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
