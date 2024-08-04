@@ -161,46 +161,47 @@ mod tests {
         Router,
     };
     use axum_test::TestServer;
-    use bcrypt::BcryptError;
     use rusqlite::Connection;
     use serde_json::json;
 
     use crate::auth;
-    use crate::auth::{hash_password, AuthError, Claims};
+    use crate::auth::{hash_password, Claims};
     use crate::config::AppConfig;
     use crate::db::{initialize, insert_user};
 
     #[test]
-    fn test_verify_password() {
+    fn verify_password_for_valid_password() {
         let hash = "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm";
         let password = "okon";
+
+        assert!(auth::verify_password(password, hash).unwrap());
+    }
+
+    #[test]
+    fn verify_password_for_invalid_password() {
+        let hash = "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm";
         let wrong_password = "thewrongpassword";
 
-        assert!(auth::verify_password(password, hash).is_ok_and(|value| value));
-        assert!(auth::verify_password(wrong_password, hash).is_ok_and(|value| !value));
+        assert!(!auth::verify_password(wrong_password, hash).unwrap());
     }
 
     #[test]
-    fn test_hash_password() -> Result<(), BcryptError> {
+    fn hash_password_produces_verifiable_hash() {
         let password = "password1234";
         let wrong_password = "the_wrong_password";
-        let hash = auth::hash_password(password)?;
+        let hash = auth::hash_password(password).unwrap();
 
-        assert!(auth::verify_password(password, &hash)?);
-        assert!(!auth::verify_password(wrong_password, &hash)?);
-        Ok(())
+        assert!(auth::verify_password(password, &hash).unwrap());
+        assert!(!auth::verify_password(wrong_password, &hash).unwrap());
     }
 
     #[test]
-    fn test_hash_dupe_password() -> Result<(), BcryptError> {
+    fn hash_duplicate_password_produces_unique_hash() {
         let password = "password1234";
-        let hash = auth::hash_password(password)?;
-
-        let dupe_password = "password1234";
-        let dupe_hash = auth::hash_password(dupe_password)?;
+        let hash = auth::hash_password(password).unwrap();
+        let dupe_hash = auth::hash_password(password).unwrap();
 
         assert_ne!(hash, dupe_hash);
-        Ok(())
     }
 
     fn get_test_app_config() -> AppConfig {
@@ -212,27 +213,25 @@ mod tests {
     }
 
     #[test]
-    fn test_jwt_encode() -> Result<(), AuthError> {
+    fn jwt_encode_does_not_panic() {
         let email = "averyemail@email.com";
-        let _ = auth::encode_jwt(email, get_test_app_config().encoding_key())?;
-
-        Ok(())
+        auth::encode_jwt(email, get_test_app_config().encoding_key()).unwrap();
     }
 
     #[test]
-    fn test_jwt_email() -> Result<(), AuthError> {
+    fn decode_jwt_gives_correct_email_address() {
         let config = get_test_app_config();
         let email = "averyemail@email.com";
-        let jwt = auth::encode_jwt(email, config.encoding_key())?;
-        let claims = auth::decode_jwt(&jwt, config.decoding_key())?.claims;
+        let jwt = auth::encode_jwt(email, config.encoding_key()).unwrap();
+        let claims = auth::decode_jwt(&jwt, config.decoding_key())
+            .unwrap()
+            .claims;
 
         assert_eq!(email, claims.email);
-
-        Ok(())
     }
 
     #[tokio::test]
-    async fn test_valid_sign_in() {
+    async fn sign_in_succeeds_with_valid_credentials() {
         let app_config = get_test_app_config();
 
         let raw_password = "hunter2";
@@ -261,7 +260,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_invalid_sign_in() {
+    async fn sign_in_fails_with_missing_credentials() {
+        let app = Router::new()
+            .route("/signin", post(auth::sign_in))
+            .with_state(get_test_app_config());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        server
+            .post("/signin")
+            .content_type("application/json")
+            .await
+            .assert_status(StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn sign_in_fails_with_invalid_credentials() {
         let app = Router::new()
             .route("/signin", post(auth::sign_in))
             .with_state(get_test_app_config());
@@ -276,15 +290,15 @@ mod tests {
                 "password": "definitelyNotTheCorrectPassword",
             }))
             .await
-            .assert_status_not_ok();
+            .assert_status(StatusCode::UNAUTHORIZED);
     }
 
-    async fn handler(_: Claims) -> Html<&'static str> {
+    async fn handler_with_auth(_: Claims) -> Html<&'static str> {
         Html("<h1>Hello, World!</h1>")
     }
 
     #[tokio::test]
-    async fn test_auth_protected_route() {
+    async fn get_protected_route_with_valid_jwt() {
         let app_config = get_test_app_config();
 
         let raw_password = "hunter2";
@@ -297,7 +311,7 @@ mod tests {
 
         let app = Router::new()
             .route("/signin", post(auth::sign_in))
-            .route("/protected", get(handler))
+            .route("/protected", get(handler_with_auth))
             .with_state(app_config);
 
         let server = TestServer::new(app).expect("Could not create test server.");
@@ -323,11 +337,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_protected_route_missing_header() {
+    async fn get_protected_route_with_missing_header() {
         let app_config = get_test_app_config();
 
         let app = Router::new()
-            .route("/protected", get(handler))
+            .route("/protected", get(handler_with_auth))
             .with_state(app_config.clone());
 
         let server = TestServer::new(app).expect("Could not create test server.");
@@ -339,11 +353,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_protected_route_empty_token() {
+    async fn get_protected_route_with_empty_token() {
         let app_config = get_test_app_config();
 
         let app = Router::new()
-            .route("/protected", get(handler))
+            .route("/protected", get(handler_with_auth))
             .with_state(app_config.clone());
 
         let server = TestServer::new(app).expect("Could not create test server.");
