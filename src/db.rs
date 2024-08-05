@@ -1,15 +1,23 @@
+use chrono::NaiveDate;
 use rusqlite::{Connection, Error};
 use serde::{Deserialize, Serialize};
 
+trait Model {
+    /// Get the SQL query string to create a table for the model.
+    fn create_table_sql() -> &'static str;
+}
+
+type DatabaseID = i64;
+
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct User {
-    id: i64,
+    id: DatabaseID,
     email: String,
     password: String,
 }
 
 impl User {
-    pub fn new(id: i64, email: String, password: String) -> User {
+    pub fn new(id: DatabaseID, email: String, password: String) -> User {
         User {
             id,
             email,
@@ -17,7 +25,7 @@ impl User {
         }
     }
 
-    pub fn id(&self) -> i64 {
+    pub fn id(&self) -> DatabaseID {
         self.id
     }
     pub fn email(&self) -> &str {
@@ -29,15 +37,94 @@ impl User {
     }
 }
 
+impl Model for User {
+    fn create_table_sql() -> &'static str {
+        "CREATE TABLE user (
+                    id INTEGER PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    password TEXT UNIQUE NOT NULL
+                    )"
+    }
+}
+
+struct Category {
+    id: DatabaseID,
+    name: String,
+}
+
+impl Model for Category {
+    fn create_table_sql() -> &'static str {
+        "CREATE TABLE category (
+                id INTEGER PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL
+                )"
+    }
+}
+
+struct Transaction {
+    id: DatabaseID,
+    amount: f64,
+    date: NaiveDate,
+    description: String,
+    category_id: DatabaseID,
+    user_id: DatabaseID,
+}
+
+impl Model for Transaction {
+    fn create_table_sql() -> &'static str {
+        "CREATE TABLE \"transaction\" (
+                id INTEGER PRIMARY KEY,
+                amount REAL NOT NULL,
+                date TEXT NOT NULL,
+                description TEXT NOT NULL,
+                category_id INTEGER,
+                user_id INTEGER NOT NULL,
+                FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE CASCADE,
+                FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
+                )"
+    }
+}
+
+struct SavingsRatio {
+    transaction_id: DatabaseID,
+    ratio: f64,
+}
+
+impl Model for SavingsRatio {
+    fn create_table_sql() -> &'static str {
+        "CREATE TABLE savings_ratio (
+                transaction_id INTEGER PRIMARY KEY,
+                ratio REAL NOT NULL,
+                FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
+                )"
+    }
+}
+
+struct RecurringTransaction {
+    transaction_id: DatabaseID,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    frequency: i64,
+}
+
+impl Model for RecurringTransaction {
+    fn create_table_sql() -> &'static str {
+        "CREATE TABLE recurring_transaction (
+                transaction_id INTEGER PRIMARY KEY,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                frequency INTEGER NOT NULL,
+                FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
+                )"
+    }
+}
+
 pub fn initialize(connection: &Connection) -> Result<(), Error> {
-    connection.execute(
-        "CREATE TABLE user (\
-                id INTEGER PRIMARY KEY,\
-                email TEXT UNIQUE NOT NULL,\
-                password TEXT UNIQUE NOT NULL\
-                )",
-        (),
-    )?;
+    connection.execute(User::create_table_sql(), ())?;
+    connection.execute(Category::create_table_sql(), ())?;
+    connection.execute(Transaction::create_table_sql(), ())?;
+    connection.execute(SavingsRatio::create_table_sql(), ())?;
+    connection.execute(RecurringTransaction::create_table_sql(), ())?;
 
     Ok(())
 }
