@@ -19,8 +19,8 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::config::AppConfig;
 use crate::db::User;
+use crate::{config::AppConfig, db::DbError};
 
 // Code in this module is adapted from https://github.com/ezesundayeze/axum--auth and https://github.com/tokio-rs/axum/blob/main/examples/jwt/src/main.rs
 
@@ -115,8 +115,15 @@ pub async fn sign_in(
         return Err(AuthError::MissingCredentials);
     }
 
-    let user = User::select(&user_data.email, &state.db_connection().lock().unwrap())
-        .ok_or(AuthError::WrongCredentials)?;
+    let user = User::select(&user_data.email, &state.db_connection().lock().unwrap()).map_err(
+        |e| match e {
+            DbError::EmailNotFound => AuthError::WrongCredentials,
+            _ => {
+                tracing::error!("Error matching user: {e:?}");
+                AuthError::InternalError
+            }
+        },
+    )?;
 
     let is_valid = verify_password(&user_data.password, user.password()).map_err(|e| {
         tracing::error!("Error verifying password: {}", e);

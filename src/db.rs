@@ -55,12 +55,10 @@ impl User {
     /// # Panics
     ///
     /// Panics if there are SQL related errors.
-    pub fn select(email: &str, db_connection: &Connection) -> Option<User> {
+    pub fn select(email: &str, db_connection: &Connection) -> Result<User, DbError> {
         let mut stmt = db_connection
             .prepare("SELECT id, email, password FROM user WHERE email = :email")
-            .map_err(DbError::SqlError)
-            // An error here is a bug, therefore we panic.
-            .unwrap();
+            .map_err(DbError::SqlError)?;
 
         let rows = stmt
             .query_map(&[(":email", &email)], |row| {
@@ -70,12 +68,14 @@ impl User {
 
                 Ok(User::new(id, email, password))
             })
-            .map_err(DbError::SqlError)
-            .unwrap();
+            .map_err(DbError::SqlError)?;
 
         let row = rows.into_iter().next();
 
-        row.and_then(|user_result| user_result.map(Some).map_err(DbError::SqlError).unwrap())
+        match row {
+            Some(user_result) => user_result.map_err(DbError::SqlError),
+            None => Err(DbError::EmailNotFound),
+        }
     }
 }
 
@@ -174,6 +174,8 @@ pub fn initialize(connection: &Connection) -> Result<(), Error> {
 /// Errors originating from operations on the app's database.
 #[derive(Debug, PartialEq)]
 pub enum DbError {
+    /// The specified email address could not be found in the database. The client could try again with a different email address.
+    EmailNotFound,
     /// An empty email was given. The client should try again with a non-empty email address.
     EmptyEmail,
     /// An empty password hash was given. The client should try again with a non-empty password hash.
@@ -310,7 +312,7 @@ mod tests {
 
         let email = "notavalidemail";
 
-        assert!(User::select(email, &conn).is_none());
+        assert_eq!(User::select(email, &conn), Err(DbError::EmailNotFound));
     }
 
     #[test]
