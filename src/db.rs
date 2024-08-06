@@ -42,12 +42,12 @@ impl User {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::db::{insert_user, Model, User};
+    /// use backrooms_rs::db::{Model, User};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// conn.execute(User::create_table_sql(), ());
     ///
-    /// let inserted_user = insert_user("foo@bar.baz", "hunter2", &conn).unwrap();
+    /// let inserted_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
     /// let selected_user = User::select(inserted_user.email(), &conn).unwrap();
     ///
     /// assert_eq!(inserted_user, selected_user);
@@ -76,6 +76,52 @@ impl User {
             Some(user_result) => user_result.map_err(DbError::SqlError),
             None => Err(DbError::EmailNotFound),
         }
+    }
+
+    /// Create a new user in the database.
+    ///
+    /// It is up to the caller to ensure the password is properly hashed.
+    ///
+    /// # Error
+    /// Will return an error if there was a problem executing the SQL query. This could be due to:
+    /// - a syntax error in the SQL string,
+    /// - the email is already in use, or
+    /// - the password hash is not unique.
+    pub fn insert(
+        email: &str,
+        password_hash: &str,
+        connection: &Connection,
+    ) -> Result<User, DbError> {
+        // TODO: Check for invalid email format.
+        if email.is_empty() {
+            return Err(DbError::EmptyEmail);
+        }
+
+        if password_hash.is_empty() {
+            return Err(DbError::EmptyPassword);
+        }
+
+        connection
+            .execute(
+                "INSERT INTO user (email, password) VALUES (?1, ?2)",
+                (email, password_hash),
+            )
+            .map_err(|e| match e {
+                Error::SqliteFailure(error, Some(ref desc)) if error.extended_code == 2067 => {
+                    if desc.contains("email") {
+                        DbError::DuplicateEmail
+                    } else if desc.contains("password") {
+                        DbError::DuplicatePassword
+                    } else {
+                        DbError::SqlError(e)
+                    }
+                }
+                _ => DbError::SqlError(e),
+            })?;
+
+        let id = connection.last_insert_rowid();
+
+        Ok(User::new(id, email.to_string(), password_hash.to_string()))
     }
 }
 
@@ -188,57 +234,11 @@ pub enum DbError {
     SqlError(Error),
 }
 
-/// Create a new user in the database.
-///
-/// It is up to the caller to ensure the password is properly hashed.
-///
-/// # Error
-/// Will return an error if there was a problem executing the SQL query. This could be due to:
-/// - a syntax error in the SQL string,
-/// - the email is already in use, or
-/// - the password hash is not unique.
-pub fn insert_user(
-    email: &str,
-    password_hash: &str,
-    connection: &Connection,
-) -> Result<User, DbError> {
-    // TODO: Check for invalid email format.
-    if email.is_empty() {
-        return Err(DbError::EmptyEmail);
-    }
-
-    if password_hash.is_empty() {
-        return Err(DbError::EmptyPassword);
-    }
-
-    connection
-        .execute(
-            "INSERT INTO user (email, password) VALUES (?1, ?2)",
-            (email, password_hash),
-        )
-        .map_err(|e| match e {
-            Error::SqliteFailure(error, Some(ref desc)) if error.extended_code == 2067 => {
-                if desc.contains("email") {
-                    DbError::DuplicateEmail
-                } else if desc.contains("password") {
-                    DbError::DuplicatePassword
-                } else {
-                    DbError::SqlError(e)
-                }
-            }
-            _ => DbError::SqlError(e),
-        })?;
-
-    let id = connection.last_insert_rowid();
-
-    Ok(User::new(id, email.to_string(), password_hash.to_string()))
-}
-
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
 
-    use crate::db::{initialize, insert_user, DbError, User};
+    use crate::db::{initialize, DbError, User};
 
     #[test]
     fn create_user() {
@@ -248,7 +248,7 @@ mod tests {
         let email = "hello@world.com";
         let password = "hunter2";
 
-        let inserted_user = insert_user(email, password, &conn).unwrap();
+        let inserted_user = User::insert(email, password, &conn).unwrap();
 
         assert!(inserted_user.id > 0);
         assert_eq!(inserted_user.email, email);
@@ -260,7 +260,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
-        assert_eq!(insert_user("", "hunter2", &conn), Err(DbError::EmptyEmail));
+        assert_eq!(User::insert("", "hunter2", &conn), Err(DbError::EmptyEmail));
     }
 
     #[test]
@@ -269,7 +269,7 @@ mod tests {
         initialize(&conn).unwrap();
 
         assert_eq!(
-            insert_user("foo@bar.baz", "", &conn),
+            User::insert("foo@bar.baz", "", &conn),
             Err(DbError::EmptyPassword)
         );
     }
@@ -282,9 +282,9 @@ mod tests {
         let email = "hello@world.com";
         let password = "hunter2";
 
-        assert!(insert_user(email, password, &conn).is_ok());
+        assert!(User::insert(email, password, &conn).is_ok());
         assert_eq!(
-            insert_user(email, "hunter3", &conn),
+            User::insert(email, "hunter3", &conn),
             Err(DbError::DuplicateEmail)
         );
     }
@@ -297,9 +297,9 @@ mod tests {
         let email = "hello@world.com";
         let password = "hunter2";
 
-        assert!(insert_user(email, password, &conn).is_ok());
+        assert!(User::insert(email, password, &conn).is_ok());
         assert_eq!(
-            insert_user("bye@world.com", password, &conn),
+            User::insert("bye@world.com", password, &conn),
             Err(DbError::DuplicatePassword)
         );
     }
@@ -308,7 +308,7 @@ mod tests {
     fn select_user_by_non_existent_email() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
-        insert_user("foo@bar.baz", "hunter2", &conn).unwrap();
+        User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
 
         let email = "notavalidemail";
 
@@ -320,7 +320,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
-        let test_user = insert_user("foo@bar.baz", "hunter2", &conn).unwrap();
+        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
         let retrieved_user = User::select(test_user.email(), &conn).unwrap();
 
         assert_eq!(retrieved_user, test_user);

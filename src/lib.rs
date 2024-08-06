@@ -15,7 +15,7 @@ pub use config::AppConfig;
 
 use crate::{
     auth::{hash_password, Credentials},
-    db::insert_user,
+    db::User,
 };
 
 pub mod auth;
@@ -133,7 +133,7 @@ async fn create_user(
             AppError::InternalError
         })
         .and_then(|password_hash| {
-            insert_user(
+            User::insert(
                 &user_data.email,
                 &password_hash,
                 &state.db_connection().lock().unwrap(),

@@ -178,7 +178,7 @@ mod tests {
 
     use crate::auth;
     use crate::config::AppConfig;
-    use crate::db::{initialize, insert_user};
+    use crate::db::{initialize, User};
 
     #[test]
     fn verify_password_for_valid_password() {
@@ -246,7 +246,7 @@ mod tests {
         let app_config = get_test_app_config();
 
         let raw_password = "hunter2";
-        let test_user = insert_user(
+        let test_user = User::insert(
             "foo@bar.baz",
             &auth::hash_password(raw_password).unwrap(),
             &app_config.db_connection().lock().unwrap(),
@@ -313,7 +313,7 @@ mod tests {
         let app_config = get_test_app_config();
 
         let raw_password = "hunter2";
-        let test_user = insert_user(
+        let test_user = User::insert(
             "foo@bar.baz",
             &auth::hash_password(raw_password).unwrap(),
             &app_config.db_connection().lock().unwrap(),
