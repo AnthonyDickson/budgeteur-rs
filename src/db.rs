@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 use rusqlite::{Connection, Error};
 use serde::{Deserialize, Serialize};
 
-trait Model {
+pub trait Model {
     /// Get the SQL query string to create a table for the model.
     fn create_table_sql() -> &'static str;
 }
@@ -34,6 +34,48 @@ impl User {
     /// Most likely the hashed password.
     pub fn password(&self) -> &str {
         &self.password
+    }
+
+    /// Get a user from the database that has the specified `email` address or `None` if the user does not exist.
+    ///
+    /// # Examples
+    /// ```
+    /// use rusqlite::Connection;
+    ///
+    /// use backrooms_rs::db::{insert_user, Model, User};
+    ///
+    /// let conn = Connection::open_in_memory().unwrap();
+    /// conn.execute(User::create_table_sql(), ());
+    ///
+    /// let inserted_user = insert_user("foo@bar.baz", "hunter2", &conn).unwrap();
+    /// let selected_user = User::select(inserted_user.email(), &conn).unwrap();
+    ///
+    /// assert_eq!(inserted_user, selected_user);
+    /// ```
+    /// # Panics
+    ///
+    /// Panics if there are SQL related errors.
+    pub fn select(email: &str, db_connection: &Connection) -> Option<User> {
+        let mut stmt = db_connection
+            .prepare("SELECT id, email, password FROM user WHERE email = :email")
+            .map_err(DbError::SqlError)
+            // An error here is a bug, therefore we panic.
+            .unwrap();
+
+        let rows = stmt
+            .query_map(&[(":email", &email)], |row| {
+                let id: i64 = row.get(0)?;
+                let email: String = row.get(1)?;
+                let password: String = row.get(2)?;
+
+                Ok(User::new(id, email, password))
+            })
+            .map_err(DbError::SqlError)
+            .unwrap();
+
+        let row = rows.into_iter().next();
+
+        row.and_then(|user_result| user_result.map(Some).map_err(DbError::SqlError).unwrap())
     }
 }
 
@@ -141,7 +183,7 @@ pub enum DbError {
     /// The password hash clashed with an existing password hash (should be extremely rare), the caller should rehash the password and try again.
     DuplicatePassword,
     /// Wrapper for Sqlite errors not handled by the other enum entries.
-    UnspecifiedSqlError(Error),
+    SqlError(Error),
 }
 
 /// Create a new user in the database.
@@ -179,10 +221,10 @@ pub fn insert_user(
                 } else if desc.contains("password") {
                     DbError::DuplicatePassword
                 } else {
-                    DbError::UnspecifiedSqlError(e)
+                    DbError::SqlError(e)
                 }
             }
-            _ => DbError::UnspecifiedSqlError(e),
+            _ => DbError::SqlError(e),
         })?;
 
     let id = connection.last_insert_rowid();
@@ -190,34 +232,11 @@ pub fn insert_user(
     Ok(User::new(id, email.to_string(), password_hash.to_string()))
 }
 
-pub fn retrieve_user_by_email(email: &str, db_connection: &Connection) -> Option<User> {
-    let mut stmt = db_connection
-        .prepare("SELECT id, email, password FROM user WHERE email = :email")
-        .unwrap();
-
-    let rows = stmt
-        .query_map(&[(":email", &email)], |row| {
-            let id: i64 = row.get(0)?;
-            let email: String = row.get(1)?;
-            let password: String = row.get(2)?;
-
-            Ok(User::new(id, email, password))
-        })
-        .unwrap();
-
-    let row = rows.into_iter().next()?;
-
-    match row {
-        Ok(user) => Some(user),
-        Err(e) => panic!("{:#?}", e),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
 
-    use crate::db::{initialize, insert_user, retrieve_user_by_email, DbError};
+    use crate::db::{initialize, insert_user, DbError, User};
 
     #[test]
     fn create_user() {
@@ -284,23 +303,23 @@ mod tests {
     }
 
     #[test]
-    fn retrieve_user_by_invalid_email() {
+    fn select_user_by_non_existent_email() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
         insert_user("foo@bar.baz", "hunter2", &conn).unwrap();
 
         let email = "notavalidemail";
 
-        assert!(retrieve_user_by_email(email, &conn).is_none());
+        assert!(User::select(email, &conn).is_none());
     }
 
     #[test]
-    fn retrieve_user_by_valid_email() {
+    fn select_user_by_existing_email() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
         let test_user = insert_user("foo@bar.baz", "hunter2", &conn).unwrap();
-        let retrieved_user = retrieve_user_by_email(test_user.email(), &conn).unwrap();
+        let retrieved_user = User::select(test_user.email(), &conn).unwrap();
 
         assert_eq!(retrieved_user, test_user);
     }

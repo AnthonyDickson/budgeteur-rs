@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::config::AppConfig;
-use crate::db::retrieve_user_by_email;
+use crate::db::User;
 
 // Code in this module is adapted from https://github.com/ezesundayeze/axum--auth and https://github.com/tokio-rs/axum/blob/main/examples/jwt/src/main.rs
 
@@ -115,7 +115,7 @@ pub async fn sign_in(
         return Err(AuthError::MissingCredentials);
     }
 
-    let user = retrieve_user_by_email(&user_data.email, &state.db_connection().lock().unwrap())
+    let user = User::select(&user_data.email, &state.db_connection().lock().unwrap())
         .ok_or(AuthError::WrongCredentials)?;
 
     let is_valid = verify_password(&user_data.password, user.password()).map_err(|e| {
