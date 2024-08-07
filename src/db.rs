@@ -5,8 +5,6 @@ use serde::{Deserialize, Serialize};
 /// Errors originating from operations on the app's database.
 #[derive(Debug, PartialEq)]
 pub enum DbError {
-    /// The specified email address could not be found in the database. The client could try again with a different email address.
-    EmailNotFound,
     /// An empty email was given. The client should try again with a non-empty email address.
     EmptyEmail,
     /// An empty password hash was given. The client should try again with a non-empty password hash.
@@ -19,6 +17,8 @@ pub enum DbError {
     EmptyField(String),
     /// A query was given an invalid foreign key. The client should try again with a valid foreign key.
     InvalidForeignKey(String),
+    /// The row could not be found with the provided info (e.g., id). The client should try again with different parameters.
+    NotFound,
     /// Wrapper for Sqlite errors not handled by the other enum entries.
     SqlError(Error),
 }
@@ -95,7 +95,7 @@ impl User {
             Ok(User::new(id, email, password))
         })
         .map_err(|e| match e {
-            Error::QueryReturnedNoRows => DbError::EmailNotFound,
+            Error::QueryReturnedNoRows => DbError::NotFound,
             e => DbError::SqlError(e),
         })
     }
@@ -246,6 +246,46 @@ impl Category {
         let category_id = connection.last_insert_rowid();
 
         Ok(Category::new(category_id, name, user_id))
+    }
+
+    /// Retrieve category in the database.
+    ///
+    /// # Examples
+    /// ```
+    /// use rusqlite::Connection;
+    ///
+    /// use backrooms_rs::db::{Model, User, Category};
+    ///
+    /// let conn = Connection::open_in_memory().unwrap();
+    /// User::create_table(&conn).unwrap();
+    /// Category::create_table(&conn).unwrap();
+    /// let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+    /// let inserted_category = Category::insert("foo", test_user.id(), &conn).unwrap();
+    ///
+    /// let selected_category = Category::select_by_id(inserted_category.id(), &conn).unwrap();
+    ///
+    /// assert_eq!(inserted_category, selected_category);
+    /// ```
+    ///
+    /// # Errors
+    /// Will return an error if:
+    /// - `id` does not refer to a valid category,
+    /// - or there is some other SQL error.
+    pub fn select_by_id(id: DatabaseID, connection: &Connection) -> Result<Category, DbError> {
+        connection
+            .prepare("SELECT id, name, user_id FROM category WHERE id = :id")
+            .map_err(DbError::SqlError)?
+            .query_row(&[(":id", &id)], |row| {
+                let id: DatabaseID = row.get(0)?;
+                let name: String = row.get(1)?;
+                let user_id: DatabaseID = row.get(2)?;
+
+                Ok(Category::new(id, &name, user_id))
+            })
+            .map_err(|e| match e {
+                Error::QueryReturnedNoRows => DbError::NotFound,
+                e => DbError::SqlError(e),
+            })
     }
 }
 
@@ -440,7 +480,7 @@ mod tests {
 
         let email = "notavalidemail";
 
-        assert_eq!(User::select(email, &conn), Err(DbError::EmailNotFound));
+        assert_eq!(User::select(email, &conn), Err(DbError::NotFound));
     }
 
     #[test]
@@ -483,5 +523,25 @@ mod tests {
         let maybe_category = Category::insert("Foo", 42, &conn);
 
         assert!(matches!(maybe_category, Err(DbError::InvalidForeignKey(_))));
+    }
+
+    #[test]
+    fn select_category() {
+        let conn = init_db();
+        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+        let inserted_category = Category::insert("Foo", test_user.id(), &conn).unwrap();
+
+        let selected_category = Category::select_by_id(inserted_category.id(), &conn).unwrap();
+
+        assert_eq!(inserted_category, selected_category);
+    }
+
+    #[test]
+    fn select_category_with_invalid_id() {
+        let conn = init_db();
+
+        let selected_category = Category::select_by_id(1337, &conn);
+
+        assert_eq!(selected_category, Err(DbError::NotFound));
     }
 }

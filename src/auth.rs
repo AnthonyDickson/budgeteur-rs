@@ -117,7 +117,7 @@ pub async fn sign_in(
 
     let user = User::select(&user_data.email, &state.db_connection().lock().unwrap()).map_err(
         |e| match e {
-            DbError::EmailNotFound => AuthError::WrongCredentials,
+            DbError::NotFound => AuthError::WrongCredentials,
             _ => {
                 tracing::error!("Error matching user: {e:?}");
                 AuthError::InternalError
