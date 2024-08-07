@@ -63,43 +63,6 @@ impl User {
         &self.password
     }
 
-    /// Get a user from the database that has the specified `email` address or `None` if the user does not exist.
-    ///
-    /// # Examples
-    /// ```
-    /// use rusqlite::Connection;
-    ///
-    /// use backrooms_rs::db::{Model, User};
-    ///
-    /// let conn = Connection::open_in_memory().unwrap();
-    /// User::create_table(&conn).unwrap();
-    /// let inserted_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-    ///
-    /// let selected_user = User::select(inserted_user.email(), &conn).unwrap();
-    ///
-    /// assert_eq!(inserted_user, selected_user);
-    /// ```
-    /// # Panics
-    ///
-    /// Panics if there are SQL related errors.
-    pub fn select(email: &str, db_connection: &Connection) -> Result<User, DbError> {
-        let mut stmt = db_connection
-            .prepare("SELECT id, email, password FROM user WHERE email = :email")
-            .map_err(DbError::SqlError)?;
-
-        stmt.query_row(&[(":email", &email)], |row| {
-            let id: i64 = row.get(0)?;
-            let email: String = row.get(1)?;
-            let password: String = row.get(2)?;
-
-            Ok(User::new(id, email, password))
-        })
-        .map_err(|e| match e {
-            Error::QueryReturnedNoRows => DbError::NotFound,
-            e => DbError::SqlError(e),
-        })
-    }
-
     /// Create a new user in the database.
     ///
     /// It is up to the caller to ensure the password is properly hashed.
@@ -146,6 +109,43 @@ impl User {
         let id = connection.last_insert_rowid();
 
         Ok(User::new(id, email, password_hash))
+    }
+
+    /// Get a user from the database that has the specified `email` address or `None` if the user does not exist.
+    ///
+    /// # Examples
+    /// ```
+    /// use rusqlite::Connection;
+    ///
+    /// use backrooms_rs::db::{Model, User};
+    ///
+    /// let conn = Connection::open_in_memory().unwrap();
+    /// User::create_table(&conn).unwrap();
+    /// let inserted_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+    ///
+    /// let selected_user = User::select(inserted_user.email(), &conn).unwrap();
+    ///
+    /// assert_eq!(inserted_user, selected_user);
+    /// ```
+    /// # Panics
+    ///
+    /// Panics if there are SQL related errors.
+    pub fn select(email: &str, db_connection: &Connection) -> Result<User, DbError> {
+        let mut stmt = db_connection
+            .prepare("SELECT id, email, password FROM user WHERE email = :email")
+            .map_err(DbError::SqlError)?;
+
+        stmt.query_row(&[(":email", &email)], |row| {
+            let id: i64 = row.get(0)?;
+            let email: String = row.get(1)?;
+            let password: String = row.get(2)?;
+
+            Ok(User::new(id, email, password))
+        })
+        .map_err(|e| match e {
+            Error::QueryReturnedNoRows => DbError::NotFound,
+            e => DbError::SqlError(e),
+        })
     }
 }
 
