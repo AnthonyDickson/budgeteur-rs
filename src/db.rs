@@ -178,22 +178,21 @@ impl Category {
     /// Create a new category.
     ///
     /// Does **not** add the category to any database, this must be done separately.
-    pub fn new(id: DatabaseID, name: &str, user_id: DatabaseID) -> Category {
-        Category {
-            id,
-            name: name.to_string(),
-            user_id,
-        }
+    pub fn new(id: DatabaseID, name: String, user_id: DatabaseID) -> Category {
+        Category { id, name, user_id }
     }
 
+    /// The id of the category.
     pub fn id(&self) -> DatabaseID {
         self.id
     }
 
+    /// The name of the category.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// The id of the user that created the category.
     pub fn user_id(&self) -> DatabaseID {
         self.user_id
     }
@@ -211,7 +210,7 @@ impl Category {
     /// Category::create_table(&conn).unwrap();
     ///
     /// let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
-    /// let inserted_category = Category::insert("foo", test_user.id(), &conn).unwrap();
+    /// let inserted_category = Category::insert("foo".to_string(), test_user.id(), &conn).unwrap();
     ///
     /// assert_eq!(inserted_category.name(), "foo");
     /// assert_eq!(inserted_category.user_id(), test_user.id());
@@ -223,18 +222,18 @@ impl Category {
     /// - `user_id` does not refer to a valid user,
     /// - or there is some other SQL error.
     pub fn insert(
-        name: &str,
+        name: String,
         user_id: DatabaseID,
         connection: &Connection,
     ) -> Result<Category, DbError> {
         if name.is_empty() {
-            return Err(DbError::EmptyField("name".to_string()));
+            return Err(DbError::EmptyField(name));
         }
 
         connection
             .execute(
                 "INSERT INTO category (name, user_id) VALUES (?1, ?2)",
-                (name, user_id),
+                (&name, user_id),
             )
             .map_err(|e| match e {
                 Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
@@ -248,7 +247,7 @@ impl Category {
         Ok(Category::new(category_id, name, user_id))
     }
 
-    /// Retrieve category in the database.
+    /// Retrieve a category in the database by its `id`.
     ///
     /// # Examples
     /// ```
@@ -260,7 +259,7 @@ impl Category {
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
     /// let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
-    /// let inserted_category = Category::insert("foo", test_user.id(), &conn).unwrap();
+    /// let inserted_category = Category::insert("foo".to_string(), test_user.id(), &conn).unwrap();
     ///
     /// let selected_category = Category::select_by_id(inserted_category.id(), &conn).unwrap();
     ///
@@ -280,12 +279,60 @@ impl Category {
                 let name: String = row.get(1)?;
                 let user_id: DatabaseID = row.get(2)?;
 
-                Ok(Category::new(id, &name, user_id))
+                Ok(Category::new(id, name, user_id))
             })
             .map_err(|e| match e {
                 Error::QueryReturnedNoRows => DbError::NotFound,
                 e => DbError::SqlError(e),
             })
+    }
+
+    /// Retrieve categories in the database for the user `user_id`.
+    ///
+    /// # Examples
+    /// ```
+    /// use rusqlite::Connection;
+    ///
+    /// use backrooms_rs::db::{Model, User, Category};
+    ///
+    /// let conn = Connection::open_in_memory().unwrap();
+    /// User::create_table(&conn).unwrap();
+    /// Category::create_table(&conn).unwrap();
+    /// let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+    /// let inserted_categories = vec![
+    ///     Category::insert("foo".to_string(), test_user.id(), &conn).unwrap(),
+    ///     Category::insert("bar".to_string(), test_user.id(), &conn).unwrap()
+    /// ];
+    ///
+    /// let selected_categories = Category::select_by_user_id(test_user.id(), &conn).unwrap();
+    ///
+    /// assert_eq!(inserted_categories, selected_categories);
+    /// ```
+    ///
+    /// # Errors
+    /// Will return an error if:
+    /// - `user_id` does not refer to a user id used by a category,
+    /// - or there is some other SQL error.
+    pub fn select_by_user_id(
+        id: DatabaseID,
+        connection: &Connection,
+    ) -> Result<Vec<Category>, DbError> {
+        connection
+            .prepare("SELECT id, name, user_id FROM category WHERE user_id = :user_id")
+            .map_err(DbError::SqlError)?
+            .query_map(&[(":user_id", &id)], |row| {
+                let id: DatabaseID = row.get(0)?;
+                let name: String = row.get(1)?;
+                let user_id: DatabaseID = row.get(2)?;
+
+                Ok(Category::new(id, name, user_id))
+            })
+            .map_err(|e| match e {
+                Error::QueryReturnedNoRows => DbError::NotFound,
+                e => DbError::SqlError(e),
+            })?
+            .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
+            .collect()
     }
 }
 
@@ -499,7 +546,7 @@ mod tests {
         let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
 
         let name = "Categorically a category";
-        let category = Category::insert(name, test_user.id(), &conn).unwrap();
+        let category = Category::insert(name.to_string(), test_user.id(), &conn).unwrap();
 
         assert!(category.id > 0);
         assert_eq!(category.name, name);
@@ -511,7 +558,7 @@ mod tests {
         let conn = init_db();
         let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
 
-        let maybe_category = Category::insert("", test_user.id(), &conn);
+        let maybe_category = Category::insert("".to_string(), test_user.id(), &conn);
 
         assert!(matches!(maybe_category, Err(DbError::EmptyField(_))));
     }
@@ -520,7 +567,7 @@ mod tests {
     fn create_category_with_invalid_user_id_returns_error() {
         let conn = init_db();
 
-        let maybe_category = Category::insert("Foo", 42, &conn);
+        let maybe_category = Category::insert("Foo".to_string(), 42, &conn);
 
         assert!(matches!(maybe_category, Err(DbError::InvalidForeignKey(_))));
     }
@@ -529,7 +576,7 @@ mod tests {
     fn select_category() {
         let conn = init_db();
         let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
-        let inserted_category = Category::insert("Foo", test_user.id(), &conn).unwrap();
+        let inserted_category = Category::insert("Foo".to_string(), test_user.id(), &conn).unwrap();
 
         let selected_category = Category::select_by_id(inserted_category.id(), &conn).unwrap();
 
@@ -543,5 +590,31 @@ mod tests {
         let selected_category = Category::select_by_id(1337, &conn);
 
         assert_eq!(selected_category, Err(DbError::NotFound));
+    }
+
+    #[test]
+    fn select_category_with_user_id() {
+        let conn = init_db();
+        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+        let inserted_categories = vec![
+            Category::insert("Foo".to_string(), test_user.id(), &conn).unwrap(),
+            Category::insert("Bar".to_string(), test_user.id(), &conn).unwrap(),
+        ];
+
+        let selected_categories = Category::select_by_user_id(test_user.id(), &conn).unwrap();
+
+        assert_eq!(inserted_categories, selected_categories);
+    }
+
+    #[test]
+    fn select_category_with_invalid_user_id() {
+        let conn = init_db();
+        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+        Category::insert("Foo".to_string(), test_user.id(), &conn).unwrap();
+        Category::insert("Bar".to_string(), test_user.id(), &conn).unwrap();
+
+        let selected_categories = Category::select_by_user_id(test_user.id() + 1, &conn).unwrap();
+
+        assert_eq!(selected_categories, []);
     }
 }
