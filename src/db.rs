@@ -354,13 +354,131 @@ impl Model for Category {
     }
 }
 
-struct Transaction {
+pub struct Transaction {
     id: DatabaseID,
     amount: f64,
     date: NaiveDate,
     description: String,
     category_id: DatabaseID,
     user_id: DatabaseID,
+}
+
+impl Transaction {
+    /// Create a new transaction.
+    ///
+    /// Does **not** add the transaction to any database, this must be done separately.
+    pub fn new(
+        id: DatabaseID,
+        amount: f64,
+        date: NaiveDate,
+        description: String,
+        category_id: DatabaseID,
+        user_id: DatabaseID,
+    ) -> Transaction {
+        Transaction {
+            id,
+            amount,
+            date,
+            description,
+            category_id,
+            user_id,
+        }
+    }
+
+    pub fn id(&self) -> DatabaseID {
+        self.id
+    }
+
+    pub fn amount(&self) -> f64 {
+        self.amount
+    }
+
+    pub fn date(&self) -> &NaiveDate {
+        &self.date
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+
+    pub fn category_id(&self) -> DatabaseID {
+        self.category_id
+    }
+
+    pub fn user_id(&self) -> DatabaseID {
+        self.user_id
+    }
+
+    /// Create a new category in the database.
+    ///
+    /// # Examples
+    /// ```
+    /// use chrono::NaiveDate;
+    /// use rusqlite::Connection;
+    ///
+    /// use backrooms_rs::db::{Category, Model, Transaction, User};
+    ///
+    /// let conn = Connection::open_in_memory().unwrap();
+    /// User::create_table(&conn).unwrap();
+    /// Category::create_table(&conn).unwrap();
+    /// Transaction::create_table(&conn).unwrap();
+    ///
+    /// let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+    /// let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
+    ///
+    /// let transaction = Transaction::insert(
+    ///     3.14,
+    ///     NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+    ///     "Rust Pie".to_string(),
+    ///     category.id(),
+    ///     user.id(),
+    ///     &conn
+    /// )
+    /// .unwrap();
+    ///
+    /// assert_eq!(transaction.amount(), 3.14);
+    /// assert_eq!(*transaction.date(), NaiveDate::from_ymd_opt(2024, 8, 7).unwrap());
+    /// assert_eq!(transaction.description(), "Rust Pie");
+    /// assert_eq!(transaction.category_id(), category.id());
+    /// assert_eq!(transaction.user_id(), user.id());
+    /// ```
+    ///
+    /// # Errors
+    /// Will return an error if:
+    /// - `name` is empty,
+    /// - `user_id` does not refer to a valid user,
+    /// - or there is some other SQL error.
+    pub fn insert(
+        amount: f64,
+        date: NaiveDate,
+        description: String,
+        category_id: DatabaseID,
+        user_id: DatabaseID,
+        connection: &Connection,
+    ) -> Result<Transaction, DbError> {
+        connection
+            .execute(
+                "INSERT INTO \"transaction\" (amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+                (amount, &date, &description, category_id, user_id),
+            )
+            .map_err(|e| match e {
+                Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
+                    DbError::InvalidForeignKey("category_id or user_id".to_string())
+                }
+                _ => DbError::SqlError(e),
+            })?;
+
+        let transaction_id = connection.last_insert_rowid();
+
+        Ok(Transaction::new(
+            transaction_id,
+            amount,
+            date,
+            description,
+            category_id,
+            user_id,
+        ))
+    }
 }
 
 impl Model for Transaction {
@@ -451,9 +569,12 @@ pub fn initialize(connection: &Connection) -> Result<(), DbError> {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::PI;
+
+    use chrono::NaiveDate;
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, DbError, User};
+    use crate::db::{initialize, Category, DbError, Transaction, User};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -625,5 +746,33 @@ mod tests {
         let selected_categories = Category::select_by_user_id(test_user.id() + 1, &conn).unwrap();
 
         assert_eq!(selected_categories, []);
+    }
+
+    #[test]
+    fn create_transaction() {
+        let conn = init_db();
+
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
+
+        let amount = PI;
+        let date = NaiveDate::from_ymd_opt(2024, 8, 7).unwrap();
+        let description = "Rust Pie".to_string();
+
+        let transaction = Transaction::insert(
+            amount,
+            date,
+            description.clone(),
+            category.id(),
+            user.id(),
+            &conn,
+        )
+        .unwrap();
+
+        assert_eq!(transaction.amount(), amount);
+        assert_eq!(*transaction.date(), date);
+        assert_eq!(transaction.description(), description);
+        assert_eq!(transaction.category_id(), category.id());
+        assert_eq!(transaction.user_id(), user.id());
     }
 }
