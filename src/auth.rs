@@ -247,8 +247,8 @@ mod tests {
 
         let raw_password = "hunter2";
         let test_user = User::insert(
-            "foo@bar.baz",
-            &auth::hash_password(raw_password).unwrap(),
+            "foo@bar.baz".to_string(),
+            auth::hash_password(raw_password).unwrap(),
             &app_config.db_connection().lock().unwrap(),
         )
         .unwrap();
@@ -314,8 +314,8 @@ mod tests {
 
         let raw_password = "hunter2";
         let test_user = User::insert(
-            "foo@bar.baz",
-            &auth::hash_password(raw_password).unwrap(),
+            "foo@bar.baz".to_string(),
+            auth::hash_password(raw_password).unwrap(),
             &app_config.db_connection().lock().unwrap(),
         )
         .unwrap();

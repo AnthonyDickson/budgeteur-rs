@@ -134,8 +134,8 @@ async fn create_user(
         })
         .and_then(|password_hash| {
             User::insert(
-                &user_data.email,
-                &password_hash,
+                user_data.email,
+                password_hash,
                 &state.db_connection().lock().unwrap(),
             )
             .map(|user| (StatusCode::CREATED, Json(user)))

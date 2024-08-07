@@ -73,7 +73,7 @@ impl User {
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
-    /// let inserted_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+    /// let inserted_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
     ///
     /// let selected_user = User::select(inserted_user.email(), &conn).unwrap();
     ///
@@ -112,8 +112,8 @@ impl User {
     /// - the email is already in use, or
     /// - the password hash is not unique.
     pub fn insert(
-        email: &str,
-        password_hash: &str,
+        email: String,
+        password_hash: String,
         connection: &Connection,
     ) -> Result<User, DbError> {
         // TODO: Check for invalid email format.
@@ -128,7 +128,7 @@ impl User {
         connection
             .execute(
                 "INSERT INTO user (email, password) VALUES (?1, ?2)",
-                (email, password_hash),
+                (&email, &password_hash),
             )
             .map_err(|e| match e {
                 Error::SqliteFailure(error, Some(ref desc)) if error.extended_code == 2067 => {
@@ -145,7 +145,7 @@ impl User {
 
         let id = connection.last_insert_rowid();
 
-        Ok(User::new(id, email.to_string(), password_hash.to_string()))
+        Ok(User::new(id, email, password_hash))
     }
 }
 
@@ -209,7 +209,7 @@ impl Category {
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
     ///
-    /// let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+    /// let test_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
     /// let inserted_category = Category::insert("foo".to_string(), test_user.id(), &conn).unwrap();
     ///
     /// assert_eq!(inserted_category.name(), "foo");
@@ -258,7 +258,7 @@ impl Category {
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
-    /// let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+    /// let test_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
     /// let inserted_category = Category::insert("foo".to_string(), test_user.id(), &conn).unwrap();
     ///
     /// let selected_category = Category::select_by_id(inserted_category.id(), &conn).unwrap();
@@ -298,7 +298,7 @@ impl Category {
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
-    /// let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+    /// let test_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
     /// let inserted_categories = vec![
     ///     Category::insert("foo".to_string(), test_user.id(), &conn).unwrap(),
     ///     Category::insert("bar".to_string(), test_user.id(), &conn).unwrap()
@@ -468,7 +468,7 @@ mod tests {
         let email = "hello@world.com";
         let password = "hunter2";
 
-        let inserted_user = User::insert(email, password, &conn).unwrap();
+        let inserted_user = User::insert(email.to_string(), password.to_string(), &conn).unwrap();
 
         assert!(inserted_user.id > 0);
         assert_eq!(inserted_user.email, email);
@@ -479,7 +479,10 @@ mod tests {
     fn create_user_empty_email() {
         let conn = init_db();
 
-        assert_eq!(User::insert("", "hunter2", &conn), Err(DbError::EmptyEmail));
+        assert_eq!(
+            User::insert("".to_string(), "hunter2".to_string(), &conn),
+            Err(DbError::EmptyEmail)
+        );
     }
 
     #[test]
@@ -487,7 +490,7 @@ mod tests {
         let conn = init_db();
 
         assert_eq!(
-            User::insert("foo@bar.baz", "", &conn),
+            User::insert("foo@bar.baz".to_string(), "".to_string(), &conn),
             Err(DbError::EmptyPassword)
         );
     }
@@ -496,12 +499,12 @@ mod tests {
     fn create_user_duplicate_email() {
         let conn = init_db();
 
-        let email = "hello@world.com";
-        let password = "hunter2";
+        let email = "hello@world.com".to_string();
+        let password = "hunter2".to_string();
 
-        assert!(User::insert(email, password, &conn).is_ok());
+        assert!(User::insert(email.clone(), password.clone(), &conn).is_ok());
         assert_eq!(
-            User::insert(email, "hunter3", &conn),
+            User::insert(email.clone(), "hunter3".to_string(), &conn),
             Err(DbError::DuplicateEmail)
         );
     }
@@ -510,12 +513,12 @@ mod tests {
     fn create_user_duplicate_password() {
         let conn = init_db();
 
-        let email = "hello@world.com";
-        let password = "hunter2";
+        let email = "hello@world.com".to_string();
+        let password = "hunter2".to_string();
 
-        assert!(User::insert(email, password, &conn).is_ok());
+        assert!(User::insert(email, password.clone(), &conn).is_ok());
         assert_eq!(
-            User::insert("bye@world.com", password, &conn),
+            User::insert("bye@world.com".to_string(), password.clone(), &conn),
             Err(DbError::DuplicatePassword)
         );
     }
@@ -523,7 +526,7 @@ mod tests {
     #[test]
     fn select_user_by_non_existent_email() {
         let conn = init_db();
-        User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+        User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
 
         let email = "notavalidemail";
 
@@ -534,7 +537,8 @@ mod tests {
     fn select_user_by_existing_email() {
         let conn = init_db();
 
-        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+        let test_user =
+            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
         let retrieved_user = User::select(test_user.email(), &conn).unwrap();
 
         assert_eq!(retrieved_user, test_user);
@@ -543,7 +547,8 @@ mod tests {
     #[test]
     fn create_category() {
         let conn = init_db();
-        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+        let test_user =
+            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
 
         let name = "Categorically a category";
         let category = Category::insert(name.to_string(), test_user.id(), &conn).unwrap();
@@ -556,7 +561,8 @@ mod tests {
     #[test]
     fn create_category_with_empty_name_returns_error() {
         let conn = init_db();
-        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+        let test_user =
+            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
 
         let maybe_category = Category::insert("".to_string(), test_user.id(), &conn);
 
@@ -575,7 +581,8 @@ mod tests {
     #[test]
     fn select_category() {
         let conn = init_db();
-        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+        let test_user =
+            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
         let inserted_category = Category::insert("Foo".to_string(), test_user.id(), &conn).unwrap();
 
         let selected_category = Category::select_by_id(inserted_category.id(), &conn).unwrap();
@@ -595,7 +602,8 @@ mod tests {
     #[test]
     fn select_category_with_user_id() {
         let conn = init_db();
-        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+        let test_user =
+            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
         let inserted_categories = vec![
             Category::insert("Foo".to_string(), test_user.id(), &conn).unwrap(),
             Category::insert("Bar".to_string(), test_user.id(), &conn).unwrap(),
@@ -609,7 +617,8 @@ mod tests {
     #[test]
     fn select_category_with_invalid_user_id() {
         let conn = init_db();
-        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+        let test_user =
+            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
         Category::insert("Foo".to_string(), test_user.id(), &conn).unwrap();
         Category::insert("Bar".to_string(), test_user.id(), &conn).unwrap();
 
