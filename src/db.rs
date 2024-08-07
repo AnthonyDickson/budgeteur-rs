@@ -15,6 +15,10 @@ pub enum DbError {
     DuplicateEmail,
     /// The password hash clashed with an existing password hash (should be extremely rare), the caller should rehash the password and try again.
     DuplicatePassword,
+    /// The specified field was empty when it is not allowed. The client should try again after replacing the field with a non-empty string.
+    EmptyField(String),
+    /// A query was given an invalid foreign key. The client should try again with a valid foreign key.
+    InvalidForeignKey(String),
     /// Wrapper for Sqlite errors not handled by the other enum entries.
     SqlError(Error),
 }
@@ -37,6 +41,9 @@ pub struct User {
 }
 
 impl User {
+    /// Create a new user.
+    ///
+    /// Does **not** add the user to any database, this must be done separately.
     pub fn new(id: DatabaseID, email: String, password: String) -> User {
         User {
             id,
@@ -104,6 +111,8 @@ impl User {
     ///
     /// # Error
     /// Will return an error if there was a problem executing the SQL query. This could be due to:
+    /// - the email is empty,
+    /// - the password is empty,
     /// - a syntax error in the SQL string,
     /// - the email is already in use, or
     /// - the password hash is not unique.
@@ -162,9 +171,87 @@ impl Model for User {
     }
 }
 
-struct Category {
+#[derive(Debug, PartialEq)]
+/// A category for expenses and income, e.g., 'Groceries', 'Eating Out', 'Wages'.
+pub struct Category {
     id: DatabaseID,
     name: String,
+    user_id: DatabaseID,
+}
+
+impl Category {
+    /// Create a new category.
+    ///
+    /// Does **not** add the category to any database, this must be done separately.
+    pub fn new(id: DatabaseID, name: &str, user_id: DatabaseID) -> Category {
+        Category {
+            id,
+            name: name.to_string(),
+            user_id,
+        }
+    }
+
+    pub fn id(&self) -> DatabaseID {
+        self.id
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn user_id(&self) -> DatabaseID {
+        self.user_id
+    }
+
+    /// Create a new category in the database.
+    ///
+    /// # Examples
+    /// ```
+    /// use rusqlite::Connection;
+    ///
+    /// use backrooms_rs::db::{Model, User, Category};
+    ///
+    /// let conn = Connection::open_in_memory().unwrap();
+    /// User::create_table(&conn).unwrap();
+    /// Category::create_table(&conn).unwrap();
+    ///
+    /// let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+    /// let inserted_category = Category::insert("foo", test_user.id(), &conn).unwrap();
+    ///
+    /// assert_eq!(inserted_category.name(), "foo");
+    /// assert_eq!(inserted_category.user_id(), test_user.id());
+    /// ```
+    ///
+    /// # Errors
+    /// Will return an error if:
+    /// - `name` is empty,
+    /// - `user_id` does not refer to a valid user,
+    /// - or there is some other SQL error.
+    pub fn insert(
+        name: &str,
+        user_id: DatabaseID,
+        connection: &Connection,
+    ) -> Result<Category, DbError> {
+        if name.is_empty() {
+            return Err(DbError::EmptyField("name".to_string()));
+        }
+
+        connection
+            .execute(
+                "INSERT INTO category (name, user_id) VALUES (?1, ?2)",
+                (name, user_id),
+            )
+            .map_err(|e| match e {
+                Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
+                    DbError::InvalidForeignKey("user_id".to_string())
+                }
+                _ => DbError::SqlError(e),
+            })?;
+
+        let category_id = connection.last_insert_rowid();
+
+        Ok(Category::new(category_id, name, user_id))
+    }
 }
 
 impl Model for Category {
@@ -173,7 +260,9 @@ impl Model for Category {
             .execute(
                 "CREATE TABLE category (
                 id INTEGER PRIMARY KEY,
-                name TEXT UNIQUE NOT NULL
+                name TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
                 )",
                 (),
             )
@@ -282,12 +371,17 @@ pub fn initialize(connection: &Connection) -> Result<(), DbError> {
 mod tests {
     use rusqlite::Connection;
 
-    use crate::db::{initialize, DbError, User};
+    use crate::db::{initialize, Category, DbError, User};
+
+    fn init_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
 
     #[test]
     fn create_user() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
+        let conn = init_db();
 
         let email = "hello@world.com";
         let password = "hunter2";
@@ -301,16 +395,14 @@ mod tests {
 
     #[test]
     fn create_user_empty_email() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
+        let conn = init_db();
 
         assert_eq!(User::insert("", "hunter2", &conn), Err(DbError::EmptyEmail));
     }
 
     #[test]
     fn create_user_empty_password() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
+        let conn = init_db();
 
         assert_eq!(
             User::insert("foo@bar.baz", "", &conn),
@@ -320,8 +412,7 @@ mod tests {
 
     #[test]
     fn create_user_duplicate_email() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
+        let conn = init_db();
 
         let email = "hello@world.com";
         let password = "hunter2";
@@ -335,8 +426,7 @@ mod tests {
 
     #[test]
     fn create_user_duplicate_password() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
+        let conn = init_db();
 
         let email = "hello@world.com";
         let password = "hunter2";
@@ -350,8 +440,7 @@ mod tests {
 
     #[test]
     fn select_user_by_non_existent_email() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
+        let conn = init_db();
         User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
 
         let email = "notavalidemail";
@@ -361,12 +450,43 @@ mod tests {
 
     #[test]
     fn select_user_by_existing_email() {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
+        let conn = init_db();
 
         let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
         let retrieved_user = User::select(test_user.email(), &conn).unwrap();
 
         assert_eq!(retrieved_user, test_user);
+    }
+
+    #[test]
+    fn create_category() {
+        let conn = init_db();
+        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+
+        let name = "Categorically a category";
+        let category = Category::insert(name, test_user.id(), &conn).unwrap();
+
+        assert!(category.id > 0);
+        assert_eq!(category.name, name);
+        assert_eq!(category.user_id, test_user.id());
+    }
+
+    #[test]
+    fn create_category_with_empty_name_returns_error() {
+        let conn = init_db();
+        let test_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+
+        let maybe_category = Category::insert("", test_user.id(), &conn);
+
+        assert!(matches!(maybe_category, Err(DbError::EmptyField(_))));
+    }
+
+    #[test]
+    fn create_category_with_invalid_user_id_returns_error() {
+        let conn = init_db();
+
+        let maybe_category = Category::insert("Foo", 42, &conn);
+
+        assert!(matches!(maybe_category, Err(DbError::InvalidForeignKey(_))));
     }
 }
