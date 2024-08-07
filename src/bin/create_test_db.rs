@@ -39,7 +39,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Creating database at {output_path:#?}");
     let conn = Connection::open(output_path)?;
 
-    initialize(&conn)?;
+    // TODO: Implement Display and Error for db::DbError and replace unwrap below with ?.
+    initialize(&conn).unwrap();
 
     println!("Creating test user...");
     conn.execute(

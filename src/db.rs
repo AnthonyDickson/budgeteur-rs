@@ -1,10 +1,30 @@
 use chrono::NaiveDate;
-use rusqlite::{Connection, Error};
+use rusqlite::{Connection, Error, Transaction as SqlTransaction};
 use serde::{Deserialize, Serialize};
 
+/// Errors originating from operations on the app's database.
+#[derive(Debug, PartialEq)]
+pub enum DbError {
+    /// The specified email address could not be found in the database. The client could try again with a different email address.
+    EmailNotFound,
+    /// An empty email was given. The client should try again with a non-empty email address.
+    EmptyEmail,
+    /// An empty password hash was given. The client should try again with a non-empty password hash.
+    EmptyPassword,
+    /// The user's email already exists in the database. The client should try again with a different email address.
+    DuplicateEmail,
+    /// The password hash clashed with an existing password hash (should be extremely rare), the caller should rehash the password and try again.
+    DuplicatePassword,
+    /// Wrapper for Sqlite errors not handled by the other enum entries.
+    SqlError(Error),
+}
+
 pub trait Model {
-    /// Get the SQL query string to create a table for the model.
-    fn create_table_sql() -> &'static str;
+    /// Create a table for the model.
+    ///
+    /// # Errors
+    /// Returns an error if the table already exists or if there is an SQL error.
+    fn create_table(connection: &Connection) -> Result<(), DbError>;
 }
 
 type DatabaseID = i64;
@@ -45,9 +65,9 @@ impl User {
     /// use backrooms_rs::db::{Model, User};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
-    /// conn.execute(User::create_table_sql(), ());
-    ///
+    /// User::create_table(&conn).unwrap();
     /// let inserted_user = User::insert("foo@bar.baz", "hunter2", &conn).unwrap();
+    ///
     /// let selected_user = User::select(inserted_user.email(), &conn).unwrap();
     ///
     /// assert_eq!(inserted_user, selected_user);
@@ -126,12 +146,19 @@ impl User {
 }
 
 impl Model for User {
-    fn create_table_sql() -> &'static str {
-        "CREATE TABLE user (
+    fn create_table(connection: &Connection) -> Result<(), DbError> {
+        connection
+            .execute(
+                "CREATE TABLE user (
                     id INTEGER PRIMARY KEY,
                     email TEXT UNIQUE NOT NULL,
                     password TEXT UNIQUE NOT NULL
-                    )"
+                    )",
+                (),
+            )
+            .map_err(DbError::SqlError)?;
+
+        Ok(())
     }
 }
 
@@ -141,11 +168,18 @@ struct Category {
 }
 
 impl Model for Category {
-    fn create_table_sql() -> &'static str {
-        "CREATE TABLE category (
+    fn create_table(connection: &Connection) -> Result<(), DbError> {
+        connection
+            .execute(
+                "CREATE TABLE category (
                 id INTEGER PRIMARY KEY,
                 name TEXT UNIQUE NOT NULL
-                )"
+                )",
+                (),
+            )
+            .map_err(DbError::SqlError)?;
+
+        Ok(())
     }
 }
 
@@ -159,17 +193,24 @@ struct Transaction {
 }
 
 impl Model for Transaction {
-    fn create_table_sql() -> &'static str {
-        "CREATE TABLE \"transaction\" (
-                id INTEGER PRIMARY KEY,
-                amount REAL NOT NULL,
-                date TEXT NOT NULL,
-                description TEXT NOT NULL,
-                category_id INTEGER,
-                user_id INTEGER NOT NULL,
-                FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE CASCADE,
-                FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
-                )"
+    fn create_table(connection: &Connection) -> Result<(), DbError> {
+        connection
+                .execute(
+                    "CREATE TABLE \"transaction\" (
+                            id INTEGER PRIMARY KEY,
+                            amount REAL NOT NULL,
+                            date TEXT NOT NULL,
+                            description TEXT NOT NULL,
+                            category_id INTEGER,
+                            user_id INTEGER NOT NULL,
+                            FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE CASCADE,
+                            FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
+                            )",
+                    (),
+                )
+                .map_err(DbError::SqlError)?;
+
+        Ok(())
     }
 }
 
@@ -179,12 +220,19 @@ struct SavingsRatio {
 }
 
 impl Model for SavingsRatio {
-    fn create_table_sql() -> &'static str {
-        "CREATE TABLE savings_ratio (
-                transaction_id INTEGER PRIMARY KEY,
-                ratio REAL NOT NULL,
-                FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
-                )"
+    fn create_table(connection: &Connection) -> Result<(), DbError> {
+        connection
+            .execute(
+                "CREATE TABLE savings_ratio (
+                        transaction_id INTEGER PRIMARY KEY,
+                        ratio REAL NOT NULL,
+                        FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
+                        )",
+                (),
+            )
+            .map_err(DbError::SqlError)?;
+
+        Ok(())
     }
 }
 
@@ -196,42 +244,38 @@ struct RecurringTransaction {
 }
 
 impl Model for RecurringTransaction {
-    fn create_table_sql() -> &'static str {
-        "CREATE TABLE recurring_transaction (
-                transaction_id INTEGER PRIMARY KEY,
-                start_date TEXT NOT NULL,
-                end_date TEXT NOT NULL,
-                frequency INTEGER NOT NULL,
-                FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
-                )"
+    fn create_table(connection: &Connection) -> Result<(), DbError> {
+        connection
+                .execute(
+                    "CREATE TABLE recurring_transaction (
+                            transaction_id INTEGER PRIMARY KEY,
+                            start_date TEXT NOT NULL,
+                            end_date TEXT NOT NULL,
+                            frequency INTEGER NOT NULL,
+                            FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
+                            )",
+                    (),
+                )
+                .map_err(DbError::SqlError)?;
+
+        Ok(())
     }
 }
 
-pub fn initialize(connection: &Connection) -> Result<(), Error> {
-    connection.execute(User::create_table_sql(), ())?;
-    connection.execute(Category::create_table_sql(), ())?;
-    connection.execute(Transaction::create_table_sql(), ())?;
-    connection.execute(SavingsRatio::create_table_sql(), ())?;
-    connection.execute(RecurringTransaction::create_table_sql(), ())?;
+pub fn initialize(connection: &Connection) -> Result<(), DbError> {
+    let transaction =
+        SqlTransaction::new_unchecked(connection, rusqlite::TransactionBehavior::Exclusive)
+            .map_err(DbError::SqlError)?;
+
+    User::create_table(&transaction)?;
+    Category::create_table(&transaction)?;
+    Transaction::create_table(&transaction)?;
+    SavingsRatio::create_table(&transaction)?;
+    RecurringTransaction::create_table(&transaction)?;
+
+    transaction.commit().map_err(DbError::SqlError)?;
 
     Ok(())
-}
-
-/// Errors originating from operations on the app's database.
-#[derive(Debug, PartialEq)]
-pub enum DbError {
-    /// The specified email address could not be found in the database. The client could try again with a different email address.
-    EmailNotFound,
-    /// An empty email was given. The client should try again with a non-empty email address.
-    EmptyEmail,
-    /// An empty password hash was given. The client should try again with a non-empty password hash.
-    EmptyPassword,
-    /// The user's email already exists in the database. The client should try again with a different email address.
-    DuplicateEmail,
-    /// The password hash clashed with an existing password hash (should be extremely rare), the caller should rehash the password and try again.
-    DuplicatePassword,
-    /// Wrapper for Sqlite errors not handled by the other enum entries.
-    SqlError(Error),
 }
 
 #[cfg(test)]
