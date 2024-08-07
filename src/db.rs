@@ -87,22 +87,17 @@ impl User {
             .prepare("SELECT id, email, password FROM user WHERE email = :email")
             .map_err(DbError::SqlError)?;
 
-        let rows = stmt
-            .query_map(&[(":email", &email)], |row| {
-                let id: i64 = row.get(0)?;
-                let email: String = row.get(1)?;
-                let password: String = row.get(2)?;
+        stmt.query_row(&[(":email", &email)], |row| {
+            let id: i64 = row.get(0)?;
+            let email: String = row.get(1)?;
+            let password: String = row.get(2)?;
 
-                Ok(User::new(id, email, password))
-            })
-            .map_err(DbError::SqlError)?;
-
-        let row = rows.into_iter().next();
-
-        match row {
-            Some(user_result) => user_result.map_err(DbError::SqlError),
-            None => Err(DbError::EmailNotFound),
-        }
+            Ok(User::new(id, email, password))
+        })
+        .map_err(|e| match e {
+            Error::QueryReturnedNoRows => DbError::EmailNotFound,
+            e => DbError::SqlError(e),
+        })
     }
 
     /// Create a new user in the database.
