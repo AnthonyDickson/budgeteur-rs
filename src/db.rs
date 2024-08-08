@@ -107,7 +107,7 @@ impl User {
         })
     }
 
-    /// Get a user from the database that has the specified `email` address or `None` if the user does not exist.
+    /// Get the user from the database that has the specified `email` address or `None` if such user does not exist.
     ///
     /// # Examples
     /// ```
@@ -119,14 +119,14 @@ impl User {
     /// User::create_table(&conn).unwrap();
     /// let inserted_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
     ///
-    /// let selected_user = User::select(inserted_user.email(), &conn).unwrap();
+    /// let selected_user = User::select_by_email(inserted_user.email(), &conn).unwrap();
     ///
     /// assert_eq!(inserted_user, selected_user);
     /// ```
     /// # Panics
     ///
     /// Panics if there are SQL related errors.
-    pub fn select(email: &str, db_connection: &Connection) -> Result<User, DbError> {
+    pub fn select_by_email(email: &str, db_connection: &Connection) -> Result<User, DbError> {
         let mut stmt = db_connection
             .prepare("SELECT id, email, password FROM user WHERE email = :email")
             .map_err(DbError::SqlError)?;
@@ -632,7 +632,7 @@ mod tests {
 
         let email = "notavalidemail";
 
-        assert_eq!(User::select(email, &conn), Err(DbError::NotFound));
+        assert_eq!(User::select_by_email(email, &conn), Err(DbError::NotFound));
     }
 
     #[test]
@@ -641,7 +641,7 @@ mod tests {
 
         let test_user =
             User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let retrieved_user = User::select(test_user.email(), &conn).unwrap();
+        let retrieved_user = User::select_by_email(test_user.email(), &conn).unwrap();
 
         assert_eq!(retrieved_user, test_user);
     }

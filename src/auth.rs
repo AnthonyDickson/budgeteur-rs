@@ -115,15 +115,14 @@ pub async fn sign_in(
         return Err(AuthError::MissingCredentials);
     }
 
-    let user = User::select(&user_data.email, &state.db_connection().lock().unwrap()).map_err(
-        |e| match e {
+    let user = User::select_by_email(&user_data.email, &state.db_connection().lock().unwrap())
+        .map_err(|e| match e {
             DbError::NotFound => AuthError::WrongCredentials,
             _ => {
                 tracing::error!("Error matching user: {e:?}");
                 AuthError::InternalError
             }
-        },
-    )?;
+        })?;
 
     let is_valid = verify_password(&user_data.password, user.password()).map_err(|e| {
         tracing::error!("Error verifying password: {}", e);
