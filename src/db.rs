@@ -25,12 +25,16 @@ pub enum DbError {
     SqlError(Error),
 }
 
+// TODO: Implement trait `From` for `DbError` to convert from `rusqlite::Error`. Wrap error in SqlError variant.
+
 pub trait Model {
     /// Create a table for the model.
     ///
     /// # Errors
     /// Returns an error if the table already exists or if there is an SQL error.
     fn create_table(connection: &Connection) -> Result<(), DbError>;
+
+    // TODO: Add generic function to `Model` trait that converts from an SQL row into a concrete `Model` type.
 }
 
 type DatabaseID = i64;
@@ -311,17 +315,15 @@ impl Category {
     /// ```
     ///
     /// # Errors
-    /// Will return an error if:
-    /// - `user_id` does not refer to a user id used by a category,
-    /// - or there is some other SQL error.
+    /// Will return an error if there is an SQL error.
     pub fn select_by_user_id(
-        id: DatabaseID,
+        user_id: DatabaseID,
         connection: &Connection,
     ) -> Result<Vec<Category>, DbError> {
         connection
             .prepare("SELECT id, name, user_id FROM category WHERE user_id = :user_id")
             .map_err(DbError::SqlError)?
-            .query_map(&[(":user_id", &id)], |row| {
+            .query_map(&[(":user_id", &user_id)], |row| {
                 let id: DatabaseID = row.get(0)?;
                 let name: String = row.get(1)?;
                 let user_id: DatabaseID = row.get(2)?;
@@ -431,7 +433,9 @@ impl Transaction {
     ///
     /// # Errors
     /// Will return an error if:
+    /// - `date` refers to a future date,
     /// - `name` is empty,
+    /// - `category_id` does not refer to a valid category,
     /// - `user_id` does not refer to a valid user,
     /// - or there is some other SQL error.
     pub fn insert(
@@ -446,6 +450,7 @@ impl Transaction {
             return Err(DbError::InvalidDate);
         }
 
+        // TODO: Ensure that the category id refers to a category owned by the user.
         connection
             .execute(
                 "INSERT INTO \"transaction\" (amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -468,6 +473,107 @@ impl Transaction {
             category_id,
             user_id,
         })
+    }
+
+    /// Retrieve a transaction in the database by its `id`.
+    ///
+    /// # Examples
+    /// ```
+    /// use chrono::NaiveDate;
+    /// use rusqlite::Connection;
+    ///
+    /// use backrooms_rs::db::{Model, User, Category, Transaction};
+    ///
+    /// let conn = Connection::open_in_memory().unwrap();
+    /// User::create_table(&conn).unwrap();
+    /// Category::create_table(&conn).unwrap();
+    /// Transaction::create_table(&conn).unwrap();
+    /// let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+    /// let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+    ///
+    /// let inserted_transaction = Transaction::insert(
+    ///     3.14,
+    ///     NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+    ///     "Rust Pie".to_string(),
+    ///     category.id(),
+    ///     user.id(),
+    ///     &conn
+    /// )
+    /// .unwrap();
+    ///
+    /// let selected_transaction = Transaction::select_by_id(inserted_transaction.id(), &conn).unwrap();
+    ///
+    /// assert_eq!(inserted_transaction, selected_transaction);
+    /// ```
+    ///
+    /// # Errors
+    /// Will return an error if:
+    /// - `id` does not refer to a valid transaction,
+    /// - or there is some other SQL error.
+    pub fn select_by_id(id: DatabaseID, connection: &Connection) -> Result<Transaction, DbError> {
+        connection
+            .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE id = :id")
+            .map_err(DbError::SqlError)?
+            .query_row(&[(":id", &id)], |row| {
+                let id = row.get(0)?;
+                let amount = row.get(1)?;
+                let date = row.get(2)?;
+                let description = row.get(3)?;
+                let category_id = row.get(4)?;
+                let user_id = row.get(5)?;
+
+                Ok(Transaction { id, amount, date, description, category_id, user_id })
+            })
+            .map_err(|e| match e {
+                Error::QueryReturnedNoRows => DbError::NotFound,
+                e => DbError::SqlError(e),
+            })
+    }
+
+    /// Retrieve the transactions in the database for the user `user_id`.
+    ///
+    /// # Examples
+    /// ```
+    /// use backrooms_rs::db::{User, Transaction};
+    ///
+    /// fn sum_transaction_amount_for_user(user: &User, conn: &rusqlite::Connection) -> f64 {
+    ///     let transactions = Transaction::select_by_user_id(user.id(), conn).unwrap();
+    ///     transactions.iter().map(|transaction| transaction.amount()).sum()
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    /// Will return an error if there is an SQL error.
+    pub fn select_by_user_id(
+        user_id: DatabaseID,
+        connection: &Connection,
+    ) -> Result<Vec<Transaction>, DbError> {
+        connection
+            .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE user_id = :user_id")
+            .map_err(DbError::SqlError)?
+            .query_map(&[(":user_id", &user_id)], |row| {
+                let id = row.get(0)?;
+                let amount = row.get(1)?;
+                let date = row.get(2)?;
+                let description = row.get(3)?;
+                let category_id = row.get(4)?;
+                let user_id = row.get(5)?;
+
+                Ok(Transaction {
+                    id,
+                    amount,
+                    date,
+                    description,
+                    category_id,
+                    user_id,
+                })
+            })
+            .map_err(|e| match e {
+                Error::QueryReturnedNoRows => DbError::NotFound,
+                e => DbError::SqlError(e),
+            })?
+            .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
+            .collect()
     }
 }
 
@@ -790,5 +896,80 @@ mod tests {
         );
 
         assert_eq!(maybe_transaction, Err(DbError::InvalidDate));
+    }
+
+    #[test]
+    fn select_transaction_by_id() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+
+        let inserted_transaction = Transaction::insert(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            user.id(),
+            &conn,
+        )
+        .unwrap();
+
+        let selected_transaction =
+            Transaction::select_by_id(inserted_transaction.id(), &conn).unwrap();
+
+        assert_eq!(inserted_transaction, selected_transaction);
+    }
+
+    #[test]
+    fn select_transaction_by_invalid_id_fails() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+
+        let inserted_transaction = Transaction::insert(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            user.id(),
+            &conn,
+        )
+        .unwrap();
+
+        let maybe_transaction = Transaction::select_by_id(inserted_transaction.id() + 1, &conn);
+
+        assert_eq!(maybe_transaction, Err(DbError::NotFound));
+    }
+
+    #[test]
+    fn select_transactions_by_user_id() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+
+        let expected_transactions = vec![
+            Transaction::insert(
+                PI,
+                NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+                "Rust Pie".to_string(),
+                category.id(),
+                user.id(),
+                &conn,
+            )
+            .unwrap(),
+            Transaction::insert(
+                PI + 1.0,
+                NaiveDate::from_ymd_opt(2024, 8, 8).unwrap(),
+                "Rust Pif".to_string(),
+                category.id(),
+                user.id(),
+                &conn,
+            )
+            .unwrap(),
+        ];
+
+        let transactions = Transaction::select_by_user_id(user.id(), &conn).unwrap();
+
+        assert_eq!(transactions, expected_transactions);
     }
 }
