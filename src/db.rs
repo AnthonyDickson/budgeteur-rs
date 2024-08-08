@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use rusqlite::{Connection, Error, Transaction as SqlTransaction};
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +17,8 @@ pub enum DbError {
     EmptyField(String),
     /// A query was given an invalid foreign key. The client should try again with a valid foreign key.
     InvalidForeignKey(String),
+    /// An invalid date was provided (e.g., a future date on a transaction). The client should try again with a date no later than today.
+    InvalidDate,
     /// The row could not be found with the provided info (e.g., id). The client should try again with different parameters.
     NotFound,
     /// Wrapper for Sqlite errors not handled by the other enum entries.
@@ -356,6 +358,7 @@ impl Model for Category {
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
 /// New instances should be created through `Transaction::insert(...)`.
+#[derive(Debug, PartialEq)]
 pub struct Transaction {
     id: DatabaseID,
     amount: f64,
@@ -391,6 +394,8 @@ impl Transaction {
     }
 
     /// Create a new transaction in the database.
+    ///
+    /// Dates must be no later than today.
     ///
     /// # Examples
     /// ```
@@ -437,6 +442,10 @@ impl Transaction {
         user_id: DatabaseID,
         connection: &Connection,
     ) -> Result<Transaction, DbError> {
+        if date > Utc::now().date_naive() {
+            return Err(DbError::InvalidDate);
+        }
+
         connection
             .execute(
                 "INSERT INTO \"transaction\" (amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -552,7 +561,7 @@ pub fn initialize(connection: &Connection) -> Result<(), DbError> {
 mod tests {
     use std::f64::consts::PI;
 
-    use chrono::NaiveDate;
+    use chrono::{Days, NaiveDate, Utc};
     use rusqlite::Connection;
 
     use crate::db::{initialize, Category, DbError, Transaction, User};
@@ -737,7 +746,7 @@ mod tests {
         let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
 
         let amount = PI;
-        let date = NaiveDate::from_ymd_opt(2024, 8, 7).unwrap();
+        let date = Utc::now().date_naive();
         let description = "Rust Pie".to_string();
 
         let transaction = Transaction::insert(
@@ -755,5 +764,31 @@ mod tests {
         assert_eq!(transaction.description(), description);
         assert_eq!(transaction.category_id(), category.id());
         assert_eq!(transaction.user_id(), user.id());
+    }
+
+    #[test]
+    fn create_transaction_fails_on_future_date() {
+        let conn = init_db();
+
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
+
+        let amount = PI;
+        let date = Utc::now()
+            .date_naive()
+            .checked_add_days(Days::new(1))
+            .unwrap();
+        let description = "Rust Pie".to_string();
+
+        let maybe_transaction = Transaction::insert(
+            amount,
+            date,
+            description.clone(),
+            category.id(),
+            user.id(),
+            &conn,
+        );
+
+        assert_eq!(maybe_transaction, Err(DbError::InvalidDate));
     }
 }
