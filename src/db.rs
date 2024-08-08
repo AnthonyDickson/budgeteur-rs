@@ -33,6 +33,9 @@ pub trait Model {
 
 type DatabaseID = i64;
 
+/// A user of the application.
+///
+/// New instances should be created through `User::insert(...)`.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct User {
     id: DatabaseID,
@@ -41,17 +44,6 @@ pub struct User {
 }
 
 impl User {
-    /// Create a new user.
-    ///
-    /// Does **not** add the user to any database, this must be done separately.
-    pub fn new(id: DatabaseID, email: String, password: String) -> User {
-        User {
-            id,
-            email,
-            password,
-        }
-    }
-
     pub fn id(&self) -> DatabaseID {
         self.id
     }
@@ -108,7 +100,11 @@ impl User {
 
         let id = connection.last_insert_rowid();
 
-        Ok(User::new(id, email, password_hash))
+        Ok(User {
+            id,
+            email,
+            password: password_hash,
+        })
     }
 
     /// Get a user from the database that has the specified `email` address or `None` if the user does not exist.
@@ -140,7 +136,11 @@ impl User {
             let email: String = row.get(1)?;
             let password: String = row.get(2)?;
 
-            Ok(User::new(id, email, password))
+            Ok(User {
+                id,
+                email,
+                password,
+            })
         })
         .map_err(|e| match e {
             Error::QueryReturnedNoRows => DbError::NotFound,
@@ -166,8 +166,10 @@ impl Model for User {
     }
 }
 
-#[derive(Debug, PartialEq)]
 /// A category for expenses and income, e.g., 'Groceries', 'Eating Out', 'Wages'.
+///
+/// New instances should be created through `Category::insert(...)`.
+#[derive(Debug, PartialEq)]
 pub struct Category {
     id: DatabaseID,
     name: String,
@@ -175,13 +177,6 @@ pub struct Category {
 }
 
 impl Category {
-    /// Create a new category.
-    ///
-    /// Does **not** add the category to any database, this must be done separately.
-    pub fn new(id: DatabaseID, name: String, user_id: DatabaseID) -> Category {
-        Category { id, name, user_id }
-    }
-
     /// The id of the category.
     pub fn id(&self) -> DatabaseID {
         self.id
@@ -244,7 +239,11 @@ impl Category {
 
         let category_id = connection.last_insert_rowid();
 
-        Ok(Category::new(category_id, name, user_id))
+        Ok(Category {
+            id: category_id,
+            name,
+            user_id,
+        })
     }
 
     /// Retrieve a category in the database by its `id`.
@@ -279,7 +278,7 @@ impl Category {
                 let name: String = row.get(1)?;
                 let user_id: DatabaseID = row.get(2)?;
 
-                Ok(Category::new(id, name, user_id))
+                Ok(Category { id, name, user_id })
             })
             .map_err(|e| match e {
                 Error::QueryReturnedNoRows => DbError::NotFound,
@@ -325,7 +324,7 @@ impl Category {
                 let name: String = row.get(1)?;
                 let user_id: DatabaseID = row.get(2)?;
 
-                Ok(Category::new(id, name, user_id))
+                Ok(Category { id, name, user_id })
             })
             .map_err(|e| match e {
                 Error::QueryReturnedNoRows => DbError::NotFound,
@@ -354,6 +353,9 @@ impl Model for Category {
     }
 }
 
+/// An expense or income, i.e. an event where money was either spent or earned.
+///
+/// New instances should be created through `Transaction::insert(...)`.
 pub struct Transaction {
     id: DatabaseID,
     amount: f64,
@@ -364,27 +366,6 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    /// Create a new transaction.
-    ///
-    /// Does **not** add the transaction to any database, this must be done separately.
-    pub fn new(
-        id: DatabaseID,
-        amount: f64,
-        date: NaiveDate,
-        description: String,
-        category_id: DatabaseID,
-        user_id: DatabaseID,
-    ) -> Transaction {
-        Transaction {
-            id,
-            amount,
-            date,
-            description,
-            category_id,
-            user_id,
-        }
-    }
-
     pub fn id(&self) -> DatabaseID {
         self.id
     }
@@ -409,7 +390,7 @@ impl Transaction {
         self.user_id
     }
 
-    /// Create a new category in the database.
+    /// Create a new transaction in the database.
     ///
     /// # Examples
     /// ```
@@ -470,14 +451,14 @@ impl Transaction {
 
         let transaction_id = connection.last_insert_rowid();
 
-        Ok(Transaction::new(
-            transaction_id,
+        Ok(Transaction {
+            id: transaction_id,
             amount,
             date,
             description,
             category_id,
             user_id,
-        ))
+        })
     }
 }
 
