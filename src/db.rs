@@ -25,7 +25,25 @@ pub enum DbError {
     SqlError(Error),
 }
 
-// TODO: Implement trait `From` for `DbError` to convert from `rusqlite::Error`. Wrap error in SqlError variant.
+impl From<Error> for DbError {
+    fn from(error: Error) -> Self {
+        match error {
+            // Code 2067 occurs when a UNIQUE constraint failed.
+            Error::SqliteFailure(sql_error, Some(ref desc))
+                if sql_error.extended_code == 2067 && desc.contains("email") =>
+            {
+                DbError::DuplicateEmail
+            }
+            Error::SqliteFailure(sql_error, Some(ref desc))
+                if sql_error.extended_code == 2067 && desc.contains("password") =>
+            {
+                DbError::DuplicatePassword
+            }
+            Error::QueryReturnedNoRows => DbError::NotFound,
+            e => DbError::SqlError(e),
+        }
+    }
+}
 
 pub trait Model {
     /// Create a table for the model.
@@ -86,23 +104,10 @@ impl User {
             return Err(DbError::EmptyPassword);
         }
 
-        connection
-            .execute(
-                "INSERT INTO user (email, password) VALUES (?1, ?2)",
-                (&email, &password_hash),
-            )
-            .map_err(|e| match e {
-                Error::SqliteFailure(error, Some(ref desc)) if error.extended_code == 2067 => {
-                    if desc.contains("email") {
-                        DbError::DuplicateEmail
-                    } else if desc.contains("password") {
-                        DbError::DuplicatePassword
-                    } else {
-                        DbError::SqlError(e)
-                    }
-                }
-                _ => DbError::SqlError(e),
-            })?;
+        connection.execute(
+            "INSERT INTO user (email, password) VALUES (?1, ?2)",
+            (&email, &password_hash),
+        )?;
 
         let id = connection.last_insert_rowid();
 
@@ -133,11 +138,10 @@ impl User {
     ///
     /// Panics if there are SQL related errors.
     pub fn select_by_email(email: &str, db_connection: &Connection) -> Result<User, DbError> {
-        let mut stmt = db_connection
-            .prepare("SELECT id, email, password FROM user WHERE email = :email")
-            .map_err(DbError::SqlError)?;
+        let mut stmt =
+            db_connection.prepare("SELECT id, email, password FROM user WHERE email = :email")?;
 
-        stmt.query_row(&[(":email", &email)], |row| {
+        let user = stmt.query_row(&[(":email", &email)], |row| {
             let id: i64 = row.get(0)?;
             let email: String = row.get(1)?;
             let password: String = row.get(2)?;
@@ -147,26 +151,22 @@ impl User {
                 email,
                 password,
             })
-        })
-        .map_err(|e| match e {
-            Error::QueryReturnedNoRows => DbError::NotFound,
-            e => DbError::SqlError(e),
-        })
+        })?;
+
+        Ok(user)
     }
 }
 
 impl Model for User {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
-        connection
-            .execute(
-                "CREATE TABLE user (
+        connection.execute(
+            "CREATE TABLE user (
                     id INTEGER PRIMARY KEY,
                     email TEXT UNIQUE NOT NULL,
                     password TEXT UNIQUE NOT NULL
                     )",
-                (),
-            )
-            .map_err(DbError::SqlError)?;
+            (),
+        )?;
 
         Ok(())
     }
@@ -276,20 +276,17 @@ impl Category {
     /// - `id` does not refer to a valid category,
     /// - or there is some other SQL error.
     pub fn select_by_id(id: DatabaseID, connection: &Connection) -> Result<Category, DbError> {
-        connection
-            .prepare("SELECT id, name, user_id FROM category WHERE id = :id")
-            .map_err(DbError::SqlError)?
+        let category = connection
+            .prepare("SELECT id, name, user_id FROM category WHERE id = :id")?
             .query_row(&[(":id", &id)], |row| {
                 let id: DatabaseID = row.get(0)?;
                 let name: String = row.get(1)?;
                 let user_id: DatabaseID = row.get(2)?;
 
                 Ok(Category { id, name, user_id })
-            })
-            .map_err(|e| match e {
-                Error::QueryReturnedNoRows => DbError::NotFound,
-                e => DbError::SqlError(e),
-            })
+            })?;
+
+        Ok(category)
     }
 
     /// Retrieve categories in the database for the user `user_id`.
@@ -321,18 +318,13 @@ impl Category {
         connection: &Connection,
     ) -> Result<Vec<Category>, DbError> {
         connection
-            .prepare("SELECT id, name, user_id FROM category WHERE user_id = :user_id")
-            .map_err(DbError::SqlError)?
+            .prepare("SELECT id, name, user_id FROM category WHERE user_id = :user_id")?
             .query_map(&[(":user_id", &user_id)], |row| {
                 let id: DatabaseID = row.get(0)?;
                 let name: String = row.get(1)?;
                 let user_id: DatabaseID = row.get(2)?;
 
                 Ok(Category { id, name, user_id })
-            })
-            .map_err(|e| match e {
-                Error::QueryReturnedNoRows => DbError::NotFound,
-                e => DbError::SqlError(e),
             })?
             .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
             .collect()
@@ -341,17 +333,15 @@ impl Category {
 
 impl Model for Category {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
-        connection
-            .execute(
-                "CREATE TABLE category (
+        connection.execute(
+            "CREATE TABLE category (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
                 user_id INTEGER NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
                 )",
-                (),
-            )
-            .map_err(DbError::SqlError)?;
+            (),
+        )?;
 
         Ok(())
     }
@@ -511,9 +501,8 @@ impl Transaction {
     /// - `id` does not refer to a valid transaction,
     /// - or there is some other SQL error.
     pub fn select_by_id(id: DatabaseID, connection: &Connection) -> Result<Transaction, DbError> {
-        connection
-            .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE id = :id")
-            .map_err(DbError::SqlError)?
+        let transaction = connection
+            .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE id = :id")?
             .query_row(&[(":id", &id)], |row| {
                 let id = row.get(0)?;
                 let amount = row.get(1)?;
@@ -523,11 +512,9 @@ impl Transaction {
                 let user_id = row.get(5)?;
 
                 Ok(Transaction { id, amount, date, description, category_id, user_id })
-            })
-            .map_err(|e| match e {
-                Error::QueryReturnedNoRows => DbError::NotFound,
-                e => DbError::SqlError(e),
-            })
+            })?;
+
+        Ok(transaction)
     }
 
     /// Retrieve the transactions in the database for the user `user_id`.
@@ -549,8 +536,7 @@ impl Transaction {
         connection: &Connection,
     ) -> Result<Vec<Transaction>, DbError> {
         connection
-            .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE user_id = :user_id")
-            .map_err(DbError::SqlError)?
+            .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE user_id = :user_id")?
             .query_map(&[(":user_id", &user_id)], |row| {
                 let id = row.get(0)?;
                 let amount = row.get(1)?;
@@ -567,10 +553,6 @@ impl Transaction {
                     category_id,
                     user_id,
                 })
-            })
-            .map_err(|e| match e {
-                Error::QueryReturnedNoRows => DbError::NotFound,
-                e => DbError::SqlError(e),
             })?
             .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
             .collect()
@@ -592,8 +574,7 @@ impl Model for Transaction {
                             FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
                             )",
                     (),
-                )
-                .map_err(DbError::SqlError)?;
+                )?;
 
         Ok(())
     }
@@ -614,8 +595,7 @@ impl Model for SavingsRatio {
                         FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
                         )",
                 (),
-            )
-            .map_err(DbError::SqlError)?;
+            )?;
 
         Ok(())
     }
@@ -640,8 +620,7 @@ impl Model for RecurringTransaction {
                             FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
                             )",
                     (),
-                )
-                .map_err(DbError::SqlError)?;
+                )?;
 
         Ok(())
     }
@@ -649,8 +628,7 @@ impl Model for RecurringTransaction {
 
 pub fn initialize(connection: &Connection) -> Result<(), DbError> {
     let transaction =
-        SqlTransaction::new_unchecked(connection, rusqlite::TransactionBehavior::Exclusive)
-            .map_err(DbError::SqlError)?;
+        SqlTransaction::new_unchecked(connection, rusqlite::TransactionBehavior::Exclusive)?;
 
     User::create_table(&transaction)?;
     Category::create_table(&transaction)?;
@@ -658,7 +636,7 @@ pub fn initialize(connection: &Connection) -> Result<(), DbError> {
     SavingsRatio::create_table(&transaction)?;
     RecurringTransaction::create_table(&transaction)?;
 
-    transaction.commit().map_err(DbError::SqlError)?;
+    transaction.commit()?;
 
     Ok(())
 }
@@ -870,6 +848,58 @@ mod tests {
         assert_eq!(transaction.description(), description);
         assert_eq!(transaction.category_id(), category.id());
         assert_eq!(transaction.user_id(), user.id());
+    }
+
+    #[test]
+    fn create_transaction_fails_on_invalid_user_id() {
+        let conn = init_db();
+
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
+
+        let amount = PI;
+        let date = Utc::now().date_naive();
+        let description = "Rust Pie".to_string();
+
+        let maybe_transaction = Transaction::insert(
+            amount,
+            date,
+            description.clone(),
+            category.id(),
+            user.id() + 1,
+            &conn,
+        );
+
+        assert!(matches!(
+            maybe_transaction,
+            Err(DbError::InvalidForeignKey(_))
+        ));
+    }
+
+    #[test]
+    fn create_transaction_fails_on_invalid_category_id() {
+        let conn = init_db();
+
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
+
+        let amount = PI;
+        let date = Utc::now().date_naive();
+        let description = "Rust Pie".to_string();
+
+        let maybe_transaction = Transaction::insert(
+            amount,
+            date,
+            description.clone(),
+            category.id() + 1,
+            user.id(),
+            &conn,
+        );
+
+        assert!(matches!(
+            maybe_transaction,
+            Err(DbError::InvalidForeignKey(_))
+        ));
     }
 
     #[test]
