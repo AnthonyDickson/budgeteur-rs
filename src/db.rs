@@ -1,5 +1,8 @@
 use chrono::{NaiveDate, Utc};
-use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
+use rusqlite::{
+    types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput},
+    Connection, Error, Row, Transaction as SqlTransaction,
+};
 use serde::{Deserialize, Serialize};
 
 /// Errors originating from operations on the app's database.
@@ -17,7 +20,8 @@ pub enum DbError {
     EmptyField(String),
     /// A query was given an invalid foreign key. The client should check that the ids are valid.
     InvalidForeignKey,
-    /// An invalid date was provided (e.g., a future date on a transaction). The client should try again with a date no later than today.
+    /// An invalid date was provided (e.g., a future date on a transaction or an end date before or on a start date for recurring transactions).
+    /// The client should try again with a date no later than today.
     InvalidDate,
     /// An invalid ratio was given. The client should try again with a number between 0.0 and 1.0 (inclusive).
     InvalidRatio,
@@ -96,7 +100,7 @@ impl User {
     /// It is up to the caller to ensure the password is properly hashed.
     ///
     /// # Error
-    /// Will return an error if there was a problem executing the SQL query. This could be due to:
+    /// This function will return an error if there was a problem executing the SQL query. This could be due to:
     /// - the email is empty,
     /// - the password is empty,
     /// - a syntax error in the SQL string,
@@ -228,7 +232,7 @@ impl Category {
     /// ```
     ///
     /// # Errors
-    /// Will return an error if:
+    /// This function will return an error if:
     /// - `name` is empty,
     /// - `user_id` does not refer to a valid user,
     /// - or there is some other SQL error.
@@ -275,7 +279,7 @@ impl Category {
     /// ```
     ///
     /// # Errors
-    /// Will return an error if:
+    /// This function will return an error if:
     /// - `id` does not refer to a valid category,
     /// - or there is some other SQL error.
     pub fn select_by_id(id: DatabaseID, connection: &Connection) -> Result<Category, DbError> {
@@ -309,7 +313,7 @@ impl Category {
     /// ```
     ///
     /// # Errors
-    /// Will return an error if there is an SQL error.
+    /// This function will return an error if there is an SQL error.
     pub fn select_by_user_id(
         user_id: DatabaseID,
         connection: &Connection,
@@ -421,7 +425,7 @@ impl Transaction {
     /// ```
     ///
     /// # Errors
-    /// Will return an error if:
+    /// This function will return an error if:
     /// - `date` refers to a future date,
     /// - `name` is empty,
     /// - `category_id` does not refer to a valid category,
@@ -490,7 +494,7 @@ impl Transaction {
     /// ```
     ///
     /// # Errors
-    /// Will return an error if:
+    /// This function will return an error if:
     /// - `id` does not refer to a valid transaction,
     /// - or there is some other SQL error.
     pub fn select_by_id(id: DatabaseID, connection: &Connection) -> Result<Transaction, DbError> {
@@ -514,7 +518,7 @@ impl Transaction {
     /// ```
     ///
     /// # Errors
-    /// Will return an error if there is an SQL error.
+    /// This function will return an error if there is an SQL error.
     pub fn select_by_user_id(
         user_id: DatabaseID,
         connection: &Connection,
@@ -593,7 +597,7 @@ impl SavingsRatio {
     /// ```
     ///
     /// # Errors
-    /// Will return an error if:
+    /// This function will return an error if:
     /// - `transaction_id` does not refer to a valid transaction,
     /// - `ratio` is not a ratio between zero and one (inclusive),
     /// - or there is some other SQL error.
@@ -644,41 +648,147 @@ impl Model<SavingsRatio> for SavingsRatio {
     }
 }
 
-struct RecurringTransaction {
+/// How often a recurring transaction happens.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Frequency {
+    Daily,
+    Weekly,
+    Fortnightly,
+    /// A calendar month of variable length.
+    Monthly,
+    /// A calendar quarter (Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec).
+    Quarterly,
+    Yearly,
+}
+
+impl ToSql for Frequency {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::Owned(rusqlite::types::Value::Integer(
+            match self {
+                Frequency::Daily => 0,
+                Frequency::Weekly => 1,
+                Frequency::Fortnightly => 2,
+                Frequency::Monthly => 3,
+                Frequency::Quarterly => 4,
+                Frequency::Yearly => 5,
+            },
+        )))
+    }
+}
+
+impl FromSql for Frequency {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> FromSqlResult<Self> {
+        value.as_i64().and_then(|number| match number {
+            0 => Ok(Frequency::Daily),
+            1 => Ok(Frequency::Weekly),
+            2 => Ok(Frequency::Fortnightly),
+            3 => Ok(Frequency::Monthly),
+            4 => Ok(Frequency::Quarterly),
+            5 => Ok(Frequency::Yearly),
+            _ => Err(FromSqlError::OutOfRange(number)),
+        })
+    }
+}
+
+/// A transaction (income or expense) that repeats on a regular basis (e.g., wages, phone bill).
+///
+/// This object must be attached to an existing transaction and cannot exist independently.
+///
+/// New instances should be created through `RecurringTransaction::insert(...)`.
+#[derive(Debug, PartialEq)]
+pub struct RecurringTransaction {
     transaction_id: DatabaseID,
-    start_date: NaiveDate,
-    end_date: NaiveDate,
-    frequency: i64,
+    end_date: Option<NaiveDate>,
+    frequency: Frequency,
+}
+
+impl RecurringTransaction {
+    pub fn transaction_id(&self) -> DatabaseID {
+        self.transaction_id
+    }
+
+    pub fn end_date(&self) -> &Option<NaiveDate> {
+        &self.end_date
+    }
+
+    pub fn frequency(&self) -> Frequency {
+        self.frequency
+    }
+
+    /// Create a new recurring transaction in the database.
+    ///
+    /// This will attach to an existing transaction and convert that transaction from a once-off transaction to a recurring one.
+    ///
+    /// # Examples
+    /// ```
+    /// use chrono::Utc;
+    /// use rusqlite::Connection;
+    ///
+    /// use backrooms_rs::db::{Frequency, Transaction, RecurringTransaction};
+    ///
+    /// fn set_recurring(
+    ///     transaction: &Transaction,
+    ///     frequency: Frequency,
+    ///     connection: &Connection
+    /// ) -> RecurringTransaction {
+    ///     RecurringTransaction::insert(
+    ///         &transaction,
+    ///         None,
+    ///         frequency,
+    ///         connection
+    ///     )
+    ///     .unwrap()
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// - `end_date` is on or before `transaction.date()`,
+    /// - or there is some other SQL error.
+    pub fn insert(
+        transaction: &Transaction,
+        end_date: Option<NaiveDate>,
+        frequency: Frequency,
+        connection: &Connection,
+    ) -> Result<RecurringTransaction, DbError> {
+        if end_date.is_some_and(|date| date <= *transaction.date()) {
+            return Err(DbError::InvalidDate);
+        }
+
+        connection.execute(
+            "INSERT INTO recurring_transaction (transaction_id, end_date, frequency) VALUES (?1, ?2, ?3)",
+            (transaction.id(), end_date, frequency),
+        )?;
+
+        Ok(RecurringTransaction {
+            transaction_id: transaction.id(),
+            end_date,
+            frequency,
+        })
+    }
 }
 
 impl Model<RecurringTransaction> for RecurringTransaction {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection
-                .execute(
-                    "CREATE TABLE recurring_transaction (
-                            transaction_id INTEGER PRIMARY KEY,
-                            start_date TEXT NOT NULL,
-                            end_date TEXT NOT NULL,
-                            frequency INTEGER NOT NULL,
-                            FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
-                            )",
-                    (),
-                )?;
+            .execute(
+                "CREATE TABLE recurring_transaction (
+                        transaction_id INTEGER PRIMARY KEY,
+                        end_date TEXT NOT NULL,
+                        frequency INTEGER NOT NULL,
+                        FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
+                        )",
+                (),
+            )?;
 
         Ok(())
     }
 
     fn map_row(row: &Row) -> Result<RecurringTransaction, Error> {
-        let transaction_id = row.get(0)?;
-        let start_date = row.get(1)?;
-        let end_date = row.get(2)?;
-        let frequency = row.get(3)?;
-
         Ok(RecurringTransaction {
-            transaction_id,
-            start_date,
-            end_date,
-            frequency,
+            transaction_id: row.get(0)?,
+            end_date: row.get(1)?,
+            frequency: row.get(2)?,
         })
     }
 }
@@ -702,10 +812,12 @@ pub fn initialize(connection: &Connection) -> Result<(), DbError> {
 mod tests {
     use std::f64::consts::PI;
 
-    use chrono::{Days, NaiveDate, Utc};
+    use chrono::{Days, Months, NaiveDate, Utc};
     use rusqlite::Connection;
 
     use crate::db::{initialize, Category, DbError, SavingsRatio, Transaction, User};
+
+    use super::{Frequency, RecurringTransaction};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1137,5 +1249,66 @@ mod tests {
         let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
 
         assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
+    }
+
+    #[test]
+    fn create_recurring_transaction() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let transaction = Transaction::insert(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            user.id(),
+            &conn,
+        )
+        .unwrap();
+
+        let end_date = transaction.date().checked_add_months(Months::new(3));
+
+        let recurring =
+            RecurringTransaction::insert(&transaction, end_date, Frequency::Weekly, &conn).unwrap();
+
+        assert_eq!(recurring.transaction_id(), transaction.id);
+        assert_eq!(*recurring.end_date(), end_date);
+        assert_eq!(recurring.frequency(), Frequency::Weekly);
+    }
+
+    #[test]
+    fn create_recurring_transaction_fails_on_past_end_date() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let transaction = Transaction::insert(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            user.id(),
+            &conn,
+        )
+        .unwrap();
+
+        assert_eq!(
+            RecurringTransaction::insert(
+                &transaction,
+                Some(*transaction.date()),
+                Frequency::Weekly,
+                &conn
+            ),
+            Err(DbError::InvalidDate)
+        );
+
+        assert_eq!(
+            RecurringTransaction::insert(
+                &transaction,
+                Some(transaction.date().checked_sub_days(Days::new(1)).unwrap()),
+                Frequency::Weekly,
+                &conn
+            ),
+            Err(DbError::InvalidDate)
+        );
     }
 }
