@@ -19,6 +19,8 @@ pub enum DbError {
     InvalidForeignKey,
     /// An invalid date was provided (e.g., a future date on a transaction). The client should try again with a date no later than today.
     InvalidDate,
+    /// An invalid ratio was given. The client should try again with a number between 0.0 and 1.0 (inclusive).
+    InvalidRatio,
     /// The row could not be found with the provided info (e.g., id). The client should try again with different parameters.
     NotFound,
     /// Wrapper for Sqlite errors not handled by the other enum entries.
@@ -557,9 +559,63 @@ impl Model<Transaction> for Transaction {
     }
 }
 
-struct SavingsRatio {
+/// The amount of an income transaction that should counted as savings.
+///
+/// This object must be attached to an existing transaction and cannot exist independently.
+///
+/// New instances should be created through `SavingsRatio::insert(...)`.
+#[derive(Debug, PartialEq)]
+pub struct SavingsRatio {
     transaction_id: DatabaseID,
     ratio: f64,
+}
+
+impl SavingsRatio {
+    pub fn transaction_id(&self) -> DatabaseID {
+        self.transaction_id
+    }
+
+    pub fn ratio(&self) -> f64 {
+        self.ratio
+    }
+
+    /// Create a new savings ratio in the database.
+    ///
+    /// # Examples
+    /// ```
+    /// use rusqlite::Connection;
+    ///
+    /// use backrooms_rs::db::{Transaction, SavingsRatio};
+    ///
+    /// fn set_savings_ratio(transaction: &Transaction, ratio: f64, connection: &Connection) -> SavingsRatio {
+    ///     SavingsRatio::insert(transaction.id(), ratio, connection).unwrap()
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    /// Will return an error if:
+    /// - `transaction_id` does not refer to a valid transaction,
+    /// - `ratio` is not a ratio between zero and one (inclusive),
+    /// - or there is some other SQL error.
+    pub fn insert(
+        transaction_id: DatabaseID,
+        ratio: f64,
+        connection: &Connection,
+    ) -> Result<SavingsRatio, DbError> {
+        if !(0.0..=1.0).contains(&ratio) || ratio.is_sign_negative() {
+            return Err(DbError::InvalidRatio);
+        }
+
+        connection.execute(
+            "INSERT INTO savings_ratio (transaction_id, ratio) VALUES (?1, ?2)",
+            (transaction_id, ratio),
+        )?;
+
+        Ok(SavingsRatio {
+            transaction_id,
+            ratio,
+        })
+    }
 }
 
 impl Model<SavingsRatio> for SavingsRatio {
@@ -649,7 +705,7 @@ mod tests {
     use chrono::{Days, NaiveDate, Utc};
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, DbError, Transaction, User};
+    use crate::db::{initialize, Category, DbError, SavingsRatio, Transaction, User};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -996,5 +1052,90 @@ mod tests {
         let transactions = Transaction::select_by_user_id(user.id(), &conn).unwrap();
 
         assert_eq!(transactions, expected_transactions);
+    }
+
+    #[test]
+    fn create_savings_ratio() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let transaction = Transaction::insert(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            user.id(),
+            &conn,
+        )
+        .unwrap();
+
+        let ratio = 0.5;
+        let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn).unwrap();
+
+        assert_eq!(savings_ratio.transaction_id(), transaction.id());
+        assert_eq!(savings_ratio.ratio(), ratio);
+    }
+
+    #[test]
+    fn create_savings_ratio_fails_with_ratio_below_zero() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let transaction = Transaction::insert(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            user.id(),
+            &conn,
+        )
+        .unwrap();
+
+        let ratio = -0.01;
+        let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
+
+        assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
+    }
+
+    #[test]
+    fn create_savings_ratio_fails_with_negative_zero_ratio() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let transaction = Transaction::insert(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            user.id(),
+            &conn,
+        )
+        .unwrap();
+
+        let ratio = -0.0;
+        let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
+
+        assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
+    }
+
+    #[test]
+    fn create_savings_ratio_fails_with_ratio_above_one() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let transaction = Transaction::insert(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            user.id(),
+            &conn,
+        )
+        .unwrap();
+
+        let ratio = 1.01;
+        let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
+
+        assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
     }
 }
