@@ -1,5 +1,5 @@
 use chrono::{NaiveDate, Utc};
-use rusqlite::{Connection, Error, Transaction as SqlTransaction};
+use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 use serde::{Deserialize, Serialize};
 
 /// Errors originating from operations on the app's database.
@@ -49,14 +49,20 @@ impl From<Error> for DbError {
     }
 }
 
-pub trait Model {
+pub trait Model<T> {
     /// Create a table for the model.
     ///
     /// # Errors
     /// Returns an error if the table already exists or if there is an SQL error.
     fn create_table(connection: &Connection) -> Result<(), DbError>;
 
-    // TODO: Add generic function to `Model` trait that converts from an SQL row into a concrete `Model` type.
+    /// Convert a row into a concrete type.
+    ///
+    /// **Note:** This function expects that the row object contains all the table columns in the order they were defined.
+    ///
+    /// # Errors
+    /// Returns an error if a row item cannot be converted into the corresponding rust type, or if an invalid column index was used.
+    fn map_row(row: &Row) -> Result<T, Error>;
 }
 
 type DatabaseID = i64;
@@ -145,23 +151,13 @@ impl User {
         let mut stmt =
             db_connection.prepare("SELECT id, email, password FROM user WHERE email = :email")?;
 
-        let user = stmt.query_row(&[(":email", &email)], |row| {
-            let id: i64 = row.get(0)?;
-            let email: String = row.get(1)?;
-            let password: String = row.get(2)?;
-
-            Ok(User {
-                id,
-                email,
-                password,
-            })
-        })?;
+        let user = stmt.query_row(&[(":email", &email)], User::map_row)?;
 
         Ok(user)
     }
 }
 
-impl Model for User {
+impl Model<User> for User {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection.execute(
             "CREATE TABLE user (
@@ -173,6 +169,14 @@ impl Model for User {
         )?;
 
         Ok(())
+    }
+
+    fn map_row(row: &Row) -> Result<User, Error> {
+        Ok(User {
+            id: row.get(0)?,
+            email: row.get(1)?,
+            password: row.get(2)?,
+        })
     }
 }
 
@@ -275,13 +279,7 @@ impl Category {
     pub fn select_by_id(id: DatabaseID, connection: &Connection) -> Result<Category, DbError> {
         let category = connection
             .prepare("SELECT id, name, user_id FROM category WHERE id = :id")?
-            .query_row(&[(":id", &id)], |row| {
-                let id: DatabaseID = row.get(0)?;
-                let name: String = row.get(1)?;
-                let user_id: DatabaseID = row.get(2)?;
-
-                Ok(Category { id, name, user_id })
-            })?;
+            .query_row(&[(":id", &id)], Category::map_row)?;
 
         Ok(category)
     }
@@ -316,19 +314,13 @@ impl Category {
     ) -> Result<Vec<Category>, DbError> {
         connection
             .prepare("SELECT id, name, user_id FROM category WHERE user_id = :user_id")?
-            .query_map(&[(":user_id", &user_id)], |row| {
-                let id: DatabaseID = row.get(0)?;
-                let name: String = row.get(1)?;
-                let user_id: DatabaseID = row.get(2)?;
-
-                Ok(Category { id, name, user_id })
-            })?
+            .query_map(&[(":user_id", &user_id)], Category::map_row)?
             .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
             .collect()
     }
 }
 
-impl Model for Category {
+impl Model<Category> for Category {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection.execute(
             "CREATE TABLE category (
@@ -341,6 +333,14 @@ impl Model for Category {
         )?;
 
         Ok(())
+    }
+
+    fn map_row(row: &Row) -> Result<Category, Error> {
+        Ok(Category {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            user_id: row.get(2)?,
+        })
     }
 }
 
@@ -494,16 +494,7 @@ impl Transaction {
     pub fn select_by_id(id: DatabaseID, connection: &Connection) -> Result<Transaction, DbError> {
         let transaction = connection
             .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE id = :id")?
-            .query_row(&[(":id", &id)], |row| {
-                let id = row.get(0)?;
-                let amount = row.get(1)?;
-                let date = row.get(2)?;
-                let description = row.get(3)?;
-                let category_id = row.get(4)?;
-                let user_id = row.get(5)?;
-
-                Ok(Transaction { id, amount, date, description, category_id, user_id })
-            })?;
+            .query_row(&[(":id", &id)], Transaction::map_row)?;
 
         Ok(transaction)
     }
@@ -528,29 +519,13 @@ impl Transaction {
     ) -> Result<Vec<Transaction>, DbError> {
         connection
             .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE user_id = :user_id")?
-            .query_map(&[(":user_id", &user_id)], |row| {
-                let id = row.get(0)?;
-                let amount = row.get(1)?;
-                let date = row.get(2)?;
-                let description = row.get(3)?;
-                let category_id = row.get(4)?;
-                let user_id = row.get(5)?;
-
-                Ok(Transaction {
-                    id,
-                    amount,
-                    date,
-                    description,
-                    category_id,
-                    user_id,
-                })
-            })?
+            .query_map(&[(":user_id", &user_id)], Transaction::map_row)?
             .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
             .collect()
     }
 }
 
-impl Model for Transaction {
+impl Model<Transaction> for Transaction {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection
                 .execute(
@@ -569,6 +544,17 @@ impl Model for Transaction {
 
         Ok(())
     }
+
+    fn map_row(row: &Row) -> Result<Transaction, Error> {
+        Ok(Transaction {
+            id: row.get(0)?,
+            amount: row.get(1)?,
+            date: row.get(2)?,
+            description: row.get(3)?,
+            category_id: row.get(4)?,
+            user_id: row.get(5)?,
+        })
+    }
 }
 
 struct SavingsRatio {
@@ -576,7 +562,7 @@ struct SavingsRatio {
     ratio: f64,
 }
 
-impl Model for SavingsRatio {
+impl Model<SavingsRatio> for SavingsRatio {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection
             .execute(
@@ -590,6 +576,16 @@ impl Model for SavingsRatio {
 
         Ok(())
     }
+
+    fn map_row(row: &Row) -> Result<SavingsRatio, Error> {
+        let transaction_id = row.get(0)?;
+        let ratio = row.get(1)?;
+
+        Ok(SavingsRatio {
+            transaction_id,
+            ratio,
+        })
+    }
 }
 
 struct RecurringTransaction {
@@ -599,7 +595,7 @@ struct RecurringTransaction {
     frequency: i64,
 }
 
-impl Model for RecurringTransaction {
+impl Model<RecurringTransaction> for RecurringTransaction {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection
                 .execute(
@@ -614,6 +610,20 @@ impl Model for RecurringTransaction {
                 )?;
 
         Ok(())
+    }
+
+    fn map_row(row: &Row) -> Result<RecurringTransaction, Error> {
+        let transaction_id = row.get(0)?;
+        let start_date = row.get(1)?;
+        let end_date = row.get(2)?;
+        let frequency = row.get(3)?;
+
+        Ok(RecurringTransaction {
+            transaction_id,
+            start_date,
+            end_date,
+            frequency,
+        })
     }
 }
 
