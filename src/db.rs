@@ -15,8 +15,8 @@ pub enum DbError {
     DuplicatePassword,
     /// The specified field was empty when it is not allowed. The client should try again after replacing the field with a non-empty string.
     EmptyField(String),
-    /// A query was given an invalid foreign key. The client should try again with a valid foreign key.
-    InvalidForeignKey(String),
+    /// A query was given an invalid foreign key. The client should check that the ids are valid.
+    InvalidForeignKey,
     /// An invalid date was provided (e.g., a future date on a transaction). The client should try again with a date no later than today.
     InvalidDate,
     /// The row could not be found with the provided info (e.g., id). The client should try again with different parameters.
@@ -28,6 +28,10 @@ pub enum DbError {
 impl From<Error> for DbError {
     fn from(error: Error) -> Self {
         match error {
+            // Code 787 occurs when a FOREIGN KEY constraint failed.
+            Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
+                DbError::InvalidForeignKey
+            }
             // Code 2067 occurs when a UNIQUE constraint failed.
             Error::SqliteFailure(sql_error, Some(ref desc))
                 if sql_error.extended_code == 2067 && desc.contains("email") =>
@@ -231,17 +235,10 @@ impl Category {
             return Err(DbError::EmptyField(name));
         }
 
-        connection
-            .execute(
-                "INSERT INTO category (name, user_id) VALUES (?1, ?2)",
-                (&name, user_id),
-            )
-            .map_err(|e| match e {
-                Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
-                    DbError::InvalidForeignKey("user_id".to_string())
-                }
-                _ => DbError::SqlError(e),
-            })?;
+        connection.execute(
+            "INSERT INTO category (name, user_id) VALUES (?1, ?2)",
+            (&name, user_id),
+        )?;
 
         let category_id = connection.last_insert_rowid();
 
@@ -445,13 +442,7 @@ impl Transaction {
             .execute(
                 "INSERT INTO \"transaction\" (amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
                 (amount, &date, &description, category_id, user_id),
-            )
-            .map_err(|e| match e {
-                Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
-                    DbError::InvalidForeignKey("category_id or user_id".to_string())
-                }
-                _ => DbError::SqlError(e),
-            })?;
+            )?;
 
         let transaction_id = connection.last_insert_rowid();
 
@@ -770,7 +761,7 @@ mod tests {
 
         let maybe_category = Category::insert("Foo".to_string(), 42, &conn);
 
-        assert!(matches!(maybe_category, Err(DbError::InvalidForeignKey(_))));
+        assert_eq!(maybe_category, Err(DbError::InvalidForeignKey));
     }
 
     #[test]
@@ -870,10 +861,7 @@ mod tests {
             &conn,
         );
 
-        assert!(matches!(
-            maybe_transaction,
-            Err(DbError::InvalidForeignKey(_))
-        ));
+        assert_eq!(maybe_transaction, Err(DbError::InvalidForeignKey));
     }
 
     #[test]
@@ -896,10 +884,7 @@ mod tests {
             &conn,
         );
 
-        assert!(matches!(
-            maybe_transaction,
-            Err(DbError::InvalidForeignKey(_))
-        ));
+        assert_eq!(maybe_transaction, Err(DbError::InvalidForeignKey));
     }
 
     #[test]
