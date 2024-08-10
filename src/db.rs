@@ -83,6 +83,29 @@ pub struct User {
     password: String,
 }
 
+impl Model<User> for User {
+    fn create_table(connection: &Connection) -> Result<(), DbError> {
+        connection.execute(
+            "CREATE TABLE user (
+                    id INTEGER PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    password TEXT UNIQUE NOT NULL
+                    )",
+            (),
+        )?;
+
+        Ok(())
+    }
+
+    fn map_row(row: &Row) -> Result<User, Error> {
+        Ok(User {
+            id: row.get(0)?,
+            email: row.get(1)?,
+            password: row.get(2)?,
+        })
+    }
+}
+
 impl User {
     pub fn id(&self) -> DatabaseID {
         self.id
@@ -163,29 +186,6 @@ impl User {
     }
 }
 
-impl Model<User> for User {
-    fn create_table(connection: &Connection) -> Result<(), DbError> {
-        connection.execute(
-            "CREATE TABLE user (
-                    id INTEGER PRIMARY KEY,
-                    email TEXT UNIQUE NOT NULL,
-                    password TEXT UNIQUE NOT NULL
-                    )",
-            (),
-        )?;
-
-        Ok(())
-    }
-
-    fn map_row(row: &Row) -> Result<User, Error> {
-        Ok(User {
-            id: row.get(0)?,
-            email: row.get(1)?,
-            password: row.get(2)?,
-        })
-    }
-}
-
 /// A category for expenses and income, e.g., 'Groceries', 'Eating Out', 'Wages'.
 ///
 /// New instances should be created through `Category::insert(...)`.
@@ -194,6 +194,30 @@ pub struct Category {
     id: DatabaseID,
     name: String,
     user_id: DatabaseID,
+}
+
+impl Model<Category> for Category {
+    fn create_table(connection: &Connection) -> Result<(), DbError> {
+        connection.execute(
+            "CREATE TABLE category (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
+                )",
+            (),
+        )?;
+
+        Ok(())
+    }
+
+    fn map_row(row: &Row) -> Result<Category, Error> {
+        Ok(Category {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            user_id: row.get(2)?,
+        })
+    }
 }
 
 impl Category {
@@ -326,30 +350,6 @@ impl Category {
     }
 }
 
-impl Model<Category> for Category {
-    fn create_table(connection: &Connection) -> Result<(), DbError> {
-        connection.execute(
-            "CREATE TABLE category (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                user_id INTEGER NOT NULL,
-                FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
-                )",
-            (),
-        )?;
-
-        Ok(())
-    }
-
-    fn map_row(row: &Row) -> Result<Category, Error> {
-        Ok(Category {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            user_id: row.get(2)?,
-        })
-    }
-}
-
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
 /// New instances should be created through `Transaction::insert(...)`.
@@ -361,6 +361,38 @@ pub struct Transaction {
     description: String,
     category_id: DatabaseID,
     user_id: DatabaseID,
+}
+
+impl Model<Transaction> for Transaction {
+    fn create_table(connection: &Connection) -> Result<(), DbError> {
+        connection
+                .execute(
+                    "CREATE TABLE \"transaction\" (
+                            id INTEGER PRIMARY KEY,
+                            amount REAL NOT NULL,
+                            date TEXT NOT NULL,
+                            description TEXT NOT NULL,
+                            category_id INTEGER,
+                            user_id INTEGER NOT NULL,
+                            FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE CASCADE,
+                            FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
+                            )",
+                    (),
+                )?;
+
+        Ok(())
+    }
+
+    fn map_row(row: &Row) -> Result<Transaction, Error> {
+        Ok(Transaction {
+            id: row.get(0)?,
+            amount: row.get(1)?,
+            date: row.get(2)?,
+            description: row.get(3)?,
+            category_id: row.get(4)?,
+            user_id: row.get(5)?,
+        })
+    }
 }
 
 impl Transaction {
@@ -531,38 +563,6 @@ impl Transaction {
     }
 }
 
-impl Model<Transaction> for Transaction {
-    fn create_table(connection: &Connection) -> Result<(), DbError> {
-        connection
-                .execute(
-                    "CREATE TABLE \"transaction\" (
-                            id INTEGER PRIMARY KEY,
-                            amount REAL NOT NULL,
-                            date TEXT NOT NULL,
-                            description TEXT NOT NULL,
-                            category_id INTEGER,
-                            user_id INTEGER NOT NULL,
-                            FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE CASCADE,
-                            FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
-                            )",
-                    (),
-                )?;
-
-        Ok(())
-    }
-
-    fn map_row(row: &Row) -> Result<Transaction, Error> {
-        Ok(Transaction {
-            id: row.get(0)?,
-            amount: row.get(1)?,
-            date: row.get(2)?,
-            description: row.get(3)?,
-            category_id: row.get(4)?,
-            user_id: row.get(5)?,
-        })
-    }
-}
-
 /// The amount of an income transaction that should counted as savings.
 ///
 /// This object must be attached to an existing transaction and cannot exist independently.
@@ -572,6 +572,32 @@ impl Model<Transaction> for Transaction {
 pub struct SavingsRatio {
     transaction_id: DatabaseID,
     ratio: f64,
+}
+
+impl Model<SavingsRatio> for SavingsRatio {
+    fn create_table(connection: &Connection) -> Result<(), DbError> {
+        connection
+            .execute(
+                "CREATE TABLE savings_ratio (
+                        transaction_id INTEGER PRIMARY KEY,
+                        ratio REAL NOT NULL,
+                        FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
+                        )",
+                (),
+            )?;
+
+        Ok(())
+    }
+
+    fn map_row(row: &Row) -> Result<SavingsRatio, Error> {
+        let transaction_id = row.get(0)?;
+        let ratio = row.get(1)?;
+
+        Ok(SavingsRatio {
+            transaction_id,
+            ratio,
+        })
+    }
 }
 
 impl SavingsRatio {
@@ -614,32 +640,6 @@ impl SavingsRatio {
             "INSERT INTO savings_ratio (transaction_id, ratio) VALUES (?1, ?2)",
             (transaction_id, ratio),
         )?;
-
-        Ok(SavingsRatio {
-            transaction_id,
-            ratio,
-        })
-    }
-}
-
-impl Model<SavingsRatio> for SavingsRatio {
-    fn create_table(connection: &Connection) -> Result<(), DbError> {
-        connection
-            .execute(
-                "CREATE TABLE savings_ratio (
-                        transaction_id INTEGER PRIMARY KEY,
-                        ratio REAL NOT NULL,
-                        FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
-                        )",
-                (),
-            )?;
-
-        Ok(())
-    }
-
-    fn map_row(row: &Row) -> Result<SavingsRatio, Error> {
-        let transaction_id = row.get(0)?;
-        let ratio = row.get(1)?;
 
         Ok(SavingsRatio {
             transaction_id,
@@ -700,6 +700,31 @@ pub struct RecurringTransaction {
     transaction_id: DatabaseID,
     end_date: Option<NaiveDate>,
     frequency: Frequency,
+}
+
+impl Model<RecurringTransaction> for RecurringTransaction {
+    fn create_table(connection: &Connection) -> Result<(), DbError> {
+        connection
+            .execute(
+                "CREATE TABLE recurring_transaction (
+                        transaction_id INTEGER PRIMARY KEY,
+                        end_date TEXT NOT NULL,
+                        frequency INTEGER NOT NULL,
+                        FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
+                        )",
+                (),
+            )?;
+
+        Ok(())
+    }
+
+    fn map_row(row: &Row) -> Result<RecurringTransaction, Error> {
+        Ok(RecurringTransaction {
+            transaction_id: row.get(0)?,
+            end_date: row.get(1)?,
+            frequency: row.get(2)?,
+        })
+    }
 }
 
 impl RecurringTransaction {
@@ -764,31 +789,6 @@ impl RecurringTransaction {
             transaction_id: transaction.id(),
             end_date,
             frequency,
-        })
-    }
-}
-
-impl Model<RecurringTransaction> for RecurringTransaction {
-    fn create_table(connection: &Connection) -> Result<(), DbError> {
-        connection
-            .execute(
-                "CREATE TABLE recurring_transaction (
-                        transaction_id INTEGER PRIMARY KEY,
-                        end_date TEXT NOT NULL,
-                        frequency INTEGER NOT NULL,
-                        FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE
-                        )",
-                (),
-            )?;
-
-        Ok(())
-    }
-
-    fn map_row(row: &Row) -> Result<RecurringTransaction, Error> {
-        Ok(RecurringTransaction {
-            transaction_id: row.get(0)?,
-            end_date: row.get(1)?,
-            frequency: row.get(2)?,
         })
     }
 }
