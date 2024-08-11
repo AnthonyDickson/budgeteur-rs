@@ -68,7 +68,85 @@ pub trait Model<T> {
     ///
     /// # Errors
     /// Returns an error if a row item cannot be converted into the corresponding rust type, or if an invalid column index was used.
-    fn map_row(row: &Row) -> Result<T, Error>;
+    fn map_row(row: &Row) -> Result<T, Error> {
+        Self::map_row_with_offset(row, 0)
+    }
+
+    /// Convert a row into a concrete type.
+    ///
+    /// The `offset` indicates which column the row should be read from.
+    /// This is useful in cases where tables have been joined and you want to construct two different types from the one query.
+    ///
+    /// **Note:** This function expects that the row object contains all the table columns in the order they were defined.
+    ///
+    /// # Examples
+    /// ```
+    /// use rusqlite::{Connection, Error, Row};
+    ///
+    /// use backrooms_rs::db::{DbError, Model};
+    ///
+    /// struct Foo {
+    ///     id: i64,
+    ///     desc: String
+    /// }
+    ///
+    /// impl Model<Foo> for Foo {
+    ///     fn create_table(connection: &Connection) -> Result<(), DbError> {
+    ///         connection.execute(
+    ///             "CREATE TABLE bar (id INTEGER PRIMARY KEY, desc TEXT NOT NULL)",
+    ///             (),
+    ///         )?;
+    ///
+    ///         Ok(())
+    ///     }
+    ///
+    ///     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Foo, Error> {
+    ///         Ok(Foo {
+    ///             id: row.get(offset)?,
+    ///             desc: row.get(offset + 1)?,
+    ///         })
+    ///     }
+    /// }
+    ///
+    /// struct Bar {
+    ///     id: i64,
+    ///     desc: String
+    /// }
+    ///
+    /// impl Model<Bar> for Bar {
+    ///     fn create_table(connection: &Connection) -> Result<(), DbError> {
+    ///         connection.execute(
+    ///             "CREATE TABLE bar (id INTEGER PRIMARY KEY, desc TEXT NOT NULL)",
+    ///             (),
+    ///         )?;
+    ///
+    ///         Ok(())
+    ///     }
+    ///
+    ///     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Bar, Error> {
+    ///         Ok(Bar {
+    ///             id: row.get(offset)?,
+    ///             desc: row.get(offset + 1)?,
+    ///         })
+    ///     }
+    /// }
+    ///
+    /// fn example(conn: &Connection) -> Result<(Foo, Bar), DbError> {
+    ///     conn.
+    ///         prepare("SELECT l.id, l.desc, r.id, r.desc FROM foo l INNER JOIN bar r ON l.id = r.foo_id WHERE l.id = :id")?
+    ///         .query_row(&[(":id", &1)], |row| {
+    ///             let foo = Foo::map_row(row)?;
+    ///             let bar = Bar::map_row_with_offset(row, 2)?;
+    ///
+    ///             Ok((foo, bar))
+    ///         })
+    ///         .map_err(|e| e.into())
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    /// Returns an error if a row item cannot be converted into the corresponding rust type, or if an invalid column index was used.
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<T, Error>;
 }
 
 type DatabaseID = i64;
@@ -97,11 +175,11 @@ impl Model<User> for User {
         Ok(())
     }
 
-    fn map_row(row: &Row) -> Result<User, Error> {
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<User, Error> {
         Ok(User {
-            id: row.get(0)?,
-            email: row.get(1)?,
-            password: row.get(2)?,
+            id: row.get(offset)?,
+            email: row.get(offset + 1)?,
+            password: row.get(offset + 2)?,
         })
     }
 }
@@ -176,13 +254,11 @@ impl User {
     /// # Panics
     ///
     /// Panics if there are SQL related errors.
-    pub fn select_by_email(email: &str, db_connection: &Connection) -> Result<User, DbError> {
-        let mut stmt =
-            db_connection.prepare("SELECT id, email, password FROM user WHERE email = :email")?;
-
-        let user = stmt.query_row(&[(":email", &email)], User::map_row)?;
-
-        Ok(user)
+    pub fn select_by_email(email: &str, connection: &Connection) -> Result<User, DbError> {
+        connection
+            .prepare("SELECT id, email, password FROM user WHERE email = :email")?
+            .query_row(&[(":email", &email)], User::map_row)
+            .map_err(|e| e.into())
     }
 }
 
@@ -211,11 +287,11 @@ impl Model<Category> for Category {
         Ok(())
     }
 
-    fn map_row(row: &Row) -> Result<Category, Error> {
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Category, Error> {
         Ok(Category {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            user_id: row.get(2)?,
+            id: row.get(offset)?,
+            name: row.get(offset + 1)?,
+            user_id: row.get(offset + 2)?,
         })
     }
 }
@@ -383,14 +459,14 @@ impl Model<Transaction> for Transaction {
         Ok(())
     }
 
-    fn map_row(row: &Row) -> Result<Transaction, Error> {
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Transaction, Error> {
         Ok(Transaction {
-            id: row.get(0)?,
-            amount: row.get(1)?,
-            date: row.get(2)?,
-            description: row.get(3)?,
-            category_id: row.get(4)?,
-            user_id: row.get(5)?,
+            id: row.get(offset)?,
+            amount: row.get(offset + 1)?,
+            date: row.get(offset + 2)?,
+            description: row.get(offset + 3)?,
+            category_id: row.get(offset + 4)?,
+            user_id: row.get(offset + 5)?,
         })
     }
 }
@@ -589,13 +665,10 @@ impl Model<SavingsRatio> for SavingsRatio {
         Ok(())
     }
 
-    fn map_row(row: &Row) -> Result<SavingsRatio, Error> {
-        let transaction_id = row.get(0)?;
-        let ratio = row.get(1)?;
-
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<SavingsRatio, Error> {
         Ok(SavingsRatio {
-            transaction_id,
-            ratio,
+            transaction_id: row.get(offset)?,
+            ratio: row.get(offset + 1)?,
         })
     }
 }
@@ -718,11 +791,11 @@ impl Model<RecurringTransaction> for RecurringTransaction {
         Ok(())
     }
 
-    fn map_row(row: &Row) -> Result<RecurringTransaction, Error> {
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<RecurringTransaction, Error> {
         Ok(RecurringTransaction {
-            transaction_id: row.get(0)?,
-            end_date: row.get(1)?,
-            frequency: row.get(2)?,
+            transaction_id: row.get(offset)?,
+            end_date: row.get(offset + 1)?,
+            frequency: row.get(offset + 2)?,
         })
     }
 }
@@ -808,6 +881,28 @@ pub fn initialize(connection: &Connection) -> Result<(), DbError> {
     Ok(())
 }
 
+// TODO: Separate types for recurring schedule (current RecurringTransaction type) and join result row of transaction and recurring schedule?
+pub fn select_recurring_transactions_by_user(
+    user: &User,
+    connection: &Connection,
+) -> Result<Vec<(Transaction, RecurringTransaction)>, DbError> {
+    connection
+        .prepare(
+            "SELECT l.id, l.amount, l.date, l.description, l.category_id, l.user_id, r.transaction_id, r.end_date, r.frequency
+            FROM \"transaction\" l
+            INNER JOIN recurring_transaction r ON r.transaction_id = l.id
+            WHERE l.user_id = :user_id;",
+        )?
+        .query_and_then(&[(":user_id", &user.id())], |row| {
+            let transaction = Transaction::map_row(row)?;
+            let recurring_transaction = RecurringTransaction::map_row_with_offset(row, 6)?;
+
+            Ok((transaction, recurring_transaction))
+        })?
+        .map(|item| item.map_err(DbError::SqlError))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::f64::consts::PI;
@@ -817,7 +912,7 @@ mod tests {
 
     use crate::db::{initialize, Category, DbError, SavingsRatio, Transaction, User};
 
-    use super::{Frequency, RecurringTransaction};
+    use super::{select_recurring_transactions_by_user, Frequency, RecurringTransaction};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1310,5 +1405,46 @@ mod tests {
             ),
             Err(DbError::InvalidDate)
         );
+    }
+
+    #[test]
+    fn select_recurring_transactions_succeeds() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let inserted_transaction = Transaction::insert(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            user.id(),
+            &conn,
+        )
+        .unwrap();
+
+        let end_date = inserted_transaction
+            .date()
+            .checked_add_months(Months::new(3));
+
+        let inserted_recurring_transction =
+            RecurringTransaction::insert(&inserted_transaction, end_date, Frequency::Weekly, &conn)
+                .unwrap();
+
+        let expected = vec![(inserted_transaction, inserted_recurring_transction)];
+
+        let results = select_recurring_transactions_by_user(&user, &conn).unwrap();
+
+        assert_eq!(results, expected);
+    }
+
+    #[test]
+    fn select_recurring_transactions_returns_empty_list() {
+        let conn = init_db();
+        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+
+        let expected = vec![];
+        let results = select_recurring_transactions_by_user(&user, &conn).unwrap();
+
+        assert_eq!(results, expected);
     }
 }
