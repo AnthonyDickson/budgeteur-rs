@@ -149,7 +149,7 @@ pub trait Model<T> {
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<T, Error>;
 }
 
-type DatabaseID = i64;
+pub type DatabaseID = i64;
 
 /// A user of the application.
 ///
@@ -265,7 +265,7 @@ impl User {
 /// A category for expenses and income, e.g., 'Groceries', 'Eating Out', 'Wages'.
 ///
 /// New instances should be created through `Category::insert(...)`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Category {
     id: DatabaseID,
     name: String,
@@ -429,7 +429,7 @@ impl Category {
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
 /// New instances should be created through `Transaction::insert(...)`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Transaction {
     id: DatabaseID,
     amount: f64,

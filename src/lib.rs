@@ -1,13 +1,15 @@
 use std::{env, env::VarError, time::Duration};
 
+use auth::Claims;
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use axum_server::Handle;
+use db::{Category, DatabaseID};
 use serde_json::json;
 use tokio::signal;
 
@@ -15,7 +17,7 @@ pub use config::AppConfig;
 
 use crate::{
     auth::{hash_password, Credentials},
-    db::User,
+    db::{DbError, Transaction, User},
 };
 
 pub mod auth;
@@ -30,6 +32,10 @@ pub fn build_router() -> Router<AppConfig> {
         .route("/user", post(create_user))
         .route("/sign_in", post(auth::sign_in))
         .route("/protected", get(services::hello))
+        .route("/category", post(create_category))
+        .route("/category/:category_id", get(get_category))
+        .route("/transaction", post(create_transaction))
+        .route("/transaction/:transaction_id", get(get_transaction))
 }
 
 /// Get a port number from the environment variable `env_key` if set, otherwise return `default_port`.
@@ -123,6 +129,51 @@ pub async fn graceful_shutdown(handle: Handle) {
     }
 }
 
+enum AppError {
+    InternalError,
+    UserCreation(String),
+    /// The requested resource was not found. The client should check that the parameters (e.g., ID) are correct and that the resource has been created.
+    NotFound,
+    ///
+    DatabaseError(DbError),
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let (status, error_message) = match self {
+            AppError::InternalError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            ),
+            AppError::UserCreation(description) => (StatusCode::OK, description),
+            AppError::DatabaseError(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Internal server error: {e:?}"),
+            ),
+            AppError::NotFound => (
+                StatusCode::NOT_FOUND,
+                "The requested resource could not be found.".to_string(),
+            ),
+        };
+
+        let body = Json(json!({
+            "error": error_message,
+        }));
+
+        (status, body).into_response()
+    }
+}
+
+impl From<DbError> for AppError {
+    fn from(e: DbError) -> Self {
+        tracing::error!("{e:?}");
+
+        AppError::DatabaseError(e)
+    }
+}
+
+// TODO: Use StatusCode::OK for routes that create a resource and also include the resource in the response.
+
 async fn create_user(
     State(state): State<AppConfig>,
     Json(user_data): Json<Credentials>,
@@ -144,40 +195,115 @@ async fn create_user(
         .into_response()
 }
 
-enum AppError {
-    InternalError,
-    UserCreation(String),
+/// A route handler for creating a new category.
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+async fn create_category(
+    State(state): State<AppConfig>,
+    claims: Claims,
+    Json(category_data): Json<Category>,
+) -> impl IntoResponse {
+    let connection_mutex = state.db_connection();
+    let connection = connection_mutex.lock().unwrap();
+
+    User::select_by_email(&claims.email, &connection)
+        .and_then(|user| Category::insert(category_data.name().to_string(), user.id(), &connection))
+        .map(|category| (StatusCode::CREATED, Json(category)))
+        .map_err(AppError::DatabaseError)
 }
 
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let (status, error_message) = match self {
-            AppError::InternalError => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            ),
-            AppError::UserCreation(description) => (StatusCode::OK, description),
-        };
+/// A route handler for getting a category by its database ID.
+///
+/// This function will return the status code 404 if the requested resource does not exist (e.g., not created yet).
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+async fn get_category(
+    State(state): State<AppConfig>,
+    claims: Claims,
+    Path(category_id): Path<DatabaseID>,
+) -> impl IntoResponse {
+    let connection_mutex = state.db_connection();
+    let connection = connection_mutex.lock().unwrap();
 
-        let body = Json(json!({
-            "error": error_message,
-        }));
+    Category::select_by_id(category_id, &connection)
+        .map_err(AppError::DatabaseError)
+        .and_then(|category| {
+            if User::select_by_email(&claims.email, &connection)?.id() == category.user_id() {
+                Ok(category)
+            } else {
+                // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
+                Err(AppError::NotFound)
+            }
+        })
+        .map(|category| (StatusCode::OK, Json(category)))
+}
 
-        (status, body).into_response()
-    }
+/// A route handler for creating a new transaction.
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+async fn create_transaction(
+    State(state): State<AppConfig>,
+    _: Claims,
+    Json(transaction_data): Json<Transaction>,
+) -> impl IntoResponse {
+    Transaction::insert(
+        transaction_data.amount(),
+        *transaction_data.date(),
+        transaction_data.description().to_string(),
+        transaction_data.category_id(),
+        transaction_data.user_id(),
+        &state.db_connection().lock().unwrap(),
+    )
+    .map(|transaction| (StatusCode::CREATED, Json(transaction)))
+    .map_err(AppError::DatabaseError)
+}
+
+/// A route handler for getting a transaction by its database ID.
+///
+/// This function will return the status code 404 if the requested resource does not exist (e.g., not created yet).
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+async fn get_transaction(
+    State(state): State<AppConfig>,
+    claims: Claims,
+    Path(transaction_id): Path<DatabaseID>,
+) -> impl IntoResponse {
+    let connection_mutex = state.db_connection();
+    let connection = connection_mutex.lock().unwrap();
+
+    Transaction::select_by_id(transaction_id, &connection)
+        .map_err(AppError::DatabaseError)
+        .and_then(|transaction| {
+            if User::select_by_email(&claims.email, &connection)?.id() == transaction.user_id() {
+                Ok(transaction)
+            } else {
+                // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
+                Err(AppError::NotFound)
+            }
+        })
+        .map(|transaction| (StatusCode::OK, Json(transaction)))
 }
 
 #[cfg(test)]
 mod tests {
     use axum::{http::StatusCode, routing::post, Router};
     use axum_test::TestServer;
+    use chrono::Utc;
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::auth::verify_password;
     use crate::{
-        create_user,
-        db::{initialize, User},
+        auth::verify_password,
+        build_router, create_user,
+        db::{initialize, Category, Transaction, User},
         AppConfig,
     };
 
@@ -215,4 +341,256 @@ mod tests {
         assert_eq!(user.email(), email);
         assert!(verify_password(password, user.password()).unwrap());
     }
+
+    async fn create_app_with_user() -> (TestServer, User, String) {
+        let app = build_router().with_state(get_test_app_config());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let email = "test@test.com";
+        let password = "hunter2";
+
+        let response = server
+            .post("/user")
+            .content_type("application/json")
+            .json(&json!({
+                "email": email,
+                "password": password
+            }))
+            .await;
+
+        response.assert_status(StatusCode::CREATED);
+
+        let user = response.json::<User>();
+
+        let response = server
+            .post("/sign_in")
+            .content_type("application/json")
+            .json(&json!({
+                "email": &user.email(),
+                "password": password,
+            }))
+            .await;
+
+        response.assert_status_ok();
+        let token = response.json::<String>();
+
+        (server, user, token)
+    }
+
+    #[tokio::test]
+    async fn create_category() {
+        let (server, user, token) = create_app_with_user().await;
+
+        let name = "Foo";
+
+        let response = server
+            .post("/category")
+            .authorization_bearer(token)
+            .content_type("application/json")
+            .json(&json!({
+                "id": 0,
+                "name": name,
+                "user_id": user.id(),
+            }))
+            .await;
+
+        response.assert_status(StatusCode::CREATED);
+
+        let category = response.json::<Category>();
+
+        assert_eq!(category.name(), name);
+        assert_eq!(category.user_id(), user.id());
+    }
+
+    async fn create_app_with_user_and_category() -> (TestServer, User, String, Category) {
+        let (server, user, token) = create_app_with_user().await;
+
+        let category = server
+            .post("/category")
+            .authorization_bearer(&token)
+            .content_type("application/json")
+            .json(&json!({
+                "id": 0,
+                "name": "foo",
+                "user_id": user.id(),
+            }))
+            .await
+            .json::<Category>();
+
+        (server, user, token, category)
+    }
+
+    #[tokio::test]
+    async fn get_category() {
+        let (server, _, token, category) = create_app_with_user_and_category().await;
+
+        let response = server
+            .get(&format!("/category/{}", category.id()))
+            .authorization_bearer(token)
+            .await;
+
+        response.assert_status_ok();
+
+        let selected_category = response.json::<Category>();
+
+        assert_eq!(selected_category, category);
+    }
+
+    #[tokio::test]
+    async fn get_category_fails_on_wrong_user() {
+        let (server, _, _, category) = create_app_with_user_and_category().await;
+
+        let email = "test2@test.com";
+        let password = "hunter3";
+
+        let user = server
+            .post("/user")
+            .content_type("application/json")
+            .json(&json!({
+                "email": email,
+                "password": password
+            }))
+            .await
+            .json::<User>();
+
+        let token = server
+            .post("/sign_in")
+            .content_type("application/json")
+            .json(&json!({
+                "email": user.email(),
+                "password": password
+            }))
+            .await
+            .json::<String>();
+
+        server
+            .get(&format!("/category/{}", category.id()))
+            .authorization_bearer(token)
+            .await
+            .assert_status_not_found();
+    }
+
+    #[tokio::test]
+    async fn create_transaction() {
+        let (server, user, token, category) = create_app_with_user_and_category().await;
+
+        let amount = -10.0;
+        let date = Utc::now().date_naive();
+        let description = "A thingymajig";
+
+        let response = server
+            .post("/transaction")
+            .authorization_bearer(token)
+            .content_type("application/json")
+            .json(&json!({
+                "id": 0,
+                "amount": amount,
+                "date": date,
+                "description": description,
+                "category_id": category.id(),
+                "user_id": user.id(),
+            }))
+            .await;
+
+        response.assert_status(StatusCode::CREATED);
+
+        let transaction = response.json::<Transaction>();
+
+        assert_eq!(transaction.amount(), amount);
+        assert_eq!(*transaction.date(), date);
+        assert_eq!(transaction.description(), description);
+        assert_eq!(transaction.category_id(), category.id());
+        assert_eq!(transaction.user_id(), user.id());
+    }
+
+    #[tokio::test]
+    async fn get_transaction() {
+        let (server, user, token, category) = create_app_with_user_and_category().await;
+
+        let amount = -10.0;
+        let date = Utc::now().date_naive();
+        let description = "A thingymajig";
+
+        let inserted_transaction = server
+            .post("/transaction")
+            .authorization_bearer(&token)
+            .content_type("application/json")
+            .json(&json!({
+                "id": 0,
+                "amount": amount,
+                "date": date,
+                "description": description,
+                "category_id": category.id(),
+                "user_id": user.id(),
+            }))
+            .await
+            .json::<Transaction>();
+
+        let response = server
+            .get(&format!("/transaction/{}", inserted_transaction.id()))
+            .authorization_bearer(token)
+            .await;
+
+        response.assert_status_ok();
+
+        let selected_transaction = response.json::<Transaction>();
+
+        assert_eq!(selected_transaction, inserted_transaction);
+    }
+
+    #[tokio::test]
+    async fn get_transaction_fails_on_wrong_user() {
+        let (server, user, token, category) = create_app_with_user_and_category().await;
+
+        let amount = -10.0;
+        let date = Utc::now().date_naive();
+        let description = "A thingymajig";
+
+        let inserted_transaction = server
+            .post("/transaction")
+            .authorization_bearer(&token)
+            .content_type("application/json")
+            .json(&json!({
+                "id": 0,
+                "amount": amount,
+                "date": date,
+                "description": description,
+                "category_id": category.id(),
+                "user_id": user.id(),
+            }))
+            .await
+            .json::<Transaction>();
+
+        let email = "test2@test.com";
+        let password = "hunter3";
+
+        let user = server
+            .post("/user")
+            .content_type("application/json")
+            .json(&json!({
+                "email": email,
+                "password": password
+            }))
+            .await
+            .json::<User>();
+
+        let token = server
+            .post("/sign_in")
+            .content_type("application/json")
+            .json(&json!({
+                "email": user.email(),
+                "password": password
+            }))
+            .await
+            .json::<String>();
+
+        server
+            .get(&format!("/transaction/{}", inserted_transaction.id()))
+            .authorization_bearer(token)
+            .await
+            .assert_status_not_found();
+    }
+
+    // TODO: Add tests for category and transaction that check for correct behaviour when foreign key constraints are violated. Need to also decide what 'correct behaviour' should be.
 }

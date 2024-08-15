@@ -19,8 +19,10 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::db::User;
-use crate::{config::AppConfig, db::DbError};
+use crate::{
+    config::AppConfig,
+    db::{DbError, User},
+};
 
 // Code in this module is adapted from https://github.com/ezesundayeze/axum--auth and https://github.com/tokio-rs/axum/blob/main/examples/jwt/src/main.rs
 
