@@ -130,11 +130,13 @@ pub async fn graceful_shutdown(handle: Handle) {
 }
 
 enum AppError {
+    /// An error occurred in a third-party library.
     InternalError,
+    /// An error occurred while creating a user.
     UserCreation(String),
     /// The requested resource was not found. The client should check that the parameters (e.g., ID) are correct and that the resource has been created.
     NotFound,
-    ///
+    /// An error occurred whlie accessing the application's database. This may be due to a database constraint being violated (e.g., foreign keys).
     DatabaseError(DbError),
 }
 
@@ -172,12 +174,10 @@ impl From<DbError> for AppError {
     }
 }
 
-// TODO: Use StatusCode::OK for routes that create a resource and also include the resource in the response.
-
 async fn create_user(
     State(state): State<AppConfig>,
     Json(user_data): Json<Credentials>,
-) -> Response {
+) -> impl IntoResponse {
     hash_password(&user_data.password)
         .map_err(|e| {
             tracing::error!("Error hashing password: {e:?}");
@@ -189,10 +189,9 @@ async fn create_user(
                 password_hash,
                 &state.db_connection().lock().unwrap(),
             )
-            .map(|user| (StatusCode::CREATED, Json(user)))
+            .map(|user| (StatusCode::OK, Json(user)))
             .map_err(|e| AppError::UserCreation(format!("Could not create user: {e:?}")))
         })
-        .into_response()
 }
 
 /// A route handler for creating a new category.
@@ -210,7 +209,7 @@ async fn create_category(
 
     User::select_by_email(&claims.email, &connection)
         .and_then(|user| Category::insert(category_data.name().to_string(), user.id(), &connection))
-        .map(|category| (StatusCode::CREATED, Json(category)))
+        .map(|category| (StatusCode::OK, Json(category)))
         .map_err(AppError::DatabaseError)
 }
 
@@ -260,7 +259,7 @@ async fn create_transaction(
         transaction_data.user_id(),
         &state.db_connection().lock().unwrap(),
     )
-    .map(|transaction| (StatusCode::CREATED, Json(transaction)))
+    .map(|transaction| (StatusCode::OK, Json(transaction)))
     .map_err(AppError::DatabaseError)
 }
 
@@ -294,7 +293,7 @@ async fn get_transaction(
 
 #[cfg(test)]
 mod tests {
-    use axum::{http::StatusCode, routing::post, Router};
+    use axum::{routing::post, Router};
     use axum_test::TestServer;
     use chrono::Utc;
     use rusqlite::Connection;
@@ -335,7 +334,7 @@ mod tests {
             }))
             .await;
 
-        response.assert_status(StatusCode::CREATED);
+        response.assert_status_ok();
 
         let user = response.json::<User>();
         assert_eq!(user.email(), email);
@@ -359,7 +358,7 @@ mod tests {
             }))
             .await;
 
-        response.assert_status(StatusCode::CREATED);
+        response.assert_status_ok();
 
         let user = response.json::<User>();
 
@@ -395,7 +394,7 @@ mod tests {
             }))
             .await;
 
-        response.assert_status(StatusCode::CREATED);
+        response.assert_status_ok();
 
         let category = response.json::<Category>();
 
@@ -493,7 +492,7 @@ mod tests {
             }))
             .await;
 
-        response.assert_status(StatusCode::CREATED);
+        response.assert_status_ok();
 
         let transaction = response.json::<Transaction>();
 
