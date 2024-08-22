@@ -16,7 +16,7 @@ use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-use backrooms_rs::{build_router, graceful_shutdown, parse_port_or_default, AppConfig};
+use backend::{build_router, graceful_shutdown, parse_port_or_default, AppConfig};
 
 #[tokio::main]
 async fn main() {
@@ -61,12 +61,13 @@ async fn main() {
     let port = parse_port_or_default("HTTPS_PORT", 3000);
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
+    // TODO: Pass in TLS cert path via CLI.
     let tls_config = RustlsConfig::from_pem_file(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs/cert.pem"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs/key.pem"),
+        PathBuf::from("self_signed_certs/cert.pem"),
+        PathBuf::from("self_signed_certs/key.pem"),
     )
     .await
-    .unwrap();
+    .expect("Could not open TLS certificates.");
 
     let jwt_secret =
         env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set");

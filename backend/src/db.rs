@@ -83,7 +83,7 @@ pub trait Model<T> {
     /// ```
     /// use rusqlite::{Connection, Error, Row};
     ///
-    /// use backrooms_rs::db::{DbError, Model};
+    /// use backend::db::{DbError, Model};
     ///
     /// struct Foo {
     ///     id: i64,
@@ -241,7 +241,7 @@ impl User {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::db::{Model, User};
+    /// use backend::db::{Model, User};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
@@ -318,7 +318,7 @@ impl Category {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::db::{Model, User, Category};
+    /// use backend::db::{Model, User, Category};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
@@ -365,7 +365,7 @@ impl Category {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::db::{Model, User, Category};
+    /// use backend::db::{Model, User, Category};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
@@ -396,7 +396,7 @@ impl Category {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::db::{Model, User, Category};
+    /// use backend::db::{Model, User, Category};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
@@ -505,7 +505,7 @@ impl Transaction {
     /// use chrono::NaiveDate;
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::db::{Category, Model, Transaction, User};
+    /// use backend::db::{Category, Model, Transaction, User};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
@@ -577,7 +577,7 @@ impl Transaction {
     /// use chrono::NaiveDate;
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::db::{Model, User, Category, Transaction};
+    /// use backend::db::{Model, User, Category, Transaction};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
@@ -617,7 +617,7 @@ impl Transaction {
     ///
     /// # Examples
     /// ```
-    /// use backrooms_rs::db::{User, Transaction};
+    /// use backend::db::{User, Transaction};
     ///
     /// fn sum_transaction_amount_for_user(user: &User, conn: &rusqlite::Connection) -> f64 {
     ///     let transactions = Transaction::select_by_user_id(user.id(), conn).unwrap();
@@ -688,7 +688,7 @@ impl SavingsRatio {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::db::{Transaction, SavingsRatio};
+    /// use backend::db::{Transaction, SavingsRatio};
     ///
     /// fn set_savings_ratio(transaction: &Transaction, ratio: f64, connection: &Connection) -> SavingsRatio {
     ///     SavingsRatio::insert(transaction.id(), ratio, connection).unwrap()
@@ -822,7 +822,7 @@ impl RecurringTransaction {
     /// use chrono::Utc;
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::db::{Frequency, Transaction, RecurringTransaction};
+    /// use backend::db::{Frequency, Transaction, RecurringTransaction};
     ///
     /// fn set_recurring(
     ///     transaction: &Transaction,

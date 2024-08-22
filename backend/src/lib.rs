@@ -46,7 +46,7 @@ pub fn build_router() -> Router<AppConfig> {
 /// This function may panic if the environment variable `env_key` cannot be parsed as an integer.
 ///
 /// ```rust,should_panic
-/// use backrooms_rs::parse_port_or_default;
+/// use backend::parse_port_or_default;
 ///
 /// unsafe { std::env::set_var("FOO", "123s"); }
 /// // This will panic!
@@ -57,7 +57,7 @@ pub fn build_router() -> Router<AppConfig> {
 /// # Examples
 ///
 /// ```
-/// use backrooms_rs::parse_port_or_default;
+/// use backend::parse_port_or_default;
 ///
 /// assert_eq!(parse_port_or_default("FOO", 1234), 1234);
 ///

@@ -5,8 +5,8 @@ use std::process::exit;
 
 use rusqlite::Connection;
 
-use backrooms_rs::auth::hash_password;
-use backrooms_rs::db::initialize;
+use backend::auth::hash_password;
+use backend::db::initialize;
 
 /// Create and populate a database for manual testing.
 fn main() -> Result<(), Box<dyn Error>> {
