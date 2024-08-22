@@ -1,9 +1,49 @@
 # backrooms-rs
-A single-user REST API for my budgeting and personal finance web-app.
+Backrooms-rs is a budgeting and personal finance web-app.
 
 This app provides two services:
 * Budgeting: Recording your income and expenses, and tracking savings targets.
 * Personal Finance: Keeping track of your net worth.
 
-The application itself is a REST API, so all interactions will likely be through text commands.
-A web-based front-end application will be built using this API as the back-end.
+The application is separated into a web-based `frontend` and a REST API `backend`.
+
+## Quickstart
+### API
+1.  (First time only) Run the below script to create the test database:
+    ```shell
+    cargo run create_test_db test.db
+    ```
+2.  To start the API server run the following command:
+    ```shell
+    cargo run server
+    ```
+    By default this will serve on port 3000.
+3.  Test that the API is running:
+    ```shell
+    curl -i -X GET https://localhost:3000/api
+    ```
+
+    Example output:
+    ```
+    HTTP/2 418
+    content-length: 0
+    date: Thu, 22 Aug 2024 03:00:58 GMT
+    ```
+
+### Web Server
+1.  (First time only) Add the WebAssembly target:
+    ```shell
+    rustup target add wasm32_unknown-unknown
+    ```
+2.  (First time only) Install trunk:
+    ```shell
+    cargo install --locked trunk
+    ```
+3.  Change directory into the frontend workspace:
+    ```shell
+    cd frontend/
+    ```
+4.  Start the webserver:
+    ```shell
+    trunk serve --open
+    ```
