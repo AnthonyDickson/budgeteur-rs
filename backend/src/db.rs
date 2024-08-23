@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use chrono::{NaiveDate, Utc};
 use common::{DatabaseID, Email, User};
 use rusqlite::{
@@ -7,7 +9,7 @@ use rusqlite::{
 use serde::{Deserialize, Serialize};
 
 /// Errors originating from operations on the app's database.
-#[derive(Debug, PartialEq)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum DbError {
     /// An empty email was given. The client should try again with a non-empty email address.
     EmptyEmail,
@@ -30,6 +32,16 @@ pub enum DbError {
     NotFound,
     /// Wrapper for Sqlite errors not handled by the other enum entries.
     SqlError(Error),
+}
+
+impl Display for DbError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyField(description) => write!(f, "{:?}: {}", self, description),
+            Self::SqlError(inner_error) => write!(f, "{:?}: {}", self, inner_error),
+            other => write!(f, "{:?}", other),
+        }
+    }
 }
 
 impl From<Error> for DbError {
@@ -237,7 +249,6 @@ impl Insert for User {
     }
 }
 
-// TODO: Implement this for Email newtype instead.
 impl SelectBy<&Email> for User {
     type ResultType = User;
 
