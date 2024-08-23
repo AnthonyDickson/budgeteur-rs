@@ -295,20 +295,14 @@ async fn get_transaction(
 }
 
 #[cfg(test)]
-mod tests {
+mod user_tests {
     use axum::{routing::post, Router};
     use axum_test::TestServer;
-    use chrono::Utc;
     use common::{Email, User};
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::{
-        auth::verify_password,
-        build_router, create_user,
-        db::{initialize, Category, Transaction},
-        AppConfig,
-    };
+    use crate::{auth::verify_password, create_user, db::initialize, AppConfig};
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =
@@ -343,6 +337,28 @@ mod tests {
         let user = response.json::<User>();
         assert_eq!(user.email(), &email);
         assert!(verify_password(password, user.password_hash()).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod category_tests {
+    use axum_test::TestServer;
+    use common::User;
+    use rusqlite::Connection;
+    use serde_json::json;
+
+    use crate::{
+        build_router,
+        db::{initialize, Category},
+        AppConfig,
+    };
+
+    fn get_test_app_config() -> AppConfig {
+        let db_connection =
+            Connection::open_in_memory().expect("Could not open database in memory.");
+        initialize(&db_connection).expect("Could not initialize database.");
+
+        AppConfig::new(db_connection, "42".to_string())
     }
 
     async fn create_app_with_user() -> (TestServer, User, String) {
@@ -381,6 +397,24 @@ mod tests {
         (server, user, token)
     }
 
+    async fn create_app_with_user_and_category() -> (TestServer, User, String, Category) {
+        let (server, user, token) = create_app_with_user().await;
+
+        let category = server
+            .post("/category")
+            .authorization_bearer(&token)
+            .content_type("application/json")
+            .json(&json!({
+                "id": 0,
+                "name": "foo",
+                "user_id": user.id(),
+            }))
+            .await
+            .json::<Category>();
+
+        (server, user, token, category)
+    }
+
     #[tokio::test]
     async fn create_category() {
         let (server, user, token) = create_app_with_user().await;
@@ -404,24 +438,6 @@ mod tests {
 
         assert_eq!(category.name(), name);
         assert_eq!(category.user_id(), user.id());
-    }
-
-    async fn create_app_with_user_and_category() -> (TestServer, User, String, Category) {
-        let (server, user, token) = create_app_with_user().await;
-
-        let category = server
-            .post("/category")
-            .authorization_bearer(&token)
-            .content_type("application/json")
-            .json(&json!({
-                "id": 0,
-                "name": "foo",
-                "user_id": user.id(),
-            }))
-            .await
-            .json::<Category>();
-
-        (server, user, token, category)
     }
 
     #[tokio::test]
@@ -472,6 +488,83 @@ mod tests {
             .authorization_bearer(token)
             .await
             .assert_status_not_found();
+    }
+}
+
+#[cfg(test)]
+mod transaction_tests {
+    use axum_test::TestServer;
+    use chrono::Utc;
+    use common::User;
+    use rusqlite::Connection;
+    use serde_json::json;
+
+    use crate::{
+        build_router,
+        db::{initialize, Category, Transaction},
+        AppConfig,
+    };
+
+    fn get_test_app_config() -> AppConfig {
+        let db_connection =
+            Connection::open_in_memory().expect("Could not open database in memory.");
+        initialize(&db_connection).expect("Could not initialize database.");
+
+        AppConfig::new(db_connection, "42".to_string())
+    }
+
+    async fn create_app_with_user() -> (TestServer, User, String) {
+        let app = build_router().with_state(get_test_app_config());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let email = "test@test.com";
+        let password = "hunter2";
+
+        let response = server
+            .post("/user")
+            .content_type("application/json")
+            .json(&json!({
+                "email": email,
+                "password": password
+            }))
+            .await;
+
+        response.assert_status_ok();
+
+        let user = response.json::<User>();
+
+        let response = server
+            .post("/sign_in")
+            .content_type("application/json")
+            .json(&json!({
+                "email": &user.email(),
+                "password": password,
+            }))
+            .await;
+
+        response.assert_status_ok();
+        let token = response.json::<String>();
+
+        (server, user, token)
+    }
+
+    async fn create_app_with_user_and_category() -> (TestServer, User, String, Category) {
+        let (server, user, token) = create_app_with_user().await;
+
+        let category = server
+            .post("/category")
+            .authorization_bearer(&token)
+            .content_type("application/json")
+            .json(&json!({
+                "id": 0,
+                "name": "foo",
+                "user_id": user.id(),
+            }))
+            .await
+            .json::<Category>();
+
+        (server, user, token, category)
     }
 
     #[tokio::test]
