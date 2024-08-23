@@ -5,6 +5,8 @@ edition = "2021"
 default-run = "server"
 
 [dependencies]
+common = { path = "../common" }
+
 axum = "0.7.5"
 axum-extra = { version = "0.9.3", features = ["typed-header"] }
 axum-server = { version = "0.7.1", features = ["tls-rustls"] }

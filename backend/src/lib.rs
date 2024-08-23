@@ -9,7 +9,8 @@ use axum::{
     Json, Router,
 };
 use axum_server::Handle;
-use db::{Category, DatabaseID};
+use common::DatabaseID;
+use db::Category;
 use serde_json::json;
 use tokio::signal;
 

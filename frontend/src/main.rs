@@ -1,7 +1,18 @@
-use yew::{function_component, html, Html};
+use frontend::AppContext;
+use yew::{context::ContextProvider, function_component, html, use_context, use_state, Html};
 
-#[function_component(App)]
-fn app() -> Html {
+#[function_component]
+fn CurrentUser() -> Html {
+    let ctx = use_context::<AppContext>().expect("app context not found");
+
+    match ctx.current_user {
+        Some(user) => html!(<p>{format!("Current User: {}", user.email())}</p>),
+        None => html!(<p>{"Not signed in."}</p>),
+    }
+}
+
+#[function_component]
+fn SignInForm() -> Html {
     html! {
         // Sign-in form template adapted from: https://tailwindui.com/components/application-ui/forms/sign-in-forms, accessed 22/08/2024
         <div class="flex min-h-full flex-col justify-center px-6 py-12 lg:px-8">
@@ -40,6 +51,23 @@ fn app() -> Html {
                   <a href="#" class="font-semibold leading-6 text-indigo-600 hover:text-indigo-500">{"Register here"}</a>
                 </p>
             </div>
+        </div>
+    }
+}
+
+#[function_component]
+fn App() -> Html {
+    let ctx = use_state(|| AppContext {
+        current_user: None,
+        token: None,
+    });
+
+    html! {
+        <div class="container">
+            <ContextProvider<AppContext> context={(*ctx).clone()}>
+                <SignInForm />
+                <CurrentUser />
+            </ContextProvider<AppContext>>
         </div>
     }
 }

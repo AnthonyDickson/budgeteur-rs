@@ -1,4 +1,5 @@
 use chrono::{NaiveDate, Utc};
+use common::DatabaseID;
 use rusqlite::{
     types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput},
     Connection, Error, Row, Transaction as SqlTransaction,
@@ -149,8 +150,6 @@ pub trait Model<T> {
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<T, Error>;
 }
 
-pub type DatabaseID = i64;
-
 /// A user of the application.
 ///
 /// New instances should be created through `User::insert(...)`.
@@ -183,6 +182,8 @@ impl Model<User> for User {
         })
     }
 }
+
+// TODO: Merge db::User into common::User. Move database specific items to a trait and implement that trait here. Try to create generic trait for insert and select operations (generic arguments and return type).
 
 impl User {
     pub fn id(&self) -> DatabaseID {
