@@ -916,20 +916,12 @@ pub fn select_recurring_transactions_by_user(
         .collect()
 }
 
-// TODO: Break up tests and organise by the thing being tested.
 #[cfg(test)]
-mod tests {
-    use std::f64::consts::PI;
-
-    use chrono::{Days, Months, NaiveDate, Utc};
+mod user_tests {
     use common::Email;
     use rusqlite::Connection;
 
-    use crate::db::{
-        initialize, Category, DbError, Insert, SavingsRatio, SelectBy, Transaction, User, UserData,
-    };
-
-    use super::{select_recurring_transactions_by_user, Frequency, RecurringTransaction};
+    use crate::db::{initialize, DbError, Insert, SelectBy, User, UserData};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1068,6 +1060,37 @@ mod tests {
 
         assert_eq!(retrieved_user, test_user);
     }
+}
+
+#[cfg(test)]
+mod category_tests {
+    use common::Email;
+    use rusqlite::Connection;
+
+    use crate::db::{initialize, Category, DbError, User};
+
+    use super::{Insert, UserData};
+
+    fn init_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
+
+    fn create_database_and_insert_test_user() -> (Connection, User) {
+        let conn = init_db();
+
+        let test_user = User::insert(
+            UserData {
+                email: Email::new("foo@bar.baz").unwrap(),
+                password_hash: "hunter2".to_string(),
+            },
+            &conn,
+        )
+        .unwrap();
+
+        (conn, test_user)
+    }
 
     #[test]
     fn create_category() {
@@ -1141,9 +1164,38 @@ mod tests {
 
         assert_eq!(selected_categories, []);
     }
+}
+
+#[cfg(test)]
+mod transaction_tests {
+    use std::f64::consts::PI;
+
+    use chrono::{Days, NaiveDate, Utc};
+    use common::Email;
+    use rusqlite::Connection;
+
+    use crate::db::{initialize, Category, DbError, Transaction, User};
+
+    use super::{Insert, UserData};
+
+    fn init_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
 
     fn create_database_and_insert_test_user_and_category() -> (Connection, User, Category) {
-        let (conn, test_user) = create_database_and_insert_test_user();
+        let conn = init_db();
+
+        let test_user = User::insert(
+            UserData {
+                email: Email::new("foo@bar.baz").unwrap(),
+                password_hash: "hunter2".to_string(),
+            },
+            &conn,
+        )
+        .unwrap();
+
         let category = Category::insert("Food".to_string(), test_user.id(), &conn).unwrap();
         (conn, test_user, category)
     }
@@ -1304,6 +1356,41 @@ mod tests {
 
         assert_eq!(transactions, expected_transactions);
     }
+}
+
+#[cfg(test)]
+mod savings_ratio_tests {
+    use std::f64::consts::PI;
+
+    use chrono::NaiveDate;
+    use common::Email;
+    use rusqlite::Connection;
+
+    use crate::db::{initialize, Category, DbError, SavingsRatio, Transaction, User};
+
+    use super::{Insert, UserData};
+
+    fn init_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
+
+    fn create_database_and_insert_test_user_and_category() -> (Connection, User, Category) {
+        let conn = init_db();
+
+        let test_user = User::insert(
+            UserData {
+                email: Email::new("foo@bar.baz").unwrap(),
+                password_hash: "hunter2".to_string(),
+            },
+            &conn,
+        )
+        .unwrap();
+
+        let category = Category::insert("Food".to_string(), test_user.id(), &conn).unwrap();
+        (conn, test_user, category)
+    }
 
     #[test]
     fn create_savings_ratio() {
@@ -1380,6 +1467,58 @@ mod tests {
         let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
 
         assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
+    }
+}
+
+#[cfg(test)]
+mod recurring_transaction_tests {
+    use std::f64::consts::PI;
+
+    use chrono::{Days, Months, NaiveDate};
+    use common::{Email, User};
+    use rusqlite::Connection;
+
+    use crate::db::{
+        select_recurring_transactions_by_user, DbError, Frequency, RecurringTransaction,
+        Transaction,
+    };
+
+    use super::{initialize, Category, Insert, UserData};
+    fn init_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
+
+    fn create_database_and_insert_test_user() -> (Connection, User) {
+        let conn = init_db();
+
+        let test_user = User::insert(
+            UserData {
+                email: Email::new("foo@bar.baz").unwrap(),
+                password_hash: "hunter2".to_string(),
+            },
+            &conn,
+        )
+        .unwrap();
+
+        (conn, test_user)
+    }
+
+    fn create_database_and_insert_test_user_and_category() -> (Connection, User, Category) {
+        let conn = init_db();
+
+        let test_user = User::insert(
+            UserData {
+                email: Email::new("foo@bar.baz").unwrap(),
+                password_hash: "hunter2".to_string(),
+            },
+            &conn,
+        )
+        .unwrap();
+
+        let category = Category::insert("Food".to_string(), test_user.id(), &conn).unwrap();
+        (conn, test_user, category)
     }
 
     #[test]
