@@ -1,5 +1,7 @@
+use std::ops::Deref;
+
 use chrono::{NaiveDate, Utc};
-use common::DatabaseID;
+use common::{DatabaseID, User};
 use rusqlite::{
     types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput},
     Connection, Error, Row, Transaction as SqlTransaction,
@@ -150,16 +152,6 @@ pub trait Model<T> {
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<T, Error>;
 }
 
-/// A user of the application.
-///
-/// New instances should be created through `User::insert(...)`.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct User {
-    id: DatabaseID,
-    email: String,
-    password: String,
-}
-
 impl Model<User> for User {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection.execute(
@@ -175,27 +167,40 @@ impl Model<User> for User {
     }
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<User, Error> {
-        Ok(User {
-            id: row.get(offset)?,
-            email: row.get(offset + 1)?,
-            password: row.get(offset + 2)?,
-        })
+        let id = row.get(offset)?;
+        let email = row.get(offset + 1)?;
+        let password_hash = row.get(offset + 2)?;
+
+        Ok(User::new(id, email, password_hash))
     }
 }
 
-// TODO: Merge db::User into common::User. Move database specific items to a trait and implement that trait here. Try to create generic trait for insert and select operations (generic arguments and return type).
+// TODO: Implement `Insert` for other model types.
+pub trait Insert {
+    type ParamType;
+    type ResultType;
 
-impl User {
-    pub fn id(&self) -> DatabaseID {
-        self.id
-    }
-    pub fn email(&self) -> &str {
-        &self.email
-    }
-    /// Most likely the hashed password.
-    pub fn password(&self) -> &str {
-        &self.password
-    }
+    fn insert(
+        params: Self::ParamType,
+        connection: &Connection,
+    ) -> Result<Self::ResultType, DbError>;
+}
+
+// TODO: Implement `SelectBy` for other model types.
+pub trait SelectBy<T> {
+    type ResultType;
+
+    fn select(field: T, connection: &Connection) -> Result<Self::ResultType, DbError>;
+}
+
+pub struct UserData {
+    pub email: String,
+    pub password_hash: String,
+}
+
+impl Insert for User {
+    type ParamType = UserData;
+    type ResultType = User;
 
     /// Create a new user in the database.
     ///
@@ -208,33 +213,30 @@ impl User {
     /// - a syntax error in the SQL string,
     /// - the email is already in use, or
     /// - the password hash is not unique.
-    pub fn insert(
-        email: String,
-        password_hash: String,
-        connection: &Connection,
-    ) -> Result<User, DbError> {
+    fn insert(user: Self::ParamType, connection: &Connection) -> Result<Self::ResultType, DbError> {
         // TODO: Check for invalid email format.
-        if email.is_empty() {
+        if user.email.is_empty() {
             return Err(DbError::EmptyEmail);
         }
 
-        if password_hash.is_empty() {
+        if user.password_hash.is_empty() {
             return Err(DbError::EmptyPassword);
         }
 
         connection.execute(
             "INSERT INTO user (email, password) VALUES (?1, ?2)",
-            (&email, &password_hash),
+            (&user.email, &user.password_hash),
         )?;
 
         let id = connection.last_insert_rowid();
 
-        Ok(User {
-            id,
-            email,
-            password: password_hash,
-        })
+        Ok(User::new(id, user.email, user.password_hash))
     }
+}
+
+// TODO: Implement this for Email newtype instead.
+impl<T: Deref<Target = str> + ToSql> SelectBy<&T> for User {
+    type ResultType = User;
 
     /// Get the user from the database that has the specified `email` address or `None` if such user does not exist.
     ///
@@ -242,20 +244,21 @@ impl User {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Model, User};
+    /// use backend::db::{Insert, Model, SelectBy, UserData};
+    /// use common::User;
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
-    /// let inserted_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+    /// let inserted_user = User::insert(UserData{ email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string()}, &conn).unwrap();
     ///
-    /// let selected_user = User::select_by_email(inserted_user.email(), &conn).unwrap();
+    /// let selected_user = User::select(&inserted_user.email().to_string(), &conn).unwrap();
     ///
     /// assert_eq!(inserted_user, selected_user);
     /// ```
     /// # Panics
     ///
     /// Panics if there are SQL related errors.
-    pub fn select_by_email(email: &str, connection: &Connection) -> Result<User, DbError> {
+    fn select(email: &T, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection
             .prepare("SELECT id, email, password FROM user WHERE email = :email")?
             .query_row(&[(":email", &email)], User::map_row)
@@ -319,13 +322,14 @@ impl Category {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Model, User, Category};
+    /// use backend::db::{Model, Category, Insert, UserData};
+    /// use common::User;
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
     ///
-    /// let test_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+    /// let test_user = User::insert(UserData { email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string()}, &conn).unwrap();
     /// let inserted_category = Category::insert("foo".to_string(), test_user.id(), &conn).unwrap();
     ///
     /// assert_eq!(inserted_category.name(), "foo");
@@ -366,12 +370,13 @@ impl Category {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Model, User, Category};
+    /// use backend::db::{Model, Category, Insert, UserData};
+    /// use common::User;
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
-    /// let test_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+    /// let test_user = User::insert(UserData { email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string() }, &conn).unwrap();
     /// let inserted_category = Category::insert("foo".to_string(), test_user.id(), &conn).unwrap();
     ///
     /// let selected_category = Category::select_by_id(inserted_category.id(), &conn).unwrap();
@@ -397,12 +402,13 @@ impl Category {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Model, User, Category};
+    /// use backend::db::{Model, Category, Insert, UserData};
+    /// use common::User;
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
-    /// let test_user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+    /// let test_user = User::insert(UserData { email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string()}, &conn).unwrap();
     /// let inserted_categories = vec![
     ///     Category::insert("foo".to_string(), test_user.id(), &conn).unwrap(),
     ///     Category::insert("bar".to_string(), test_user.id(), &conn).unwrap()
@@ -506,14 +512,15 @@ impl Transaction {
     /// use chrono::NaiveDate;
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Category, Model, Transaction, User};
+    /// use backend::db::{Category, Insert, Model, Transaction, UserData};
+    /// use common::User;
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
     /// Transaction::create_table(&conn).unwrap();
     ///
-    /// let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+    /// let user = User::insert(UserData { email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string() }, &conn).unwrap();
     /// let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
     ///
     /// let transaction = Transaction::insert(
@@ -578,13 +585,14 @@ impl Transaction {
     /// use chrono::NaiveDate;
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Model, User, Category, Transaction};
+    /// use backend::db::{Model, Category, Insert, Transaction, UserData};
+    /// use common::User;
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
     /// Transaction::create_table(&conn).unwrap();
-    /// let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+    /// let user = User::insert(UserData { email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string()}, &conn).unwrap();
     /// let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
     ///
     /// let inserted_transaction = Transaction::insert(
@@ -618,7 +626,8 @@ impl Transaction {
     ///
     /// # Examples
     /// ```
-    /// use backend::db::{User, Transaction};
+    /// use backend::db::Transaction;
+    /// use common::User;
     ///
     /// fn sum_transaction_amount_for_user(user: &User, conn: &rusqlite::Connection) -> f64 {
     ///     let transactions = Transaction::select_by_user_id(user.id(), conn).unwrap();
@@ -911,7 +920,9 @@ mod tests {
     use chrono::{Days, Months, NaiveDate, Utc};
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, DbError, SavingsRatio, Transaction, User};
+    use crate::db::{
+        initialize, Category, DbError, Insert, SavingsRatio, SelectBy, Transaction, User, UserData,
+    };
 
     use super::{select_recurring_transactions_by_user, Frequency, RecurringTransaction};
 
@@ -926,13 +937,20 @@ mod tests {
         let conn = init_db();
 
         let email = "hello@world.com";
-        let password = "hunter2";
+        let password_hash = "hunter2";
 
-        let inserted_user = User::insert(email.to_string(), password.to_string(), &conn).unwrap();
+        let inserted_user = User::insert(
+            UserData {
+                email: email.to_string(),
+                password_hash: password_hash.to_string(),
+            },
+            &conn,
+        )
+        .unwrap();
 
-        assert!(inserted_user.id > 0);
-        assert_eq!(inserted_user.email, email);
-        assert_eq!(inserted_user.password, password);
+        assert!(inserted_user.id() > 0);
+        assert_eq!(inserted_user.email(), email);
+        assert_eq!(inserted_user.password_hash(), password_hash);
     }
 
     #[test]
@@ -940,7 +958,13 @@ mod tests {
         let conn = init_db();
 
         assert_eq!(
-            User::insert("".to_string(), "hunter2".to_string(), &conn),
+            User::insert(
+                UserData {
+                    email: "".to_string(),
+                    password_hash: "hunter2".to_string()
+                },
+                &conn
+            ),
             Err(DbError::EmptyEmail)
         );
     }
@@ -950,7 +974,13 @@ mod tests {
         let conn = init_db();
 
         assert_eq!(
-            User::insert("foo@bar.baz".to_string(), "".to_string(), &conn),
+            User::insert(
+                UserData {
+                    email: "foo@bar.baz".to_string(),
+                    password_hash: "".to_string()
+                },
+                &conn
+            ),
             Err(DbError::EmptyPassword)
         );
     }
@@ -962,9 +992,22 @@ mod tests {
         let email = "hello@world.com".to_string();
         let password = "hunter2".to_string();
 
-        assert!(User::insert(email.clone(), password.clone(), &conn).is_ok());
+        assert!(User::insert(
+            UserData {
+                email: email.clone(),
+                password_hash: password.clone()
+            },
+            &conn
+        )
+        .is_ok());
         assert_eq!(
-            User::insert(email.clone(), "hunter3".to_string(), &conn),
+            User::insert(
+                UserData {
+                    email: email.clone(),
+                    password_hash: "hunter3".to_string()
+                },
+                &conn
+            ),
             Err(DbError::DuplicateEmail)
         );
     }
@@ -976,39 +1019,70 @@ mod tests {
         let email = "hello@world.com".to_string();
         let password = "hunter2".to_string();
 
-        assert!(User::insert(email, password.clone(), &conn).is_ok());
+        assert!(User::insert(
+            UserData {
+                email,
+                password_hash: password.clone()
+            },
+            &conn
+        )
+        .is_ok());
         assert_eq!(
-            User::insert("bye@world.com".to_string(), password.clone(), &conn),
+            User::insert(
+                UserData {
+                    email: "bye@world.com".to_string(),
+                    password_hash: password.clone()
+                },
+                &conn
+            ),
             Err(DbError::DuplicatePassword)
         );
     }
 
+    fn create_database_and_insert_test_user() -> (Connection, User) {
+        let conn = init_db();
+
+        let test_user = User::insert(
+            UserData {
+                email: "foo@bar.baz".to_string(),
+                password_hash: "hunter2".to_string(),
+            },
+            &conn,
+        )
+        .unwrap();
+
+        (conn, test_user)
+    }
+
     #[test]
     fn select_user_by_non_existent_email() {
-        let conn = init_db();
-        User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let (conn, _) = create_database_and_insert_test_user();
 
-        let email = "notavalidemail";
+        let email = "notavalidemail".to_string();
 
-        assert_eq!(User::select_by_email(email, &conn), Err(DbError::NotFound));
+        assert_eq!(User::select(&email, &conn), Err(DbError::NotFound));
     }
 
     #[test]
     fn select_user_by_existing_email() {
         let conn = init_db();
 
-        let test_user =
-            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let retrieved_user = User::select_by_email(test_user.email(), &conn).unwrap();
+        let test_user = User::insert(
+            UserData {
+                email: "foo@bar.baz".to_string(),
+                password_hash: "hunter2".to_string(),
+            },
+            &conn,
+        )
+        .unwrap();
+        let retrieved_user = User::select(&test_user.email().to_string(), &conn).unwrap();
 
         assert_eq!(retrieved_user, test_user);
     }
 
     #[test]
     fn create_category() {
-        let conn = init_db();
-        let test_user =
-            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let (conn, test_user) = create_database_and_insert_test_user();
 
         let name = "Categorically a category";
         let category = Category::insert(name.to_string(), test_user.id(), &conn).unwrap();
@@ -1020,9 +1094,7 @@ mod tests {
 
     #[test]
     fn create_category_with_empty_name_returns_error() {
-        let conn = init_db();
-        let test_user =
-            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let (conn, test_user) = create_database_and_insert_test_user();
 
         let maybe_category = Category::insert("".to_string(), test_user.id(), &conn);
 
@@ -1040,9 +1112,7 @@ mod tests {
 
     #[test]
     fn select_category() {
-        let conn = init_db();
-        let test_user =
-            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let (conn, test_user) = create_database_and_insert_test_user();
         let inserted_category = Category::insert("Foo".to_string(), test_user.id(), &conn).unwrap();
 
         let selected_category = Category::select_by_id(inserted_category.id(), &conn).unwrap();
@@ -1061,9 +1131,7 @@ mod tests {
 
     #[test]
     fn select_category_with_user_id() {
-        let conn = init_db();
-        let test_user =
-            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let (conn, test_user) = create_database_and_insert_test_user();
         let inserted_categories = vec![
             Category::insert("Foo".to_string(), test_user.id(), &conn).unwrap(),
             Category::insert("Bar".to_string(), test_user.id(), &conn).unwrap(),
@@ -1076,9 +1144,7 @@ mod tests {
 
     #[test]
     fn select_category_with_invalid_user_id() {
-        let conn = init_db();
-        let test_user =
-            User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let (conn, test_user) = create_database_and_insert_test_user();
         Category::insert("Foo".to_string(), test_user.id(), &conn).unwrap();
         Category::insert("Bar".to_string(), test_user.id(), &conn).unwrap();
 
@@ -1087,12 +1153,15 @@ mod tests {
         assert_eq!(selected_categories, []);
     }
 
+    fn create_database_and_insert_test_user_and_category() -> (Connection, User, Category) {
+        let (conn, test_user) = create_database_and_insert_test_user();
+        let category = Category::insert("Food".to_string(), test_user.id(), &conn).unwrap();
+        (conn, test_user, category)
+    }
+
     #[test]
     fn create_transaction() {
-        let conn = init_db();
-
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let amount = PI;
         let date = Utc::now().date_naive();
@@ -1103,7 +1172,7 @@ mod tests {
             date,
             description.clone(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         )
         .unwrap();
@@ -1112,15 +1181,12 @@ mod tests {
         assert_eq!(*transaction.date(), date);
         assert_eq!(transaction.description(), description);
         assert_eq!(transaction.category_id(), category.id());
-        assert_eq!(transaction.user_id(), user.id());
+        assert_eq!(transaction.user_id(), test_user.id());
     }
 
     #[test]
     fn create_transaction_fails_on_invalid_user_id() {
-        let conn = init_db();
-
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let amount = PI;
         let date = Utc::now().date_naive();
@@ -1131,7 +1197,7 @@ mod tests {
             date,
             description.clone(),
             category.id(),
-            user.id() + 1,
+            test_user.id() + 1,
             &conn,
         );
 
@@ -1140,10 +1206,7 @@ mod tests {
 
     #[test]
     fn create_transaction_fails_on_invalid_category_id() {
-        let conn = init_db();
-
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let amount = PI;
         let date = Utc::now().date_naive();
@@ -1154,7 +1217,7 @@ mod tests {
             date,
             description.clone(),
             category.id() + 1,
-            user.id(),
+            test_user.id(),
             &conn,
         );
 
@@ -1163,10 +1226,7 @@ mod tests {
 
     #[test]
     fn create_transaction_fails_on_future_date() {
-        let conn = init_db();
-
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let amount = PI;
         let date = Utc::now()
@@ -1180,7 +1240,7 @@ mod tests {
             date,
             description.clone(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         );
 
@@ -1189,16 +1249,14 @@ mod tests {
 
     #[test]
     fn select_transaction_by_id() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let inserted_transaction = Transaction::insert(
             PI,
             NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
             "Rust Pie".to_string(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         )
         .unwrap();
@@ -1211,16 +1269,14 @@ mod tests {
 
     #[test]
     fn select_transaction_by_invalid_id_fails() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let inserted_transaction = Transaction::insert(
             PI,
             NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
             "Rust Pie".to_string(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         )
         .unwrap();
@@ -1232,9 +1288,7 @@ mod tests {
 
     #[test]
     fn select_transactions_by_user_id() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let expected_transactions = vec![
             Transaction::insert(
@@ -1242,7 +1296,7 @@ mod tests {
                 NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
                 "Rust Pie".to_string(),
                 category.id(),
-                user.id(),
+                test_user.id(),
                 &conn,
             )
             .unwrap(),
@@ -1251,28 +1305,26 @@ mod tests {
                 NaiveDate::from_ymd_opt(2024, 8, 8).unwrap(),
                 "Rust Pif".to_string(),
                 category.id(),
-                user.id(),
+                test_user.id(),
                 &conn,
             )
             .unwrap(),
         ];
 
-        let transactions = Transaction::select_by_user_id(user.id(), &conn).unwrap();
+        let transactions = Transaction::select_by_user_id(test_user.id(), &conn).unwrap();
 
         assert_eq!(transactions, expected_transactions);
     }
 
     #[test]
     fn create_savings_ratio() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
         let transaction = Transaction::insert(
             PI,
             NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
             "Rust Pie".to_string(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         )
         .unwrap();
@@ -1286,15 +1338,13 @@ mod tests {
 
     #[test]
     fn create_savings_ratio_fails_with_ratio_below_zero() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
         let transaction = Transaction::insert(
             PI,
             NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
             "Rust Pie".to_string(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         )
         .unwrap();
@@ -1307,15 +1357,13 @@ mod tests {
 
     #[test]
     fn create_savings_ratio_fails_with_negative_zero_ratio() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
         let transaction = Transaction::insert(
             PI,
             NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
             "Rust Pie".to_string(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         )
         .unwrap();
@@ -1328,15 +1376,13 @@ mod tests {
 
     #[test]
     fn create_savings_ratio_fails_with_ratio_above_one() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
         let transaction = Transaction::insert(
             PI,
             NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
             "Rust Pie".to_string(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         )
         .unwrap();
@@ -1349,15 +1395,13 @@ mod tests {
 
     #[test]
     fn create_recurring_transaction() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
         let transaction = Transaction::insert(
             PI,
             NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
             "Rust Pie".to_string(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         )
         .unwrap();
@@ -1374,15 +1418,13 @@ mod tests {
 
     #[test]
     fn create_recurring_transaction_fails_on_past_end_date() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
         let transaction = Transaction::insert(
             PI,
             NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
             "Rust Pie".to_string(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         )
         .unwrap();
@@ -1410,15 +1452,13 @@ mod tests {
 
     #[test]
     fn select_recurring_transactions_succeeds() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
-        let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
+        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
         let inserted_transaction = Transaction::insert(
             PI,
             NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
             "Rust Pie".to_string(),
             category.id(),
-            user.id(),
+            test_user.id(),
             &conn,
         )
         .unwrap();
@@ -1433,18 +1473,17 @@ mod tests {
 
         let expected = vec![(inserted_transaction, inserted_recurring_transction)];
 
-        let results = select_recurring_transactions_by_user(&user, &conn).unwrap();
+        let results = select_recurring_transactions_by_user(&test_user, &conn).unwrap();
 
         assert_eq!(results, expected);
     }
 
     #[test]
     fn select_recurring_transactions_returns_empty_list() {
-        let conn = init_db();
-        let user = User::insert("foo@bar.baz".to_string(), "hunter2".to_string(), &conn).unwrap();
+        let (conn, test_user) = create_database_and_insert_test_user();
 
         let expected = vec![];
-        let results = select_recurring_transactions_by_user(&user, &conn).unwrap();
+        let results = select_recurring_transactions_by_user(&test_user, &conn).unwrap();
 
         assert_eq!(results, expected);
     }

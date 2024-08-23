@@ -9,8 +9,8 @@ use axum::{
     Json, Router,
 };
 use axum_server::Handle;
-use common::DatabaseID;
-use db::Category;
+use common::{DatabaseID, User};
+use db::{Category, Insert, SelectBy, UserData};
 use serde_json::json;
 use tokio::signal;
 
@@ -18,7 +18,7 @@ pub use config::AppConfig;
 
 use crate::{
     auth::{hash_password, Credentials},
-    db::{DbError, Transaction, User},
+    db::{DbError, Transaction},
 };
 
 pub mod auth;
@@ -186,8 +186,10 @@ async fn create_user(
         })
         .and_then(|password_hash| {
             User::insert(
-                user_data.email,
-                password_hash,
+                UserData {
+                    email: user_data.email,
+                    password_hash,
+                },
                 &state.db_connection().lock().unwrap(),
             )
             .map(|user| (StatusCode::OK, Json(user)))
@@ -208,7 +210,7 @@ async fn create_category(
     let connection_mutex = state.db_connection();
     let connection = connection_mutex.lock().unwrap();
 
-    User::select_by_email(&claims.email, &connection)
+    User::select(&claims.email, &connection)
         .and_then(|user| Category::insert(category_data.name().to_string(), user.id(), &connection))
         .map(|category| (StatusCode::OK, Json(category)))
         .map_err(AppError::DatabaseError)
@@ -232,7 +234,7 @@ async fn get_category(
     Category::select_by_id(category_id, &connection)
         .map_err(AppError::DatabaseError)
         .and_then(|category| {
-            if User::select_by_email(&claims.email, &connection)?.id() == category.user_id() {
+            if User::select(&claims.email, &connection)?.id() == category.user_id() {
                 Ok(category)
             } else {
                 // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
@@ -282,7 +284,7 @@ async fn get_transaction(
     Transaction::select_by_id(transaction_id, &connection)
         .map_err(AppError::DatabaseError)
         .and_then(|transaction| {
-            if User::select_by_email(&claims.email, &connection)?.id() == transaction.user_id() {
+            if User::select(&claims.email, &connection)?.id() == transaction.user_id() {
                 Ok(transaction)
             } else {
                 // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
@@ -297,13 +299,14 @@ mod tests {
     use axum::{routing::post, Router};
     use axum_test::TestServer;
     use chrono::Utc;
+    use common::User;
     use rusqlite::Connection;
     use serde_json::json;
 
     use crate::{
         auth::verify_password,
         build_router, create_user,
-        db::{initialize, Category, Transaction, User},
+        db::{initialize, Category, Transaction},
         AppConfig,
     };
 
@@ -339,7 +342,7 @@ mod tests {
 
         let user = response.json::<User>();
         assert_eq!(user.email(), email);
-        assert!(verify_password(password, user.password()).unwrap());
+        assert!(verify_password(password, user.password_hash()).unwrap());
     }
 
     async fn create_app_with_user() -> (TestServer, User, String) {

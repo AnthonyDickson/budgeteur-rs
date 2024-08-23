@@ -15,13 +15,14 @@ use axum_extra::{
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::{Duration, Utc};
+use common::User;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
     config::AppConfig,
-    db::{DbError, User},
+    db::{DbError, SelectBy},
 };
 
 // Code in this module is adapted from https://github.com/ezesundayeze/axum--auth and https://github.com/tokio-rs/axum/blob/main/examples/jwt/src/main.rs
@@ -117,16 +118,17 @@ pub async fn sign_in(
         return Err(AuthError::MissingCredentials);
     }
 
-    let user = User::select_by_email(&user_data.email, &state.db_connection().lock().unwrap())
-        .map_err(|e| match e {
+    let user = User::select(&user_data.email, &state.db_connection().lock().unwrap()).map_err(
+        |e| match e {
             DbError::NotFound => AuthError::WrongCredentials,
             _ => {
                 tracing::error!("Error matching user: {e:?}");
                 AuthError::InternalError
             }
-        })?;
+        },
+    )?;
 
-    let is_valid = verify_password(&user_data.password, user.password()).map_err(|e| {
+    let is_valid = verify_password(&user_data.password, user.password_hash()).map_err(|e| {
         tracing::error!("Error verifying password: {}", e);
         AuthError::InternalError
     })?;
@@ -174,12 +176,13 @@ mod tests {
         Router,
     };
     use axum_test::TestServer;
+    use common::User;
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::auth;
-    use crate::config::AppConfig;
-    use crate::db::{initialize, User};
+    use crate::db::initialize;
+    use crate::{auth, db::Insert};
+    use crate::{config::AppConfig, db::UserData};
 
     #[test]
     fn verify_password_for_valid_password() {
@@ -248,8 +251,10 @@ mod tests {
 
         let raw_password = "hunter2";
         let test_user = User::insert(
-            "foo@bar.baz".to_string(),
-            auth::hash_password(raw_password).unwrap(),
+            UserData {
+                email: "foo@bar.baz".to_string(),
+                password_hash: auth::hash_password(raw_password).unwrap(),
+            },
             &app_config.db_connection().lock().unwrap(),
         )
         .unwrap();
@@ -315,8 +320,10 @@ mod tests {
 
         let raw_password = "hunter2";
         let test_user = User::insert(
-            "foo@bar.baz".to_string(),
-            auth::hash_password(raw_password).unwrap(),
+            UserData {
+                email: "foo@bar.baz".to_string(),
+                password_hash: auth::hash_password(raw_password).unwrap(),
+            },
             &app_config.db_connection().lock().unwrap(),
         )
         .unwrap();
