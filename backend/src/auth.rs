@@ -15,7 +15,7 @@ use axum_extra::{
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::{Duration, Utc};
-use common::User;
+use common::{Email, User};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -35,7 +35,7 @@ pub struct Claims {
     /// The time the token was issued.
     pub iat: usize,
     /// Email associated with the token.
-    pub email: String,
+    pub email: Email,
 }
 
 #[async_trait]
@@ -66,7 +66,7 @@ where
 #[derive(Deserialize)]
 pub struct Credentials {
     /// Email entered during sign-in.
-    pub email: String,
+    pub email: Email,
     /// Password entered during sign-in.
     pub password: String,
 }
@@ -150,14 +150,14 @@ pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
     hash(password, DEFAULT_COST)
 }
 
-fn encode_jwt(email: &str, encoding_key: &EncodingKey) -> String {
+fn encode_jwt(email: &Email, encoding_key: &EncodingKey) -> String {
     let now = Utc::now();
     let exp = (now + Duration::minutes(15)).timestamp() as usize;
     let iat = now.timestamp() as usize;
     let claim = Claims {
         exp,
         iat,
-        email: email.to_string(),
+        email: email.to_owned(),
     };
 
     encode(&Header::default(), &claim, encoding_key).unwrap()
@@ -176,7 +176,7 @@ mod tests {
         Router,
     };
     use axum_test::TestServer;
-    use common::User;
+    use common::{Email, User};
     use rusqlite::Connection;
     use serde_json::json;
 
@@ -229,15 +229,15 @@ mod tests {
 
     #[test]
     fn jwt_encode_does_not_panic() {
-        let email = "averyemail@email.com";
-        auth::encode_jwt(email, get_test_app_config().encoding_key());
+        let email = Email::new("averyemail@email.com").unwrap();
+        auth::encode_jwt(&email, get_test_app_config().encoding_key());
     }
 
     #[test]
     fn decode_jwt_gives_correct_email_address() {
         let config = get_test_app_config();
-        let email = "averyemail@email.com";
-        let jwt = auth::encode_jwt(email, config.encoding_key());
+        let email = Email::new("averyemail@email.com").unwrap();
+        let jwt = auth::encode_jwt(&email, config.encoding_key());
         let claims = auth::decode_jwt(&jwt, config.decoding_key())
             .unwrap()
             .claims;
@@ -252,7 +252,7 @@ mod tests {
         let raw_password = "hunter2";
         let test_user = User::insert(
             UserData {
-                email: "foo@bar.baz".to_string(),
+                email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: auth::hash_password(raw_password).unwrap(),
             },
             &app_config.db_connection().lock().unwrap(),
@@ -321,7 +321,7 @@ mod tests {
         let raw_password = "hunter2";
         let test_user = User::insert(
             UserData {
-                email: "foo@bar.baz".to_string(),
+                email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: auth::hash_password(raw_password).unwrap(),
             },
             &app_config.db_connection().lock().unwrap(),

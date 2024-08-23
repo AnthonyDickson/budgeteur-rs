@@ -1,7 +1,5 @@
-use std::ops::Deref;
-
 use chrono::{NaiveDate, Utc};
-use common::{DatabaseID, User};
+use common::{DatabaseID, Email, User};
 use rusqlite::{
     types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput},
     Connection, Error, Row, Transaction as SqlTransaction,
@@ -168,8 +166,13 @@ impl Model<User> for User {
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<User, Error> {
         let id = row.get(offset)?;
-        let email = row.get(offset + 1)?;
+        let raw_email: String = row.get(offset + 1)?;
         let password_hash = row.get(offset + 2)?;
+
+        // TODO: Change map_row_with_offset to return Result<T, DbError>.
+        // TODO: Add wrapper variant in DbError for EmailAddressError and implement From<EmailAddressError> for DbError.
+        // TODO: Replace unwrap with question mark operator.
+        let email = Email::new(&raw_email).unwrap();
 
         Ok(User::new(id, email, password_hash))
     }
@@ -194,7 +197,7 @@ pub trait SelectBy<T> {
 }
 
 pub struct UserData {
-    pub email: String,
+    pub email: Email,
     pub password_hash: String,
 }
 
@@ -225,7 +228,7 @@ impl Insert for User {
 
         connection.execute(
             "INSERT INTO user (email, password) VALUES (?1, ?2)",
-            (&user.email, &user.password_hash),
+            (&user.email.to_string(), &user.password_hash),
         )?;
 
         let id = connection.last_insert_rowid();
@@ -235,7 +238,7 @@ impl Insert for User {
 }
 
 // TODO: Implement this for Email newtype instead.
-impl<T: Deref<Target = str> + ToSql> SelectBy<&T> for User {
+impl SelectBy<&Email> for User {
     type ResultType = User;
 
     /// Get the user from the database that has the specified `email` address or `None` if such user does not exist.
@@ -245,23 +248,23 @@ impl<T: Deref<Target = str> + ToSql> SelectBy<&T> for User {
     /// use rusqlite::Connection;
     ///
     /// use backend::db::{Insert, Model, SelectBy, UserData};
-    /// use common::User;
+    /// use common::{Email, User};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
-    /// let inserted_user = User::insert(UserData{ email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string()}, &conn).unwrap();
+    /// let inserted_user = User::insert(UserData{ email: Email::new("foo@bar.baz").unwrap(), password_hash: "hunter2".to_string()}, &conn).unwrap();
     ///
-    /// let selected_user = User::select(&inserted_user.email().to_string(), &conn).unwrap();
+    /// let selected_user = User::select(&inserted_user.email(), &conn).unwrap();
     ///
     /// assert_eq!(inserted_user, selected_user);
     /// ```
     /// # Panics
     ///
     /// Panics if there are SQL related errors.
-    fn select(email: &T, connection: &Connection) -> Result<Self::ResultType, DbError> {
+    fn select(email: &Email, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection
             .prepare("SELECT id, email, password FROM user WHERE email = :email")?
-            .query_row(&[(":email", &email)], User::map_row)
+            .query_row(&[(":email", &email.to_string())], User::map_row)
             .map_err(|e| e.into())
     }
 }
@@ -323,13 +326,13 @@ impl Category {
     /// use rusqlite::Connection;
     ///
     /// use backend::db::{Model, Category, Insert, UserData};
-    /// use common::User;
+    /// use common::{Email, User};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
     ///
-    /// let test_user = User::insert(UserData { email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string()}, &conn).unwrap();
+    /// let test_user = User::insert(UserData { email: Email::new("foo@bar.baz").unwrap(), password_hash: "hunter2".to_string()}, &conn).unwrap();
     /// let inserted_category = Category::insert("foo".to_string(), test_user.id(), &conn).unwrap();
     ///
     /// assert_eq!(inserted_category.name(), "foo");
@@ -371,12 +374,12 @@ impl Category {
     /// use rusqlite::Connection;
     ///
     /// use backend::db::{Model, Category, Insert, UserData};
-    /// use common::User;
+    /// use common::{Email, User};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
-    /// let test_user = User::insert(UserData { email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string() }, &conn).unwrap();
+    /// let test_user = User::insert(UserData { email: Email::new("foo@bar.baz").unwrap(), password_hash: "hunter2".to_string() }, &conn).unwrap();
     /// let inserted_category = Category::insert("foo".to_string(), test_user.id(), &conn).unwrap();
     ///
     /// let selected_category = Category::select_by_id(inserted_category.id(), &conn).unwrap();
@@ -403,12 +406,12 @@ impl Category {
     /// use rusqlite::Connection;
     ///
     /// use backend::db::{Model, Category, Insert, UserData};
-    /// use common::User;
+    /// use common::{Email, User};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
-    /// let test_user = User::insert(UserData { email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string()}, &conn).unwrap();
+    /// let test_user = User::insert(UserData { email: Email::new("foo@bar.baz").unwrap(), password_hash: "hunter2".to_string()}, &conn).unwrap();
     /// let inserted_categories = vec![
     ///     Category::insert("foo".to_string(), test_user.id(), &conn).unwrap(),
     ///     Category::insert("bar".to_string(), test_user.id(), &conn).unwrap()
@@ -513,14 +516,14 @@ impl Transaction {
     /// use rusqlite::Connection;
     ///
     /// use backend::db::{Category, Insert, Model, Transaction, UserData};
-    /// use common::User;
+    /// use common::{Email, User};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
     /// Transaction::create_table(&conn).unwrap();
     ///
-    /// let user = User::insert(UserData { email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string() }, &conn).unwrap();
+    /// let user = User::insert(UserData { email: Email::new("foo@bar.baz").unwrap(), password_hash: "hunter2".to_string() }, &conn).unwrap();
     /// let category = Category::insert("Food".to_string(), user.id(), &conn).unwrap();
     ///
     /// let transaction = Transaction::insert(
@@ -586,13 +589,13 @@ impl Transaction {
     /// use rusqlite::Connection;
     ///
     /// use backend::db::{Model, Category, Insert, Transaction, UserData};
-    /// use common::User;
+    /// use common::{Email, User};
     ///
     /// let conn = Connection::open_in_memory().unwrap();
     /// User::create_table(&conn).unwrap();
     /// Category::create_table(&conn).unwrap();
     /// Transaction::create_table(&conn).unwrap();
-    /// let user = User::insert(UserData { email: "foo@bar.baz".to_string(), password_hash: "hunter2".to_string()}, &conn).unwrap();
+    /// let user = User::insert(UserData { email: Email::new("foo@bar.baz").unwrap(), password_hash: "hunter2".to_string()}, &conn).unwrap();
     /// let category = Category::insert("foo".to_string(), user.id(), &conn).unwrap();
     ///
     /// let inserted_transaction = Transaction::insert(
@@ -913,11 +916,13 @@ pub fn select_recurring_transactions_by_user(
         .collect()
 }
 
+// TODO: Break up tests and organise by the thing being tested.
 #[cfg(test)]
 mod tests {
     use std::f64::consts::PI;
 
     use chrono::{Days, Months, NaiveDate, Utc};
+    use common::Email;
     use rusqlite::Connection;
 
     use crate::db::{
@@ -936,12 +941,12 @@ mod tests {
     fn create_user() {
         let conn = init_db();
 
-        let email = "hello@world.com";
+        let email = Email::new("hello@world.com").unwrap();
         let password_hash = "hunter2";
 
         let inserted_user = User::insert(
             UserData {
-                email: email.to_string(),
+                email: email.clone(),
                 password_hash: password_hash.to_string(),
             },
             &conn,
@@ -949,24 +954,8 @@ mod tests {
         .unwrap();
 
         assert!(inserted_user.id() > 0);
-        assert_eq!(inserted_user.email(), email);
+        assert_eq!(inserted_user.email(), &email);
         assert_eq!(inserted_user.password_hash(), password_hash);
-    }
-
-    #[test]
-    fn create_user_empty_email() {
-        let conn = init_db();
-
-        assert_eq!(
-            User::insert(
-                UserData {
-                    email: "".to_string(),
-                    password_hash: "hunter2".to_string()
-                },
-                &conn
-            ),
-            Err(DbError::EmptyEmail)
-        );
     }
 
     #[test]
@@ -976,7 +965,7 @@ mod tests {
         assert_eq!(
             User::insert(
                 UserData {
-                    email: "foo@bar.baz".to_string(),
+                    email: Email::new("foo@bar.baz").unwrap(),
                     password_hash: "".to_string()
                 },
                 &conn
@@ -989,7 +978,7 @@ mod tests {
     fn create_user_duplicate_email() {
         let conn = init_db();
 
-        let email = "hello@world.com".to_string();
+        let email = Email::new("hello@world.com").unwrap();
         let password = "hunter2".to_string();
 
         assert!(User::insert(
@@ -1016,7 +1005,7 @@ mod tests {
     fn create_user_duplicate_password() {
         let conn = init_db();
 
-        let email = "hello@world.com".to_string();
+        let email = Email::new("hello@world.com").unwrap();
         let password = "hunter2".to_string();
 
         assert!(User::insert(
@@ -1030,7 +1019,7 @@ mod tests {
         assert_eq!(
             User::insert(
                 UserData {
-                    email: "bye@world.com".to_string(),
+                    email: Email::new("bye@world.com").unwrap(),
                     password_hash: password.clone()
                 },
                 &conn
@@ -1044,7 +1033,7 @@ mod tests {
 
         let test_user = User::insert(
             UserData {
-                email: "foo@bar.baz".to_string(),
+                email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: "hunter2".to_string(),
             },
             &conn,
@@ -1058,7 +1047,7 @@ mod tests {
     fn select_user_by_non_existent_email() {
         let (conn, _) = create_database_and_insert_test_user();
 
-        let email = "notavalidemail".to_string();
+        let email = Email::new("notavalidemail@foo.bar").unwrap();
 
         assert_eq!(User::select(&email, &conn), Err(DbError::NotFound));
     }
@@ -1069,13 +1058,13 @@ mod tests {
 
         let test_user = User::insert(
             UserData {
-                email: "foo@bar.baz".to_string(),
+                email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: "hunter2".to_string(),
             },
             &conn,
         )
         .unwrap();
-        let retrieved_user = User::select(&test_user.email().to_string(), &conn).unwrap();
+        let retrieved_user = User::select(test_user.email(), &conn).unwrap();
 
         assert_eq!(retrieved_user, test_user);
     }

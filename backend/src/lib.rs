@@ -299,7 +299,7 @@ mod tests {
     use axum::{routing::post, Router};
     use axum_test::TestServer;
     use chrono::Utc;
-    use common::User;
+    use common::{Email, User};
     use rusqlite::Connection;
     use serde_json::json;
 
@@ -326,7 +326,7 @@ mod tests {
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
-        let email = "test@test.com";
+        let email = Email::new("test@test.com").unwrap();
         let password = "hunter2";
 
         let response = server
@@ -341,7 +341,7 @@ mod tests {
         response.assert_status_ok();
 
         let user = response.json::<User>();
-        assert_eq!(user.email(), email);
+        assert_eq!(user.email(), &email);
         assert!(verify_password(password, user.password_hash()).unwrap());
     }
 
