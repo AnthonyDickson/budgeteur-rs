@@ -1,4 +1,4 @@
-use std::{fmt::Display, ops::Deref};
+use std::fmt::Display;
 
 use bcrypt::{hash, verify, BcryptError, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use thiserror::Error;
 #[error("{0} is not a valid password")]
 pub struct PasswordError(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PasswordHash(String);
 
 impl PasswordHash {
@@ -18,10 +18,10 @@ impl PasswordHash {
     ///
     /// This function will return an error if the password could not be hashed.
     pub fn new(raw_password: RawPassword) -> Result<Self, PasswordError> {
-        match hash(&raw_password, DEFAULT_COST) {
+        match hash(&raw_password.0, DEFAULT_COST) {
             Ok(password_hash) => Ok(Self(password_hash)),
             // TODO: Add error variants to `PasswordError` to indicate error w/ hashing.
-            Err(_) => Err(PasswordError(raw_password.into_string())),
+            Err(_) => Err(PasswordError(raw_password.0)),
         }
     }
 
@@ -38,33 +38,13 @@ impl PasswordHash {
 
     /// Check that `raw_password` matches the stored password.
     pub fn verify(&self, raw_password: &RawPassword) -> Result<bool, BcryptError> {
-        verify(raw_password, self)
+        verify(&raw_password.0, &self.0)
     }
 }
 
 impl Display for PasswordHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl AsRef<str> for PasswordHash {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl AsRef<[u8]> for PasswordHash {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_bytes()
-    }
-}
-
-impl Deref for PasswordHash {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 
@@ -117,11 +97,11 @@ mod password_hash_tests {
 }
 
 /// A password that has been validated, but not yet hashed.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RawPassword(String);
 
 impl RawPassword {
-    /// Create a new password from a string.
+    /// Create and validate a new password from a string.
     ///
     /// # Errors
     ///
@@ -142,23 +122,6 @@ impl RawPassword {
     /// This function should only be called on strings coming out of a trusted source such as the application's database or for tests where costly validation is unecessary.
     pub unsafe fn new_unchecked(raw_password_string: String) -> Self {
         Self(raw_password_string)
-    }
-}
-
-impl AsRef<str> for RawPassword {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-impl AsRef<[u8]> for RawPassword {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_bytes()
-    }
-}
-
-impl RawPassword {
-    fn into_string(self) -> String {
-        self.0
     }
 }
 

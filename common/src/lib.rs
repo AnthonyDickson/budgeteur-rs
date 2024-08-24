@@ -7,8 +7,6 @@ pub use password::{PasswordError, PasswordHash, RawPassword};
 
 pub type DatabaseID = i64;
 
-// TODO: Implement password and password hash newtypes that wrap a string + type state to ensure that raw passwords are not accidentally stored as a password hash (RawPassword should have a function that hashes and salts the password and returns a PasswordHash).
-
 /// A user of the application.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {

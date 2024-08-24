@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, ops::Deref};
+use std::fmt::Display;
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Email(String);
 
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -29,7 +29,7 @@ impl Email {
     /// # Safety
     ///
     /// This function should only be called on strings coming out of a trusted source such as the application's database.
-    /// For emails coming from the user (e.g., via the REST API), this function should **not** be used, instead use the checked version of this method.
+    /// For emails coming from the user (e.g., via the REST API), this function should **not** be used, instead use the checked version.
     pub unsafe fn new_unchecked(raw_email: String) -> Self {
         Self(raw_email)
     }
@@ -38,20 +38,6 @@ impl Email {
 impl Display for Email {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl AsRef<str> for Email {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Deref for Email {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 

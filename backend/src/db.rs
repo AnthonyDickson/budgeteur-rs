@@ -228,15 +228,6 @@ impl Insert for User {
     /// - the email is already in use, or
     /// - the password hash is not unique.
     fn insert(user: Self::ParamType, connection: &Connection) -> Result<Self::ResultType, DbError> {
-        // TODO: Check for invalid email format.
-        if user.email.is_empty() {
-            return Err(DbError::EmptyEmail);
-        }
-
-        if user.password_hash.is_empty() {
-            return Err(DbError::EmptyPassword);
-        }
-
         connection.execute(
             "INSERT INTO user (email, password) VALUES (?1, ?2)",
             (&user.email.to_string(), user.password_hash.to_string()),
