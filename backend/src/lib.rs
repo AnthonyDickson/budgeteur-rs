@@ -9,8 +9,8 @@ use axum::{
     Json, Router,
 };
 use axum_server::Handle;
-use common::{DatabaseID, PasswordHash, User};
-use db::{Category, Insert, SelectBy, UserData};
+use common::{Category, DatabaseID, PasswordHash, User};
+use db::{Insert, NewCategory, SelectBy, UserData};
 use serde_json::json;
 use tokio::signal;
 
@@ -211,7 +211,15 @@ async fn create_category(
     let connection = connection_mutex.lock().unwrap();
 
     User::select(&claims.email, &connection)
-        .and_then(|user| Category::insert(category_data.name().to_string(), user.id(), &connection))
+        .and_then(|user| {
+            Category::insert(
+                NewCategory {
+                    name: category_data.name().to_owned(),
+                    user_id: user.id(),
+                },
+                &connection,
+            )
+        })
         .map(|category| (StatusCode::OK, Json(category)))
         .map_err(AppError::DatabaseError)
 }
@@ -231,7 +239,7 @@ async fn get_category(
     let connection_mutex = state.db_connection();
     let connection = connection_mutex.lock().unwrap();
 
-    Category::select_by_id(category_id, &connection)
+    Category::select(category_id, &connection)
         .map_err(AppError::DatabaseError)
         .and_then(|category| {
             if User::select(&claims.email, &connection)?.id() == category.user_id() {
@@ -343,15 +351,11 @@ mod user_tests {
 #[cfg(test)]
 mod category_tests {
     use axum_test::TestServer;
-    use common::User;
+    use common::{Category, CategoryName, User};
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::{
-        build_router,
-        db::{initialize, Category},
-        AppConfig,
-    };
+    use crate::{build_router, db::initialize, AppConfig};
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =
@@ -419,7 +423,7 @@ mod category_tests {
     async fn create_category() {
         let (server, user, token) = create_app_with_user().await;
 
-        let name = "Foo";
+        let name = CategoryName::new("Foo".to_string()).unwrap();
 
         let response = server
             .post("/category")
@@ -436,7 +440,7 @@ mod category_tests {
 
         let category = response.json::<Category>();
 
-        assert_eq!(category.name(), name);
+        assert_eq!(category.name(), &name);
         assert_eq!(category.user_id(), user.id());
     }
 
@@ -495,13 +499,13 @@ mod category_tests {
 mod transaction_tests {
     use axum_test::TestServer;
     use chrono::Utc;
-    use common::User;
+    use common::{Category, User};
     use rusqlite::Connection;
     use serde_json::json;
 
     use crate::{
         build_router,
-        db::{initialize, Category, Transaction},
+        db::{initialize, Transaction},
         AppConfig,
     };
 

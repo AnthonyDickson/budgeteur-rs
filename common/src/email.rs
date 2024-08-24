@@ -2,12 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Email(String);
-
 #[derive(Error, Debug, Clone, PartialEq)]
 #[error("{0} is not a valid email address")]
 pub struct EmailAddressError(pub String);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Email(String);
 
 impl Email {
     /// Create and validate an email address.
