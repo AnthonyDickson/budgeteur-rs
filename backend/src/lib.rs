@@ -10,7 +10,7 @@ use axum::{
 };
 use axum_server::Handle;
 use common::{Category, DatabaseID, PasswordHash, User};
-use db::{Insert, NewCategory, NewUser, SelectBy};
+use db::{Insert, NewCategory, NewTransaction, NewUser, SelectBy};
 use serde_json::json;
 use tokio::signal;
 
@@ -205,6 +205,7 @@ async fn create_user(
 async fn create_category(
     State(state): State<AppConfig>,
     claims: Claims,
+    // TODO: Replace `Category` with `NewCategory`.
     Json(category_data): Json<Category>,
 ) -> impl IntoResponse {
     let connection_mutex = state.db_connection();
@@ -260,14 +261,17 @@ async fn get_category(
 async fn create_transaction(
     State(state): State<AppConfig>,
     _: Claims,
+    // TODO: Replace `Transaction` with `NewTransaction`.
     Json(transaction_data): Json<Transaction>,
 ) -> impl IntoResponse {
     Transaction::insert(
-        transaction_data.amount(),
-        *transaction_data.date(),
-        transaction_data.description().to_string(),
-        transaction_data.category_id(),
-        transaction_data.user_id(),
+        NewTransaction {
+            amount: transaction_data.amount(),
+            date: *transaction_data.date(),
+            description: transaction_data.description().to_string(),
+            category_id: transaction_data.category_id(),
+            user_id: transaction_data.user_id(),
+        },
         &state.db_connection().lock().unwrap(),
     )
     .map(|transaction| (StatusCode::OK, Json(transaction)))

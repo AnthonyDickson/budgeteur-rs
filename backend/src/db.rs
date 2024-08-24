@@ -179,7 +179,6 @@ pub trait Insert {
     ) -> Result<Self::ResultType, DbError>;
 }
 
-// TODO: Implement `SelectBy` for other model types.
 pub trait SelectBy<T> {
     type ResultType;
 
@@ -441,6 +440,8 @@ impl SelectBy<UserID> for Category {
     }
 }
 
+// TODO: Implement `SelectBy` for `Transaction`.
+// TODO: Move `Transaction` to workspace `common` and its own module.
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
 /// New instances should be created through `Transaction::insert(...)`.
@@ -488,6 +489,87 @@ impl Model for Transaction {
     }
 }
 
+pub struct NewTransaction {
+    pub amount: f64,
+    pub date: NaiveDate,
+    pub description: String,
+    pub category_id: DatabaseID,
+    pub user_id: UserID,
+}
+
+impl Insert for Transaction {
+    type ParamType = NewTransaction;
+    type ResultType = Transaction;
+
+    /// Create a new transaction in the database.
+    ///
+    /// Dates must be no later than today.
+    ///
+    /// # Examples
+    /// ```
+    /// # use chrono::NaiveDate;
+    /// # use rusqlite::Connection;
+    /// #
+    /// # use backend::db::{Insert, Model, NewTransaction, Transaction};
+    /// # use common::{Category, User};
+    /// #
+    /// fn create_transaction(user: &User, category: &Category, connection: &Connection) {
+    ///     let transaction = Transaction::insert(
+    ///         NewTransaction {
+    ///             amount: 3.14,
+    ///             date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+    ///             description: "Rust Pie".to_string(),
+    ///             category_id: category.id(),
+    ///             user_id: user.id()
+    ///         },
+    ///         &connection
+    ///     )
+    ///     .unwrap();
+    ///
+    ///     assert_eq!(transaction.amount(), 3.14);
+    ///     assert_eq!(*transaction.date(), NaiveDate::from_ymd_opt(2024, 8, 7).unwrap());
+    ///     assert_eq!(transaction.description(), "Rust Pie");
+    ///     assert_eq!(transaction.category_id(), category.id());
+    ///     assert_eq!(transaction.user_id(), user.id());
+    /// }
+    ///
+    /// ```
+    ///
+    /// # Errors
+    /// This function will return an error if:
+    /// - `date` refers to a future date,
+    /// - `name` is empty,
+    /// - `category_id` does not refer to a valid category,
+    /// - `user_id` does not refer to a valid user,
+    /// - or there is some other SQL error.
+    fn insert(
+        new_transaction: Self::ParamType,
+        connection: &Connection,
+    ) -> Result<Self::ResultType, DbError> {
+        if new_transaction.date > Utc::now().date_naive() {
+            return Err(DbError::InvalidDate);
+        }
+
+        // TODO: Ensure that the category id refers to a category owned by the user.
+        connection
+                .execute(
+                    "INSERT INTO \"transaction\" (amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    (new_transaction.amount, &new_transaction.date, &new_transaction.description, new_transaction.category_id, new_transaction.user_id.as_i64()),
+                )?;
+
+        let transaction_id = connection.last_insert_rowid();
+
+        Ok(Transaction {
+            id: transaction_id,
+            amount: new_transaction.amount,
+            date: new_transaction.date,
+            description: new_transaction.description,
+            category_id: new_transaction.category_id,
+            user_id: new_transaction.user_id,
+        })
+    }
+}
+
 impl Transaction {
     pub fn id(&self) -> DatabaseID {
         self.id
@@ -511,76 +593,6 @@ impl Transaction {
 
     pub fn user_id(&self) -> UserID {
         self.user_id
-    }
-
-    /// Create a new transaction in the database.
-    ///
-    /// Dates must be no later than today.
-    ///
-    /// # Examples
-    /// ```
-    /// # use chrono::NaiveDate;
-    /// # use rusqlite::Connection;
-    /// #
-    /// # use backend::db::{Insert, Model, Transaction};
-    /// # use common::{Category, User};
-    /// #
-    /// fn create_transaction(user: &User, category: &Category, connection: &Connection) {
-    ///     let transaction = Transaction::insert(
-    ///         3.14,
-    ///         NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-    ///         "Rust Pie".to_string(),
-    ///         category.id(),
-    ///         user.id(),
-    ///         &connection
-    ///     )
-    ///     .unwrap();
-    ///
-    ///     assert_eq!(transaction.amount(), 3.14);
-    ///     assert_eq!(*transaction.date(), NaiveDate::from_ymd_opt(2024, 8, 7).unwrap());
-    ///     assert_eq!(transaction.description(), "Rust Pie");
-    ///     assert_eq!(transaction.category_id(), category.id());
-    ///     assert_eq!(transaction.user_id(), user.id());
-    /// }
-    ///
-    /// ```
-    ///
-    /// # Errors
-    /// This function will return an error if:
-    /// - `date` refers to a future date,
-    /// - `name` is empty,
-    /// - `category_id` does not refer to a valid category,
-    /// - `user_id` does not refer to a valid user,
-    /// - or there is some other SQL error.
-    pub fn insert(
-        amount: f64,
-        date: NaiveDate,
-        description: String,
-        category_id: DatabaseID,
-        user_id: UserID,
-        connection: &Connection,
-    ) -> Result<Transaction, DbError> {
-        if date > Utc::now().date_naive() {
-            return Err(DbError::InvalidDate);
-        }
-
-        // TODO: Ensure that the category id refers to a category owned by the user.
-        connection
-            .execute(
-                "INSERT INTO \"transaction\" (amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-                (amount, &date, &description, category_id, user_id.as_i64()),
-            )?;
-
-        let transaction_id = connection.last_insert_rowid();
-
-        Ok(Transaction {
-            id: transaction_id,
-            amount,
-            date,
-            description,
-            category_id,
-            user_id,
-        })
     }
 
     /// Retrieve a transaction in the database by its `id`.
@@ -636,6 +648,7 @@ impl Transaction {
     }
 }
 
+// TODO: Implement `Insert` and `SelectBy` for `SavingsRatio`.
 /// The amount of an income transaction that should counted as savings.
 ///
 /// This object must be attached to an existing transaction and cannot exist independently.
@@ -762,6 +775,7 @@ impl FromSql for Frequency {
     }
 }
 
+// TODO: Implement `Insert` and `SelectBy` for `RecurringTransaction`.
 /// A transaction (income or expense) that repeats on a regular basis (e.g., wages, phone bill).
 ///
 /// This object must be attached to an existing transaction and cannot exist independently.
@@ -1189,7 +1203,7 @@ mod transaction_tests {
     use common::{CategoryName, Email, PasswordHash, UserID};
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, DbError, Transaction, User};
+    use crate::db::{initialize, Category, DbError, NewTransaction, Transaction, User};
 
     use super::{Insert, NewCategory, NewUser};
 
@@ -1232,11 +1246,13 @@ mod transaction_tests {
         let description = "Rust Pie".to_string();
 
         let transaction = Transaction::insert(
-            amount,
-            date,
-            description.clone(),
-            category.id(),
-            test_user.id(),
+            NewTransaction {
+                amount,
+                date,
+                description: description.clone(),
+                category_id: category.id(),
+                user_id: test_user.id(),
+            },
             &conn,
         )
         .unwrap();
@@ -1257,11 +1273,13 @@ mod transaction_tests {
         let description = "Rust Pie".to_string();
 
         let maybe_transaction = Transaction::insert(
-            amount,
-            date,
-            description.clone(),
-            category.id(),
-            UserID::new(test_user.id().as_i64() + 1),
+            NewTransaction {
+                amount,
+                date,
+                description: description.clone(),
+                category_id: category.id(),
+                user_id: UserID::new(test_user.id().as_i64() + 1),
+            },
             &conn,
         );
 
@@ -1277,11 +1295,13 @@ mod transaction_tests {
         let description = "Rust Pie".to_string();
 
         let maybe_transaction = Transaction::insert(
-            amount,
-            date,
-            description.clone(),
-            category.id() + 1,
-            test_user.id(),
+            NewTransaction {
+                amount,
+                date,
+                description: description.clone(),
+                category_id: category.id() + 1,
+                user_id: test_user.id(),
+            },
             &conn,
         );
 
@@ -1300,11 +1320,13 @@ mod transaction_tests {
         let description = "Rust Pie".to_string();
 
         let maybe_transaction = Transaction::insert(
-            amount,
-            date,
-            description.clone(),
-            category.id(),
-            test_user.id(),
+            NewTransaction {
+                amount,
+                date,
+                description: description.clone(),
+                category_id: category.id(),
+                user_id: test_user.id(),
+            },
             &conn,
         );
 
@@ -1316,11 +1338,13 @@ mod transaction_tests {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let inserted_transaction = Transaction::insert(
-            PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            "Rust Pie".to_string(),
-            category.id(),
-            test_user.id(),
+            NewTransaction {
+                amount: PI,
+                date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+                description: "Rust Pie".to_string(),
+                category_id: category.id(),
+                user_id: test_user.id(),
+            },
             &conn,
         )
         .unwrap();
@@ -1336,11 +1360,13 @@ mod transaction_tests {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let inserted_transaction = Transaction::insert(
-            PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            "Rust Pie".to_string(),
-            category.id(),
-            test_user.id(),
+            NewTransaction {
+                amount: PI,
+                date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+                description: "Rust Pie".to_string(),
+                category_id: category.id(),
+                user_id: test_user.id(),
+            },
             &conn,
         )
         .unwrap();
@@ -1356,20 +1382,24 @@ mod transaction_tests {
 
         let expected_transactions = vec![
             Transaction::insert(
-                PI,
-                NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-                "Rust Pie".to_string(),
-                category.id(),
-                test_user.id(),
+                NewTransaction {
+                    amount: PI,
+                    date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+                    description: "Rust Pie".to_string(),
+                    category_id: category.id(),
+                    user_id: test_user.id(),
+                },
                 &conn,
             )
             .unwrap(),
             Transaction::insert(
-                PI + 1.0,
-                NaiveDate::from_ymd_opt(2024, 8, 8).unwrap(),
-                "Rust Pif".to_string(),
-                category.id(),
-                test_user.id(),
+                NewTransaction {
+                    amount: PI + 1.0,
+                    date: NaiveDate::from_ymd_opt(2024, 8, 8).unwrap(),
+                    description: "Rust Pif".to_string(),
+                    category_id: category.id(),
+                    user_id: test_user.id(),
+                },
                 &conn,
             )
             .unwrap(),
@@ -1389,7 +1419,9 @@ mod savings_ratio_tests {
     use common::{CategoryName, Email, PasswordHash};
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, DbError, SavingsRatio, Transaction, User};
+    use crate::db::{
+        initialize, Category, DbError, NewTransaction, SavingsRatio, Transaction, User,
+    };
 
     use super::{Insert, NewCategory, NewUser};
 
@@ -1399,7 +1431,7 @@ mod savings_ratio_tests {
         conn
     }
 
-    fn create_database_and_insert_test_user_and_category() -> (Connection, User, Category) {
+    fn create_database_and_insert_test_transaction() -> (Connection, Transaction) {
         let conn = init_db();
 
         let test_user = User::insert(
@@ -1420,21 +1452,24 @@ mod savings_ratio_tests {
         )
         .unwrap();
 
-        (conn, test_user, category)
+        let transaction = Transaction::insert(
+            NewTransaction {
+                amount: PI,
+                date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+                description: "Rust Pie".to_string(),
+                category_id: category.id(),
+                user_id: test_user.id(),
+            },
+            &conn,
+        )
+        .unwrap();
+
+        (conn, transaction)
     }
 
     #[test]
     fn create_savings_ratio() {
-        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
-        let transaction = Transaction::insert(
-            PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            "Rust Pie".to_string(),
-            category.id(),
-            test_user.id(),
-            &conn,
-        )
-        .unwrap();
+        let (conn, transaction) = create_database_and_insert_test_transaction();
 
         let ratio = 0.5;
         let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn).unwrap();
@@ -1445,16 +1480,7 @@ mod savings_ratio_tests {
 
     #[test]
     fn create_savings_ratio_fails_with_ratio_below_zero() {
-        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
-        let transaction = Transaction::insert(
-            PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            "Rust Pie".to_string(),
-            category.id(),
-            test_user.id(),
-            &conn,
-        )
-        .unwrap();
+        let (conn, transaction) = create_database_and_insert_test_transaction();
 
         let ratio = -0.01;
         let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
@@ -1464,16 +1490,7 @@ mod savings_ratio_tests {
 
     #[test]
     fn create_savings_ratio_fails_with_negative_zero_ratio() {
-        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
-        let transaction = Transaction::insert(
-            PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            "Rust Pie".to_string(),
-            category.id(),
-            test_user.id(),
-            &conn,
-        )
-        .unwrap();
+        let (conn, transaction) = create_database_and_insert_test_transaction();
 
         let ratio = -0.0;
         let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
@@ -1483,16 +1500,7 @@ mod savings_ratio_tests {
 
     #[test]
     fn create_savings_ratio_fails_with_ratio_above_one() {
-        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
-        let transaction = Transaction::insert(
-            PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            "Rust Pie".to_string(),
-            category.id(),
-            test_user.id(),
-            &conn,
-        )
-        .unwrap();
+        let (conn, transaction) = create_database_and_insert_test_transaction();
 
         let ratio = 1.01;
         let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
@@ -1514,7 +1522,8 @@ mod recurring_transaction_tests {
         Transaction,
     };
 
-    use super::{initialize, Category, Insert, NewCategory, NewUser};
+    use super::{initialize, Category, Insert, NewCategory, NewTransaction, NewUser};
+
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
@@ -1536,7 +1545,8 @@ mod recurring_transaction_tests {
         (conn, test_user)
     }
 
-    fn create_database_and_insert_test_user_and_category() -> (Connection, User, Category) {
+    fn create_database_and_insert_test_user_category_and_transaction(
+    ) -> (Connection, User, Category, Transaction) {
         let (conn, test_user) = create_database_and_insert_test_user();
 
         let category = Category::insert(
@@ -1548,21 +1558,25 @@ mod recurring_transaction_tests {
         )
         .unwrap();
 
-        (conn, test_user, category)
+        let transaction = Transaction::insert(
+            NewTransaction {
+                amount: PI,
+                date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+                description: "Rust Pie".to_string(),
+                category_id: category.id(),
+                user_id: test_user.id(),
+            },
+            &conn,
+        )
+        .unwrap();
+
+        (conn, test_user, category, transaction)
     }
 
     #[test]
     fn create_recurring_transaction() {
-        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
-        let transaction = Transaction::insert(
-            PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            "Rust Pie".to_string(),
-            category.id(),
-            test_user.id(),
-            &conn,
-        )
-        .unwrap();
+        let (conn, _, _, transaction) =
+            create_database_and_insert_test_user_category_and_transaction();
 
         let end_date = transaction.date().checked_add_months(Months::new(3));
 
@@ -1576,16 +1590,8 @@ mod recurring_transaction_tests {
 
     #[test]
     fn create_recurring_transaction_fails_on_past_end_date() {
-        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
-        let transaction = Transaction::insert(
-            PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            "Rust Pie".to_string(),
-            category.id(),
-            test_user.id(),
-            &conn,
-        )
-        .unwrap();
+        let (conn, _, _, transaction) =
+            create_database_and_insert_test_user_category_and_transaction();
 
         assert_eq!(
             RecurringTransaction::insert(
@@ -1610,26 +1616,15 @@ mod recurring_transaction_tests {
 
     #[test]
     fn select_recurring_transactions_succeeds() {
-        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
-        let inserted_transaction = Transaction::insert(
-            PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            "Rust Pie".to_string(),
-            category.id(),
-            test_user.id(),
-            &conn,
-        )
-        .unwrap();
+        let (conn, test_user, _, transaction) =
+            create_database_and_insert_test_user_category_and_transaction();
 
-        let end_date = inserted_transaction
-            .date()
-            .checked_add_months(Months::new(3));
+        let end_date = transaction.date().checked_add_months(Months::new(3));
 
         let inserted_recurring_transction =
-            RecurringTransaction::insert(&inserted_transaction, end_date, Frequency::Weekly, &conn)
-                .unwrap();
+            RecurringTransaction::insert(&transaction, end_date, Frequency::Weekly, &conn).unwrap();
 
-        let expected = vec![(inserted_transaction, inserted_recurring_transction)];
+        let expected = vec![(transaction, inserted_recurring_transction)];
 
         let results = select_recurring_transactions_by_user(&test_user, &conn).unwrap();
 
