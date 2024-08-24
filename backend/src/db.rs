@@ -68,8 +68,10 @@ impl From<Error> for DbError {
     }
 }
 
-// TODO: Change from generic type to associated type since it only makes sense to have a single implementation per type.
-pub trait Model<T> {
+/// An object schema that is stored in a database.
+pub trait Model {
+    type ReturnType;
+
     /// Create a table for the model.
     ///
     /// # Errors
@@ -82,7 +84,7 @@ pub trait Model<T> {
     ///
     /// # Errors
     /// Returns an error if a row item cannot be converted into the corresponding rust type, or if an invalid column index was used.
-    fn map_row(row: &Row) -> Result<T, Error> {
+    fn map_row(row: &Row) -> Result<Self::ReturnType, Error> {
         Self::map_row_with_offset(row, 0)
     }
 
@@ -104,7 +106,9 @@ pub trait Model<T> {
     ///     desc: String
     /// }
     ///
-    /// impl Model<Foo> for Foo {
+    /// impl Model for Foo {
+    ///     type ReturnType = Self;
+    ///
     ///     fn create_table(connection: &Connection) -> Result<(), DbError> {
     ///         connection.execute(
     ///             "CREATE TABLE bar (id INTEGER PRIMARY KEY, desc TEXT NOT NULL)",
@@ -114,8 +118,8 @@ pub trait Model<T> {
     ///         Ok(())
     ///     }
     ///
-    ///     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Foo, Error> {
-    ///         Ok(Foo {
+    ///     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
+    ///         Ok(Self {
     ///             id: row.get(offset)?,
     ///             desc: row.get(offset + 1)?,
     ///         })
@@ -127,7 +131,9 @@ pub trait Model<T> {
     ///     desc: String
     /// }
     ///
-    /// impl Model<Bar> for Bar {
+    /// impl Model for Bar {
+    ///     type ReturnType = Self;
+    ///
     ///     fn create_table(connection: &Connection) -> Result<(), DbError> {
     ///         connection.execute(
     ///             "CREATE TABLE bar (id INTEGER PRIMARY KEY, desc TEXT NOT NULL)",
@@ -137,8 +143,8 @@ pub trait Model<T> {
     ///         Ok(())
     ///     }
     ///
-    ///     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Bar, Error> {
-    ///         Ok(Bar {
+    ///     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
+    ///         Ok(Self {
     ///             id: row.get(offset)?,
     ///             desc: row.get(offset + 1)?,
     ///         })
@@ -160,10 +166,12 @@ pub trait Model<T> {
     ///
     /// # Errors
     /// Returns an error if a row item cannot be converted into the corresponding rust type, or if an invalid column index was used.
-    fn map_row_with_offset(row: &Row, offset: usize) -> Result<T, Error>;
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self::ReturnType, Error>;
 }
 
-impl Model<User> for User {
+impl Model for User {
+    type ReturnType = Self;
+
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection.execute(
             "CREATE TABLE user (
@@ -177,7 +185,7 @@ impl Model<User> for User {
         Ok(())
     }
 
-    fn map_row_with_offset(row: &Row, offset: usize) -> Result<User, Error> {
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
         let id = row.get(offset)?;
         let raw_email: String = row.get(offset + 1)?;
         let raw_password_hash: String = row.get(offset + 2)?;
@@ -185,7 +193,7 @@ impl Model<User> for User {
         let email = unsafe { Email::new_unchecked(raw_email) };
         let password_hash = unsafe { PasswordHash::new_unchecked(raw_password_hash) };
 
-        Ok(User::new(id, email, password_hash))
+        Ok(Self::new(id, email, password_hash))
     }
 }
 
@@ -279,7 +287,9 @@ pub struct Category {
     user_id: DatabaseID,
 }
 
-impl Model<Category> for Category {
+impl Model for Category {
+    type ReturnType = Self;
+
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection.execute(
             "CREATE TABLE category (
@@ -294,8 +304,8 @@ impl Model<Category> for Category {
         Ok(())
     }
 
-    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Category, Error> {
-        Ok(Category {
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
+        Ok(Self {
             id: row.get(offset)?,
             name: row.get(offset + 1)?,
             user_id: row.get(offset + 2)?,
@@ -441,7 +451,9 @@ pub struct Transaction {
     user_id: DatabaseID,
 }
 
-impl Model<Transaction> for Transaction {
+impl Model for Transaction {
+    type ReturnType = Self;
+
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection
                 .execute(
@@ -461,8 +473,8 @@ impl Model<Transaction> for Transaction {
         Ok(())
     }
 
-    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Transaction, Error> {
-        Ok(Transaction {
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
+        Ok(Self {
             id: row.get(offset)?,
             amount: row.get(offset + 1)?,
             date: row.get(offset + 2)?,
@@ -632,7 +644,9 @@ pub struct SavingsRatio {
     ratio: f64,
 }
 
-impl Model<SavingsRatio> for SavingsRatio {
+impl Model for SavingsRatio {
+    type ReturnType = Self;
+
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection
             .execute(
@@ -647,8 +661,8 @@ impl Model<SavingsRatio> for SavingsRatio {
         Ok(())
     }
 
-    fn map_row_with_offset(row: &Row, offset: usize) -> Result<SavingsRatio, Error> {
-        Ok(SavingsRatio {
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
+        Ok(Self {
             transaction_id: row.get(offset)?,
             ratio: row.get(offset + 1)?,
         })
@@ -757,7 +771,9 @@ pub struct RecurringTransaction {
     frequency: Frequency,
 }
 
-impl Model<RecurringTransaction> for RecurringTransaction {
+impl Model for RecurringTransaction {
+    type ReturnType = Self;
+
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection
             .execute(
@@ -773,8 +789,8 @@ impl Model<RecurringTransaction> for RecurringTransaction {
         Ok(())
     }
 
-    fn map_row_with_offset(row: &Row, offset: usize) -> Result<RecurringTransaction, Error> {
-        Ok(RecurringTransaction {
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
+        Ok(Self {
             transaction_id: row.get(offset)?,
             end_date: row.get(offset + 1)?,
             frequency: row.get(offset + 2)?,

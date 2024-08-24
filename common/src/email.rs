@@ -10,7 +10,7 @@ pub struct Email(String);
 pub struct EmailAddressError(pub String);
 
 impl Email {
-    /// Create an email address.
+    /// Create and validate an email address.
     ///
     /// # Errors
     ///
