@@ -169,6 +169,23 @@ pub trait Model {
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self::ReturnType, Error>;
 }
 
+pub trait Insert {
+    type ParamType;
+    type ResultType;
+
+    fn insert(
+        params: Self::ParamType,
+        connection: &Connection,
+    ) -> Result<Self::ResultType, DbError>;
+}
+
+// TODO: Implement `SelectBy` for other model types.
+pub trait SelectBy<T> {
+    type ResultType;
+
+    fn select(field: T, connection: &Connection) -> Result<Self::ResultType, DbError>;
+}
+
 impl Model for User {
     type ReturnType = Self;
 
@@ -196,23 +213,6 @@ impl Model for User {
 
         Ok(Self::new(id, email, password_hash))
     }
-}
-
-pub trait Insert {
-    type ParamType;
-    type ResultType;
-
-    fn insert(
-        params: Self::ParamType,
-        connection: &Connection,
-    ) -> Result<Self::ResultType, DbError>;
-}
-
-// TODO: Implement `SelectBy` for other model types.
-pub trait SelectBy<T> {
-    type ResultType;
-
-    fn select(field: T, connection: &Connection) -> Result<Self::ResultType, DbError>;
 }
 
 pub struct NewUser {
