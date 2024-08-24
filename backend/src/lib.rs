@@ -293,7 +293,7 @@ async fn get_transaction(
     let connection_mutex = state.db_connection();
     let connection = connection_mutex.lock().unwrap();
 
-    Transaction::select_by_id(transaction_id, &connection)
+    Transaction::select(transaction_id, &connection)
         .map_err(AppError::DatabaseError)
         .and_then(|transaction| {
             if User::select(&claims.email, &connection)?.id() == transaction.user_id() {

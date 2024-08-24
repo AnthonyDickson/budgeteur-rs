@@ -440,7 +440,6 @@ impl SelectBy<UserID> for Category {
     }
 }
 
-// TODO: Implement `SelectBy` for `Transaction`.
 // TODO: Move `Transaction` to workspace `common` and its own module.
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
@@ -453,6 +452,32 @@ pub struct Transaction {
     description: String,
     category_id: DatabaseID,
     user_id: UserID,
+}
+
+impl Transaction {
+    pub fn id(&self) -> DatabaseID {
+        self.id
+    }
+
+    pub fn amount(&self) -> f64 {
+        self.amount
+    }
+
+    pub fn date(&self) -> &NaiveDate {
+        &self.date
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+
+    pub fn category_id(&self) -> DatabaseID {
+        self.category_id
+    }
+
+    pub fn user_id(&self) -> UserID {
+        self.user_id
+    }
 }
 
 impl Model for Transaction {
@@ -570,30 +595,8 @@ impl Insert for Transaction {
     }
 }
 
-impl Transaction {
-    pub fn id(&self) -> DatabaseID {
-        self.id
-    }
-
-    pub fn amount(&self) -> f64 {
-        self.amount
-    }
-
-    pub fn date(&self) -> &NaiveDate {
-        &self.date
-    }
-
-    pub fn description(&self) -> &str {
-        &self.description
-    }
-
-    pub fn category_id(&self) -> DatabaseID {
-        self.category_id
-    }
-
-    pub fn user_id(&self) -> UserID {
-        self.user_id
-    }
+impl SelectBy<DatabaseID> for Transaction {
+    type ResultType = Self;
 
     /// Retrieve a transaction in the database by its `id`.
     ///
@@ -601,11 +604,11 @@ impl Transaction {
     /// ```
     /// # use rusqlite::Connection;
     /// #
-    /// # use backend::db::{DbError, Transaction};
+    /// # use backend::db::{DbError, SelectBy, Transaction};
     /// # use common::DatabaseID;
     /// #
     /// fn get_transaction(id: DatabaseID, connection: &Connection) -> Result<Transaction, DbError> {
-    ///     Transaction::select_by_id(id, &connection)
+    ///     Transaction::select(id, &connection)
     /// }
     /// ```
     ///
@@ -613,38 +616,39 @@ impl Transaction {
     /// This function will return an error if:
     /// - `id` does not refer to a valid transaction,
     /// - or there is some other SQL error.
-    pub fn select_by_id(id: DatabaseID, connection: &Connection) -> Result<Transaction, DbError> {
+    fn select(id: DatabaseID, connection: &Connection) -> Result<Self::ResultType, DbError> {
         let transaction = connection
-            .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE id = :id")?
-            .query_row(&[(":id", &id)], Transaction::map_row)?;
+                .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE id = :id")?
+                .query_row(&[(":id", &id)], Transaction::map_row)?;
 
         Ok(transaction)
     }
+}
 
-    /// Retrieve the transactions in the database for the user `user_id`.
+impl SelectBy<UserID> for Transaction {
+    type ResultType = Vec<Self>;
+
+    /// Retrieve the transactions in the database that have `user_id`.
     ///
     /// # Examples
     /// ```
-    /// use backend::db::Transaction;
+    /// use backend::db::{SelectBy, Transaction};
     /// use common::User;
     ///
     /// fn sum_transaction_amount_for_user(user: &User, conn: &rusqlite::Connection) -> f64 {
-    ///     let transactions = Transaction::select_by_user_id(user.id(), conn).unwrap();
+    ///     let transactions = Transaction::select(user.id(), conn).unwrap();
     ///     transactions.iter().map(|transaction| transaction.amount()).sum()
     /// }
     /// ```
     ///
     /// # Errors
     /// This function will return an error if there is an SQL error.
-    pub fn select_by_user_id(
-        user_id: UserID,
-        connection: &Connection,
-    ) -> Result<Vec<Transaction>, DbError> {
+    fn select(user_id: UserID, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection
-            .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE user_id = :user_id")?
-            .query_map(&[(":user_id", &user_id.as_i64())], Transaction::map_row)?
-            .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
-            .collect()
+                .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE user_id = :user_id")?
+                .query_map(&[(":user_id", &user_id.as_i64())], Transaction::map_row)?
+                .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
+                .collect()
     }
 }
 
@@ -1203,7 +1207,7 @@ mod transaction_tests {
     use common::{CategoryName, Email, PasswordHash, UserID};
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, DbError, NewTransaction, Transaction, User};
+    use crate::db::{initialize, Category, DbError, NewTransaction, SelectBy, Transaction, User};
 
     use super::{Insert, NewCategory, NewUser};
 
@@ -1349,8 +1353,7 @@ mod transaction_tests {
         )
         .unwrap();
 
-        let selected_transaction =
-            Transaction::select_by_id(inserted_transaction.id(), &conn).unwrap();
+        let selected_transaction = Transaction::select(inserted_transaction.id(), &conn).unwrap();
 
         assert_eq!(inserted_transaction, selected_transaction);
     }
@@ -1371,7 +1374,7 @@ mod transaction_tests {
         )
         .unwrap();
 
-        let maybe_transaction = Transaction::select_by_id(inserted_transaction.id() + 1, &conn);
+        let maybe_transaction = Transaction::select(inserted_transaction.id() + 1, &conn);
 
         assert_eq!(maybe_transaction, Err(DbError::NotFound));
     }
@@ -1405,7 +1408,7 @@ mod transaction_tests {
             .unwrap(),
         ];
 
-        let transactions = Transaction::select_by_user_id(test_user.id(), &conn).unwrap();
+        let transactions = Transaction::select(test_user.id(), &conn).unwrap();
 
         assert_eq!(transactions, expected_transactions);
     }
