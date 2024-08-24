@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::DatabaseID;
+use crate::{DatabaseID, UserID};
 
 #[derive(thiserror::Error, Debug)]
 #[error("{0} is not a valid category name")]
@@ -45,12 +45,12 @@ impl AsRef<str> for CategoryName {
 pub struct Category {
     id: DatabaseID,
     name: CategoryName,
-    user_id: DatabaseID,
+    user_id: UserID,
 }
 
 impl Category {
     /// Create a new category.
-    pub fn new(id: DatabaseID, name: CategoryName, user_id: DatabaseID) -> Self {
+    pub fn new(id: DatabaseID, name: CategoryName, user_id: UserID) -> Self {
         Self { id, name, user_id }
     }
 
@@ -65,7 +65,7 @@ impl Category {
     }
 
     /// The id of the user that created the category.
-    pub fn user_id(&self) -> DatabaseID {
+    pub fn user_id(&self) -> UserID {
         self.user_id
     }
 }

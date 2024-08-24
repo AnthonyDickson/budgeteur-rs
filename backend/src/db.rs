@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use chrono::{NaiveDate, Utc};
-use common::{Category, CategoryName, DatabaseID, Email, PasswordHash, User};
+use common::{Category, CategoryName, DatabaseID, Email, PasswordHash, User, UserID};
 use rusqlite::{
     types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput},
     Connection, Error, Row, Transaction as SqlTransaction,
@@ -186,10 +186,11 @@ impl Model for User {
     }
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
-        let id = row.get(offset)?;
-        let raw_email: String = row.get(offset + 1)?;
-        let raw_password_hash: String = row.get(offset + 2)?;
+        let raw_id = row.get(offset)?;
+        let raw_email = row.get(offset + 1)?;
+        let raw_password_hash = row.get(offset + 2)?;
 
+        let id = UserID::new(raw_id);
         let email = unsafe { Email::new_unchecked(raw_email) };
         let password_hash = unsafe { PasswordHash::new_unchecked(raw_password_hash) };
 
@@ -240,7 +241,7 @@ impl Insert for User {
             (&user.email.to_string(), user.password_hash.to_string()),
         )?;
 
-        let id = connection.last_insert_rowid();
+        let id = UserID::new(connection.last_insert_rowid());
 
         Ok(User::new(id, user.email, user.password_hash))
     }
@@ -295,9 +296,12 @@ impl Model for Category {
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
         let id = row.get(offset)?;
+
         let raw_name: String = row.get(offset + 1)?;
         let name = unsafe { CategoryName::new_unchecked(raw_name) };
-        let user_id = row.get(offset + 2)?;
+
+        let raw_user_id = row.get(offset + 2)?;
+        let user_id = UserID::new(raw_user_id);
 
         Ok(Self::new(id, name, user_id))
     }
@@ -306,7 +310,7 @@ impl Model for Category {
 /// The data for creating a new category.
 pub struct NewCategory {
     pub name: CategoryName,
-    pub user_id: DatabaseID,
+    pub user_id: UserID,
 }
 
 impl Insert for Category {
@@ -343,7 +347,7 @@ impl Insert for Category {
     ) -> Result<Self::ResultType, DbError> {
         connection.execute(
             "INSERT INTO category (name, user_id) VALUES (?1, ?2)",
-            (category_data.name.as_ref(), category_data.user_id),
+            (category_data.name.as_ref(), category_data.user_id.as_i64()),
         )?;
 
         let category_id = connection.last_insert_rowid();
@@ -386,15 +390,6 @@ impl SelectBy<DatabaseID> for Category {
     }
 }
 
-// TODO: Replace `User.id` with this newtype.
-pub struct UserID(i64);
-
-impl UserID {
-    pub fn new(id: i64) -> Self {
-        Self(id)
-    }
-}
-
 impl SelectBy<UserID> for Category {
     type ResultType = Vec<Self>;
 
@@ -404,7 +399,7 @@ impl SelectBy<UserID> for Category {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Insert, Model, NewCategory, SelectBy, UserID};
+    /// use backend::db::{Insert, Model, NewCategory, SelectBy};
     /// use common::{Category, CategoryName, User};
     ///
     /// fn create_and_validate_categories(user: &User, connection: &Connection) -> Vec<Category> {
@@ -427,7 +422,7 @@ impl SelectBy<UserID> for Category {
     ///         .unwrap(),
     ///     ];
     ///
-    ///     let selected_categories = Category::select(UserID::new(user.id()), &connection).unwrap();
+    ///     let selected_categories = Category::select(user.id(), &connection).unwrap();
     ///
     ///     assert_eq!(inserted_categories, selected_categories);
     ///
@@ -440,7 +435,7 @@ impl SelectBy<UserID> for Category {
     fn select(user_id: UserID, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection
             .prepare("SELECT id, name, user_id FROM category WHERE user_id = :user_id")?
-            .query_map(&[(":user_id", &user_id.0)], Category::map_row)?
+            .query_map(&[(":user_id", &user_id.as_i64())], Category::map_row)?
             .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
             .collect()
     }
@@ -456,7 +451,7 @@ pub struct Transaction {
     date: NaiveDate,
     description: String,
     category_id: DatabaseID,
-    user_id: DatabaseID,
+    user_id: UserID,
 }
 
 impl Model for Transaction {
@@ -488,7 +483,7 @@ impl Model for Transaction {
             date: row.get(offset + 2)?,
             description: row.get(offset + 3)?,
             category_id: row.get(offset + 4)?,
-            user_id: row.get(offset + 5)?,
+            user_id: UserID::new(row.get(offset + 5)?),
         })
     }
 }
@@ -514,7 +509,7 @@ impl Transaction {
         self.category_id
     }
 
-    pub fn user_id(&self) -> DatabaseID {
+    pub fn user_id(&self) -> UserID {
         self.user_id
     }
 
@@ -562,7 +557,7 @@ impl Transaction {
         date: NaiveDate,
         description: String,
         category_id: DatabaseID,
-        user_id: DatabaseID,
+        user_id: UserID,
         connection: &Connection,
     ) -> Result<Transaction, DbError> {
         if date > Utc::now().date_naive() {
@@ -573,7 +568,7 @@ impl Transaction {
         connection
             .execute(
                 "INSERT INTO \"transaction\" (amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-                (amount, &date, &description, category_id, user_id),
+                (amount, &date, &description, category_id, user_id.as_i64()),
             )?;
 
         let transaction_id = connection.last_insert_rowid();
@@ -630,12 +625,12 @@ impl Transaction {
     /// # Errors
     /// This function will return an error if there is an SQL error.
     pub fn select_by_user_id(
-        user_id: DatabaseID,
+        user_id: UserID,
         connection: &Connection,
     ) -> Result<Vec<Transaction>, DbError> {
         connection
             .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE user_id = :user_id")?
-            .query_map(&[(":user_id", &user_id)], Transaction::map_row)?
+            .query_map(&[(":user_id", &user_id.as_i64())], Transaction::map_row)?
             .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
             .collect()
     }
@@ -899,7 +894,7 @@ pub fn select_recurring_transactions_by_user(
             INNER JOIN recurring_transaction r ON r.transaction_id = l.id
             WHERE l.user_id = :user_id;",
         )?
-        .query_and_then(&[(":user_id", &user.id())], |row| {
+        .query_and_then(&[(":user_id", &user.id().as_i64())], |row| {
             let transaction = Transaction::map_row(row)?;
             let recurring_transaction = RecurringTransaction::map_row_with_offset(row, 6)?;
 
@@ -938,7 +933,7 @@ mod user_tests {
         )
         .unwrap();
 
-        assert!(inserted_user.id() > 0);
+        assert!(inserted_user.id().as_i64() > 0);
         assert_eq!(inserted_user.email(), &email);
         assert_eq!(inserted_user.password_hash(), &password_hash);
     }
@@ -1094,7 +1089,13 @@ mod category_tests {
         let conn = init_db();
 
         let name = unsafe { CategoryName::new_unchecked("Foo".to_string()) };
-        let maybe_category = Category::insert(NewCategory { name, user_id: 42 }, &conn);
+        let maybe_category = Category::insert(
+            NewCategory {
+                name,
+                user_id: UserID::new(42),
+            },
+            &conn,
+        );
 
         assert_eq!(maybe_category, Err(DbError::InvalidForeignKey));
     }
@@ -1148,7 +1149,7 @@ mod category_tests {
             .unwrap(),
         ];
 
-        let selected_categories = Category::select(UserID::new(test_user.id()), &conn).unwrap();
+        let selected_categories = Category::select(test_user.id(), &conn).unwrap();
 
         assert_eq!(inserted_categories, selected_categories);
     }
@@ -1173,7 +1174,8 @@ mod category_tests {
         )
         .unwrap();
 
-        let selected_categories = Category::select(UserID::new(test_user.id() + 1), &conn).unwrap();
+        let selected_categories =
+            Category::select(UserID::new(test_user.id().as_i64() + 1), &conn).unwrap();
 
         assert_eq!(selected_categories, []);
     }
@@ -1184,7 +1186,7 @@ mod transaction_tests {
     use std::f64::consts::PI;
 
     use chrono::{Days, NaiveDate, Utc};
-    use common::{CategoryName, Email, PasswordHash};
+    use common::{CategoryName, Email, PasswordHash, UserID};
     use rusqlite::Connection;
 
     use crate::db::{initialize, Category, DbError, Transaction, User};
@@ -1259,7 +1261,7 @@ mod transaction_tests {
             date,
             description.clone(),
             category.id(),
-            test_user.id() + 1,
+            UserID::new(test_user.id().as_i64() + 1),
             &conn,
         );
 

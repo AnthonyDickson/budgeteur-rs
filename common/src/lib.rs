@@ -11,16 +11,29 @@ pub use password::{PasswordError, PasswordHash, RawPassword};
 
 pub type DatabaseID = i64;
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UserID(i64);
+
+impl UserID {
+    pub fn new(id: i64) -> Self {
+        Self(id)
+    }
+
+    pub fn as_i64(&self) -> i64 {
+        self.0
+    }
+}
+
 /// A user of the application.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
-    id: DatabaseID,
+    id: UserID,
     email: Email,
     password_hash: PasswordHash,
 }
 
 impl User {
-    pub fn new(id: DatabaseID, email: Email, password_hash: PasswordHash) -> Self {
+    pub fn new(id: UserID, email: Email, password_hash: PasswordHash) -> Self {
         User {
             id,
             email,
@@ -28,7 +41,7 @@ impl User {
         }
     }
 
-    pub fn id(&self) -> DatabaseID {
+    pub fn id(&self) -> UserID {
         self.id
     }
 
@@ -47,7 +60,7 @@ mod tests {
 
     #[test]
     fn create_transaction() {
-        let id = 1;
+        let id = UserID::new(1);
         let email = Email::new("foo@bar.baz").unwrap();
         let password_hash =
             unsafe { PasswordHash::new_unchecked("definitelyapasswordhash".to_string()) };
