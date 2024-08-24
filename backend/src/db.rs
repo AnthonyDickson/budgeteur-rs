@@ -214,14 +214,13 @@ pub trait SelectBy<T> {
     fn select(field: T, connection: &Connection) -> Result<Self::ResultType, DbError>;
 }
 
-// TODO: Rename to `NewUser`
-pub struct UserData {
+pub struct NewUser {
     pub email: Email,
     pub password_hash: PasswordHash,
 }
 
 impl Insert for User {
-    type ParamType = UserData;
+    type ParamType = NewUser;
     type ResultType = User;
 
     /// Create a new user in the database.
@@ -915,7 +914,7 @@ mod user_tests {
     use common::{Email, PasswordHash};
     use rusqlite::Connection;
 
-    use crate::db::{initialize, DbError, Insert, SelectBy, User, UserData};
+    use crate::db::{initialize, DbError, Insert, NewUser, SelectBy, User};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -931,7 +930,7 @@ mod user_tests {
         let password_hash = unsafe { PasswordHash::new_unchecked("hunter2".to_string()) };
 
         let inserted_user = User::insert(
-            UserData {
+            NewUser {
                 email: email.clone(),
                 password_hash: password_hash.clone(),
             },
@@ -951,7 +950,7 @@ mod user_tests {
         let email = Email::new("hello@world.com").unwrap();
 
         assert!(User::insert(
-            UserData {
+            NewUser {
                 email: email.clone(),
                 password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) }
             },
@@ -960,7 +959,7 @@ mod user_tests {
         .is_ok());
         assert_eq!(
             User::insert(
-                UserData {
+                NewUser {
                     email: email.clone(),
                     password_hash: unsafe { PasswordHash::new_unchecked("hunter3".to_string()) }
                 },
@@ -978,7 +977,7 @@ mod user_tests {
         let password = unsafe { PasswordHash::new_unchecked("hunter2".to_string()) };
 
         assert!(User::insert(
-            UserData {
+            NewUser {
                 email,
                 password_hash: password.clone()
             },
@@ -987,7 +986,7 @@ mod user_tests {
         .is_ok());
         assert_eq!(
             User::insert(
-                UserData {
+                NewUser {
                     email: Email::new("bye@world.com").unwrap(),
                     password_hash: password.clone()
                 },
@@ -1001,7 +1000,7 @@ mod user_tests {
         let conn = init_db();
 
         let test_user = User::insert(
-            UserData {
+            NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
             },
@@ -1026,7 +1025,7 @@ mod user_tests {
         let conn = init_db();
 
         let test_user = User::insert(
-            UserData {
+            NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
             },
@@ -1048,7 +1047,7 @@ mod category_tests {
         initialize, Category, CategoryName, DbError, NewCategory, SelectBy, User, UserID,
     };
 
-    use super::{Insert, UserData};
+    use super::{Insert, NewUser};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1060,7 +1059,7 @@ mod category_tests {
         let conn = init_db();
 
         let test_user = User::insert(
-            UserData {
+            NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
             },
@@ -1190,7 +1189,7 @@ mod transaction_tests {
 
     use crate::db::{initialize, Category, DbError, Transaction, User};
 
-    use super::{Insert, NewCategory, UserData};
+    use super::{Insert, NewCategory, NewUser};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1202,7 +1201,7 @@ mod transaction_tests {
         let conn = init_db();
 
         let test_user = User::insert(
-            UserData {
+            NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
             },
@@ -1390,7 +1389,7 @@ mod savings_ratio_tests {
 
     use crate::db::{initialize, Category, DbError, SavingsRatio, Transaction, User};
 
-    use super::{Insert, NewCategory, UserData};
+    use super::{Insert, NewCategory, NewUser};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1402,7 +1401,7 @@ mod savings_ratio_tests {
         let conn = init_db();
 
         let test_user = User::insert(
-            UserData {
+            NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
             },
@@ -1513,7 +1512,7 @@ mod recurring_transaction_tests {
         Transaction,
     };
 
-    use super::{initialize, Category, Insert, NewCategory, UserData};
+    use super::{initialize, Category, Insert, NewCategory, NewUser};
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
@@ -1524,7 +1523,7 @@ mod recurring_transaction_tests {
         let conn = init_db();
 
         let test_user = User::insert(
-            UserData {
+            NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
             },

@@ -10,7 +10,7 @@ use axum::{
 };
 use axum_server::Handle;
 use common::{Category, DatabaseID, PasswordHash, User};
-use db::{Insert, NewCategory, SelectBy, UserData};
+use db::{Insert, NewCategory, NewUser, SelectBy};
 use serde_json::json;
 use tokio::signal;
 
@@ -186,7 +186,7 @@ async fn create_user(
         })
         .and_then(|password_hash| {
             User::insert(
-                UserData {
+                NewUser {
                     email: user_data.email,
                     password_hash,
                 },

@@ -172,7 +172,7 @@ mod tests {
 
     use crate::db::initialize;
     use crate::{auth, db::Insert};
-    use crate::{config::AppConfig, db::UserData};
+    use crate::{config::AppConfig, db::NewUser};
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =
@@ -206,7 +206,7 @@ mod tests {
 
         let raw_password = RawPassword::new("averysafeandsecurepassword".to_string()).unwrap();
         let test_user = User::insert(
-            UserData {
+            NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
             },
@@ -275,7 +275,7 @@ mod tests {
 
         let raw_password = RawPassword::new("averysafeandsecurepassword".to_owned()).unwrap();
         let test_user = User::insert(
-            UserData {
+            NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
                 password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
             },
