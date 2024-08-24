@@ -3,9 +3,9 @@ use std::error::Error;
 use std::path::Path;
 use std::process::exit;
 
+use common::{PasswordHash, RawPassword};
 use rusqlite::Connection;
 
-use backend::auth::hash_password;
 use backend::db::initialize;
 
 /// Create and populate a database for manual testing.
@@ -42,9 +42,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     initialize(&conn)?;
 
     println!("Creating test user...");
+
+    let password_hash =
+        PasswordHash::new(unsafe { RawPassword::new_unchecked("test".to_owned()) })?;
+
     conn.execute(
         "INSERT INTO user (email, password) VALUES (?1, ?2)",
-        (&"test@test.com", &hash_password("test")?),
+        (&"test@test.com", password_hash.to_string()),
     )?;
 
     Ok(())

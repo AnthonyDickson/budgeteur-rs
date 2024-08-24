@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 mod email;
 pub use email::{Email, EmailAddressError};
+mod password;
+pub use password::{PasswordError, PasswordHash, RawPassword};
 
 pub type DatabaseID = i64;
 
@@ -12,11 +14,11 @@ pub type DatabaseID = i64;
 pub struct User {
     id: DatabaseID,
     email: Email,
-    password_hash: String,
+    password_hash: PasswordHash,
 }
 
 impl User {
-    pub fn new(id: DatabaseID, email: Email, password_hash: String) -> Self {
+    pub fn new(id: DatabaseID, email: Email, password_hash: PasswordHash) -> Self {
         User {
             id,
             email,
@@ -32,7 +34,7 @@ impl User {
         &self.email
     }
 
-    pub fn password_hash(&self) -> &str {
+    pub fn password_hash(&self) -> &PasswordHash {
         &self.password_hash
     }
 }
@@ -45,7 +47,8 @@ mod tests {
     fn create_transaction() {
         let id = 1;
         let email = Email::new("foo@bar.baz").unwrap();
-        let password_hash = "definitelyapasswordhash".to_string();
+        let password_hash =
+            unsafe { PasswordHash::new_unchecked("definitelyapasswordhash".to_string()) };
 
         let user = User::new(id, email.clone(), password_hash.clone());
 

@@ -10,6 +10,11 @@ pub struct Email(String);
 pub struct EmailAddressError(pub String);
 
 impl Email {
+    /// Create an email address.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if `raw_email` is not a valid email address.
     pub fn new(raw_email: &str) -> Result<Self, EmailAddressError> {
         // TODO: Use proper regex/email validation.
         if raw_email.contains('@') && !raw_email.is_empty() {
@@ -17,6 +22,16 @@ impl Email {
         } else {
             Err(EmailAddressError(raw_email.to_string()))
         }
+    }
+
+    /// Create a new `Email` without any validation.
+    ///
+    /// # Safety
+    ///
+    /// This function should only be called on strings coming out of a trusted source such as the application's database.
+    /// For emails coming from the user (e.g., via the REST API), this function should **not** be used, instead use the checked version of this method.
+    pub unsafe fn new_unchecked(raw_email: String) -> Self {
+        Self(raw_email)
     }
 }
 

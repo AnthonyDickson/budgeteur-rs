@@ -13,9 +13,8 @@ use axum_extra::{
     headers::{authorization::Bearer, Authorization},
     TypedHeader,
 };
-use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::{Duration, Utc};
-use common::{Email, User};
+use common::{Email, RawPassword, User};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -68,7 +67,7 @@ pub struct Credentials {
     /// Email entered during sign-in.
     pub email: Email,
     /// Password entered during sign-in.
-    pub password: String,
+    pub password: RawPassword,
 }
 
 #[derive(Debug)]
@@ -114,10 +113,6 @@ pub async fn sign_in(
     State(state): State<AppConfig>,
     Json(user_data): Json<Credentials>,
 ) -> Result<Json<String>, AuthError> {
-    if user_data.email.is_empty() || user_data.password.is_empty() {
-        return Err(AuthError::MissingCredentials);
-    }
-
     let user = User::select(&user_data.email, &state.db_connection().lock().unwrap()).map_err(
         |e| match e {
             DbError::NotFound => AuthError::WrongCredentials,
@@ -128,26 +123,21 @@ pub async fn sign_in(
         },
     )?;
 
-    let is_valid = verify_password(&user_data.password, user.password_hash()).map_err(|e| {
-        tracing::error!("Error verifying password: {}", e);
-        AuthError::InternalError
-    })?;
+    user.password_hash()
+        .verify(&user_data.password)
+        .map_err(|e| {
+            tracing::error!("Error verifying password: {}", e);
+            AuthError::InternalError
+        })
+        .map(|password_is_correct| {
+            if password_is_correct {
+                let token = encode_jwt(user.email(), state.encoding_key());
 
-    if !is_valid {
-        return Err(AuthError::WrongCredentials);
-    }
-
-    let token = encode_jwt(user.email(), state.encoding_key());
-
-    Ok(Json(token))
-}
-
-pub fn verify_password(password: &str, hash: &str) -> Result<bool, bcrypt::BcryptError> {
-    verify(password, hash)
-}
-
-pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
-    hash(password, DEFAULT_COST)
+                Ok(Json(token))
+            } else {
+                Err(AuthError::WrongCredentials)
+            }
+        })?
 }
 
 fn encode_jwt(email: &Email, encoding_key: &EncodingKey) -> String {
@@ -176,48 +166,13 @@ mod tests {
         Router,
     };
     use axum_test::TestServer;
-    use common::{Email, User};
+    use common::{Email, PasswordHash, RawPassword, User};
     use rusqlite::Connection;
     use serde_json::json;
 
     use crate::db::initialize;
     use crate::{auth, db::Insert};
     use crate::{config::AppConfig, db::UserData};
-
-    #[test]
-    fn verify_password_for_valid_password() {
-        let hash = "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm";
-        let password = "okon";
-
-        assert!(auth::verify_password(password, hash).unwrap());
-    }
-
-    #[test]
-    fn verify_password_for_invalid_password() {
-        let hash = "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm";
-        let wrong_password = "thewrongpassword";
-
-        assert!(!auth::verify_password(wrong_password, hash).unwrap());
-    }
-
-    #[test]
-    fn hash_password_produces_verifiable_hash() {
-        let password = "password1234";
-        let wrong_password = "the_wrong_password";
-        let hash = auth::hash_password(password).unwrap();
-
-        assert!(auth::verify_password(password, &hash).unwrap());
-        assert!(!auth::verify_password(wrong_password, &hash).unwrap());
-    }
-
-    #[test]
-    fn hash_duplicate_password_produces_unique_hash() {
-        let password = "password1234";
-        let hash = auth::hash_password(password).unwrap();
-        let dupe_hash = auth::hash_password(password).unwrap();
-
-        assert_ne!(hash, dupe_hash);
-    }
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =
@@ -249,11 +204,11 @@ mod tests {
     async fn sign_in_succeeds_with_valid_credentials() {
         let app_config = get_test_app_config();
 
-        let raw_password = "hunter2";
+        let raw_password = RawPassword::new("averysafeandsecurepassword".to_string()).unwrap();
         let test_user = User::insert(
             UserData {
                 email: Email::new("foo@bar.baz").unwrap(),
-                password_hash: auth::hash_password(raw_password).unwrap(),
+                password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
             },
             &app_config.db_connection().lock().unwrap(),
         )
@@ -318,11 +273,11 @@ mod tests {
     async fn get_protected_route_with_valid_jwt() {
         let app_config = get_test_app_config();
 
-        let raw_password = "hunter2";
+        let raw_password = RawPassword::new("averysafeandsecurepassword".to_owned()).unwrap();
         let test_user = User::insert(
             UserData {
                 email: Email::new("foo@bar.baz").unwrap(),
-                password_hash: auth::hash_password(raw_password).unwrap(),
+                password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
             },
             &app_config.db_connection().lock().unwrap(),
         )

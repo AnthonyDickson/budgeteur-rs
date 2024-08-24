@@ -9,7 +9,7 @@ use axum::{
     Json, Router,
 };
 use axum_server::Handle;
-use common::{DatabaseID, User};
+use common::{DatabaseID, PasswordHash, User};
 use db::{Category, Insert, SelectBy, UserData};
 use serde_json::json;
 use tokio::signal;
@@ -17,7 +17,7 @@ use tokio::signal;
 pub use config::AppConfig;
 
 use crate::{
-    auth::{hash_password, Credentials},
+    auth::Credentials,
     db::{DbError, Transaction},
 };
 
@@ -179,7 +179,7 @@ async fn create_user(
     State(state): State<AppConfig>,
     Json(user_data): Json<Credentials>,
 ) -> impl IntoResponse {
-    hash_password(&user_data.password)
+    PasswordHash::new(user_data.password)
         .map_err(|e| {
             tracing::error!("Error hashing password: {e:?}");
             AppError::InternalError
@@ -298,11 +298,11 @@ async fn get_transaction(
 mod user_tests {
     use axum::{routing::post, Router};
     use axum_test::TestServer;
-    use common::{Email, User};
+    use common::{Email, RawPassword, User};
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::{auth::verify_password, create_user, db::initialize, AppConfig};
+    use crate::{create_user, db::initialize, AppConfig};
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =
@@ -321,7 +321,7 @@ mod user_tests {
         let server = TestServer::new(app).expect("Could not create test server.");
 
         let email = Email::new("test@test.com").unwrap();
-        let password = "hunter2";
+        let password = unsafe { RawPassword::new_unchecked("hunter2".to_owned()) };
 
         let response = server
             .post("/user")
@@ -336,7 +336,7 @@ mod user_tests {
 
         let user = response.json::<User>();
         assert_eq!(user.email(), &email);
-        assert!(verify_password(password, user.password_hash()).unwrap());
+        assert!(user.password_hash().verify(&password).unwrap());
     }
 }
 
