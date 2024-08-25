@@ -2,8 +2,8 @@ use std::fmt::Display;
 
 use chrono::{NaiveDate, Utc};
 use common::{
-    Category, CategoryName, DatabaseID, Email, PasswordHash, RecurringTransaction, SavingsRatio,
-    Transaction, User, UserID,
+    Category, CategoryName, DatabaseID, Email, PasswordHash, Ratio, RecurringTransaction,
+    SavingsRatio, Transaction, User, UserID,
 };
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
@@ -631,7 +631,12 @@ impl Model for SavingsRatio {
     }
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
-        Ok(Self::new(row.get(offset)?, row.get(offset + 1)?))
+        let transaction_id = row.get(offset)?;
+
+        let raw_ratio = row.get(offset + 1)?;
+        let ratio = unsafe { Ratio::new_unchecked(raw_ratio) };
+
+        Ok(Self::new(transaction_id, ratio))
     }
 }
 
@@ -646,9 +651,9 @@ impl Insert for SavingsRatio {
     /// use rusqlite::Connection;
     ///
     /// use backend::db::Insert;
-    /// use common::{SavingsRatio, Transaction};
+    /// use common::{Ratio, SavingsRatio, Transaction};
     ///
-    /// fn set_savings_ratio(transaction: &Transaction, ratio: f64, connection: &Connection) -> SavingsRatio {
+    /// fn set_savings_ratio(transaction: &Transaction, ratio: Ratio, connection: &Connection) -> SavingsRatio {
     ///     SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), connection).unwrap()
     /// }
     /// ```
@@ -664,13 +669,9 @@ impl Insert for SavingsRatio {
     ) -> Result<Self::ResultType, DbError> {
         let ratio = new_savings_ratio.ratio();
 
-        if !(0.0..=1.0).contains(&ratio) || ratio.is_sign_negative() {
-            return Err(DbError::InvalidRatio);
-        }
-
         connection.execute(
             "INSERT INTO savings_ratio (transaction_id, ratio) VALUES (?1, ?2)",
-            (new_savings_ratio.transaction_id(), ratio),
+            (new_savings_ratio.transaction_id(), ratio.as_f64()),
         )?;
 
         Ok(new_savings_ratio)
@@ -775,7 +776,7 @@ pub fn initialize(connection: &Connection) -> Result<(), DbError> {
     Ok(())
 }
 
-// TODO: Separate types for recurring schedule (current RecurringTransaction type) and join result row of transaction and recurring schedule?
+// TODO: Separate types for recurring schedule (current RecurringTransaction type) and join result row of transaction and recurring schedule to create a RecurringTransaction?
 pub fn select_recurring_transactions_by_user(
     user: &User,
     connection: &Connection,
@@ -1295,10 +1296,10 @@ mod savings_ratio_tests {
     use std::f64::consts::PI;
 
     use chrono::NaiveDate;
-    use common::{CategoryName, Email, PasswordHash, SavingsRatio};
+    use common::{CategoryName, Email, PasswordHash, Ratio, SavingsRatio};
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, DbError, NewTransaction, Transaction, User};
+    use crate::db::{initialize, Category, NewTransaction, Transaction, User};
 
     use super::{Insert, NewCategory, NewUser};
 
@@ -1348,42 +1349,13 @@ mod savings_ratio_tests {
     fn create_savings_ratio() {
         let (conn, transaction) = create_database_and_insert_test_transaction();
 
-        let ratio = 0.5;
+        let ratio = Ratio::new(0.5).unwrap();
         let savings_ratio =
-            SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), &conn).unwrap();
+            SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio.clone()), &conn)
+                .unwrap();
 
         assert_eq!(savings_ratio.transaction_id(), transaction.id());
-        assert_eq!(savings_ratio.ratio(), ratio);
-    }
-
-    #[test]
-    fn create_savings_ratio_fails_with_ratio_below_zero() {
-        let (conn, transaction) = create_database_and_insert_test_transaction();
-
-        let ratio = -0.01;
-        let savings_ratio = SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), &conn);
-
-        assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
-    }
-
-    #[test]
-    fn create_savings_ratio_fails_with_negative_zero_ratio() {
-        let (conn, transaction) = create_database_and_insert_test_transaction();
-
-        let ratio = -0.0;
-        let savings_ratio = SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), &conn);
-
-        assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
-    }
-
-    #[test]
-    fn create_savings_ratio_fails_with_ratio_above_one() {
-        let (conn, transaction) = create_database_and_insert_test_transaction();
-
-        let ratio = 1.01;
-        let savings_ratio = SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), &conn);
-
-        assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
+        assert_eq!(savings_ratio.ratio(), &ratio);
     }
 }
 

@@ -11,7 +11,7 @@ mod recurring_transaction;
 pub use recurring_transaction::{Frequency, RecurringTransaction, RecurringTransactionError};
 
 mod savings_ratio;
-pub use savings_ratio::SavingsRatio;
+pub use savings_ratio::{Ratio, SavingsRatio};
 
 mod transaction;
 pub use transaction::Transaction;
