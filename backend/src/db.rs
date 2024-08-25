@@ -7,20 +7,13 @@ use common::{
 };
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
-// TODO: Remove error variants obsoleted by newtypes (e.g., EmptyEmail).
 /// Errors originating from operations on the app's database.
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum DbError {
-    /// An empty email was given. The client should try again with a non-empty email address.
-    EmptyEmail,
-    /// An empty password hash was given. The client should try again with a non-empty password hash.
-    EmptyPassword,
     /// The user's email already exists in the database. The client should try again with a different email address.
     DuplicateEmail,
     /// The password hash clashed with an existing password hash (should be extremely rare), the caller should rehash the password and try again.
     DuplicatePassword,
-    /// The specified field was empty when it is not allowed. The client should try again after replacing the field with a non-empty string.
-    EmptyField(String),
     /// A query was given an invalid foreign key. The client should check that the ids are valid.
     InvalidForeignKey,
     /// An invalid date was provided (e.g., a future date on a transaction or an end date before or on a start date for recurring transactions).
@@ -37,7 +30,6 @@ pub enum DbError {
 impl Display for DbError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::EmptyField(description) => write!(f, "{:?}: {}", self, description),
             Self::SqlError(inner_error) => write!(f, "{:?}: {}", self, inner_error),
             other => write!(f, "{:?}", other),
         }
