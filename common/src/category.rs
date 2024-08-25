@@ -26,10 +26,10 @@ impl CategoryName {
 
     /// Create a category name without validation.
     ///
-    /// # Safety
+    /// The caller should ensure that the string is not empty.
     ///
-    /// This function should only be called on strings coming out of a trusted source such as the application's database.
-    pub unsafe fn new_unchecked(name: String) -> Self {
+    /// This function has `_unchecked` in the name but is not `unsafe`, because if the non-empty invariant is violated it will cause incorrect behaviour but not affect memory safety.
+    pub fn new_unchecked(name: String) -> Self {
         Self(name)
     }
 }

@@ -26,11 +26,11 @@ impl Email {
 
     /// Create a new `Email` without any validation.
     ///
-    /// # Safety
-    ///
-    /// This function should only be called on strings coming out of a trusted source such as the application's database.
+    /// The caller should ensure that `raw_email` is a correctly formatted email address.
     /// For emails coming from the user (e.g., via the REST API), this function should **not** be used, instead use the checked version.
-    pub unsafe fn new_unchecked(raw_email: String) -> Self {
+    ///
+    /// This function has `_unchecked` in the name but is not `unsafe`, because if an incorrectly formatted email is provided it will cause incorrect behaviour but not affect memory safety.
+    pub fn new_unchecked(raw_email: String) -> Self {
         Self(raw_email)
     }
 }

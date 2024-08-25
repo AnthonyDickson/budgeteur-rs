@@ -78,12 +78,12 @@ impl RecurringTransaction {
         }
     }
 
-    /// Create a new `RecurringTransaction` without any validation of `end_date`.
+    /// Create a new `RecurringTransaction` without validating `end_date`.
     ///
-    /// # Safety
+    /// The caller should ensure that `end_date` is greater than the date of the transaction that `transaction_id` refers to.
     ///
-    /// This function should only be used for data coming from a trusted source of validated data such as the application's database.
-    pub unsafe fn new_unchecked(
+    /// This function has `_unchecked` in the name but is not `unsafe`, because if the `end_date` invariant is violated it will cause incorrect behaviour but not affect memory safety.
+    pub fn new_unchecked(
         transaction_id: DatabaseID,
         end_date: Option<NaiveDate>,
         frequency: Frequency,

@@ -330,7 +330,7 @@ mod user_tests {
         let server = TestServer::new(app).expect("Could not create test server.");
 
         let email = Email::new("test@test.com").unwrap();
-        let password = unsafe { RawPassword::new_unchecked("hunter2".to_owned()) };
+        let password = RawPassword::new_unchecked("hunter2".to_owned());
 
         let response = server
             .post("/user")

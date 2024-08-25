@@ -208,8 +208,8 @@ impl Model for User {
         let raw_password_hash = row.get(offset + 2)?;
 
         let id = UserID::new(raw_id);
-        let email = unsafe { Email::new_unchecked(raw_email) };
-        let password_hash = unsafe { PasswordHash::new_unchecked(raw_password_hash) };
+        let email = Email::new_unchecked(raw_email);
+        let password_hash = PasswordHash::new_unchecked(raw_password_hash);
 
         Ok(Self::new(id, email, password_hash))
     }
@@ -298,7 +298,7 @@ impl Model for Category {
         let id = row.get(offset)?;
 
         let raw_name: String = row.get(offset + 1)?;
-        let name = unsafe { CategoryName::new_unchecked(raw_name) };
+        let name = CategoryName::new_unchecked(raw_name);
 
         let raw_user_id = row.get(offset + 2)?;
         let user_id = UserID::new(raw_user_id);
@@ -406,7 +406,7 @@ impl SelectBy<UserID> for Category {
     ///     let inserted_categories = vec![
     ///         Category::insert(
     ///            NewCategory {
-    ///                name: unsafe { CategoryName::new_unchecked("Foo".to_string()) },
+    ///                name: CategoryName::new_unchecked("Foo".to_string()),
     ///                user_id: user.id(),
     ///            },
     ///            &connection,
@@ -414,7 +414,7 @@ impl SelectBy<UserID> for Category {
     ///         .unwrap(),
     ///         Category::insert(
     ///             NewCategory {
-    ///                 name: unsafe { CategoryName::new_unchecked("Bar".to_string()) },
+    ///                 name: CategoryName::new_unchecked("Bar".to_string()),
     ///                 user_id: user.id(),
     ///             },
     ///             &connection,
@@ -634,7 +634,7 @@ impl Model for SavingsRatio {
         let transaction_id = row.get(offset)?;
 
         let raw_ratio = row.get(offset + 1)?;
-        let ratio = unsafe { Ratio::new_unchecked(raw_ratio) };
+        let ratio = Ratio::new_unchecked(raw_ratio);
 
         Ok(Self::new(transaction_id, ratio))
     }
@@ -710,7 +710,7 @@ impl Model for RecurringTransaction {
                 let transaction_id = row.get(offset)?;
                 let end_date = row.get(offset + 1)?;
 
-                Ok(unsafe { Self::new_unchecked(transaction_id, end_date, frequency) })
+                Ok(Self::new_unchecked(transaction_id, end_date, frequency))
             })
     }
 }
@@ -816,7 +816,7 @@ mod user_tests {
         let conn = init_db();
 
         let email = Email::new("hello@world.com").unwrap();
-        let password_hash = unsafe { PasswordHash::new_unchecked("hunter2".to_string()) };
+        let password_hash = PasswordHash::new_unchecked("hunter2".to_string());
 
         let inserted_user = User::insert(
             NewUser {
@@ -841,7 +841,7 @@ mod user_tests {
         assert!(User::insert(
             NewUser {
                 email: email.clone(),
-                password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) }
+                password_hash: PasswordHash::new_unchecked("hunter2".to_string())
             },
             &conn
         )
@@ -850,7 +850,7 @@ mod user_tests {
             User::insert(
                 NewUser {
                     email: email.clone(),
-                    password_hash: unsafe { PasswordHash::new_unchecked("hunter3".to_string()) }
+                    password_hash: PasswordHash::new_unchecked("hunter3".to_string())
                 },
                 &conn
             ),
@@ -863,7 +863,7 @@ mod user_tests {
         let conn = init_db();
 
         let email = Email::new("hello@world.com").unwrap();
-        let password = unsafe { PasswordHash::new_unchecked("hunter2".to_string()) };
+        let password = PasswordHash::new_unchecked("hunter2".to_string());
 
         assert!(User::insert(
             NewUser {
@@ -892,7 +892,7 @@ mod user_tests {
         let test_user = User::insert(
             NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
-                password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
+                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
         )
@@ -917,7 +917,7 @@ mod user_tests {
         let test_user = User::insert(
             NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
-                password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
+                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
         )
@@ -951,7 +951,7 @@ mod category_tests {
         let test_user = User::insert(
             NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
-                password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
+                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
         )
@@ -983,7 +983,7 @@ mod category_tests {
     fn create_category_with_invalid_user_id_returns_error() {
         let conn = init_db();
 
-        let name = unsafe { CategoryName::new_unchecked("Foo".to_string()) };
+        let name = CategoryName::new_unchecked("Foo".to_string());
         let maybe_category = Category::insert(
             NewCategory {
                 name,
@@ -998,7 +998,7 @@ mod category_tests {
     #[test]
     fn select_category() {
         let (conn, test_user) = create_database_and_insert_test_user();
-        let name = unsafe { CategoryName::new_unchecked("Foo".to_string()) };
+        let name = CategoryName::new_unchecked("Foo".to_string());
         let inserted_category = Category::insert(
             NewCategory {
                 name,
@@ -1028,7 +1028,7 @@ mod category_tests {
         let inserted_categories = vec![
             Category::insert(
                 NewCategory {
-                    name: unsafe { CategoryName::new_unchecked("Foo".to_string()) },
+                    name: CategoryName::new_unchecked("Foo".to_string()),
                     user_id: test_user.id(),
                 },
                 &conn,
@@ -1036,7 +1036,7 @@ mod category_tests {
             .unwrap(),
             Category::insert(
                 NewCategory {
-                    name: unsafe { CategoryName::new_unchecked("Bar".to_string()) },
+                    name: CategoryName::new_unchecked("Bar".to_string()),
                     user_id: test_user.id(),
                 },
                 &conn,
@@ -1054,7 +1054,7 @@ mod category_tests {
         let (conn, test_user) = create_database_and_insert_test_user();
         Category::insert(
             NewCategory {
-                name: unsafe { CategoryName::new_unchecked("Foo".to_string()) },
+                name: CategoryName::new_unchecked("Foo".to_string()),
                 user_id: test_user.id(),
             },
             &conn,
@@ -1062,7 +1062,7 @@ mod category_tests {
         .unwrap();
         Category::insert(
             NewCategory {
-                name: unsafe { CategoryName::new_unchecked("Bar".to_string()) },
+                name: CategoryName::new_unchecked("Bar".to_string()),
                 user_id: test_user.id(),
             },
             &conn,
@@ -1100,7 +1100,7 @@ mod transaction_tests {
         let test_user = User::insert(
             NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
-                password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
+                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
         )
@@ -1315,7 +1315,7 @@ mod savings_ratio_tests {
         let test_user = User::insert(
             NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
-                password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
+                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
         )
@@ -1386,7 +1386,7 @@ mod recurring_transaction_tests {
         let test_user = User::insert(
             NewUser {
                 email: Email::new("foo@bar.baz").unwrap(),
-                password_hash: unsafe { PasswordHash::new_unchecked("hunter2".to_string()) },
+                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
         )

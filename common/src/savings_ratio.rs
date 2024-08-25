@@ -10,7 +10,7 @@ pub struct RatioError(String);
 pub struct Ratio(f64);
 
 impl Ratio {
-    /// Create a new ratio.
+    /// Create a new ratio between zero and one (inclusive).
     ///
     /// # Errors
     ///
@@ -23,13 +23,12 @@ impl Ratio {
         }
     }
 
-    // TODO: Remove `unsafe` from `::new_unchecked` functions that could result in incorrect behaviour, but not result in memory related issues.
-    /// Create a new ratio without validation.
+    /// Create a new ratio between zero and one (inclusive) without validation.
     ///
-    /// # Safety
+    /// The caller should ensure that `value` is between zero and one (inclusive).
     ///
-    /// This function should only be called on values from a trusted source of validated values such as the application's database.
-    pub unsafe fn new_unchecked(value: f64) -> Self {
+    /// This function has `_unchecked` in the name but is not `unsafe`, because if the `value` invariant is violated it will cause incorrect behaviour but not affect memory safety.
+    pub fn new_unchecked(value: f64) -> Self {
         Self(value)
     }
 

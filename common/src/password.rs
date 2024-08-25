@@ -27,12 +27,10 @@ impl PasswordHash {
 
     /// Create a new `PasswordHash` without any validation.
     ///
-    /// This is intended to be used with a valid password hash.
+    /// The caller should ensure that `raw_password_hash` is a valid password hash string.
     ///
-    /// # Safety
-    ///
-    /// This function should only be called on strings coming out of a trusted source such as the application's database.
-    pub unsafe fn new_unchecked(raw_password_hash: String) -> Self {
+    /// This function has `_unchecked` in the name but is not `unsafe`, because if an invalid hash is provided it will cause incorrect behaviour but not affect memory safety.
+    pub fn new_unchecked(raw_password_hash: String) -> Self {
         Self(raw_password_hash)
     }
 
@@ -54,24 +52,20 @@ mod password_hash_tests {
 
     #[test]
     fn verify_password_succeeds_for_valid_password() {
-        let hash = unsafe {
-            PasswordHash::new_unchecked(
-                "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_owned(),
-            )
-        };
-        let password = unsafe { RawPassword::new_unchecked("okon".to_owned()) };
+        let hash = PasswordHash::new_unchecked(
+            "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_owned(),
+        );
+        let password = RawPassword::new_unchecked("okon".to_owned());
 
         assert!(hash.verify(&password).unwrap());
     }
 
     #[test]
     fn verify_password_fails_for_invalid_password() {
-        let hash = unsafe {
-            PasswordHash::new_unchecked(
-                "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_owned(),
-            )
-        };
-        let password = unsafe { RawPassword::new_unchecked("thewrongpassword".to_owned()) };
+        let hash = PasswordHash::new_unchecked(
+            "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_owned(),
+        );
+        let password = RawPassword::new_unchecked("thewrongpassword".to_owned());
 
         assert!(!hash.verify(&password).unwrap());
     }
@@ -117,10 +111,10 @@ impl RawPassword {
 
     /// Create a new `RawPassword` without any validation.
     ///
-    /// # Safety
+    /// The caller should ensure that `raw_password_string` is a valid password.
     ///
-    /// This function should only be called on strings coming out of a trusted source such as the application's database or for tests where costly validation is unecessary.
-    pub unsafe fn new_unchecked(raw_password_string: String) -> Self {
+    /// This function has `_unchecked` in the name but is not `unsafe`, because if an invalid password is provided it may cause incorrect behaviour but will not affect memory safety.
+    pub fn new_unchecked(raw_password_string: String) -> Self {
         Self(raw_password_string)
     }
 }
