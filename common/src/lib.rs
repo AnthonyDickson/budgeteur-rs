@@ -7,6 +7,9 @@ pub use email::{Email, EmailAddressError};
 mod password;
 pub use password::{PasswordError, PasswordHash, RawPassword};
 
+mod recurring_transaction;
+pub use recurring_transaction::{Frequency, RecurringTransaction, RecurringTransactionError};
+
 mod transaction;
 pub use transaction::Transaction;
 

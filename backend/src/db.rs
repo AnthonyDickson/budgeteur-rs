@@ -1,11 +1,11 @@
 use std::fmt::Display;
 
 use chrono::{NaiveDate, Utc};
-use common::{Category, CategoryName, DatabaseID, Email, PasswordHash, Transaction, User, UserID};
-use rusqlite::{
-    types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput},
-    Connection, Error, Row, Transaction as SqlTransaction,
+use common::{
+    Category, CategoryName, DatabaseID, Email, PasswordHash, RecurringTransaction, Transaction,
+    User, UserID,
 };
+use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
 // TODO: Remove error variants obsoleted by newtypes (e.g., EmptyEmail).
 /// Errors originating from operations on the app's database.
@@ -716,97 +716,6 @@ impl Insert for SavingsRatio {
     }
 }
 
-/// How often a recurring transaction happens.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Frequency {
-    Daily,
-    Weekly,
-    Fortnightly,
-    /// A calendar month of variable length.
-    Monthly,
-    /// A calendar quarter (Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec).
-    Quarterly,
-    Yearly,
-}
-
-impl ToSql for Frequency {
-    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::Owned(rusqlite::types::Value::Integer(
-            match self {
-                Frequency::Daily => 0,
-                Frequency::Weekly => 1,
-                Frequency::Fortnightly => 2,
-                Frequency::Monthly => 3,
-                Frequency::Quarterly => 4,
-                Frequency::Yearly => 5,
-            },
-        )))
-    }
-}
-
-impl FromSql for Frequency {
-    fn column_result(value: rusqlite::types::ValueRef<'_>) -> FromSqlResult<Self> {
-        value.as_i64().and_then(|number| match number {
-            0 => Ok(Frequency::Daily),
-            1 => Ok(Frequency::Weekly),
-            2 => Ok(Frequency::Fortnightly),
-            3 => Ok(Frequency::Monthly),
-            4 => Ok(Frequency::Quarterly),
-            5 => Ok(Frequency::Yearly),
-            _ => Err(FromSqlError::OutOfRange(number)),
-        })
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("invalid recurring transaction: {0}")]
-pub struct RecurringTransactionError(String);
-
-// // TODO: Move `RecurringTransaction` and related types such as `Frequency` to own module.
-/// A transaction (income or expense) that repeats on a regular basis (e.g., wages, phone bill).
-///
-/// This object must be attached to an existing transaction and cannot exist independently.
-///
-/// New instances should be created through `RecurringTransaction::insert(...)`.
-#[derive(Debug, PartialEq)]
-pub struct RecurringTransaction {
-    transaction_id: DatabaseID,
-    end_date: Option<NaiveDate>,
-    frequency: Frequency,
-}
-
-impl RecurringTransaction {
-    pub fn new(
-        transaction: &Transaction,
-        end_date: Option<NaiveDate>,
-        frequency: Frequency,
-    ) -> Result<Self, RecurringTransactionError> {
-        match end_date {
-            Some(date) if date <= *transaction.date() => Err(RecurringTransactionError(format!(
-                "the end date {date} is before the transaction date (i.e. the start date) {}",
-                transaction.date()
-            ))),
-            Some(_) | None => Ok(Self {
-                transaction_id: transaction.id(),
-                end_date,
-                frequency,
-            }),
-        }
-    }
-
-    pub fn transaction_id(&self) -> DatabaseID {
-        self.transaction_id
-    }
-
-    pub fn end_date(&self) -> &Option<NaiveDate> {
-        &self.end_date
-    }
-
-    pub fn frequency(&self) -> Frequency {
-        self.frequency
-    }
-}
-
 impl Model for RecurringTransaction {
     type ReturnType = Self;
 
@@ -826,11 +735,21 @@ impl Model for RecurringTransaction {
     }
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
-        Ok(Self {
-            transaction_id: row.get(offset)?,
-            end_date: row.get(offset + 1)?,
-            frequency: row.get(offset + 2)?,
-        })
+        row.get::<usize, i64>(offset + 2)?
+            .try_into()
+            .map_err(|e| {
+                Error::FromSqlConversionFailure(
+                    offset + 2,
+                    rusqlite::types::Type::Integer,
+                    Box::new(e),
+                )
+            })
+            .and_then(|frequency| {
+                let transaction_id = row.get(offset)?;
+                let end_date = row.get(offset + 1)?;
+
+                Ok(unsafe { Self::new_unchecked(transaction_id, end_date, frequency) })
+            })
     }
 }
 
@@ -847,8 +766,8 @@ impl Insert for RecurringTransaction {
     /// use chrono::Utc;
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Frequency, Insert, RecurringTransaction};
-    /// use common::Transaction;
+    /// use backend::db::Insert;
+    /// use common::{Frequency, RecurringTransaction, Transaction};
     ///
     /// fn set_recurring(
     ///     transaction: &Transaction,
@@ -871,22 +790,12 @@ impl Insert for RecurringTransaction {
         new_recurring_transaction: Self::ParamType,
         connection: &Connection,
     ) -> Result<Self::ResultType, DbError> {
-        let Self::ParamType {
-            transaction_id,
-            end_date,
-            frequency,
-        } = new_recurring_transaction;
-
         connection.execute(
             "INSERT INTO recurring_transaction (transaction_id, end_date, frequency) VALUES (?1, ?2, ?3)",
-            (transaction_id, end_date, frequency),
+            (new_recurring_transaction.transaction_id(), new_recurring_transaction.end_date(), new_recurring_transaction.frequency() as i64),
         )?;
 
-        Ok(Self {
-            transaction_id,
-            end_date,
-            frequency,
-        })
+        Ok(new_recurring_transaction)
     }
 }
 
@@ -1523,13 +1432,13 @@ mod recurring_transaction_tests {
     use std::f64::consts::PI;
 
     use chrono::{Days, Months, NaiveDate};
-    use common::{CategoryName, Email, PasswordHash, Transaction, User};
+    use common::{
+        CategoryName, Email, Frequency, PasswordHash, RecurringTransaction,
+        RecurringTransactionError, Transaction, User,
+    };
     use rusqlite::Connection;
 
-    use crate::db::{
-        select_recurring_transactions_by_user, Frequency, RecurringTransaction,
-        RecurringTransactionError,
-    };
+    use crate::db::select_recurring_transactions_by_user;
 
     use super::{initialize, Category, Insert, NewCategory, NewTransaction, NewUser};
 
