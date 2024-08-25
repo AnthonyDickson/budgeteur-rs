@@ -2,8 +2,8 @@ use std::fmt::Display;
 
 use chrono::{NaiveDate, Utc};
 use common::{
-    Category, CategoryName, DatabaseID, Email, PasswordHash, RecurringTransaction, Transaction,
-    User, UserID,
+    Category, CategoryName, DatabaseID, Email, PasswordHash, RecurringTransaction, SavingsRatio,
+    Transaction, User, UserID,
 };
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
@@ -613,36 +613,6 @@ impl SelectBy<UserID> for Transaction {
     }
 }
 
-// TODO: Move `SavingsRatio` to own module.
-/// The amount of an income transaction that should counted as savings.
-///
-/// This object must be attached to an existing transaction and cannot exist independently.
-///
-/// New instances should be created through `SavingsRatio::insert(...)`.
-#[derive(Debug, PartialEq)]
-pub struct SavingsRatio {
-    transaction_id: DatabaseID,
-    // TODO: Create newtype for ratio that restricts values to the interval [0.0, 1.0] and remove validation code from `SavingsRatio::insert`.
-    ratio: f64,
-}
-
-impl SavingsRatio {
-    pub fn new(transaction_id: DatabaseID, ratio: f64) -> Self {
-        Self {
-            transaction_id,
-            ratio,
-        }
-    }
-
-    pub fn transaction_id(&self) -> DatabaseID {
-        self.transaction_id
-    }
-
-    pub fn ratio(&self) -> f64 {
-        self.ratio
-    }
-}
-
 impl Model for SavingsRatio {
     type ReturnType = Self;
 
@@ -661,10 +631,7 @@ impl Model for SavingsRatio {
     }
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
-        Ok(Self {
-            transaction_id: row.get(offset)?,
-            ratio: row.get(offset + 1)?,
-        })
+        Ok(Self::new(row.get(offset)?, row.get(offset + 1)?))
     }
 }
 
@@ -678,8 +645,8 @@ impl Insert for SavingsRatio {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Insert, SavingsRatio};
-    /// use common::Transaction;
+    /// use backend::db::Insert;
+    /// use common::{SavingsRatio, Transaction};
     ///
     /// fn set_savings_ratio(transaction: &Transaction, ratio: f64, connection: &Connection) -> SavingsRatio {
     ///     SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), connection).unwrap()
@@ -695,10 +662,7 @@ impl Insert for SavingsRatio {
         new_savings_ratio: Self::ParamType,
         connection: &Connection,
     ) -> Result<Self::ResultType, DbError> {
-        let Self {
-            transaction_id,
-            ratio,
-        } = new_savings_ratio;
+        let ratio = new_savings_ratio.ratio();
 
         if !(0.0..=1.0).contains(&ratio) || ratio.is_sign_negative() {
             return Err(DbError::InvalidRatio);
@@ -706,13 +670,10 @@ impl Insert for SavingsRatio {
 
         connection.execute(
             "INSERT INTO savings_ratio (transaction_id, ratio) VALUES (?1, ?2)",
-            (transaction_id, ratio),
+            (new_savings_ratio.transaction_id(), ratio),
         )?;
 
-        Ok(Self {
-            transaction_id,
-            ratio,
-        })
+        Ok(new_savings_ratio)
     }
 }
 
@@ -911,6 +872,7 @@ mod user_tests {
             &conn
         )
         .is_ok());
+
         assert_eq!(
             User::insert(
                 NewUser {
@@ -1333,12 +1295,10 @@ mod savings_ratio_tests {
     use std::f64::consts::PI;
 
     use chrono::NaiveDate;
-    use common::{CategoryName, Email, PasswordHash};
+    use common::{CategoryName, Email, PasswordHash, SavingsRatio};
     use rusqlite::Connection;
 
-    use crate::db::{
-        initialize, Category, DbError, NewTransaction, SavingsRatio, Transaction, User,
-    };
+    use crate::db::{initialize, Category, DbError, NewTransaction, Transaction, User};
 
     use super::{Insert, NewCategory, NewUser};
 
