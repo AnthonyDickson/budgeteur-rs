@@ -9,8 +9,8 @@ use axum::{
     Json, Router,
 };
 use axum_server::Handle;
-use common::{Category, DatabaseID, PasswordHash, Transaction, User};
-use db::{Insert, NewCategory, NewTransaction, NewUser, SelectBy};
+use common::{Category, DatabaseID, NewCategory, PasswordHash, Transaction, User};
+use db::{Insert, NewTransaction, NewUser, SelectBy};
 use serde_json::json;
 use tokio::signal;
 
@@ -201,23 +201,13 @@ async fn create_user(
 /// Panics if the lock for the database connection is already held by the same thread.
 async fn create_category(
     State(state): State<AppConfig>,
-    claims: Claims,
-    // TODO: Replace `Category` with `NewCategory`.
-    Json(category_data): Json<Category>,
+    _claims: Claims,
+    Json(new_category): Json<NewCategory>,
 ) -> impl IntoResponse {
     let connection_mutex = state.db_connection();
     let connection = connection_mutex.lock().unwrap();
 
-    User::select(&claims.email, &connection)
-        .and_then(|user| {
-            Category::insert(
-                NewCategory {
-                    name: category_data.name().to_owned(),
-                    user_id: user.id(),
-                },
-                &connection,
-            )
-        })
+    Category::insert(new_category, &connection)
         .map(|category| (StatusCode::OK, Json(category)))
         .map_err(AppError::DatabaseError)
 }

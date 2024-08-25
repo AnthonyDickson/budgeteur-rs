@@ -70,6 +70,13 @@ impl Category {
     }
 }
 
+/// The data for creating a new category.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NewCategory {
+    pub name: CategoryName,
+    pub user_id: UserID,
+}
+
 #[cfg(test)]
 mod category_name_tests {
     use crate::{category::CategoryName, CategoryNameError};

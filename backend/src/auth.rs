@@ -27,6 +27,8 @@ use crate::{
 // Code in this module is adapted from https://github.com/ezesundayeze/axum--auth and https://github.com/tokio-rs/axum/blob/main/examples/jwt/src/main.rs
 
 /// The contents of a JSON Web Token.
+///
+/// Adding this to a request handler will require the requester to provide a valid JWT.
 #[derive(Serialize, Deserialize)]
 pub struct Claims {
     /// The expiry time of the token.

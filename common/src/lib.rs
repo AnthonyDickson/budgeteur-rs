@@ -1,5 +1,5 @@
 mod category;
-pub use category::{Category, CategoryName, CategoryNameError};
+pub use category::{Category, CategoryName, CategoryNameError, NewCategory};
 
 mod email;
 pub use email::{Email, EmailAddressError};
