@@ -1,6 +1,7 @@
+use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
-use crate::{Email, PasswordHash};
+use crate::PasswordHash;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserID(i64);
@@ -19,12 +20,12 @@ impl UserID {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
     id: UserID,
-    email: Email,
+    email: EmailAddress,
     password_hash: PasswordHash,
 }
 
 impl User {
-    pub fn new(id: UserID, email: Email, password_hash: PasswordHash) -> Self {
+    pub fn new(id: UserID, email: EmailAddress, password_hash: PasswordHash) -> Self {
         User {
             id,
             email,
@@ -36,7 +37,7 @@ impl User {
         self.id
     }
 
-    pub fn email(&self) -> &Email {
+    pub fn email(&self) -> &EmailAddress {
         &self.email
     }
 

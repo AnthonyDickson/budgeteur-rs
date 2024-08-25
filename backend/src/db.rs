@@ -2,9 +2,10 @@ use std::fmt::Display;
 
 use chrono::Utc;
 use common::{
-    Category, CategoryName, DatabaseID, Email, NewCategory, NewTransaction, PasswordHash, Ratio,
+    Category, CategoryName, DatabaseID, NewCategory, NewTransaction, PasswordHash, Ratio,
     RecurringTransaction, SavingsRatio, Transaction, User, UserID,
 };
+use email_address::EmailAddress;
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
 /// Errors originating from operations on the app's database.
@@ -196,11 +197,11 @@ impl Model for User {
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
         let raw_id = row.get(offset)?;
-        let raw_email = row.get(offset + 1)?;
+        let raw_email: String = row.get(offset + 1)?;
         let raw_password_hash = row.get(offset + 2)?;
 
         let id = UserID::new(raw_id);
-        let email = Email::new_unchecked(raw_email);
+        let email = EmailAddress::new_unchecked(raw_email);
         let password_hash = PasswordHash::new_unchecked(raw_password_hash);
 
         Ok(Self::new(id, email, password_hash))
@@ -208,7 +209,7 @@ impl Model for User {
 }
 
 pub struct NewUser {
-    pub email: Email,
+    pub email: EmailAddress,
     pub password_hash: PasswordHash,
 }
 
@@ -239,19 +240,20 @@ impl Insert for User {
     }
 }
 
-impl SelectBy<&Email> for User {
+impl SelectBy<&EmailAddress> for User {
     type ResultType = User;
 
     /// Get the user from the database that has the specified `email` address or `None` if such user does not exist.
     ///
     /// # Examples
     /// ```
-    /// # use rusqlite::Connection;
-    /// #
+    /// use email_address::EmailAddress;
+    /// use rusqlite::Connection;
+    ///
     /// # use backend::db::{DbError, SelectBy};
-    /// # use common::{Email, User};
+    /// # use common::User;
     /// #
-    /// fn get_user(email: &Email, connection: &Connection) -> Result<User, DbError> {
+    /// fn get_user(email: &EmailAddress, connection: &Connection) -> Result<User, DbError> {
     ///     let user = User::select(email, connection)?;
     ///     assert_eq!(user.email(), email);
     ///
@@ -261,7 +263,7 @@ impl SelectBy<&Email> for User {
     /// # Panics
     ///
     /// Panics if there is no user with the specified email or there are SQL related errors.
-    fn select(email: &Email, connection: &Connection) -> Result<Self::ResultType, DbError> {
+    fn select(email: &EmailAddress, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection
             .prepare("SELECT id, email, password FROM user WHERE email = :email")?
             .query_row(&[(":email", &email.to_string())], User::map_row)
@@ -778,7 +780,10 @@ pub fn select_recurring_transactions_by_user(
 
 #[cfg(test)]
 mod user_tests {
-    use common::{Email, PasswordHash};
+    use std::str::FromStr;
+
+    use common::PasswordHash;
+    use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::db::{initialize, DbError, Insert, NewUser, SelectBy, User};
@@ -793,7 +798,7 @@ mod user_tests {
     fn create_user() {
         let conn = init_db();
 
-        let email = Email::new("hello@world.com").unwrap();
+        let email = EmailAddress::from_str("hello@world.com").unwrap();
         let password_hash = PasswordHash::new_unchecked("hunter2".to_string());
 
         let inserted_user = User::insert(
@@ -814,7 +819,7 @@ mod user_tests {
     fn create_user_duplicate_email() {
         let conn = init_db();
 
-        let email = Email::new("hello@world.com").unwrap();
+        let email = EmailAddress::from_str("hello@world.com").unwrap();
 
         assert!(User::insert(
             NewUser {
@@ -840,7 +845,7 @@ mod user_tests {
     fn create_user_duplicate_password() {
         let conn = init_db();
 
-        let email = Email::new("hello@world.com").unwrap();
+        let email = EmailAddress::from_str("hello@world.com").unwrap();
         let password = PasswordHash::new_unchecked("hunter2".to_string());
 
         assert!(User::insert(
@@ -855,7 +860,7 @@ mod user_tests {
         assert_eq!(
             User::insert(
                 NewUser {
-                    email: Email::new("bye@world.com").unwrap(),
+                    email: EmailAddress::from_str("bye@world.com").unwrap(),
                     password_hash: password.clone()
                 },
                 &conn
@@ -869,7 +874,7 @@ mod user_tests {
 
         let test_user = User::insert(
             NewUser {
-                email: Email::new("foo@bar.baz").unwrap(),
+                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
                 password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
@@ -883,7 +888,7 @@ mod user_tests {
     fn select_user_by_non_existent_email() {
         let (conn, _) = create_database_and_insert_test_user();
 
-        let email = Email::new("notavalidemail@foo.bar").unwrap();
+        let email = EmailAddress::from_str("notavalidemail@foo.bar").unwrap();
 
         assert_eq!(User::select(&email, &conn), Err(DbError::NotFound));
     }
@@ -894,7 +899,7 @@ mod user_tests {
 
         let test_user = User::insert(
             NewUser {
-                email: Email::new("foo@bar.baz").unwrap(),
+                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
                 password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
@@ -908,7 +913,10 @@ mod user_tests {
 
 #[cfg(test)]
 mod category_tests {
-    use common::{Email, NewCategory, PasswordHash};
+    use std::str::FromStr;
+
+    use common::{NewCategory, PasswordHash};
+    use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::db::{initialize, Category, CategoryName, DbError, SelectBy, User, UserID};
@@ -926,7 +934,7 @@ mod category_tests {
 
         let test_user = User::insert(
             NewUser {
-                email: Email::new("foo@bar.baz").unwrap(),
+                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
                 password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
@@ -1054,10 +1062,11 @@ mod category_tests {
 
 #[cfg(test)]
 mod transaction_tests {
-    use std::f64::consts::PI;
+    use std::{f64::consts::PI, str::FromStr};
 
     use chrono::{Days, NaiveDate, Utc};
-    use common::{CategoryName, Email, NewCategory, NewTransaction, PasswordHash, UserID};
+    use common::{CategoryName, NewCategory, NewTransaction, PasswordHash, UserID};
+    use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::db::{initialize, Category, DbError, SelectBy, Transaction, User};
@@ -1075,7 +1084,7 @@ mod transaction_tests {
 
         let test_user = User::insert(
             NewUser {
-                email: Email::new("foo@bar.baz").unwrap(),
+                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
                 password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
@@ -1269,12 +1278,11 @@ mod transaction_tests {
 
 #[cfg(test)]
 mod savings_ratio_tests {
-    use std::f64::consts::PI;
+    use std::{f64::consts::PI, str::FromStr};
 
     use chrono::NaiveDate;
-    use common::{
-        CategoryName, Email, NewCategory, NewTransaction, PasswordHash, Ratio, SavingsRatio,
-    };
+    use common::{CategoryName, NewCategory, NewTransaction, PasswordHash, Ratio, SavingsRatio};
+    use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::db::{initialize, Category, Transaction, User};
@@ -1292,7 +1300,7 @@ mod savings_ratio_tests {
 
         let test_user = User::insert(
             NewUser {
-                email: Email::new("foo@bar.baz").unwrap(),
+                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
                 password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,
@@ -1339,13 +1347,14 @@ mod savings_ratio_tests {
 
 #[cfg(test)]
 mod recurring_transaction_tests {
-    use std::f64::consts::PI;
+    use std::{f64::consts::PI, str::FromStr};
 
     use chrono::{Days, Months, NaiveDate};
     use common::{
-        CategoryName, Email, Frequency, NewCategory, NewTransaction, PasswordHash,
-        RecurringTransaction, RecurringTransactionError, Transaction, User,
+        CategoryName, Frequency, NewCategory, NewTransaction, PasswordHash, RecurringTransaction,
+        RecurringTransactionError, Transaction, User,
     };
+    use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::db::select_recurring_transactions_by_user;
@@ -1363,7 +1372,7 @@ mod recurring_transaction_tests {
 
         let test_user = User::insert(
             NewUser {
-                email: Email::new("foo@bar.baz").unwrap(),
+                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
                 password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
             },
             &conn,

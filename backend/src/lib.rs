@@ -285,9 +285,12 @@ async fn get_transaction(
 
 #[cfg(test)]
 mod user_tests {
+    use std::str::FromStr;
+
     use axum::{routing::post, Router};
     use axum_test::TestServer;
-    use common::{Email, RawPassword, User};
+    use common::{RawPassword, User};
+    use email_address::EmailAddress;
     use rusqlite::Connection;
     use serde_json::json;
 
@@ -309,7 +312,7 @@ mod user_tests {
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
-        let email = Email::new("test@test.com").unwrap();
+        let email = EmailAddress::from_str("test@test.com").unwrap();
         let password = RawPassword::new_unchecked("hunter2".to_owned());
 
         let response = server
