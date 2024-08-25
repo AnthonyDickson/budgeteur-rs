@@ -7,6 +7,9 @@ pub use email::{Email, EmailAddressError};
 mod password;
 pub use password::{PasswordError, PasswordHash, RawPassword};
 
+mod transaction;
+pub use transaction::Transaction;
+
 mod user;
 pub use user::{User, UserID};
 

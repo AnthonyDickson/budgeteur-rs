@@ -1,12 +1,11 @@
 use std::fmt::Display;
 
 use chrono::{NaiveDate, Utc};
-use common::{Category, CategoryName, DatabaseID, Email, PasswordHash, User, UserID};
+use common::{Category, CategoryName, DatabaseID, Email, PasswordHash, Transaction, User, UserID};
 use rusqlite::{
     types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput},
     Connection, Error, Row, Transaction as SqlTransaction,
 };
-use serde::{Deserialize, Serialize};
 
 /// Errors originating from operations on the app's database.
 #[derive(thiserror::Error, Debug, PartialEq)]
@@ -440,46 +439,6 @@ impl SelectBy<UserID> for Category {
     }
 }
 
-// TODO: Move `Transaction` to workspace `common` and its own module.
-/// An expense or income, i.e. an event where money was either spent or earned.
-///
-/// New instances should be created through `Transaction::insert(...)`.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct Transaction {
-    id: DatabaseID,
-    amount: f64,
-    date: NaiveDate,
-    description: String,
-    category_id: DatabaseID,
-    user_id: UserID,
-}
-
-impl Transaction {
-    pub fn id(&self) -> DatabaseID {
-        self.id
-    }
-
-    pub fn amount(&self) -> f64 {
-        self.amount
-    }
-
-    pub fn date(&self) -> &NaiveDate {
-        &self.date
-    }
-
-    pub fn description(&self) -> &str {
-        &self.description
-    }
-
-    pub fn category_id(&self) -> DatabaseID {
-        self.category_id
-    }
-
-    pub fn user_id(&self) -> UserID {
-        self.user_id
-    }
-}
-
 impl Model for Transaction {
     type ReturnType = Self;
 
@@ -503,14 +462,14 @@ impl Model for Transaction {
     }
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
-        Ok(Self {
-            id: row.get(offset)?,
-            amount: row.get(offset + 1)?,
-            date: row.get(offset + 2)?,
-            description: row.get(offset + 3)?,
-            category_id: row.get(offset + 4)?,
-            user_id: UserID::new(row.get(offset + 5)?),
-        })
+        Ok(Self::new(
+            row.get(offset)?,
+            row.get(offset + 1)?,
+            row.get(offset + 2)?,
+            row.get(offset + 3)?,
+            row.get(offset + 4)?,
+            UserID::new(row.get(offset + 5)?),
+        ))
     }
 }
 
@@ -524,7 +483,7 @@ pub struct NewTransaction {
 
 impl Insert for Transaction {
     type ParamType = NewTransaction;
-    type ResultType = Transaction;
+    type ResultType = Self;
 
     /// Create a new transaction in the database.
     ///
@@ -535,8 +494,8 @@ impl Insert for Transaction {
     /// # use chrono::NaiveDate;
     /// # use rusqlite::Connection;
     /// #
-    /// # use backend::db::{Insert, Model, NewTransaction, Transaction};
-    /// # use common::{Category, User};
+    /// # use backend::db::{Insert, Model, NewTransaction};
+    /// # use common::{Category, Transaction, User};
     /// #
     /// fn create_transaction(user: &User, category: &Category, connection: &Connection) {
     ///     let transaction = Transaction::insert(
@@ -584,14 +543,14 @@ impl Insert for Transaction {
 
         let transaction_id = connection.last_insert_rowid();
 
-        Ok(Transaction {
-            id: transaction_id,
-            amount: new_transaction.amount,
-            date: new_transaction.date,
-            description: new_transaction.description,
-            category_id: new_transaction.category_id,
-            user_id: new_transaction.user_id,
-        })
+        Ok(Self::new(
+            transaction_id,
+            new_transaction.amount,
+            new_transaction.date,
+            new_transaction.description,
+            new_transaction.category_id,
+            new_transaction.user_id,
+        ))
     }
 }
 
@@ -604,8 +563,8 @@ impl SelectBy<DatabaseID> for Transaction {
     /// ```
     /// # use rusqlite::Connection;
     /// #
-    /// # use backend::db::{DbError, SelectBy, Transaction};
-    /// # use common::DatabaseID;
+    /// # use backend::db::{DbError, SelectBy};
+    /// # use common::{DatabaseID, Transaction};
     /// #
     /// fn get_transaction(id: DatabaseID, connection: &Connection) -> Result<Transaction, DbError> {
     ///     Transaction::select(id, &connection)
@@ -632,8 +591,8 @@ impl SelectBy<UserID> for Transaction {
     ///
     /// # Examples
     /// ```
-    /// use backend::db::{SelectBy, Transaction};
-    /// use common::User;
+    /// use backend::db::SelectBy;
+    /// use common::{Transaction, User};
     ///
     /// fn sum_transaction_amount_for_user(user: &User, conn: &rusqlite::Connection) -> f64 {
     ///     let transactions = Transaction::select(user.id(), conn).unwrap();
@@ -704,7 +663,8 @@ impl SavingsRatio {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Transaction, SavingsRatio};
+    /// use backend::db::SavingsRatio;
+    /// use common::Transaction;
     ///
     /// fn set_savings_ratio(transaction: &Transaction, ratio: f64, connection: &Connection) -> SavingsRatio {
     ///     SavingsRatio::insert(transaction.id(), ratio, connection).unwrap()
@@ -841,7 +801,8 @@ impl RecurringTransaction {
     /// use chrono::Utc;
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Frequency, Transaction, RecurringTransaction};
+    /// use backend::db::{Frequency, RecurringTransaction};
+    /// use common::Transaction;
     ///
     /// fn set_recurring(
     ///     transaction: &Transaction,
@@ -1517,12 +1478,11 @@ mod recurring_transaction_tests {
     use std::f64::consts::PI;
 
     use chrono::{Days, Months, NaiveDate};
-    use common::{CategoryName, Email, PasswordHash, User};
+    use common::{CategoryName, Email, PasswordHash, Transaction, User};
     use rusqlite::Connection;
 
     use crate::db::{
         select_recurring_transactions_by_user, DbError, Frequency, RecurringTransaction,
-        Transaction,
     };
 
     use super::{initialize, Category, Insert, NewCategory, NewTransaction, NewUser};
@@ -1586,7 +1546,7 @@ mod recurring_transaction_tests {
         let recurring =
             RecurringTransaction::insert(&transaction, end_date, Frequency::Weekly, &conn).unwrap();
 
-        assert_eq!(recurring.transaction_id(), transaction.id);
+        assert_eq!(recurring.transaction_id(), transaction.id());
         assert_eq!(*recurring.end_date(), end_date);
         assert_eq!(recurring.frequency(), Frequency::Weekly);
     }

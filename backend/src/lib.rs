@@ -9,17 +9,14 @@ use axum::{
     Json, Router,
 };
 use axum_server::Handle;
-use common::{Category, DatabaseID, PasswordHash, User};
+use common::{Category, DatabaseID, PasswordHash, Transaction, User};
 use db::{Insert, NewCategory, NewTransaction, NewUser, SelectBy};
 use serde_json::json;
 use tokio::signal;
 
 pub use config::AppConfig;
 
-use crate::{
-    auth::Credentials,
-    db::{DbError, Transaction},
-};
+use crate::{auth::Credentials, db::DbError};
 
 pub mod auth;
 mod config;
@@ -503,15 +500,11 @@ mod category_tests {
 mod transaction_tests {
     use axum_test::TestServer;
     use chrono::Utc;
-    use common::{Category, User};
+    use common::{Category, Transaction, User};
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::{
-        build_router,
-        db::{initialize, Transaction},
-        AppConfig,
-    };
+    use crate::{build_router, db::initialize, AppConfig};
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =
