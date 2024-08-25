@@ -14,7 +14,7 @@ mod savings_ratio;
 pub use savings_ratio::{Ratio, SavingsRatio};
 
 mod transaction;
-pub use transaction::Transaction;
+pub use transaction::{NewTransaction, Transaction};
 
 mod user;
 pub use user::{User, UserID};

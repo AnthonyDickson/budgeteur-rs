@@ -9,8 +9,8 @@ use axum::{
     Json, Router,
 };
 use axum_server::Handle;
-use common::{Category, DatabaseID, NewCategory, PasswordHash, Transaction, User};
-use db::{Insert, NewTransaction, NewUser, SelectBy};
+use common::{Category, DatabaseID, NewCategory, NewTransaction, PasswordHash, Transaction, User};
+use db::{Insert, NewUser, SelectBy};
 use serde_json::json;
 use tokio::signal;
 
@@ -248,21 +248,11 @@ async fn get_category(
 async fn create_transaction(
     State(state): State<AppConfig>,
     _: Claims,
-    // TODO: Replace `Transaction` with `NewTransaction`.
-    Json(transaction_data): Json<Transaction>,
+    Json(new_transaction): Json<NewTransaction>,
 ) -> impl IntoResponse {
-    Transaction::insert(
-        NewTransaction {
-            amount: transaction_data.amount(),
-            date: *transaction_data.date(),
-            description: transaction_data.description().to_string(),
-            category_id: transaction_data.category_id(),
-            user_id: transaction_data.user_id(),
-        },
-        &state.db_connection().lock().unwrap(),
-    )
-    .map(|transaction| (StatusCode::OK, Json(transaction)))
-    .map_err(AppError::DatabaseError)
+    Transaction::insert(new_transaction, &state.db_connection().lock().unwrap())
+        .map(|transaction| (StatusCode::OK, Json(transaction)))
+        .map_err(AppError::DatabaseError)
 }
 
 /// A route handler for getting a transaction by its database ID.

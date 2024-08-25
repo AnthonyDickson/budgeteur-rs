@@ -62,3 +62,12 @@ impl Transaction {
         self.user_id
     }
 }
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct NewTransaction {
+    pub amount: f64,
+    pub date: NaiveDate,
+    pub description: String,
+    pub category_id: DatabaseID,
+    pub user_id: UserID,
+}

@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
-use chrono::{NaiveDate, Utc};
+use chrono::Utc;
 use common::{
-    Category, CategoryName, DatabaseID, Email, NewCategory, PasswordHash, Ratio,
+    Category, CategoryName, DatabaseID, Email, NewCategory, NewTransaction, PasswordHash, Ratio,
     RecurringTransaction, SavingsRatio, Transaction, User, UserID,
 };
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
@@ -469,14 +469,6 @@ impl Model for Transaction {
     }
 }
 
-pub struct NewTransaction {
-    pub amount: f64,
-    pub date: NaiveDate,
-    pub description: String,
-    pub category_id: DatabaseID,
-    pub user_id: UserID,
-}
-
 impl Insert for Transaction {
     type ParamType = NewTransaction;
     type ResultType = Self;
@@ -490,8 +482,8 @@ impl Insert for Transaction {
     /// # use chrono::NaiveDate;
     /// # use rusqlite::Connection;
     /// #
-    /// # use backend::db::{Insert, Model, NewTransaction};
-    /// # use common::{Category, Transaction, User};
+    /// # use backend::db::{Insert, Model};
+    /// # use common::{Category, NewTransaction, Transaction, User};
     /// #
     /// fn create_transaction(user: &User, category: &Category, connection: &Connection) {
     ///     let transaction = Transaction::insert(
@@ -1073,10 +1065,10 @@ mod transaction_tests {
     use std::f64::consts::PI;
 
     use chrono::{Days, NaiveDate, Utc};
-    use common::{CategoryName, Email, NewCategory, PasswordHash, UserID};
+    use common::{CategoryName, Email, NewCategory, NewTransaction, PasswordHash, UserID};
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, DbError, NewTransaction, SelectBy, Transaction, User};
+    use crate::db::{initialize, Category, DbError, SelectBy, Transaction, User};
 
     use super::{Insert, NewUser};
 
@@ -1288,10 +1280,12 @@ mod savings_ratio_tests {
     use std::f64::consts::PI;
 
     use chrono::NaiveDate;
-    use common::{CategoryName, Email, NewCategory, PasswordHash, Ratio, SavingsRatio};
+    use common::{
+        CategoryName, Email, NewCategory, NewTransaction, PasswordHash, Ratio, SavingsRatio,
+    };
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, NewTransaction, Transaction, User};
+    use crate::db::{initialize, Category, Transaction, User};
 
     use super::{Insert, NewUser};
 
@@ -1357,14 +1351,14 @@ mod recurring_transaction_tests {
 
     use chrono::{Days, Months, NaiveDate};
     use common::{
-        CategoryName, Email, Frequency, NewCategory, PasswordHash, RecurringTransaction,
-        RecurringTransactionError, Transaction, User,
+        CategoryName, Email, Frequency, NewCategory, NewTransaction, PasswordHash,
+        RecurringTransaction, RecurringTransactionError, Transaction, User,
     };
     use rusqlite::Connection;
 
     use crate::db::select_recurring_transactions_by_user;
 
-    use super::{initialize, Category, Insert, NewTransaction, NewUser};
+    use super::{initialize, Category, Insert, NewUser};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
