@@ -611,7 +611,6 @@ impl SelectBy<UserID> for Transaction {
     }
 }
 
-// TODO: Implement `Insert` and `SelectBy` for `SavingsRatio`.
 /// The amount of an income transaction that should counted as savings.
 ///
 /// This object must be attached to an existing transaction and cannot exist independently.
@@ -620,7 +619,25 @@ impl SelectBy<UserID> for Transaction {
 #[derive(Debug, PartialEq)]
 pub struct SavingsRatio {
     transaction_id: DatabaseID,
+    // TODO: Create newtype for ratio that restricts values to the interval [0.0, 1.0] and remove validation code from `SavingsRatio::insert`.
     ratio: f64,
+}
+
+impl SavingsRatio {
+    pub fn new(transaction_id: DatabaseID, ratio: f64) -> Self {
+        Self {
+            transaction_id,
+            ratio,
+        }
+    }
+
+    pub fn transaction_id(&self) -> DatabaseID {
+        self.transaction_id
+    }
+
+    pub fn ratio(&self) -> f64 {
+        self.ratio
+    }
 }
 
 impl Model for SavingsRatio {
@@ -648,14 +665,9 @@ impl Model for SavingsRatio {
     }
 }
 
-impl SavingsRatio {
-    pub fn transaction_id(&self) -> DatabaseID {
-        self.transaction_id
-    }
-
-    pub fn ratio(&self) -> f64 {
-        self.ratio
-    }
+impl Insert for SavingsRatio {
+    type ParamType = Self;
+    type ResultType = Self;
 
     /// Create a new savings ratio in the database.
     ///
@@ -663,11 +675,11 @@ impl SavingsRatio {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::SavingsRatio;
+    /// use backend::db::{Insert, SavingsRatio};
     /// use common::Transaction;
     ///
     /// fn set_savings_ratio(transaction: &Transaction, ratio: f64, connection: &Connection) -> SavingsRatio {
-    ///     SavingsRatio::insert(transaction.id(), ratio, connection).unwrap()
+    ///     SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), connection).unwrap()
     /// }
     /// ```
     ///
@@ -676,11 +688,15 @@ impl SavingsRatio {
     /// - `transaction_id` does not refer to a valid transaction,
     /// - `ratio` is not a ratio between zero and one (inclusive),
     /// - or there is some other SQL error.
-    pub fn insert(
-        transaction_id: DatabaseID,
-        ratio: f64,
+    fn insert(
+        new_savings_ratio: Self::ParamType,
         connection: &Connection,
-    ) -> Result<SavingsRatio, DbError> {
+    ) -> Result<Self::ResultType, DbError> {
+        let Self {
+            transaction_id,
+            ratio,
+        } = new_savings_ratio;
+
         if !(0.0..=1.0).contains(&ratio) || ratio.is_sign_negative() {
             return Err(DbError::InvalidRatio);
         }
@@ -690,7 +706,7 @@ impl SavingsRatio {
             (transaction_id, ratio),
         )?;
 
-        Ok(SavingsRatio {
+        Ok(Self {
             transaction_id,
             ratio,
         })
@@ -1436,7 +1452,8 @@ mod savings_ratio_tests {
         let (conn, transaction) = create_database_and_insert_test_transaction();
 
         let ratio = 0.5;
-        let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn).unwrap();
+        let savings_ratio =
+            SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), &conn).unwrap();
 
         assert_eq!(savings_ratio.transaction_id(), transaction.id());
         assert_eq!(savings_ratio.ratio(), ratio);
@@ -1447,7 +1464,7 @@ mod savings_ratio_tests {
         let (conn, transaction) = create_database_and_insert_test_transaction();
 
         let ratio = -0.01;
-        let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
+        let savings_ratio = SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), &conn);
 
         assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
     }
@@ -1457,7 +1474,7 @@ mod savings_ratio_tests {
         let (conn, transaction) = create_database_and_insert_test_transaction();
 
         let ratio = -0.0;
-        let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
+        let savings_ratio = SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), &conn);
 
         assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
     }
@@ -1467,7 +1484,7 @@ mod savings_ratio_tests {
         let (conn, transaction) = create_database_and_insert_test_transaction();
 
         let ratio = 1.01;
-        let savings_ratio = SavingsRatio::insert(transaction.id(), ratio, &conn);
+        let savings_ratio = SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), &conn);
 
         assert_eq!(savings_ratio, Err(DbError::InvalidRatio));
     }
