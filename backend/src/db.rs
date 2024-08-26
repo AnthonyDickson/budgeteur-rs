@@ -61,15 +61,91 @@ impl From<Error> for DbError {
     }
 }
 
-/// An object schema that is stored in a database.
-pub trait Model {
-    type ReturnType;
-
+/// A trait for adding an object schema to a database.
+pub trait CreateTable {
     /// Create a table for the model.
     ///
     /// # Errors
     /// Returns an error if the table already exists or if there is an SQL error.
     fn create_table(connection: &Connection) -> Result<(), DbError>;
+}
+
+/// A trait for mapping from a `rusqlite::Row` from a SQLite database to a concrete rust type.
+///
+/// # Examples
+/// ```
+/// use rusqlite::{Connection, Error, Row};
+///
+/// use backend::db::{DbError, CreateTable, MapRow};
+///
+/// struct Foo {
+///     id: i64,
+///     desc: String
+/// }
+///
+/// impl CreateTable for Foo {
+///    fn create_table(connection: &Connection) -> Result<(), DbError> {
+///        connection.execute(
+///            "CREATE TABLE foo (id INTEGER PRIMARY KEY, desc TEXT NOT NULL)",
+///            (),
+///        )?;
+///
+///        Ok(())
+///    }
+/// }
+///
+/// impl MapRow for Foo {
+///     type ReturnType = Self;
+///
+///     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
+///         Ok(Self {
+///             id: row.get(offset)?,
+///             desc: row.get(offset + 1)?,
+///         })
+///     }
+/// }
+///
+/// struct Bar {
+///     id: i64,
+///     desc: String
+/// }
+///
+/// impl CreateTable for Bar {
+///    fn create_table(connection: &Connection) -> Result<(), DbError> {
+///        connection.execute(
+///            "CREATE TABLE bar (id INTEGER PRIMARY KEY, desc TEXT NOT NULL)",
+///            (),
+///        )?;
+///
+///        Ok(())
+///    }
+/// }
+///
+/// impl MapRow for Bar {
+///     type ReturnType = Self;
+///
+///     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
+///         Ok(Self {
+///             id: row.get(offset)?,
+///             desc: row.get(offset + 1)?,
+///         })
+///     }
+/// }
+///
+/// fn example(conn: &Connection) -> Result<(Foo, Bar), DbError> {
+///     conn.
+///         prepare("SELECT l.id, l.desc, r.id, r.desc FROM foo l INNER JOIN bar r ON l.id = r.foo_id WHERE l.id = :id")?
+///         .query_row(&[(":id", &1)], |row| {
+///             let foo = Foo::map_row(row)?;
+///             let bar = Bar::map_row_with_offset(row, 2)?;
+///
+///             Ok((foo, bar))
+///         })
+///         .map_err(|e| e.into())
+/// }
+/// ```
+pub trait MapRow {
+    type ReturnType;
 
     /// Convert a row into a concrete type.
     ///
@@ -88,81 +164,13 @@ pub trait Model {
     ///
     /// **Note:** This function expects that the row object contains all the table columns in the order they were defined.
     ///
-    /// # Examples
-    /// ```
-    /// use rusqlite::{Connection, Error, Row};
-    ///
-    /// use backend::db::{DbError, Model};
-    ///
-    /// struct Foo {
-    ///     id: i64,
-    ///     desc: String
-    /// }
-    ///
-    /// impl Model for Foo {
-    ///     type ReturnType = Self;
-    ///
-    ///     fn create_table(connection: &Connection) -> Result<(), DbError> {
-    ///         connection.execute(
-    ///             "CREATE TABLE bar (id INTEGER PRIMARY KEY, desc TEXT NOT NULL)",
-    ///             (),
-    ///         )?;
-    ///
-    ///         Ok(())
-    ///     }
-    ///
-    ///     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
-    ///         Ok(Self {
-    ///             id: row.get(offset)?,
-    ///             desc: row.get(offset + 1)?,
-    ///         })
-    ///     }
-    /// }
-    ///
-    /// struct Bar {
-    ///     id: i64,
-    ///     desc: String
-    /// }
-    ///
-    /// impl Model for Bar {
-    ///     type ReturnType = Self;
-    ///
-    ///     fn create_table(connection: &Connection) -> Result<(), DbError> {
-    ///         connection.execute(
-    ///             "CREATE TABLE bar (id INTEGER PRIMARY KEY, desc TEXT NOT NULL)",
-    ///             (),
-    ///         )?;
-    ///
-    ///         Ok(())
-    ///     }
-    ///
-    ///     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
-    ///         Ok(Self {
-    ///             id: row.get(offset)?,
-    ///             desc: row.get(offset + 1)?,
-    ///         })
-    ///     }
-    /// }
-    ///
-    /// fn example(conn: &Connection) -> Result<(Foo, Bar), DbError> {
-    ///     conn.
-    ///         prepare("SELECT l.id, l.desc, r.id, r.desc FROM foo l INNER JOIN bar r ON l.id = r.foo_id WHERE l.id = :id")?
-    ///         .query_row(&[(":id", &1)], |row| {
-    ///             let foo = Foo::map_row(row)?;
-    ///             let bar = Bar::map_row_with_offset(row, 2)?;
-    ///
-    ///             Ok((foo, bar))
-    ///         })
-    ///         .map_err(|e| e.into())
-    /// }
-    /// ```
-    ///
     /// # Errors
     /// Returns an error if a row item cannot be converted into the corresponding rust type, or if an invalid column index was used.
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self::ReturnType, Error>;
 }
 
 // TODO: Add trait for inserting objects into database that consume self and return Self or, for incomplete types that begin with "New", a complete object type. E.g. `fn insert(self, conn: &Connection) -> Result<Self, DbError>;`.
+/// A trait for inserting a record into the application database.
 pub trait Insert {
     type ParamType;
     type ResultType;
@@ -173,15 +181,14 @@ pub trait Insert {
     ) -> Result<Self::ResultType, DbError>;
 }
 
+/// A trait for retrieving records from the application database by a field of type `T`.
 pub trait SelectBy<T> {
     type ResultType;
 
     fn select(field: T, connection: &Connection) -> Result<Self::ResultType, DbError>;
 }
 
-impl Model for User {
-    type ReturnType = Self;
-
+impl CreateTable for User {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection.execute(
             "CREATE TABLE user (
@@ -194,6 +201,10 @@ impl Model for User {
 
         Ok(())
     }
+}
+
+impl MapRow for User {
+    type ReturnType = Self;
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
         let raw_id = row.get(offset)?;
@@ -218,8 +229,6 @@ impl Insert for User {
     ///
     /// # Error
     /// This function will return an error if there was a problem executing the SQL query. This could be due to:
-    /// - the email is empty,
-    /// - the password is empty,
     /// - a syntax error in the SQL string,
     /// - the email is already in use, or
     /// - the password hash is not unique.
@@ -266,9 +275,7 @@ impl SelectBy<&EmailAddress> for User {
     }
 }
 
-impl Model for Category {
-    type ReturnType = Self;
-
+impl CreateTable for Category {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection.execute(
             "CREATE TABLE category (
@@ -282,6 +289,10 @@ impl Model for Category {
 
         Ok(())
     }
+}
+
+impl MapRow for Category {
+    type ReturnType = Self;
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
         let id = row.get(offset)?;
@@ -352,7 +363,7 @@ impl SelectBy<DatabaseID> for Category {
     /// ```
     /// # use rusqlite::Connection;
     /// #
-    /// # use backend::db::{Model, SelectBy};
+    /// # use backend::db::SelectBy;
     /// # use common::{Category, DatabaseID};
     /// #
     /// fn get_category(id: DatabaseID, connection: &Connection) -> Option<Category> {
@@ -382,7 +393,7 @@ impl SelectBy<UserID> for Category {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Insert, Model, SelectBy};
+    /// use backend::db::{Insert, SelectBy};
     /// use common::{Category, CategoryName, NewCategory, User};
     ///
     /// fn create_and_validate_categories(user: &User, connection: &Connection) -> Vec<Category> {
@@ -424,9 +435,7 @@ impl SelectBy<UserID> for Category {
     }
 }
 
-impl Model for Transaction {
-    type ReturnType = Self;
-
+impl CreateTable for Transaction {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection
                 .execute(
@@ -445,6 +454,10 @@ impl Model for Transaction {
 
         Ok(())
     }
+}
+
+impl MapRow for Transaction {
+    type ReturnType = Self;
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
         Ok(Self::new(
@@ -471,7 +484,7 @@ impl Insert for Transaction {
     /// # use chrono::NaiveDate;
     /// # use rusqlite::Connection;
     /// #
-    /// # use backend::db::{Insert, Model};
+    /// # use backend::db::Insert;
     /// # use common::{Category, NewTransaction, Transaction, User};
     /// #
     /// fn create_transaction(user: &User, category: &Category, connection: &Connection) {
@@ -588,9 +601,7 @@ impl SelectBy<UserID> for Transaction {
     }
 }
 
-impl Model for SavingsRatio {
-    type ReturnType = Self;
-
+impl CreateTable for SavingsRatio {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection
             .execute(
@@ -604,6 +615,10 @@ impl Model for SavingsRatio {
 
         Ok(())
     }
+}
+
+impl MapRow for SavingsRatio {
+    type ReturnType = Self;
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
         let transaction_id = row.get(offset)?;
@@ -653,9 +668,7 @@ impl Insert for SavingsRatio {
     }
 }
 
-impl Model for RecurringTransaction {
-    type ReturnType = Self;
-
+impl CreateTable for RecurringTransaction {
     fn create_table(connection: &Connection) -> Result<(), DbError> {
         connection
             .execute(
@@ -670,6 +683,10 @@ impl Model for RecurringTransaction {
 
         Ok(())
     }
+}
+
+impl MapRow for RecurringTransaction {
+    type ReturnType = Self;
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
         row.get::<usize, i64>(offset + 2)?
