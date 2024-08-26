@@ -57,6 +57,9 @@ impl RecurringTransaction {
     ///
     /// An `end_date` of `None` is interpreted as `transaction` recurring indefinitely.
     ///
+    /// Note that this function does not insert the object into the application database.
+    /// Consider using the `insert` trait function on a `NewRecurringTransaction` to insert and create the recurring transaction at the same time.
+    ///
     /// # Errors
     ///
     /// This function will return an error if `end_date` is a date before or equal to `transaction.date()`.
@@ -99,8 +102,55 @@ impl RecurringTransaction {
         self.transaction_id
     }
 
-    pub fn end_date(&self) -> &Option<NaiveDate> {
-        &self.end_date
+    pub fn end_date(&self) -> Option<&NaiveDate> {
+        self.end_date.as_ref()
+    }
+
+    pub fn frequency(&self) -> Frequency {
+        self.frequency
+    }
+}
+
+pub struct NewRecurringTransaction {
+    transaction_id: DatabaseID,
+    end_date: Option<NaiveDate>,
+    frequency: Frequency,
+}
+
+impl NewRecurringTransaction {
+    /// Create a `NewRecurringTransaction` that indicates `transaction` occurs more than once on a regular schedule.
+    ///
+    /// An `end_date` of `None` is interpreted as `transaction` recurring indefinitely.
+    ///
+    /// Note that this function does not insert the object into the application database.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if `end_date` is a date before or equal to `transaction.date()`.
+    pub fn new(
+        transaction: &Transaction,
+        end_date: Option<NaiveDate>,
+        frequency: Frequency,
+    ) -> Result<Self, RecurringTransactionError> {
+        match end_date {
+            Some(date) if date <= *transaction.date() => Err(RecurringTransactionError(format!(
+                "the end date {date} is before the transaction date (i.e. the start date) {}",
+                transaction.date()
+            ))),
+            Some(_) | None => Ok(Self {
+                transaction_id: transaction.id(),
+                end_date,
+                frequency,
+            }),
+        }
+    }
+
+    pub fn transaction_id(&self) -> i64 {
+        self.transaction_id
+    }
+
+    pub fn end_date(&self) -> Option<&NaiveDate> {
+        self.end_date.as_ref()
     }
 
     pub fn frequency(&self) -> Frequency {

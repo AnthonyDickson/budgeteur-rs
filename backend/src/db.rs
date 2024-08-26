@@ -2,8 +2,9 @@ use std::fmt::Display;
 
 use chrono::Utc;
 use common::{
-    Category, CategoryName, DatabaseID, NewCategory, NewSavingsRatio, NewTransaction, NewUser,
-    PasswordHash, Ratio, RecurringTransaction, SavingsRatio, Transaction, User, UserID,
+    Category, CategoryName, DatabaseID, NewCategory, NewRecurringTransaction, NewSavingsRatio,
+    NewTransaction, NewUser, PasswordHash, Ratio, RecurringTransaction, SavingsRatio, Transaction,
+    User, UserID,
 };
 use email_address::EmailAddress;
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
@@ -619,10 +620,10 @@ impl Insert for NewSavingsRatio {
     /// use rusqlite::Connection;
     ///
     /// use backend::db::Insert;
-    /// use common::{Ratio, SavingsRatio, Transaction};
+    /// use common::{Ratio, NewSavingsRatio, SavingsRatio, Transaction};
     ///
     /// fn set_savings_ratio(transaction: &Transaction, ratio: Ratio, connection: &Connection) -> SavingsRatio {
-    ///     NewSavingsRatio{
+    ///     NewSavingsRatio {
     ///         transaction_id: transaction.id(),
     ///         ratio
     ///     }
@@ -685,9 +686,8 @@ impl MapRow for RecurringTransaction {
     }
 }
 
-impl Insert for RecurringTransaction {
-    /// TODO: Add `NewRecurringTransaction` type so that interface is consistent with other types?
-    type ResultType = Self;
+impl Insert for NewRecurringTransaction {
+    type ResultType = RecurringTransaction;
 
     /// Create a new recurring transaction in the database.
     ///
@@ -699,14 +699,14 @@ impl Insert for RecurringTransaction {
     /// use rusqlite::Connection;
     ///
     /// use backend::db::Insert;
-    /// use common::{Frequency, RecurringTransaction, Transaction};
+    /// use common::{Frequency, NewRecurringTransaction, RecurringTransaction, Transaction};
     ///
     /// fn set_recurring(
     ///     transaction: &Transaction,
     ///     frequency: Frequency,
     ///     connection: &Connection
     /// ) -> RecurringTransaction {
-    ///     RecurringTransaction::new(&transaction, None, frequency)
+    ///     NewRecurringTransaction::new(transaction.clone(), None, frequency)
     ///         .unwrap()
     ///         .insert(connection)
     ///         .unwrap()
@@ -714,16 +714,19 @@ impl Insert for RecurringTransaction {
     /// ```
     ///
     /// # Errors
-    /// This function will return an error if:
-    /// - `end_date` is on or before `transaction.date()`,
-    /// - or there is some other SQL error.
+    /// This function will return an error if there is an SQL error.
     fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection.execute(
             "INSERT INTO recurring_transaction (transaction_id, end_date, frequency) VALUES (?1, ?2, ?3)",
             (self.transaction_id(), self.end_date(), self.frequency() as i64),
         )?;
 
-        Ok(self)
+        // The type `NewRecurringTransaction` will validate the end date, so we can skip validation here by calling the `new_unchecked` function.
+        Ok(Self::ResultType::new_unchecked(
+            self.transaction_id(),
+            self.end_date().map(|date| date.to_owned()),
+            self.frequency(),
+        ))
     }
 }
 
@@ -1291,8 +1294,8 @@ mod recurring_transaction_tests {
 
     use chrono::{Days, Months, NaiveDate};
     use common::{
-        CategoryName, Frequency, NewCategory, NewTransaction, NewUser, PasswordHash,
-        RecurringTransaction, RecurringTransactionError, Transaction, User,
+        CategoryName, Frequency, NewCategory, NewRecurringTransaction, NewTransaction, NewUser,
+        PasswordHash, RecurringTransactionError, Transaction, User,
     };
     use email_address::EmailAddress;
     use rusqlite::Connection;
@@ -1351,14 +1354,13 @@ mod recurring_transaction_tests {
 
         let end_date = transaction.date().checked_add_months(Months::new(3));
 
-        let recurring = RecurringTransaction::insert(
-            RecurringTransaction::new(&transaction, end_date, Frequency::Weekly).unwrap(),
-            &conn,
-        )
-        .unwrap();
+        let recurring = NewRecurringTransaction::new(&transaction, end_date, Frequency::Weekly)
+            .unwrap()
+            .insert(&conn)
+            .unwrap();
 
         assert_eq!(recurring.transaction_id(), transaction.id());
-        assert_eq!(*recurring.end_date(), end_date);
+        assert_eq!(recurring.end_date(), end_date.as_ref());
         assert_eq!(recurring.frequency(), Frequency::Weekly);
     }
 
@@ -1367,15 +1369,18 @@ mod recurring_transaction_tests {
         let (_, _, _, transaction) =
             create_database_and_insert_test_user_category_and_transaction();
 
-        let new_recurring_transaction =
-            RecurringTransaction::new(&transaction, Some(*transaction.date()), Frequency::Weekly);
+        let new_recurring_transaction = NewRecurringTransaction::new(
+            &transaction,
+            Some(*transaction.date()),
+            Frequency::Weekly,
+        );
 
         assert!(matches!(
             new_recurring_transaction,
             Err(RecurringTransactionError(_))
         ));
 
-        let new_recurring_transaction = RecurringTransaction::new(
+        let new_recurring_transaction = NewRecurringTransaction::new(
             &transaction,
             Some(transaction.date().checked_sub_days(Days::new(1)).unwrap()),
             Frequency::Weekly,
@@ -1394,11 +1399,11 @@ mod recurring_transaction_tests {
 
         let end_date = transaction.date().checked_add_months(Months::new(3));
 
-        let inserted_recurring_transction = RecurringTransaction::insert(
-            RecurringTransaction::new(&transaction, end_date, Frequency::Weekly).unwrap(),
-            &conn,
-        )
-        .unwrap();
+        let inserted_recurring_transction =
+            NewRecurringTransaction::new(&transaction, end_date, Frequency::Weekly)
+                .unwrap()
+                .insert(&conn)
+                .unwrap();
 
         let expected = vec![(transaction, inserted_recurring_transction)];
 

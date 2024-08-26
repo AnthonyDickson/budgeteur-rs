@@ -5,7 +5,9 @@ mod password;
 pub use password::{PasswordError, PasswordHash, RawPassword};
 
 mod recurring_transaction;
-pub use recurring_transaction::{Frequency, RecurringTransaction, RecurringTransactionError};
+pub use recurring_transaction::{
+    Frequency, NewRecurringTransaction, RecurringTransaction, RecurringTransactionError,
+};
 
 mod savings_ratio;
 pub use savings_ratio::{NewSavingsRatio, Ratio, SavingsRatio};
