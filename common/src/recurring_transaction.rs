@@ -5,7 +5,7 @@ use crate::{DatabaseID, Transaction};
 
 #[derive(Debug, Error)]
 #[error("{0} is not a valid frequency code")]
-pub struct FrequencyError(String);
+pub struct FrequencyError(i64);
 
 /// How often a recurring transaction happens.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -31,7 +31,7 @@ impl TryFrom<i64> for Frequency {
             3 => Ok(Frequency::Monthly),
             4 => Ok(Frequency::Quarterly),
             5 => Ok(Frequency::Yearly),
-            _ => Err(FrequencyError(value.to_string())),
+            _ => Err(FrequencyError(value)),
         }
     }
 }
@@ -155,5 +155,140 @@ impl NewRecurringTransaction {
 
     pub fn frequency(&self) -> Frequency {
         self.frequency
+    }
+}
+
+#[cfg(test)]
+mod recurring_transaction_tests {
+    use std::f64::consts::PI;
+
+    use chrono::{Days, NaiveDate};
+
+    use crate::{
+        recurring_transaction::RecurringTransactionError, Frequency, RecurringTransaction,
+        Transaction, UserID,
+    };
+
+    fn create_transaction() -> Transaction {
+        Transaction::new(
+            1,
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            2,
+            UserID::new(3),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn new_recurring_transaction_succeeds_on_future_date() {
+        let transaction = create_transaction();
+
+        let new_recurring_transaction = RecurringTransaction::new(
+            &transaction,
+            transaction.date().checked_add_days(Days::new(1)),
+            Frequency::Weekly,
+        );
+
+        assert!(new_recurring_transaction.is_ok());
+    }
+
+    #[test]
+    fn new_recurring_transaction_fails_on_same_date() {
+        let transaction = create_transaction();
+
+        let new_recurring_transaction =
+            RecurringTransaction::new(&transaction, Some(*transaction.date()), Frequency::Weekly);
+
+        assert!(matches!(
+            new_recurring_transaction,
+            Err(RecurringTransactionError(_))
+        ));
+    }
+
+    #[test]
+    fn new_recurring_transaction_fails_on_past_date() {
+        let transaction = create_transaction();
+
+        let new_recurring_transaction = RecurringTransaction::new(
+            &transaction,
+            transaction.date().checked_sub_days(Days::new(1)),
+            Frequency::Weekly,
+        );
+
+        assert!(matches!(
+            new_recurring_transaction,
+            Err(RecurringTransactionError(_))
+        ));
+    }
+}
+
+#[cfg(test)]
+mod new_recurring_transaction_tests {
+    use std::f64::consts::PI;
+
+    use chrono::{Days, NaiveDate};
+
+    use crate::{
+        recurring_transaction::RecurringTransactionError, Frequency, NewRecurringTransaction,
+        Transaction, UserID,
+    };
+
+    fn create_transaction() -> Transaction {
+        Transaction::new(
+            1,
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            2,
+            UserID::new(3),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn new_recurring_transaction_succeeds_on_future_date() {
+        let transaction = create_transaction();
+
+        let new_recurring_transaction = NewRecurringTransaction::new(
+            &transaction,
+            transaction.date().checked_add_days(Days::new(1)),
+            Frequency::Weekly,
+        );
+
+        assert!(new_recurring_transaction.is_ok());
+    }
+
+    #[test]
+    fn new_recurring_transaction_fails_on_same_date() {
+        let transaction = create_transaction();
+
+        let new_recurring_transaction = NewRecurringTransaction::new(
+            &transaction,
+            Some(*transaction.date()),
+            Frequency::Weekly,
+        );
+
+        assert!(matches!(
+            new_recurring_transaction,
+            Err(RecurringTransactionError(_))
+        ));
+    }
+
+    #[test]
+    fn new_recurring_transaction_fails_on_past_date() {
+        let transaction = create_transaction();
+
+        let new_recurring_transaction = NewRecurringTransaction::new(
+            &transaction,
+            transaction.date().checked_sub_days(Days::new(1)),
+            Frequency::Weekly,
+        );
+
+        assert!(matches!(
+            new_recurring_transaction,
+            Err(RecurringTransactionError(_))
+        ));
     }
 }

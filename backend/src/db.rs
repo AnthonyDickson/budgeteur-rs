@@ -788,7 +788,7 @@ mod user_tests {
     }
 
     #[test]
-    fn create_user() {
+    fn insert_user_succeeds() {
         let conn = init_db();
 
         let email = EmailAddress::from_str("hello@world.com").unwrap();
@@ -807,7 +807,7 @@ mod user_tests {
     }
 
     #[test]
-    fn create_user_duplicate_email() {
+    fn insert_user_fails_on_duplicate_email() {
         let conn = init_db();
 
         let email = EmailAddress::from_str("hello@world.com").unwrap();
@@ -830,7 +830,7 @@ mod user_tests {
     }
 
     #[test]
-    fn create_user_duplicate_password() {
+    fn insert_user_fails_on_duplicate_password() {
         let conn = init_db();
 
         let email = EmailAddress::from_str("hello@world.com").unwrap();
@@ -853,30 +853,18 @@ mod user_tests {
         );
     }
 
-    fn create_database_and_insert_test_user() -> (Connection, User) {
+    #[test]
+    fn select_user_fails_with_non_existent_email() {
         let conn = init_db();
 
-        let test_user = NewUser {
-            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-        }
-        .insert(&conn)
-        .unwrap();
-
-        (conn, test_user)
-    }
-
-    #[test]
-    fn select_user_by_non_existent_email() {
-        let (conn, _) = create_database_and_insert_test_user();
-
+        // This email is not in the database.
         let email = EmailAddress::from_str("notavalidemail@foo.bar").unwrap();
 
         assert_eq!(User::select(&email, &conn), Err(DbError::NotFound));
     }
 
     #[test]
-    fn select_user_by_existing_email() {
+    fn select_user_succeeds_with_existing_email() {
         let conn = init_db();
 
         let test_user = NewUser {
@@ -924,7 +912,7 @@ mod category_tests {
     }
 
     #[test]
-    fn create_category() {
+    fn insert_category_succeeds() {
         let (conn, test_user) = create_database_and_insert_test_user();
 
         let name = CategoryName::new("Categorically a category".to_string()).unwrap();
@@ -942,7 +930,7 @@ mod category_tests {
     }
 
     #[test]
-    fn create_category_with_invalid_user_id_returns_error() {
+    fn insert_category_fails_with_invalid_user_id() {
         let conn = init_db();
         let name = CategoryName::new_unchecked("Foo".to_string());
 
@@ -956,7 +944,7 @@ mod category_tests {
     }
 
     #[test]
-    fn select_category() {
+    fn select_category_succeeds() {
         let (conn, test_user) = create_database_and_insert_test_user();
         let name = CategoryName::new_unchecked("Foo".to_string());
         let inserted_category = NewCategory {
@@ -972,7 +960,7 @@ mod category_tests {
     }
 
     #[test]
-    fn select_category_with_invalid_id() {
+    fn select_category_fails_with_invalid_id() {
         let conn = init_db();
 
         let selected_category = Category::select(1337, &conn);
@@ -1068,7 +1056,7 @@ mod transaction_tests {
     }
 
     #[test]
-    fn create_transaction() {
+    fn insert_transaction_succeeds() {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let amount = PI;
@@ -1094,7 +1082,7 @@ mod transaction_tests {
     }
 
     #[test]
-    fn create_transaction_fails_on_invalid_user_id() {
+    fn insert_transaction_fails_on_invalid_user_id() {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let amount = PI;
@@ -1115,7 +1103,7 @@ mod transaction_tests {
     }
 
     #[test]
-    fn create_transaction_fails_on_invalid_category_id() {
+    fn insert_transaction_fails_on_invalid_category_id() {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let amount = PI;
@@ -1136,7 +1124,7 @@ mod transaction_tests {
     }
 
     #[test]
-    fn create_transaction_fails_on_user_id_mismatch() {
+    fn insert_transaction_fails_on_user_id_mismatch() {
         // `_test_user` is the owner of `someone_elses_category`.
         let (conn, _test_user, someone_elses_category) =
             create_database_and_insert_test_user_and_category();
@@ -1169,7 +1157,7 @@ mod transaction_tests {
     }
 
     #[test]
-    fn select_transaction_by_id() {
+    fn select_transaction_by_id_succeeds() {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let inserted_transaction = NewTransaction::new(
@@ -1189,7 +1177,7 @@ mod transaction_tests {
     }
 
     #[test]
-    fn select_transaction_by_invalid_id_fails() {
+    fn select_transaction_fails_on_invalid_id() {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let inserted_transaction = NewTransaction::new(
@@ -1209,7 +1197,18 @@ mod transaction_tests {
     }
 
     #[test]
-    fn select_transactions_by_user_id() {
+    fn select_transactions_by_user_id_suceeds_with_no_transactions() {
+        let (conn, test_user, _category) = create_database_and_insert_test_user_and_category();
+
+        let expected_transactions = vec![];
+
+        let transactions = Transaction::select(test_user.id(), &conn).unwrap();
+
+        assert_eq!(transactions, expected_transactions);
+    }
+
+    #[test]
+    fn select_transactions_by_user_id_succeeds() {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let expected_transactions = vec![
@@ -1294,7 +1293,7 @@ mod savings_ratio_tests {
     }
 
     #[test]
-    fn create_savings_ratio() {
+    fn insert_savings_ratio() {
         let (conn, transaction) = create_database_and_insert_test_transaction();
 
         let ratio = Ratio::new(0.5).unwrap();
@@ -1314,10 +1313,10 @@ mod savings_ratio_tests {
 mod recurring_transaction_tests {
     use std::{f64::consts::PI, str::FromStr};
 
-    use chrono::{Days, Months, NaiveDate};
+    use chrono::{Months, NaiveDate};
     use common::{
         CategoryName, Frequency, NewCategory, NewRecurringTransaction, NewTransaction, NewUser,
-        PasswordHash, RecurringTransactionError, Transaction, User,
+        PasswordHash, Transaction, User,
     };
     use email_address::EmailAddress;
     use rusqlite::Connection;
@@ -1371,7 +1370,7 @@ mod recurring_transaction_tests {
     }
 
     #[test]
-    fn create_recurring_transaction() {
+    fn insert_recurring_transaction() {
         let (conn, _, _, transaction) =
             create_database_and_insert_test_user_category_and_transaction();
 
@@ -1385,34 +1384,6 @@ mod recurring_transaction_tests {
         assert_eq!(recurring.transaction_id(), transaction.id());
         assert_eq!(recurring.end_date(), end_date.as_ref());
         assert_eq!(recurring.frequency(), Frequency::Weekly);
-    }
-
-    #[test]
-    fn create_recurring_transaction_fails_on_past_end_date() {
-        let (_, _, _, transaction) =
-            create_database_and_insert_test_user_category_and_transaction();
-
-        let new_recurring_transaction = NewRecurringTransaction::new(
-            &transaction,
-            Some(*transaction.date()),
-            Frequency::Weekly,
-        );
-
-        assert!(matches!(
-            new_recurring_transaction,
-            Err(RecurringTransactionError(_))
-        ));
-
-        let new_recurring_transaction = NewRecurringTransaction::new(
-            &transaction,
-            Some(transaction.date().checked_sub_days(Days::new(1)).unwrap()),
-            Frequency::Weekly,
-        );
-
-        assert!(matches!(
-            new_recurring_transaction,
-            Err(RecurringTransactionError(_))
-        ));
     }
 
     #[test]
