@@ -497,7 +497,17 @@ impl Insert for NewTransaction {
     /// - `user_id` does not refer to a valid user,
     /// - or there is some other SQL error.
     fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
-        // TODO: Ensure that the category id refers to a category owned by the user.
+        let category = Category::select(self.category_id(), connection).map_err(|e| match e {
+            // A 'not found' error does not make sense on an insert function,
+            // so we instead indicate that the category id (a foreign key) is invalid.
+            DbError::NotFound => DbError::InvalidForeignKey,
+            e => e,
+        })?;
+
+        if self.user_id() != category.user_id() {
+            return Err(DbError::InvalidForeignKey);
+        }
+
         connection
                 .execute(
                     "INSERT INTO \"transaction\" (amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1122,6 +1132,39 @@ mod transaction_tests {
         .unwrap()
         .insert(&conn);
 
+        assert_eq!(maybe_transaction, Err(DbError::InvalidForeignKey));
+    }
+
+    #[test]
+    fn create_transaction_fails_on_user_id_mismatch() {
+        // `_test_user` is the owner of `someone_elses_category`.
+        let (conn, _test_user, someone_elses_category) =
+            create_database_and_insert_test_user_and_category();
+
+        let unauthorized_user = NewUser {
+            email: EmailAddress::from_str("bar@baz.qux").unwrap(),
+            password_hash: PasswordHash::new_unchecked("hunter3".to_string()),
+        }
+        .insert(&conn)
+        .unwrap();
+
+        let amount = PI;
+        let date = Utc::now().date_naive();
+        let description = "Rust Pie".to_string();
+
+        let maybe_transaction = NewTransaction::new(
+            amount,
+            date,
+            description.clone(),
+            someone_elses_category.id(),
+            // The user below should not be allowed to use the above category because it belongs to someone else!
+            unauthorized_user.id(),
+        )
+        .unwrap()
+        .insert(&conn);
+
+        // The server should not give any information indicating to the client that the category exists or belongs to another user,
+        // so we give the same error as if the referenced category does not exist.
         assert_eq!(maybe_transaction, Err(DbError::InvalidForeignKey));
     }
 
