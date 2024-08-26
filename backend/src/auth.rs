@@ -171,14 +171,14 @@ mod tests {
         Router,
     };
     use axum_test::TestServer;
-    use common::{PasswordHash, RawPassword, User};
+    use common::{NewUser, PasswordHash, RawPassword, User};
     use email_address::EmailAddress;
     use rusqlite::Connection;
     use serde_json::json;
 
+    use crate::config::AppConfig;
     use crate::db::initialize;
     use crate::{auth, db::Insert};
-    use crate::{config::AppConfig, db::NewUser};
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =

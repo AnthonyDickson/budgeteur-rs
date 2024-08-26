@@ -79,7 +79,7 @@ pub struct NewCategory {
 
 #[cfg(test)]
 mod category_name_tests {
-    use crate::{category::CategoryName, CategoryNameError};
+    use crate::category::{CategoryName, CategoryNameError};
 
     #[test]
     fn new_fails_on_empty_string() {

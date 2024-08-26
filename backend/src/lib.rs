@@ -9,8 +9,10 @@ use axum::{
     Json, Router,
 };
 use axum_server::Handle;
-use common::{Category, DatabaseID, NewCategory, NewTransaction, PasswordHash, Transaction, User};
-use db::{Insert, NewUser, SelectBy};
+use common::{
+    Category, DatabaseID, NewCategory, NewTransaction, NewUser, PasswordHash, Transaction, User,
+};
+use db::{Insert, SelectBy};
 use serde_json::json;
 use tokio::signal;
 

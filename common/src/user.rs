@@ -45,3 +45,9 @@ impl User {
         &self.password_hash
     }
 }
+
+/// The data for creating a new user.
+pub struct NewUser {
+    pub email: EmailAddress,
+    pub password_hash: PasswordHash,
+}

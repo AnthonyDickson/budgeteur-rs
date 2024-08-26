@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use chrono::Utc;
 use common::{
-    Category, CategoryName, DatabaseID, NewCategory, NewTransaction, PasswordHash, Ratio,
+    Category, CategoryName, DatabaseID, NewCategory, NewTransaction, NewUser, PasswordHash, Ratio,
     RecurringTransaction, SavingsRatio, Transaction, User, UserID,
 };
 use email_address::EmailAddress;
@@ -206,11 +206,6 @@ impl Model for User {
 
         Ok(Self::new(id, email, password_hash))
     }
-}
-
-pub struct NewUser {
-    pub email: EmailAddress,
-    pub password_hash: PasswordHash,
 }
 
 impl Insert for User {
@@ -782,11 +777,11 @@ pub fn select_recurring_transactions_by_user(
 mod user_tests {
     use std::str::FromStr;
 
-    use common::PasswordHash;
+    use common::{NewUser, PasswordHash};
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::db::{initialize, DbError, Insert, NewUser, SelectBy, User};
+    use crate::db::{initialize, DbError, Insert, SelectBy, User};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -915,13 +910,13 @@ mod user_tests {
 mod category_tests {
     use std::str::FromStr;
 
-    use common::{NewCategory, PasswordHash};
+    use common::{NewCategory, NewUser, PasswordHash};
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::db::{initialize, Category, CategoryName, DbError, SelectBy, User, UserID};
 
-    use super::{Insert, NewUser};
+    use super::Insert;
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1065,13 +1060,13 @@ mod transaction_tests {
     use std::{f64::consts::PI, str::FromStr};
 
     use chrono::{Days, NaiveDate, Utc};
-    use common::{CategoryName, NewCategory, NewTransaction, PasswordHash, UserID};
+    use common::{CategoryName, NewCategory, NewTransaction, NewUser, PasswordHash, UserID};
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::db::{initialize, Category, DbError, SelectBy, Transaction, User};
 
-    use super::{Insert, NewUser};
+    use super::Insert;
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1281,13 +1276,15 @@ mod savings_ratio_tests {
     use std::{f64::consts::PI, str::FromStr};
 
     use chrono::NaiveDate;
-    use common::{CategoryName, NewCategory, NewTransaction, PasswordHash, Ratio, SavingsRatio};
+    use common::{
+        CategoryName, NewCategory, NewTransaction, NewUser, PasswordHash, Ratio, SavingsRatio,
+    };
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::db::{initialize, Category, Transaction, User};
 
-    use super::{Insert, NewUser};
+    use super::Insert;
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1351,15 +1348,15 @@ mod recurring_transaction_tests {
 
     use chrono::{Days, Months, NaiveDate};
     use common::{
-        CategoryName, Frequency, NewCategory, NewTransaction, PasswordHash, RecurringTransaction,
-        RecurringTransactionError, Transaction, User,
+        CategoryName, Frequency, NewCategory, NewTransaction, NewUser, PasswordHash,
+        RecurringTransaction, RecurringTransactionError, Transaction, User,
     };
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::db::select_recurring_transactions_by_user;
 
-    use super::{initialize, Category, Insert, NewUser};
+    use super::{initialize, Category, Insert};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
