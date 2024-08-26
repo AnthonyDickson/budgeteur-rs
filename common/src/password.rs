@@ -6,8 +6,17 @@ use thiserror::Error;
 use zxcvbn::{feedback::Feedback, zxcvbn, Score};
 
 #[derive(Debug, Error)]
-#[error("password is too weak: {0}")]
-pub struct PasswordError(pub String);
+pub enum PasswordError {
+    #[error("password is too weak: {0}")]
+    TooWeak(String),
+
+    /// An unexpected error occurred with the underlying hashing library.
+    ///
+    /// The error string should only be logged for debugging on the server.
+    /// When communicating with the application client this error should be replaced with a general error type indicating an internal server error.
+    #[error("hashing failed: {0}")]
+    HashingError(String),
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PasswordHash(String);
@@ -21,8 +30,7 @@ impl PasswordHash {
     pub fn new(raw_password: RawPassword) -> Result<Self, PasswordError> {
         match hash(&raw_password.0, DEFAULT_COST) {
             Ok(password_hash) => Ok(Self(password_hash)),
-            // TODO: Add error variants to `PasswordError` to indicate error w/ hashing.
-            Err(_) => Err(PasswordError(raw_password.0)),
+            Err(e) => Err(PasswordError::HashingError(e.to_string())),
         }
     }
 
@@ -63,7 +71,7 @@ impl RawPassword {
 
         match password_analysis.score() {
             Score::Three | Score::Four => Ok(Self(raw_password_string)),
-            _ => Err(PasswordError(
+            _ => Err(PasswordError::TooWeak(
                 password_analysis
                     .feedback()
                     .unwrap_or(&Feedback::default())
@@ -90,14 +98,14 @@ mod raw_password_tests {
     fn new_fails_on_empty() {
         let result = RawPassword::new("".to_string());
 
-        assert!(matches!(result, Err(PasswordError(_))));
+        assert!(matches!(result, Err(PasswordError::TooWeak(_))));
     }
 
     #[test]
     fn new_fails_on_short_password() {
         let result = RawPassword::new("imtooshort".to_string());
 
-        assert!(matches!(result, Err(PasswordError(_))));
+        assert!(matches!(result, Err(PasswordError::TooWeak(_))));
     }
 
     #[test]
