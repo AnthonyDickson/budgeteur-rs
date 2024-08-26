@@ -1,4 +1,4 @@
-use std::{env, env::VarError, time::Duration};
+use std::time::Duration;
 
 use auth::Claims;
 use axum::{
@@ -36,63 +36,6 @@ pub fn build_router() -> Router<AppConfig> {
         .route("/category/:category_id", get(get_category))
         .route("/transaction", post(create_transaction))
         .route("/transaction/:transaction_id", get(get_transaction))
-}
-
-/// Get a port number from the environment variable `env_key` if set, otherwise return `default_port`.
-///
-/// # Panics
-/// This function may panic if the environment variable `env_key` is not valid unicode.
-///
-/// This function may panic if the environment variable `env_key` cannot be parsed as an integer.
-///
-/// ```rust,should_panic
-/// use backend::parse_port_or_default;
-///
-/// unsafe { std::env::set_var("FOO", "123s"); }
-/// // This will panic!
-/// let port = parse_port_or_default("FOO", 1234);
-/// # unsafe { std::env::remove_var("FOO"); }
-/// ```
-///
-/// # Examples
-///
-/// ```
-/// use backend::parse_port_or_default;
-///
-/// assert_eq!(parse_port_or_default("FOO", 1234), 1234);
-///
-/// unsafe { std::env::set_var("FOO", "4321"); }
-/// assert_eq!(parse_port_or_default("FOO", 1234), 4321);
-/// # unsafe { std::env::remove_var("FOO"); }
-/// ```
-pub fn parse_port_or_default(env_key: &str, default_port: u16) -> u16 {
-    let port_string = match env::var(env_key) {
-        Ok(string) => string,
-        Err(VarError::NotPresent) => {
-            tracing::debug!(
-                "The environment variable '{}' was not set, using the default port {}.",
-                env_key,
-                default_port
-            );
-            return default_port;
-        }
-        Err(e) => {
-            tracing::error!(
-                "An error occurred retrieving the environment variable '{}': {}",
-                env_key,
-                e
-            );
-            panic!();
-        }
-    };
-
-    match port_string.parse() {
-        Ok(port_number) => port_number,
-        Err(e) => {
-            tracing::error!("An error occurred parsing the port number '{}' from the environment variable '{}': {}", port_string, env_key, e);
-            panic!();
-        }
-    }
 }
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and

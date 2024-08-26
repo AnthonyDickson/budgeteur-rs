@@ -1,9 +1,8 @@
 use std::{
-    env::{self, args},
+    env::{self},
     fs::OpenOptions,
     net::SocketAddr,
     path::PathBuf,
-    process::exit,
     sync::Arc,
 };
 
@@ -12,20 +11,78 @@ use axum::{
     Router,
 };
 use axum_server::{tls_rustls::RustlsConfig, Handle};
+use clap::Parser;
 use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-use backend::{build_router, graceful_shutdown, parse_port_or_default, AppConfig};
+use backend::{build_router, graceful_shutdown, AppConfig};
+
+/// The REST API server for backrooms_rs.
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// File path to the application SQLite database.
+    #[arg(long)]
+    db_path: String,
+
+    /// File path to an SSL certificate `cert.pem` and key `key.pem`.
+    #[arg(long)]
+    cert_path: String,
+
+    /// The port to serve the API from.
+    #[arg(short, long, default_value_t = 3000)]
+    port: u16,
+}
 
 #[tokio::main]
 async fn main() {
+    setup_logging();
+
+    let args = Args::parse();
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
+
+    let tls_config = RustlsConfig::from_pem_file(
+        PathBuf::from(&args.cert_path).join("cert.pem"),
+        PathBuf::from(&args.cert_path).join("key.pem"),
+    )
+    .await
+    .expect("Could not open TLS certificates.");
+
+    let jwt_secret =
+        env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set");
+
+    let conn = Connection::open(&args.db_path).unwrap();
+    let app_config = AppConfig::new(conn, jwt_secret);
+
+    let handle = Handle::new();
+    tokio::spawn(graceful_shutdown(handle.clone()));
+
+    tracing::info!("HTTPS server listening on {}", addr);
+    axum_server::bind_rustls(addr, tls_config)
+        .handle(handle)
+        .serve(
+            add_tracing_layer(
+                Router::new()
+                    .nest("/api", build_router())
+                    .with_state(app_config),
+            )
+            .into_make_service(),
+        )
+        .await
+        .unwrap();
+}
+
+fn setup_logging() {
     let stdout_log = tracing_subscriber::fmt::layer().pretty();
+
     let log_file = OpenOptions::new()
         .create(true)
         .append(true)
         .open("debug.log")
         .expect("Could not create log file");
+
     let debug_log = tracing_subscriber::fmt::layer()
         .pretty()
         .with_writer(Arc::new(log_file));
@@ -38,7 +95,9 @@ async fn main() {
                 .with_filter(filter::LevelFilter::DEBUG),
         )
         .init();
+}
 
+fn add_tracing_layer(router: Router) -> Router {
     let tracing_layer = TraceLayer::new_for_http()
         .make_span_with(|req: &Request| {
             let method = req.method();
@@ -55,48 +114,5 @@ async fn main() {
         // logging of errors so disable that
         .on_failure(());
 
-    let handle = Handle::new();
-    tokio::spawn(graceful_shutdown(handle.clone()));
-
-    let port = parse_port_or_default("HTTPS_PORT", 3000);
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-
-    // TODO: Pass in TLS cert path via CLI.
-    let tls_config = RustlsConfig::from_pem_file(
-        PathBuf::from("self_signed_certs/cert.pem"),
-        PathBuf::from("self_signed_certs/key.pem"),
-    )
-    .await
-    .expect("Could not open TLS certificates.");
-
-    let jwt_secret =
-        env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set");
-
-    let conn = Connection::open(get_database_path_from_args()).unwrap();
-    let app_config = AppConfig::new(conn, jwt_secret);
-
-    tracing::info!("HTTPS server listening on {}", addr);
-    axum_server::bind_rustls(addr, tls_config)
-        .handle(handle)
-        .serve(
-            Router::new()
-                .nest("/api", build_router())
-                .with_state(app_config)
-                .layer(tracing_layer)
-                .into_make_service(),
-        )
-        .await
-        .unwrap();
-}
-
-fn get_database_path_from_args() -> PathBuf {
-    let args: Vec<String> = args().collect();
-
-    if args.len() < 2 {
-        let program_name = args[0].clone();
-        eprintln!("Usage: {program_name:?} <database_path>");
-        exit(1);
-    }
-
-    PathBuf::from(&args[1])
+    router.layer(tracing_layer)
 }
