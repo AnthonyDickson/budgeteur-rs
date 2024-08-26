@@ -94,3 +94,8 @@ impl SavingsRatio {
         &self.ratio
     }
 }
+
+pub struct NewSavingsRatio {
+    pub transaction_id: DatabaseID,
+    pub ratio: Ratio,
+}

@@ -2,8 +2,8 @@ use std::fmt::Display;
 
 use chrono::Utc;
 use common::{
-    Category, CategoryName, DatabaseID, NewCategory, NewTransaction, NewUser, PasswordHash, Ratio,
-    RecurringTransaction, SavingsRatio, Transaction, User, UserID,
+    Category, CategoryName, DatabaseID, NewCategory, NewSavingsRatio, NewTransaction, NewUser,
+    PasswordHash, Ratio, RecurringTransaction, SavingsRatio, Transaction, User, UserID,
 };
 use email_address::EmailAddress;
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
@@ -609,9 +609,8 @@ impl MapRow for SavingsRatio {
     }
 }
 
-impl Insert for SavingsRatio {
-    /// TODO: Add `NewSavingsRatio` type so that interface is consistent with other types?
-    type ResultType = Self;
+impl Insert for NewSavingsRatio {
+    type ResultType = SavingsRatio;
 
     /// Create a new savings ratio in the database.
     ///
@@ -623,9 +622,12 @@ impl Insert for SavingsRatio {
     /// use common::{Ratio, SavingsRatio, Transaction};
     ///
     /// fn set_savings_ratio(transaction: &Transaction, ratio: Ratio, connection: &Connection) -> SavingsRatio {
-    ///     SavingsRatio::new(transaction.id(), ratio)
-    ///         .insert(connection)
-    ///         .unwrap()
+    ///     NewSavingsRatio{
+    ///         transaction_id: transaction.id(),
+    ///         ratio
+    ///     }
+    ///     .insert(connection)
+    ///     .unwrap()
     /// }
     /// ```
     ///
@@ -637,10 +639,10 @@ impl Insert for SavingsRatio {
     fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection.execute(
             "INSERT INTO savings_ratio (transaction_id, ratio) VALUES (?1, ?2)",
-            (self.transaction_id(), self.ratio().as_f64()),
+            (&self.transaction_id, self.ratio.as_f64()),
         )?;
 
-        Ok(self)
+        Ok(Self::ResultType::new(self.transaction_id, self.ratio))
     }
 }
 
@@ -1221,7 +1223,7 @@ mod savings_ratio_tests {
 
     use chrono::NaiveDate;
     use common::{
-        CategoryName, NewCategory, NewTransaction, NewUser, PasswordHash, Ratio, SavingsRatio,
+        CategoryName, NewCategory, NewSavingsRatio, NewTransaction, NewUser, PasswordHash, Ratio,
     };
     use email_address::EmailAddress;
     use rusqlite::Connection;
@@ -1271,9 +1273,12 @@ mod savings_ratio_tests {
         let (conn, transaction) = create_database_and_insert_test_transaction();
 
         let ratio = Ratio::new(0.5).unwrap();
-        let savings_ratio =
-            SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio.clone()), &conn)
-                .unwrap();
+        let savings_ratio = NewSavingsRatio {
+            transaction_id: transaction.id(),
+            ratio: ratio.clone(),
+        }
+        .insert(&conn)
+        .unwrap();
 
         assert_eq!(savings_ratio.transaction_id(), transaction.id());
         assert_eq!(savings_ratio.ratio(), &ratio);
