@@ -169,22 +169,23 @@ pub trait MapRow {
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self::ReturnType, Error>;
 }
 
-// TODO: Add trait for inserting objects into database that consume self and return Self or, for incomplete types that begin with "New", a complete object type. E.g. `fn insert(self, conn: &Connection) -> Result<Self, DbError>;`.
 /// A trait for inserting a record into the application database.
 pub trait Insert {
-    type ParamType;
     type ResultType;
 
-    fn insert(
-        params: Self::ParamType,
-        connection: &Connection,
-    ) -> Result<Self::ResultType, DbError>;
+    /// Insert the object into the application database.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the insertion failed.
+    fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError>;
 }
 
 /// A trait for retrieving records from the application database by a field of type `T`.
 pub trait SelectBy<T> {
     type ResultType;
 
+    /// Select records from the application database that match `field`.
     fn select(field: T, connection: &Connection) -> Result<Self::ResultType, DbError>;
 }
 
@@ -219,28 +220,25 @@ impl MapRow for User {
     }
 }
 
-impl Insert for User {
-    type ParamType = NewUser;
+impl Insert for NewUser {
     type ResultType = User;
 
     /// Create a new user in the database.
-    ///
-    /// It is up to the caller to ensure the password is properly hashed.
     ///
     /// # Error
     /// This function will return an error if there was a problem executing the SQL query. This could be due to:
     /// - a syntax error in the SQL string,
     /// - the email is already in use, or
-    /// - the password hash is not unique.
-    fn insert(user: Self::ParamType, connection: &Connection) -> Result<Self::ResultType, DbError> {
+    /// - the password hash is not unique (very unlikely).
+    fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection.execute(
             "INSERT INTO user (email, password) VALUES (?1, ?2)",
-            (&user.email.to_string(), user.password_hash.to_string()),
+            (&self.email.to_string(), self.password_hash.to_string()),
         )?;
 
         let id = UserID::new(connection.last_insert_rowid());
 
-        Ok(User::new(id, user.email, user.password_hash))
+        Ok(User::new(id, self.email, self.password_hash))
     }
 }
 
@@ -307,8 +305,7 @@ impl MapRow for Category {
     }
 }
 
-impl Insert for Category {
-    type ParamType = NewCategory;
+impl Insert for NewCategory {
     type ResultType = Category;
 
     /// Create a new category in the database.
@@ -322,7 +319,7 @@ impl Insert for Category {
     /// #
     /// fn create_category(name: String, user: &User, connection: &Connection) -> Result<Category, DbError> {
     ///     let name = CategoryName::new(name).unwrap();
-    ///     let category = Category::insert(NewCategory { name: name.clone(), user_id: user.id() }, &connection)?;
+    ///     let category = NewCategory { name: name.clone(), user_id: user.id() }.insert(&connection)?;
     ///
     ///     assert_eq!(category.name(), &name);
     ///     assert_eq!(category.user_id(), user.id());
@@ -335,22 +332,15 @@ impl Insert for Category {
     /// This function will return an error if:
     /// - `user_id` does not refer to a valid user,
     /// - or there is some other SQL error.
-    fn insert(
-        category_data: Self::ParamType,
-        connection: &Connection,
-    ) -> Result<Self::ResultType, DbError> {
+    fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection.execute(
             "INSERT INTO category (name, user_id) VALUES (?1, ?2)",
-            (category_data.name.as_ref(), category_data.user_id.as_i64()),
+            (self.name.as_ref(), self.user_id.as_i64()),
         )?;
 
         let category_id = connection.last_insert_rowid();
 
-        Ok(Self::ResultType::new(
-            category_id,
-            category_data.name,
-            category_data.user_id,
-        ))
+        Ok(Self::ResultType::new(category_id, self.name, self.user_id))
     }
 }
 
@@ -398,21 +388,15 @@ impl SelectBy<UserID> for Category {
     ///
     /// fn create_and_validate_categories(user: &User, connection: &Connection) -> Vec<Category> {
     ///     let inserted_categories = vec![
-    ///         Category::insert(
-    ///            NewCategory {
-    ///                name: CategoryName::new_unchecked("Foo".to_string()),
-    ///                user_id: user.id(),
-    ///            },
-    ///            &connection,
-    ///         )
+    ///         NewCategory {
+    ///             name: CategoryName::new_unchecked("Foo".to_string()),
+    ///             user_id: user.id(),
+    ///         }.insert(&connection)
     ///         .unwrap(),
-    ///         Category::insert(
-    ///             NewCategory {
-    ///                 name: CategoryName::new_unchecked("Bar".to_string()),
-    ///                 user_id: user.id(),
-    ///             },
-    ///             &connection,
-    ///         )
+    ///         NewCategory {
+    ///             name: CategoryName::new_unchecked("Bar".to_string()),
+    ///             user_id: user.id(),
+    ///         }.insert(&connection)
     ///         .unwrap(),
     ///     ];
     ///
@@ -471,9 +455,8 @@ impl MapRow for Transaction {
     }
 }
 
-impl Insert for Transaction {
-    type ParamType = NewTransaction;
-    type ResultType = Self;
+impl Insert for NewTransaction {
+    type ResultType = Transaction;
 
     /// Create a new transaction in the database.
     ///
@@ -488,16 +471,14 @@ impl Insert for Transaction {
     /// # use common::{Category, NewTransaction, Transaction, User};
     /// #
     /// fn create_transaction(user: &User, category: &Category, connection: &Connection) {
-    ///     let transaction = Transaction::insert(
-    ///         NewTransaction {
-    ///             amount: 3.14,
-    ///             date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-    ///             description: "Rust Pie".to_string(),
-    ///             category_id: category.id(),
-    ///             user_id: user.id()
-    ///         },
-    ///         &connection
-    ///     )
+    ///     let transaction = NewTransaction {
+    ///         amount: 3.14,
+    ///         date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+    ///         description: "Rust Pie".to_string(),
+    ///         category_id: category.id(),
+    ///         user_id: user.id()
+    ///     }
+    ///     .insert(&connection)
     ///     .unwrap();
     ///
     ///     assert_eq!(transaction.amount(), 3.14);
@@ -516,11 +497,9 @@ impl Insert for Transaction {
     /// - `category_id` does not refer to a valid category,
     /// - `user_id` does not refer to a valid user,
     /// - or there is some other SQL error.
-    fn insert(
-        new_transaction: Self::ParamType,
-        connection: &Connection,
-    ) -> Result<Self::ResultType, DbError> {
-        if new_transaction.date > Utc::now().date_naive() {
+    fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
+        // TODO: Create newtype for transaction date that ensures that dates are valid (today or earlier)?
+        if self.date > Utc::now().date_naive() {
             return Err(DbError::InvalidDate);
         }
 
@@ -528,18 +507,18 @@ impl Insert for Transaction {
         connection
                 .execute(
                     "INSERT INTO \"transaction\" (amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    (new_transaction.amount, &new_transaction.date, &new_transaction.description, new_transaction.category_id, new_transaction.user_id.as_i64()),
+                    (self.amount, &self.date, &self.description, self.category_id, self.user_id.as_i64()),
                 )?;
 
         let transaction_id = connection.last_insert_rowid();
 
-        Ok(Self::new(
+        Ok(Self::ResultType::new(
             transaction_id,
-            new_transaction.amount,
-            new_transaction.date,
-            new_transaction.description,
-            new_transaction.category_id,
-            new_transaction.user_id,
+            self.amount,
+            self.date,
+            self.description,
+            self.category_id,
+            self.user_id,
         ))
     }
 }
@@ -631,7 +610,7 @@ impl MapRow for SavingsRatio {
 }
 
 impl Insert for SavingsRatio {
-    type ParamType = Self;
+    /// TODO: Add `NewSavingsRatio` type so that interface is consistent with other types?
     type ResultType = Self;
 
     /// Create a new savings ratio in the database.
@@ -644,7 +623,9 @@ impl Insert for SavingsRatio {
     /// use common::{Ratio, SavingsRatio, Transaction};
     ///
     /// fn set_savings_ratio(transaction: &Transaction, ratio: Ratio, connection: &Connection) -> SavingsRatio {
-    ///     SavingsRatio::insert(SavingsRatio::new(transaction.id(), ratio), connection).unwrap()
+    ///     SavingsRatio::new(transaction.id(), ratio)
+    ///         .insert(connection)
+    ///         .unwrap()
     /// }
     /// ```
     ///
@@ -653,18 +634,13 @@ impl Insert for SavingsRatio {
     /// - `transaction_id` does not refer to a valid transaction,
     /// - `ratio` is not a ratio between zero and one (inclusive),
     /// - or there is some other SQL error.
-    fn insert(
-        new_savings_ratio: Self::ParamType,
-        connection: &Connection,
-    ) -> Result<Self::ResultType, DbError> {
-        let ratio = new_savings_ratio.ratio();
-
+    fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection.execute(
             "INSERT INTO savings_ratio (transaction_id, ratio) VALUES (?1, ?2)",
-            (new_savings_ratio.transaction_id(), ratio.as_f64()),
+            (self.transaction_id(), self.ratio().as_f64()),
         )?;
 
-        Ok(new_savings_ratio)
+        Ok(self)
     }
 }
 
@@ -708,7 +684,7 @@ impl MapRow for RecurringTransaction {
 }
 
 impl Insert for RecurringTransaction {
-    type ParamType = Self;
+    /// TODO: Add `NewRecurringTransaction` type so that interface is consistent with other types?
     type ResultType = Self;
 
     /// Create a new recurring transaction in the database.
@@ -728,11 +704,10 @@ impl Insert for RecurringTransaction {
     ///     frequency: Frequency,
     ///     connection: &Connection
     /// ) -> RecurringTransaction {
-    ///     RecurringTransaction::insert(
-    ///         RecurringTransaction::new(&transaction, None, frequency).unwrap(),
-    ///         connection
-    ///     )
-    ///     .unwrap()
+    ///     RecurringTransaction::new(&transaction, None, frequency)
+    ///         .unwrap()
+    ///         .insert(connection)
+    ///         .unwrap()
     /// }
     /// ```
     ///
@@ -740,16 +715,13 @@ impl Insert for RecurringTransaction {
     /// This function will return an error if:
     /// - `end_date` is on or before `transaction.date()`,
     /// - or there is some other SQL error.
-    fn insert(
-        new_recurring_transaction: Self::ParamType,
-        connection: &Connection,
-    ) -> Result<Self::ResultType, DbError> {
+    fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
         connection.execute(
             "INSERT INTO recurring_transaction (transaction_id, end_date, frequency) VALUES (?1, ?2, ?3)",
-            (new_recurring_transaction.transaction_id(), new_recurring_transaction.end_date(), new_recurring_transaction.frequency() as i64),
+            (self.transaction_id(), self.end_date(), self.frequency() as i64),
         )?;
 
-        Ok(new_recurring_transaction)
+        Ok(self)
     }
 }
 
@@ -813,13 +785,11 @@ mod user_tests {
         let email = EmailAddress::from_str("hello@world.com").unwrap();
         let password_hash = PasswordHash::new_unchecked("hunter2".to_string());
 
-        let inserted_user = User::insert(
-            NewUser {
-                email: email.clone(),
-                password_hash: password_hash.clone(),
-            },
-            &conn,
-        )
+        let inserted_user = NewUser {
+            email: email.clone(),
+            password_hash: password_hash.clone(),
+        }
+        .insert(&conn)
         .unwrap();
 
         assert!(inserted_user.id().as_i64() > 0);
@@ -833,22 +803,19 @@ mod user_tests {
 
         let email = EmailAddress::from_str("hello@world.com").unwrap();
 
-        assert!(User::insert(
+        assert!(NewUser {
+            email: email.clone(),
+            password_hash: PasswordHash::new_unchecked("hunter2".to_string())
+        }
+        .insert(&conn)
+        .is_ok());
+
+        assert_eq!(
             NewUser {
                 email: email.clone(),
-                password_hash: PasswordHash::new_unchecked("hunter2".to_string())
-            },
-            &conn
-        )
-        .is_ok());
-        assert_eq!(
-            User::insert(
-                NewUser {
-                    email: email.clone(),
-                    password_hash: PasswordHash::new_unchecked("hunter3".to_string())
-                },
-                &conn
-            ),
+                password_hash: PasswordHash::new_unchecked("hunter3".to_string())
+            }
+            .insert(&conn),
             Err(DbError::DuplicateEmail)
         );
     }
@@ -860,23 +827,19 @@ mod user_tests {
         let email = EmailAddress::from_str("hello@world.com").unwrap();
         let password = PasswordHash::new_unchecked("hunter2".to_string());
 
-        assert!(User::insert(
-            NewUser {
-                email,
-                password_hash: password.clone()
-            },
-            &conn
-        )
+        assert!(NewUser {
+            email,
+            password_hash: password.clone()
+        }
+        .insert(&conn)
         .is_ok());
 
         assert_eq!(
-            User::insert(
-                NewUser {
-                    email: EmailAddress::from_str("bye@world.com").unwrap(),
-                    password_hash: password.clone()
-                },
-                &conn
-            ),
+            NewUser {
+                email: EmailAddress::from_str("bye@world.com").unwrap(),
+                password_hash: password.clone()
+            }
+            .insert(&conn),
             Err(DbError::DuplicatePassword)
         );
     }
@@ -884,13 +847,11 @@ mod user_tests {
     fn create_database_and_insert_test_user() -> (Connection, User) {
         let conn = init_db();
 
-        let test_user = User::insert(
-            NewUser {
-                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-            },
-            &conn,
-        )
+        let test_user = NewUser {
+            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
+            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
+        }
+        .insert(&conn)
         .unwrap();
 
         (conn, test_user)
@@ -909,14 +870,13 @@ mod user_tests {
     fn select_user_by_existing_email() {
         let conn = init_db();
 
-        let test_user = User::insert(
-            NewUser {
-                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-            },
-            &conn,
-        )
+        let test_user = NewUser {
+            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
+            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
+        }
+        .insert(&conn)
         .unwrap();
+
         let retrieved_user = User::select(test_user.email(), &conn).unwrap();
 
         assert_eq!(retrieved_user, test_user);
@@ -944,13 +904,11 @@ mod category_tests {
     fn create_database_and_insert_test_user() -> (Connection, User) {
         let conn = init_db();
 
-        let test_user = User::insert(
-            NewUser {
-                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-            },
-            &conn,
-        )
+        let test_user = NewUser {
+            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
+            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
+        }
+        .insert(&conn)
         .unwrap();
 
         (conn, test_user)
@@ -961,13 +919,12 @@ mod category_tests {
         let (conn, test_user) = create_database_and_insert_test_user();
 
         let name = CategoryName::new("Categorically a category".to_string()).unwrap();
-        let category = Category::insert(
-            NewCategory {
-                name: name.clone(),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+
+        let category = NewCategory {
+            name: name.clone(),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
         assert!(category.id() > 0);
@@ -978,15 +935,13 @@ mod category_tests {
     #[test]
     fn create_category_with_invalid_user_id_returns_error() {
         let conn = init_db();
-
         let name = CategoryName::new_unchecked("Foo".to_string());
-        let maybe_category = Category::insert(
-            NewCategory {
-                name,
-                user_id: UserID::new(42),
-            },
-            &conn,
-        );
+
+        let maybe_category = NewCategory {
+            name,
+            user_id: UserID::new(42),
+        }
+        .insert(&conn);
 
         assert_eq!(maybe_category, Err(DbError::InvalidForeignKey));
     }
@@ -995,13 +950,11 @@ mod category_tests {
     fn select_category() {
         let (conn, test_user) = create_database_and_insert_test_user();
         let name = CategoryName::new_unchecked("Foo".to_string());
-        let inserted_category = Category::insert(
-            NewCategory {
-                name,
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+        let inserted_category = NewCategory {
+            name,
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
         let selected_category = Category::select(inserted_category.id(), &conn).unwrap();
@@ -1022,21 +975,17 @@ mod category_tests {
     fn select_category_with_user_id() {
         let (conn, test_user) = create_database_and_insert_test_user();
         let inserted_categories = vec![
-            Category::insert(
-                NewCategory {
-                    name: CategoryName::new_unchecked("Foo".to_string()),
-                    user_id: test_user.id(),
-                },
-                &conn,
-            )
+            NewCategory {
+                name: CategoryName::new_unchecked("Foo".to_string()),
+                user_id: test_user.id(),
+            }
+            .insert(&conn)
             .unwrap(),
-            Category::insert(
-                NewCategory {
-                    name: CategoryName::new_unchecked("Bar".to_string()),
-                    user_id: test_user.id(),
-                },
-                &conn,
-            )
+            NewCategory {
+                name: CategoryName::new_unchecked("Bar".to_string()),
+                user_id: test_user.id(),
+            }
+            .insert(&conn)
             .unwrap(),
         ];
 
@@ -1048,21 +997,19 @@ mod category_tests {
     #[test]
     fn select_category_with_invalid_user_id() {
         let (conn, test_user) = create_database_and_insert_test_user();
-        Category::insert(
-            NewCategory {
-                name: CategoryName::new_unchecked("Foo".to_string()),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+
+        NewCategory {
+            name: CategoryName::new_unchecked("Foo".to_string()),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
-        Category::insert(
-            NewCategory {
-                name: CategoryName::new_unchecked("Bar".to_string()),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+
+        NewCategory {
+            name: CategoryName::new_unchecked("Bar".to_string()),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
         let selected_categories =
@@ -1094,22 +1041,18 @@ mod transaction_tests {
     fn create_database_and_insert_test_user_and_category() -> (Connection, User, Category) {
         let conn = init_db();
 
-        let test_user = User::insert(
-            NewUser {
-                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-            },
-            &conn,
-        )
+        let test_user = NewUser {
+            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
+            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
+        }
+        .insert(&conn)
         .unwrap();
 
-        let category = Category::insert(
-            NewCategory {
-                name: CategoryName::new("Food".to_string()).unwrap(),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+        let category = NewCategory {
+            name: CategoryName::new("Food".to_string()).unwrap(),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
         (conn, test_user, category)
@@ -1123,16 +1066,14 @@ mod transaction_tests {
         let date = Utc::now().date_naive();
         let description = "Rust Pie".to_string();
 
-        let transaction = Transaction::insert(
-            NewTransaction {
-                amount,
-                date,
-                description: description.clone(),
-                category_id: category.id(),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+        let transaction = NewTransaction {
+            amount,
+            date,
+            description: description.clone(),
+            category_id: category.id(),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
         assert_eq!(transaction.amount(), amount);
@@ -1150,16 +1091,14 @@ mod transaction_tests {
         let date = Utc::now().date_naive();
         let description = "Rust Pie".to_string();
 
-        let maybe_transaction = Transaction::insert(
-            NewTransaction {
-                amount,
-                date,
-                description: description.clone(),
-                category_id: category.id(),
-                user_id: UserID::new(test_user.id().as_i64() + 1),
-            },
-            &conn,
-        );
+        let maybe_transaction = NewTransaction {
+            amount,
+            date,
+            description: description.clone(),
+            category_id: category.id(),
+            user_id: UserID::new(test_user.id().as_i64() + 1),
+        }
+        .insert(&conn);
 
         assert_eq!(maybe_transaction, Err(DbError::InvalidForeignKey));
     }
@@ -1172,16 +1111,14 @@ mod transaction_tests {
         let date = Utc::now().date_naive();
         let description = "Rust Pie".to_string();
 
-        let maybe_transaction = Transaction::insert(
-            NewTransaction {
-                amount,
-                date,
-                description: description.clone(),
-                category_id: category.id() + 1,
-                user_id: test_user.id(),
-            },
-            &conn,
-        );
+        let maybe_transaction = NewTransaction {
+            amount,
+            date,
+            description: description.clone(),
+            category_id: category.id() + 1,
+            user_id: test_user.id(),
+        }
+        .insert(&conn);
 
         assert_eq!(maybe_transaction, Err(DbError::InvalidForeignKey));
     }
@@ -1197,16 +1134,14 @@ mod transaction_tests {
             .unwrap();
         let description = "Rust Pie".to_string();
 
-        let maybe_transaction = Transaction::insert(
-            NewTransaction {
-                amount,
-                date,
-                description: description.clone(),
-                category_id: category.id(),
-                user_id: test_user.id(),
-            },
-            &conn,
-        );
+        let maybe_transaction = NewTransaction {
+            amount,
+            date,
+            description: description.clone(),
+            category_id: category.id(),
+            user_id: test_user.id(),
+        }
+        .insert(&conn);
 
         assert_eq!(maybe_transaction, Err(DbError::InvalidDate));
     }
@@ -1215,16 +1150,14 @@ mod transaction_tests {
     fn select_transaction_by_id() {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
-        let inserted_transaction = Transaction::insert(
-            NewTransaction {
-                amount: PI,
-                date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-                description: "Rust Pie".to_string(),
-                category_id: category.id(),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+        let inserted_transaction = NewTransaction {
+            amount: PI,
+            date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            description: "Rust Pie".to_string(),
+            category_id: category.id(),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
         let selected_transaction = Transaction::select(inserted_transaction.id(), &conn).unwrap();
@@ -1236,16 +1169,14 @@ mod transaction_tests {
     fn select_transaction_by_invalid_id_fails() {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
-        let inserted_transaction = Transaction::insert(
-            NewTransaction {
-                amount: PI,
-                date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-                description: "Rust Pie".to_string(),
-                category_id: category.id(),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+        let inserted_transaction = NewTransaction {
+            amount: PI,
+            date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            description: "Rust Pie".to_string(),
+            category_id: category.id(),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
         let maybe_transaction = Transaction::select(inserted_transaction.id() + 1, &conn);
@@ -1258,27 +1189,23 @@ mod transaction_tests {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let expected_transactions = vec![
-            Transaction::insert(
-                NewTransaction {
-                    amount: PI,
-                    date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-                    description: "Rust Pie".to_string(),
-                    category_id: category.id(),
-                    user_id: test_user.id(),
-                },
-                &conn,
-            )
+            NewTransaction {
+                amount: PI,
+                date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+                description: "Rust Pie".to_string(),
+                category_id: category.id(),
+                user_id: test_user.id(),
+            }
+            .insert(&conn)
             .unwrap(),
-            Transaction::insert(
-                NewTransaction {
-                    amount: PI + 1.0,
-                    date: NaiveDate::from_ymd_opt(2024, 8, 8).unwrap(),
-                    description: "Rust Pif".to_string(),
-                    category_id: category.id(),
-                    user_id: test_user.id(),
-                },
-                &conn,
-            )
+            NewTransaction {
+                amount: PI + 1.0,
+                date: NaiveDate::from_ymd_opt(2024, 8, 8).unwrap(),
+                description: "Rust Pif".to_string(),
+                category_id: category.id(),
+                user_id: test_user.id(),
+            }
+            .insert(&conn)
             .unwrap(),
         ];
 
@@ -1299,7 +1226,7 @@ mod savings_ratio_tests {
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, Transaction, User};
+    use crate::db::{initialize, Transaction};
 
     use super::Insert;
 
@@ -1312,34 +1239,28 @@ mod savings_ratio_tests {
     fn create_database_and_insert_test_transaction() -> (Connection, Transaction) {
         let conn = init_db();
 
-        let test_user = User::insert(
-            NewUser {
-                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-            },
-            &conn,
-        )
+        let test_user = NewUser {
+            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
+            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
+        }
+        .insert(&conn)
         .unwrap();
 
-        let category = Category::insert(
-            NewCategory {
-                name: CategoryName::new("Food".to_string()).unwrap(),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+        let category = NewCategory {
+            name: CategoryName::new("Food".to_string()).unwrap(),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
-        let transaction = Transaction::insert(
-            NewTransaction {
-                amount: PI,
-                date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-                description: "Rust Pie".to_string(),
-                category_id: category.id(),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+        let transaction = NewTransaction {
+            amount: PI,
+            date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            description: "Rust Pie".to_string(),
+            category_id: category.id(),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
         (conn, transaction)
@@ -1384,13 +1305,11 @@ mod recurring_transaction_tests {
     fn create_database_and_insert_test_user() -> (Connection, User) {
         let conn = init_db();
 
-        let test_user = User::insert(
-            NewUser {
-                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-                password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-            },
-            &conn,
-        )
+        let test_user = NewUser {
+            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
+            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
+        }
+        .insert(&conn)
         .unwrap();
 
         (conn, test_user)
@@ -1400,25 +1319,21 @@ mod recurring_transaction_tests {
     ) -> (Connection, User, Category, Transaction) {
         let (conn, test_user) = create_database_and_insert_test_user();
 
-        let category = Category::insert(
-            NewCategory {
-                name: CategoryName::new("Food".to_string()).unwrap(),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+        let category = NewCategory {
+            name: CategoryName::new("Food".to_string()).unwrap(),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
-        let transaction = Transaction::insert(
-            NewTransaction {
-                amount: PI,
-                date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-                description: "Rust Pie".to_string(),
-                category_id: category.id(),
-                user_id: test_user.id(),
-            },
-            &conn,
-        )
+        let transaction = NewTransaction {
+            amount: PI,
+            date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            description: "Rust Pie".to_string(),
+            category_id: category.id(),
+            user_id: test_user.id(),
+        }
+        .insert(&conn)
         .unwrap();
 
         (conn, test_user, category, transaction)

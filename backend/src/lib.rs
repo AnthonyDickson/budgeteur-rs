@@ -127,13 +127,11 @@ async fn create_user(
             AppError::InternalError
         })
         .and_then(|password_hash| {
-            User::insert(
-                NewUser {
-                    email: user_data.email,
-                    password_hash,
-                },
-                &state.db_connection().lock().unwrap(),
-            )
+            NewUser {
+                email: user_data.email,
+                password_hash,
+            }
+            .insert(&state.db_connection().lock().unwrap())
             .map(|user| (StatusCode::OK, Json(user)))
             .map_err(|e| AppError::UserCreation(format!("Could not create user: {e:?}")))
         })
@@ -152,7 +150,8 @@ async fn create_category(
     let connection_mutex = state.db_connection();
     let connection = connection_mutex.lock().unwrap();
 
-    Category::insert(new_category, &connection)
+    new_category
+        .insert(&connection)
         .map(|category| (StatusCode::OK, Json(category)))
         .map_err(AppError::DatabaseError)
 }
@@ -195,7 +194,8 @@ async fn create_transaction(
     _: Claims,
     Json(new_transaction): Json<NewTransaction>,
 ) -> impl IntoResponse {
-    Transaction::insert(new_transaction, &state.db_connection().lock().unwrap())
+    new_transaction
+        .insert(&state.db_connection().lock().unwrap())
         .map(|transaction| (StatusCode::OK, Json(transaction)))
         .map_err(AppError::DatabaseError)
 }

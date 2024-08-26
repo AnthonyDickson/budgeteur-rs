@@ -171,7 +171,7 @@ mod tests {
         Router,
     };
     use axum_test::TestServer;
-    use common::{NewUser, PasswordHash, RawPassword, User};
+    use common::{NewUser, PasswordHash, RawPassword};
     use email_address::EmailAddress;
     use rusqlite::Connection;
     use serde_json::json;
@@ -211,13 +211,11 @@ mod tests {
         let app_config = get_test_app_config();
 
         let raw_password = RawPassword::new("averysafeandsecurepassword".to_string()).unwrap();
-        let test_user = User::insert(
-            NewUser {
-                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-                password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
-            },
-            &app_config.db_connection().lock().unwrap(),
-        )
+        let test_user = NewUser {
+            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
+            password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
+        }
+        .insert(&app_config.db_connection().lock().unwrap())
         .unwrap();
 
         let app = Router::new()
@@ -280,13 +278,11 @@ mod tests {
         let app_config = get_test_app_config();
 
         let raw_password = RawPassword::new("averysafeandsecurepassword".to_owned()).unwrap();
-        let test_user = User::insert(
-            NewUser {
-                email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-                password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
-            },
-            &app_config.db_connection().lock().unwrap(),
-        )
+        let test_user = NewUser {
+            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
+            password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
+        }
+        .insert(&app_config.db_connection().lock().unwrap())
         .unwrap();
 
         let app = Router::new()
