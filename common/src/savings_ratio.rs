@@ -3,7 +3,7 @@ use thiserror::Error;
 use crate::DatabaseID;
 
 #[derive(Debug, Error)]
-#[error("{0} is not a valid ratio.")]
+#[error("{0} is not a valid ratio")]
 pub struct RatioError(String);
 
 #[derive(Debug, PartialEq, Clone)]

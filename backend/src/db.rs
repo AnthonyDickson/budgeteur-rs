@@ -1,6 +1,5 @@
 use std::fmt::Display;
 
-use chrono::Utc;
 use common::{
     Category, CategoryName, DatabaseID, NewCategory, NewRecurringTransaction, NewSavingsRatio,
     NewTransaction, NewUser, PasswordHash, Ratio, RecurringTransaction, SavingsRatio, Transaction,
@@ -445,7 +444,7 @@ impl MapRow for Transaction {
     type ReturnType = Self;
 
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
-        Ok(Self::new(
+        Ok(Self::new_unchecked(
             row.get(offset)?,
             row.get(offset + 1)?,
             row.get(offset + 2)?,
@@ -472,13 +471,14 @@ impl Insert for NewTransaction {
     /// # use common::{Category, NewTransaction, Transaction, User};
     /// #
     /// fn create_transaction(user: &User, category: &Category, connection: &Connection) {
-    ///     let transaction = NewTransaction {
-    ///         amount: 3.14,
-    ///         date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-    ///         description: "Rust Pie".to_string(),
-    ///         category_id: category.id(),
-    ///         user_id: user.id()
-    ///     }
+    ///     let transaction = NewTransaction::new(
+    ///         3.14,
+    ///         NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+    ///         "Rust Pie".to_string(),
+    ///         category.id(),
+    ///         user.id()
+    ///     )
+    ///     .unwrap()
     ///     .insert(&connection)
     ///     .unwrap();
     ///
@@ -493,33 +493,27 @@ impl Insert for NewTransaction {
     ///
     /// # Errors
     /// This function will return an error if:
-    /// - `date` refers to a future date,
-    /// - `name` is empty,
     /// - `category_id` does not refer to a valid category,
     /// - `user_id` does not refer to a valid user,
     /// - or there is some other SQL error.
     fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
-        // TODO: Create newtype for transaction date that ensures that dates are valid (today or earlier)?
-        if self.date > Utc::now().date_naive() {
-            return Err(DbError::InvalidDate);
-        }
-
         // TODO: Ensure that the category id refers to a category owned by the user.
         connection
                 .execute(
                     "INSERT INTO \"transaction\" (amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    (self.amount, &self.date, &self.description, self.category_id, self.user_id.as_i64()),
+                    (self.amount(), &self.date(), &self.description(), self.category_id(), self.user_id().as_i64()),
                 )?;
 
         let transaction_id = connection.last_insert_rowid();
 
-        Ok(Self::ResultType::new(
+        // The type `NewTransaction` will validate the date, so we can skip validation here by calling the `new_unchecked` function.
+        Ok(Self::ResultType::new_unchecked(
             transaction_id,
-            self.amount,
-            self.date,
-            self.description,
-            self.category_id,
-            self.user_id,
+            self.amount(),
+            self.date(),
+            self.description().to_owned(),
+            self.category_id(),
+            self.user_id(),
         ))
     }
 }
@@ -1028,7 +1022,7 @@ mod category_tests {
 mod transaction_tests {
     use std::{f64::consts::PI, str::FromStr};
 
-    use chrono::{Days, NaiveDate, Utc};
+    use chrono::{NaiveDate, Utc};
     use common::{CategoryName, NewCategory, NewTransaction, NewUser, PasswordHash, UserID};
     use email_address::EmailAddress;
     use rusqlite::Connection;
@@ -1071,13 +1065,14 @@ mod transaction_tests {
         let date = Utc::now().date_naive();
         let description = "Rust Pie".to_string();
 
-        let transaction = NewTransaction {
+        let transaction = NewTransaction::new(
             amount,
             date,
-            description: description.clone(),
-            category_id: category.id(),
-            user_id: test_user.id(),
-        }
+            description.clone(),
+            category.id(),
+            test_user.id(),
+        )
+        .unwrap()
         .insert(&conn)
         .unwrap();
 
@@ -1096,13 +1091,14 @@ mod transaction_tests {
         let date = Utc::now().date_naive();
         let description = "Rust Pie".to_string();
 
-        let maybe_transaction = NewTransaction {
+        let maybe_transaction = NewTransaction::new(
             amount,
             date,
-            description: description.clone(),
-            category_id: category.id(),
-            user_id: UserID::new(test_user.id().as_i64() + 1),
-        }
+            description.clone(),
+            category.id(),
+            UserID::new(test_user.id().as_i64() + 1),
+        )
+        .unwrap()
         .insert(&conn);
 
         assert_eq!(maybe_transaction, Err(DbError::InvalidForeignKey));
@@ -1116,52 +1112,31 @@ mod transaction_tests {
         let date = Utc::now().date_naive();
         let description = "Rust Pie".to_string();
 
-        let maybe_transaction = NewTransaction {
+        let maybe_transaction = NewTransaction::new(
             amount,
             date,
-            description: description.clone(),
-            category_id: category.id() + 1,
-            user_id: test_user.id(),
-        }
+            description.clone(),
+            category.id() + 1,
+            test_user.id(),
+        )
+        .unwrap()
         .insert(&conn);
 
         assert_eq!(maybe_transaction, Err(DbError::InvalidForeignKey));
     }
 
     #[test]
-    fn create_transaction_fails_on_future_date() {
-        let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
-
-        let amount = PI;
-        let date = Utc::now()
-            .date_naive()
-            .checked_add_days(Days::new(1))
-            .unwrap();
-        let description = "Rust Pie".to_string();
-
-        let maybe_transaction = NewTransaction {
-            amount,
-            date,
-            description: description.clone(),
-            category_id: category.id(),
-            user_id: test_user.id(),
-        }
-        .insert(&conn);
-
-        assert_eq!(maybe_transaction, Err(DbError::InvalidDate));
-    }
-
-    #[test]
     fn select_transaction_by_id() {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
-        let inserted_transaction = NewTransaction {
-            amount: PI,
-            date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            description: "Rust Pie".to_string(),
-            category_id: category.id(),
-            user_id: test_user.id(),
-        }
+        let inserted_transaction = NewTransaction::new(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            test_user.id(),
+        )
+        .unwrap()
         .insert(&conn)
         .unwrap();
 
@@ -1174,13 +1149,14 @@ mod transaction_tests {
     fn select_transaction_by_invalid_id_fails() {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
-        let inserted_transaction = NewTransaction {
-            amount: PI,
-            date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            description: "Rust Pie".to_string(),
-            category_id: category.id(),
-            user_id: test_user.id(),
-        }
+        let inserted_transaction = NewTransaction::new(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            test_user.id(),
+        )
+        .unwrap()
         .insert(&conn)
         .unwrap();
 
@@ -1194,22 +1170,24 @@ mod transaction_tests {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let expected_transactions = vec![
-            NewTransaction {
-                amount: PI,
-                date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-                description: "Rust Pie".to_string(),
-                category_id: category.id(),
-                user_id: test_user.id(),
-            }
+            NewTransaction::new(
+                PI,
+                NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+                "Rust Pie".to_string(),
+                category.id(),
+                test_user.id(),
+            )
+            .unwrap()
             .insert(&conn)
             .unwrap(),
-            NewTransaction {
-                amount: PI + 1.0,
-                date: NaiveDate::from_ymd_opt(2024, 8, 8).unwrap(),
-                description: "Rust Pif".to_string(),
-                category_id: category.id(),
-                user_id: test_user.id(),
-            }
+            NewTransaction::new(
+                PI + 1.0,
+                NaiveDate::from_ymd_opt(2024, 8, 8).unwrap(),
+                "Rust Pif".to_string(),
+                category.id(),
+                test_user.id(),
+            )
+            .unwrap()
             .insert(&conn)
             .unwrap(),
         ];
@@ -1258,13 +1236,14 @@ mod savings_ratio_tests {
         .insert(&conn)
         .unwrap();
 
-        let transaction = NewTransaction {
-            amount: PI,
-            date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            description: "Rust Pie".to_string(),
-            category_id: category.id(),
-            user_id: test_user.id(),
-        }
+        let transaction = NewTransaction::new(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            test_user.id(),
+        )
+        .unwrap()
         .insert(&conn)
         .unwrap();
 
@@ -1334,13 +1313,14 @@ mod recurring_transaction_tests {
         .insert(&conn)
         .unwrap();
 
-        let transaction = NewTransaction {
-            amount: PI,
-            date: NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
-            description: "Rust Pie".to_string(),
-            category_id: category.id(),
-            user_id: test_user.id(),
-        }
+        let transaction = NewTransaction::new(
+            PI,
+            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            "Rust Pie".to_string(),
+            category.id(),
+            test_user.id(),
+        )
+        .unwrap()
         .insert(&conn)
         .unwrap();
 
