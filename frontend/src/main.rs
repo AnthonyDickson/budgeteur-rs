@@ -1,5 +1,8 @@
 use frontend::AppContext;
-use yew::{context::ContextProvider, function_component, html, use_context, use_state, Html};
+use yew::{
+    context::ContextProvider, function_component, html, use_context, use_state, Callback, Html,
+    Properties,
+};
 
 #[function_component]
 fn CurrentUser() -> Html {
@@ -9,6 +12,21 @@ fn CurrentUser() -> Html {
         Some(user) => html!(<p>{format!("Current User: {}", user.email())}</p>),
         None => html!(<p>{"Not signed in."}</p>),
     }
+}
+
+#[derive(Properties, PartialEq)]
+struct CallbackProps {
+    on_click: Callback<()>,
+}
+
+#[function_component]
+fn InteractiveComponent(CallbackProps { on_click }: &CallbackProps) -> Html {
+    let click_handler = {
+        let on_click = on_click.clone();
+        Callback::from(move |_| on_click.emit(()))
+    };
+
+    html!(<button onclick={click_handler}>{"click me"}</button>)
 }
 
 #[function_component]
@@ -62,11 +80,30 @@ fn App() -> Html {
         token: None,
     });
 
+    let greeting = use_state(|| None);
+
+    let sign_in_callback = {
+        let greeting = greeting.clone();
+
+        Callback::from(move |_| {
+            match *greeting {
+                Some(_) => greeting.set(None),
+                None => greeting.set(Some("Hello, world!".to_string())),
+            };
+        })
+    };
+
     html! {
         <div class="container">
             <ContextProvider<AppContext> context={(*ctx).clone()}>
                 <SignInForm />
                 <CurrentUser />
+
+                <InteractiveComponent on_click={sign_in_callback.clone()} />
+
+                if let Some(greeting_text) = greeting.as_ref() {
+                    <p>{greeting_text}</p>
+                }
             </ContextProvider<AppContext>>
         </div>
     }
