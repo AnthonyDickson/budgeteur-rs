@@ -1,3 +1,5 @@
+/*! This module defines and implements traits for interacting with the applications database. */
+
 use std::fmt::Display;
 
 use common::{

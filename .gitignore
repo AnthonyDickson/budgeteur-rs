@@ -23,3 +23,6 @@ debug.log
 
 # Added by cargo
 /target
+
+# macOS files
+.DS_Store
