@@ -1,23 +1,27 @@
-use std::env;
 use std::error::Error;
 use std::path::Path;
 use std::process::exit;
 
+use clap::Parser;
 use common::{PasswordHash, RawPassword};
 use rusqlite::Connection;
 
 use backend::db::initialize;
 
+/// A utility for creating a test database for the REST API server of backrooms_rs.
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// File path to save the SQLite database to.
+    #[arg(long, short)]
+    output_path: String,
+}
+
 /// Create and populate a database for manual testing.
 fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = env::args().collect();
+    let args = Args::parse();
 
-    if args.len() < 2 {
-        eprintln!("Usage: {} <output_path>", &args[0]);
-        exit(1);
-    }
-
-    let output_path = Path::new(&args[1]);
+    let output_path = Path::new(&args.output_path);
 
     match output_path.extension() {
         None => {
