@@ -3,10 +3,12 @@ use std::path::Path;
 use std::process::exit;
 
 use clap::Parser;
-use common::{PasswordHash, RawPassword};
 use rusqlite::Connection;
 
-use backend::db::initialize;
+use backrooms_rs::{
+    db::initialize,
+    model::{PasswordHash, RawPassword},
+};
 
 /// A utility for creating a test database for the REST API server of backrooms_rs.
 #[derive(Parser, Debug)]

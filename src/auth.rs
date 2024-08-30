@@ -16,7 +16,6 @@ use axum_extra::{
     TypedHeader,
 };
 use chrono::{Duration, Utc};
-use common::{RawPassword, User};
 use email_address::EmailAddress;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
@@ -25,6 +24,7 @@ use serde_json::json;
 use crate::{
     config::AppConfig,
     db::{DbError, SelectBy},
+    model::{RawPassword, User},
 };
 
 // Code in this module is adapted from https://github.com/ezesundayeze/axum--auth and https://github.com/tokio-rs/axum/blob/main/examples/jwt/src/main.rs
@@ -173,14 +173,17 @@ mod tests {
         Router,
     };
     use axum_test::TestServer;
-    use common::{NewUser, PasswordHash, RawPassword};
     use email_address::EmailAddress;
     use rusqlite::Connection;
     use serde_json::json;
 
     use crate::config::AppConfig;
     use crate::db::initialize;
-    use crate::{auth, db::Insert};
+    use crate::{
+        auth,
+        db::Insert,
+        model::{NewUser, PasswordHash, RawPassword},
+    };
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =

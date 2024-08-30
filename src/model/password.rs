@@ -92,7 +92,7 @@ impl RawPassword {
 
 #[cfg(test)]
 mod raw_password_tests {
-    use crate::{PasswordError, RawPassword};
+    use crate::model::{PasswordError, RawPassword};
 
     #[test]
     fn new_fails_on_empty() {
@@ -118,7 +118,7 @@ mod raw_password_tests {
 
 #[cfg(test)]
 mod password_hash_tests {
-    use crate::{PasswordHash, RawPassword};
+    use crate::model::{PasswordHash, RawPassword};
 
     #[test]
     fn verify_password_succeeds_for_valid_password() {

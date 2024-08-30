@@ -2,13 +2,14 @@
 
 use std::fmt::Display;
 
-use common::{
+use email_address::EmailAddress;
+use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
+
+use crate::model::{
     Category, CategoryName, DatabaseID, NewCategory, NewRecurringTransaction, NewSavingsRatio,
     NewTransaction, NewUser, PasswordHash, Ratio, RecurringTransaction, SavingsRatio, Transaction,
     User, UserID,
 };
-use email_address::EmailAddress;
-use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
 /// Errors originating from operations on the app's database.
 #[derive(thiserror::Error, Debug, PartialEq)]
@@ -78,7 +79,7 @@ pub trait CreateTable {
 /// ```
 /// use rusqlite::{Connection, Error, Row};
 ///
-/// use backend::db::{DbError, CreateTable, MapRow};
+/// use backrooms_rs::db::{DbError, CreateTable, MapRow};
 ///
 /// struct Foo {
 ///     id: i64,
@@ -254,8 +255,7 @@ impl SelectBy<&EmailAddress> for User {
     /// use email_address::EmailAddress;
     /// use rusqlite::Connection;
     ///
-    /// # use backend::db::{DbError, SelectBy};
-    /// # use common::User;
+    /// # use backrooms_rs::{db::{DbError, SelectBy}, model::User};
     /// #
     /// fn get_user(email: &EmailAddress, connection: &Connection) -> Result<User, DbError> {
     ///     let user = User::select(email, connection)?;
@@ -316,8 +316,7 @@ impl Insert for NewCategory {
     /// ```
     /// # use rusqlite::Connection;
     /// #
-    /// # use backend::db::{DbError, Insert};
-    /// # use common::{Category, CategoryName, NewCategory, User};
+    /// # use backrooms_rs::{db::{DbError, Insert}, model::{Category, CategoryName, NewCategory, User}};
     /// #
     /// fn create_category(name: String, user: &User, connection: &Connection) -> Result<Category, DbError> {
     ///     let name = CategoryName::new(name).unwrap();
@@ -355,8 +354,7 @@ impl SelectBy<DatabaseID> for Category {
     /// ```
     /// # use rusqlite::Connection;
     /// #
-    /// # use backend::db::SelectBy;
-    /// # use common::{Category, DatabaseID};
+    /// # use backrooms_rs::{db::SelectBy, model::{Category, DatabaseID}};
     /// #
     /// fn get_category(id: DatabaseID, connection: &Connection) -> Option<Category> {
     ///     Category::select(id, &connection).ok()
@@ -385,8 +383,7 @@ impl SelectBy<UserID> for Category {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::{Insert, SelectBy};
-    /// use common::{Category, CategoryName, NewCategory, User};
+    /// use backrooms_rs::{db::{Insert, SelectBy}, model::{Category, CategoryName, NewCategory, User}};
     ///
     /// fn create_and_validate_categories(user: &User, connection: &Connection) -> Vec<Category> {
     ///     let inserted_categories = vec![
@@ -469,8 +466,7 @@ impl Insert for NewTransaction {
     /// # use chrono::NaiveDate;
     /// # use rusqlite::Connection;
     /// #
-    /// # use backend::db::Insert;
-    /// # use common::{Category, NewTransaction, Transaction, User};
+    /// # use backrooms_rs::{db::Insert, model::{Category, NewTransaction, Transaction, User}};
     /// #
     /// fn create_transaction(user: &User, category: &Category, connection: &Connection) {
     ///     let transaction = NewTransaction::new(
@@ -539,8 +535,7 @@ impl SelectBy<DatabaseID> for Transaction {
     /// ```
     /// # use rusqlite::Connection;
     /// #
-    /// # use backend::db::{DbError, SelectBy};
-    /// # use common::{DatabaseID, Transaction};
+    /// # use backrooms_rs::{db::{DbError, SelectBy}, model::{DatabaseID, Transaction}};
     /// #
     /// fn get_transaction(id: DatabaseID, connection: &Connection) -> Result<Transaction, DbError> {
     ///     Transaction::select(id, &connection)
@@ -567,8 +562,7 @@ impl SelectBy<UserID> for Transaction {
     ///
     /// # Examples
     /// ```
-    /// use backend::db::SelectBy;
-    /// use common::{Transaction, User};
+    /// use backrooms_rs::{db::SelectBy, model::{Transaction, User}};
     ///
     /// fn sum_transaction_amount_for_user(user: &User, conn: &rusqlite::Connection) -> f64 {
     ///     let transactions = Transaction::select(user.id(), conn).unwrap();
@@ -625,8 +619,7 @@ impl Insert for NewSavingsRatio {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::Insert;
-    /// use common::{Ratio, NewSavingsRatio, SavingsRatio, Transaction};
+    /// use backrooms_rs::{db::Insert, model::{Ratio, NewSavingsRatio, SavingsRatio, Transaction}};
     ///
     /// fn set_savings_ratio(transaction: &Transaction, ratio: Ratio, connection: &Connection) -> SavingsRatio {
     ///     NewSavingsRatio {
@@ -704,8 +697,7 @@ impl Insert for NewRecurringTransaction {
     /// use chrono::Utc;
     /// use rusqlite::Connection;
     ///
-    /// use backend::db::Insert;
-    /// use common::{Frequency, NewRecurringTransaction, RecurringTransaction, Transaction};
+    /// use backrooms_rs::{db::Insert, model::{Frequency, NewRecurringTransaction, RecurringTransaction, Transaction}};
     ///
     /// fn set_recurring(
     ///     transaction: &Transaction,
@@ -777,11 +769,13 @@ pub fn select_recurring_transactions_by_user(
 mod user_tests {
     use std::str::FromStr;
 
-    use common::{NewUser, PasswordHash};
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::db::{initialize, DbError, Insert, SelectBy, User};
+    use crate::{
+        db::{initialize, DbError, Insert, SelectBy, User},
+        model::{NewUser, PasswordHash},
+    };
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -886,11 +880,13 @@ mod user_tests {
 mod category_tests {
     use std::str::FromStr;
 
-    use common::{NewCategory, NewUser, PasswordHash};
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, CategoryName, DbError, SelectBy, User, UserID};
+    use crate::{
+        db::{initialize, Category, CategoryName, DbError, SelectBy, User, UserID},
+        model::{NewCategory, NewUser, PasswordHash},
+    };
 
     use super::Insert;
 
@@ -1023,11 +1019,13 @@ mod transaction_tests {
     use std::{f64::consts::PI, str::FromStr};
 
     use chrono::{NaiveDate, Utc};
-    use common::{CategoryName, NewCategory, NewTransaction, NewUser, PasswordHash, UserID};
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Category, DbError, SelectBy, Transaction, User};
+    use crate::{
+        db::{initialize, Category, DbError, SelectBy, Transaction, User},
+        model::{CategoryName, NewCategory, NewTransaction, NewUser, PasswordHash, UserID},
+    };
 
     use super::Insert;
 
@@ -1247,13 +1245,16 @@ mod savings_ratio_tests {
     use std::{f64::consts::PI, str::FromStr};
 
     use chrono::NaiveDate;
-    use common::{
-        CategoryName, NewCategory, NewSavingsRatio, NewTransaction, NewUser, PasswordHash, Ratio,
-    };
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::db::{initialize, Transaction};
+    use crate::{
+        db::{initialize, Transaction},
+        model::{
+            CategoryName, NewCategory, NewSavingsRatio, NewTransaction, NewUser, PasswordHash,
+            Ratio,
+        },
+    };
 
     use super::Insert;
 
@@ -1316,14 +1317,16 @@ mod recurring_transaction_tests {
     use std::{f64::consts::PI, str::FromStr};
 
     use chrono::{Months, NaiveDate};
-    use common::{
-        CategoryName, Frequency, NewCategory, NewRecurringTransaction, NewTransaction, NewUser,
-        PasswordHash, Transaction, User,
-    };
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::db::select_recurring_transactions_by_user;
+    use crate::{
+        db::select_recurring_transactions_by_user,
+        model::{
+            CategoryName, Frequency, NewCategory, NewRecurringTransaction, NewTransaction, NewUser,
+            PasswordHash, Transaction, User,
+        },
+    };
 
     use super::{initialize, Category, Insert};
 

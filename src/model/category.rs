@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{DatabaseID, UserID};
+use crate::model::{DatabaseID, UserID};
 
 #[derive(thiserror::Error, Debug)]
 #[error("{0} is not a valid category name")]
@@ -79,7 +79,7 @@ pub struct NewCategory {
 
 #[cfg(test)]
 mod category_name_tests {
-    use crate::category::{CategoryName, CategoryNameError};
+    use crate::model::category::{CategoryName, CategoryNameError};
 
     #[test]
     fn new_fails_on_empty_string() {

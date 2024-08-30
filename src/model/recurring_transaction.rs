@@ -1,7 +1,7 @@
 use chrono::NaiveDate;
 use thiserror::Error;
 
-use crate::{DatabaseID, Transaction};
+use crate::model::{DatabaseID, Transaction};
 
 #[derive(Debug, Error)]
 #[error("{0} is not a valid frequency code")]
@@ -164,7 +164,7 @@ mod recurring_transaction_tests {
 
     use chrono::{Days, NaiveDate};
 
-    use crate::{
+    use crate::model::{
         recurring_transaction::RecurringTransactionError, Frequency, RecurringTransaction,
         Transaction, UserID,
     };
@@ -230,7 +230,7 @@ mod new_recurring_transaction_tests {
 
     use chrono::{Days, NaiveDate};
 
-    use crate::{
+    use crate::model::{
         recurring_transaction::RecurringTransactionError, Frequency, NewRecurringTransaction,
         Transaction, UserID,
     };

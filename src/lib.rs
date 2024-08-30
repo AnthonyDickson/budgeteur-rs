@@ -9,12 +9,14 @@ use axum::{
     Json, Router,
 };
 use axum_server::Handle;
-use common::{
+use db::{Insert, SelectBy};
+use model::{
     Category, DatabaseID, NewCategory, NewTransaction, NewUser, PasswordHash, Transaction, User,
 };
-use db::{Insert, SelectBy};
 use serde_json::json;
 use tokio::signal;
+
+pub mod model;
 
 pub use config::AppConfig;
 
@@ -28,7 +30,7 @@ mod services;
 /// Return a router with all the app's routes.
 pub fn build_router() -> Router<AppConfig> {
     Router::new()
-        .route("/", get(|| async { StatusCode::IM_A_TEAPOT }))
+        .route("/coffee", get(|| async { StatusCode::IM_A_TEAPOT }))
         .route("/user", post(create_user))
         .route("/sign_in", post(auth::sign_in))
         .route("/protected", get(services::hello))
@@ -234,12 +236,16 @@ mod user_tests {
 
     use axum::{routing::post, Router};
     use axum_test::TestServer;
-    use common::{RawPassword, User};
     use email_address::EmailAddress;
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::{create_user, db::initialize, AppConfig};
+    use crate::{
+        create_user,
+        db::initialize,
+        model::{RawPassword, User},
+        AppConfig,
+    };
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =
@@ -280,11 +286,15 @@ mod user_tests {
 #[cfg(test)]
 mod category_tests {
     use axum_test::TestServer;
-    use common::{Category, CategoryName, User};
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::{build_router, db::initialize, AppConfig};
+    use crate::{
+        build_router,
+        db::initialize,
+        model::{Category, CategoryName, User},
+        AppConfig,
+    };
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =
@@ -428,11 +438,15 @@ mod category_tests {
 mod transaction_tests {
     use axum_test::TestServer;
     use chrono::Utc;
-    use common::{Category, Transaction, User};
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::{build_router, db::initialize, AppConfig};
+    use crate::{
+        build_router,
+        db::initialize,
+        model::{Category, Transaction, User},
+        AppConfig,
+    };
 
     fn get_test_app_config() -> AppConfig {
         let db_connection =

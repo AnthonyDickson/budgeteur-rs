@@ -16,7 +16,7 @@ use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-use backend::{build_router, graceful_shutdown, AppConfig};
+use backrooms_rs::{build_router, graceful_shutdown, AppConfig};
 
 /// The REST API server for backrooms_rs.
 #[derive(Parser, Debug)]
@@ -62,14 +62,7 @@ async fn main() {
     tracing::info!("HTTPS server listening on {}", addr);
     axum_server::bind_rustls(addr, tls_config)
         .handle(handle)
-        .serve(
-            add_tracing_layer(
-                Router::new()
-                    .nest("/api", build_router())
-                    .with_state(app_config),
-            )
-            .into_make_service(),
-        )
+        .serve(add_tracing_layer(build_router().with_state(app_config)).into_make_service())
         .await
         .unwrap();
 }
