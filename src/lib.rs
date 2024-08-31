@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use auth::Claims;
+use auth::{get_user_id_from_auth_cookie, AuthError};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -8,32 +8,31 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use axum_extra::extract::PrivateCookieJar;
 use axum_server::Handle;
 use db::{Insert, SelectBy};
 use model::{
-    Category, DatabaseID, NewCategory, NewTransaction, NewUser, PasswordHash, Transaction, User,
+    Category, DatabaseID, NewCategory, NewTransaction, NewUser, PasswordHash, Transaction,
 };
 use serde_json::json;
 use tokio::signal;
 
 pub mod model;
 
-pub use config::AppConfig;
+pub use config::AppState;
 
 use crate::{auth::Credentials, db::DbError};
 
 pub mod auth;
 mod config;
 pub mod db;
-mod services;
 
 /// Return a router with all the app's routes.
-pub fn build_router() -> Router<AppConfig> {
+pub fn build_router() -> Router<AppState> {
     Router::new()
         .route("/coffee", get(|| async { StatusCode::IM_A_TEAPOT }))
         .route("/user", post(create_user))
         .route("/sign_in", post(auth::sign_in))
-        .route("/protected", get(services::hello))
         .route("/category", post(create_category))
         .route("/category/:category_id", get(get_category))
         .route("/transaction", post(create_transaction))
@@ -83,6 +82,14 @@ enum AppError {
     NotFound,
     /// An error occurred whlie accessing the application's database. This may be due to a database constraint being violated (e.g., foreign keys).
     DatabaseError(DbError),
+    /// The user is not authenticated/authorized to access the given resource.
+    AuthError(AuthError),
+}
+
+impl From<AuthError> for AppError {
+    fn from(value: AuthError) -> Self {
+        AppError::AuthError(value)
+    }
 }
 
 impl IntoResponse for AppError {
@@ -97,6 +104,7 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal server error: {e:?}"),
             ),
+            AppError::AuthError(e) => (StatusCode::UNAUTHORIZED, format!("Auth error: {e:?}")),
             AppError::NotFound => (
                 StatusCode::NOT_FOUND,
                 "The requested resource could not be found.".to_string(),
@@ -120,7 +128,7 @@ impl From<DbError> for AppError {
 }
 
 async fn create_user(
-    State(state): State<AppConfig>,
+    State(state): State<AppState>,
     Json(user_data): Json<Credentials>,
 ) -> impl IntoResponse {
     PasswordHash::new(user_data.password)
@@ -145,8 +153,8 @@ async fn create_user(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 async fn create_category(
-    State(state): State<AppConfig>,
-    _claims: Claims,
+    State(state): State<AppState>,
+    _jar: PrivateCookieJar,
     Json(new_category): Json<NewCategory>,
 ) -> impl IntoResponse {
     let connection_mutex = state.db_connection();
@@ -166,8 +174,8 @@ async fn create_category(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 async fn get_category(
-    State(state): State<AppConfig>,
-    claims: Claims,
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
     Path(category_id): Path<DatabaseID>,
 ) -> impl IntoResponse {
     let connection_mutex = state.db_connection();
@@ -176,7 +184,9 @@ async fn get_category(
     Category::select(category_id, &connection)
         .map_err(AppError::DatabaseError)
         .and_then(|category| {
-            if User::select(&claims.email, &connection)?.id() == category.user_id() {
+            let user_id = get_user_id_from_auth_cookie(jar)?;
+
+            if user_id == category.user_id() {
                 Ok(category)
             } else {
                 // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
@@ -192,8 +202,8 @@ async fn get_category(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 async fn create_transaction(
-    State(state): State<AppConfig>,
-    _: Claims,
+    State(state): State<AppState>,
+    _jar: PrivateCookieJar,
     Json(new_transaction): Json<NewTransaction>,
 ) -> impl IntoResponse {
     new_transaction
@@ -210,8 +220,8 @@ async fn create_transaction(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 async fn get_transaction(
-    State(state): State<AppConfig>,
-    claims: Claims,
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
     Path(transaction_id): Path<DatabaseID>,
 ) -> impl IntoResponse {
     let connection_mutex = state.db_connection();
@@ -220,7 +230,7 @@ async fn get_transaction(
     Transaction::select(transaction_id, &connection)
         .map_err(AppError::DatabaseError)
         .and_then(|transaction| {
-            if User::select(&claims.email, &connection)?.id() == transaction.user_id() {
+            if get_user_id_from_auth_cookie(jar)? == transaction.user_id() {
                 Ok(transaction)
             } else {
                 // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
@@ -244,15 +254,15 @@ mod user_tests {
         create_user,
         db::initialize,
         model::{RawPassword, User},
-        AppConfig,
+        AppState,
     };
 
-    fn get_test_app_config() -> AppConfig {
+    fn get_test_app_config() -> AppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppConfig::new(db_connection, "42".to_string())
+        AppState::new(db_connection, "42".to_string())
     }
 
     #[tokio::test]
@@ -285,26 +295,28 @@ mod user_tests {
 
 #[cfg(test)]
 mod category_tests {
+    use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
     use rusqlite::Connection;
     use serde_json::json;
 
     use crate::{
+        auth::COOKIE_USER_ID,
         build_router,
         db::initialize,
         model::{Category, CategoryName, User},
-        AppConfig,
+        AppState,
     };
 
-    fn get_test_app_config() -> AppConfig {
+    fn get_test_app_config() -> AppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppConfig::new(db_connection, "42".to_string())
+        AppState::new(db_connection, "42".to_string())
     }
 
-    async fn create_app_with_user() -> (TestServer, User, String) {
+    async fn create_app_with_user() -> (TestServer, User, Cookie<'static>) {
         let app = build_router().with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
@@ -335,17 +347,17 @@ mod category_tests {
             .await;
 
         response.assert_status_ok();
-        let token = response.json::<String>();
+        let auth_cookie = response.cookie(COOKIE_USER_ID);
 
-        (server, user, token)
+        (server, user, auth_cookie)
     }
 
-    async fn create_app_with_user_and_category() -> (TestServer, User, String, Category) {
-        let (server, user, token) = create_app_with_user().await;
+    async fn create_app_with_user_and_category() -> (TestServer, User, Cookie<'static>, Category) {
+        let (server, user, auth_cookie) = create_app_with_user().await;
 
         let category = server
             .post("/category")
-            .authorization_bearer(&token)
+            .add_cookie(auth_cookie.clone())
             .content_type("application/json")
             .json(&json!({
                 "id": 0,
@@ -355,18 +367,18 @@ mod category_tests {
             .await
             .json::<Category>();
 
-        (server, user, token, category)
+        (server, user, auth_cookie, category)
     }
 
     #[tokio::test]
     async fn create_category() {
-        let (server, user, token) = create_app_with_user().await;
+        let (server, user, auth_cookie) = create_app_with_user().await;
 
         let name = CategoryName::new("Foo".to_string()).unwrap();
 
         let response = server
             .post("/category")
-            .authorization_bearer(token)
+            .add_cookie(auth_cookie)
             .content_type("application/json")
             .json(&json!({
                 "id": 0,
@@ -385,11 +397,11 @@ mod category_tests {
 
     #[tokio::test]
     async fn get_category() {
-        let (server, _, token, category) = create_app_with_user_and_category().await;
+        let (server, _, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let response = server
             .get(&format!("/category/{}", category.id()))
-            .authorization_bearer(token)
+            .add_cookie(auth_cookie)
             .await;
 
         response.assert_status_ok();
@@ -416,7 +428,7 @@ mod category_tests {
             .await
             .json::<User>();
 
-        let token = server
+        let auth_cookie = server
             .post("/sign_in")
             .content_type("application/json")
             .json(&json!({
@@ -424,11 +436,11 @@ mod category_tests {
                 "password": password
             }))
             .await
-            .json::<String>();
+            .cookie(COOKIE_USER_ID);
 
         server
             .get(&format!("/category/{}", category.id()))
-            .authorization_bearer(token)
+            .add_cookie(auth_cookie)
             .await
             .assert_status_not_found();
     }
@@ -436,27 +448,29 @@ mod category_tests {
 
 #[cfg(test)]
 mod transaction_tests {
+    use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
     use chrono::Utc;
     use rusqlite::Connection;
     use serde_json::json;
 
     use crate::{
+        auth::COOKIE_USER_ID,
         build_router,
         db::initialize,
         model::{Category, Transaction, User},
-        AppConfig,
+        AppState,
     };
 
-    fn get_test_app_config() -> AppConfig {
+    fn get_test_app_config() -> AppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppConfig::new(db_connection, "42".to_string())
+        AppState::new(db_connection, "42".to_string())
     }
 
-    async fn create_app_with_user() -> (TestServer, User, String) {
+    async fn create_app_with_user() -> (TestServer, User, Cookie<'static>) {
         let app = build_router().with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
@@ -487,17 +501,17 @@ mod transaction_tests {
             .await;
 
         response.assert_status_ok();
-        let token = response.json::<String>();
+        let auth_cookie = response.cookie(COOKIE_USER_ID);
 
-        (server, user, token)
+        (server, user, auth_cookie)
     }
 
-    async fn create_app_with_user_and_category() -> (TestServer, User, String, Category) {
-        let (server, user, token) = create_app_with_user().await;
+    async fn create_app_with_user_and_category() -> (TestServer, User, Cookie<'static>, Category) {
+        let (server, user, auth_cookie) = create_app_with_user().await;
 
         let category = server
             .post("/category")
-            .authorization_bearer(&token)
+            .add_cookie(auth_cookie.clone())
             .content_type("application/json")
             .json(&json!({
                 "id": 0,
@@ -507,12 +521,12 @@ mod transaction_tests {
             .await
             .json::<Category>();
 
-        (server, user, token, category)
+        (server, user, auth_cookie, category)
     }
 
     #[tokio::test]
     async fn create_transaction() {
-        let (server, user, token, category) = create_app_with_user_and_category().await;
+        let (server, user, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let amount = -10.0;
         let date = Utc::now().date_naive();
@@ -520,7 +534,7 @@ mod transaction_tests {
 
         let response = server
             .post("/transaction")
-            .authorization_bearer(token)
+            .add_cookie(auth_cookie)
             .content_type("application/json")
             .json(&json!({
                 "id": 0,
@@ -545,7 +559,7 @@ mod transaction_tests {
 
     #[tokio::test]
     async fn get_transaction() {
-        let (server, user, token, category) = create_app_with_user_and_category().await;
+        let (server, user, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let amount = -10.0;
         let date = Utc::now().date_naive();
@@ -553,7 +567,7 @@ mod transaction_tests {
 
         let inserted_transaction = server
             .post("/transaction")
-            .authorization_bearer(&token)
+            .add_cookie(auth_cookie.clone())
             .content_type("application/json")
             .json(&json!({
                 "id": 0,
@@ -568,7 +582,7 @@ mod transaction_tests {
 
         let response = server
             .get(&format!("/transaction/{}", inserted_transaction.id()))
-            .authorization_bearer(token)
+            .add_cookie(auth_cookie)
             .await;
 
         response.assert_status_ok();
@@ -580,7 +594,7 @@ mod transaction_tests {
 
     #[tokio::test]
     async fn get_transaction_fails_on_wrong_user() {
-        let (server, user, token, category) = create_app_with_user_and_category().await;
+        let (server, user, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let amount = -10.0;
         let date = Utc::now().date_naive();
@@ -588,7 +602,7 @@ mod transaction_tests {
 
         let inserted_transaction = server
             .post("/transaction")
-            .authorization_bearer(&token)
+            .add_cookie(auth_cookie.clone())
             .content_type("application/json")
             .json(&json!({
                 "id": 0,
@@ -614,7 +628,7 @@ mod transaction_tests {
             .await
             .json::<User>();
 
-        let token = server
+        let auth_cookie = server
             .post("/sign_in")
             .content_type("application/json")
             .json(&json!({
@@ -622,11 +636,11 @@ mod transaction_tests {
                 "password": password
             }))
             .await
-            .json::<String>();
+            .cookie(COOKIE_USER_ID);
 
         server
             .get(&format!("/transaction/{}", inserted_transaction.id()))
-            .authorization_bearer(token)
+            .add_cookie(auth_cookie)
             .await
             .assert_status_not_found();
     }

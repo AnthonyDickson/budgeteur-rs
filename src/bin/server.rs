@@ -16,7 +16,7 @@ use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-use backrooms_rs::{build_router, graceful_shutdown, AppConfig};
+use backrooms_rs::{build_router, graceful_shutdown, AppState};
 
 /// The REST API server for backrooms_rs.
 #[derive(Parser, Debug)]
@@ -50,11 +50,10 @@ async fn main() {
     .await
     .expect("Could not open TLS certificates.");
 
-    let jwt_secret =
-        env::var("JWT_SECRET").expect("The environment variable 'JWT_SECRET' must be set");
+    let secret = env::var("SECRET").expect("The environment variable 'SECRET' must be set");
 
     let conn = Connection::open(&args.db_path).unwrap();
-    let app_config = AppConfig::new(conn, jwt_secret);
+    let app_config = AppState::new(conn, secret);
 
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +15,12 @@ impl UserID {
 
     pub fn as_i64(&self) -> i64 {
         self.0
+    }
+}
+
+impl Display for UserID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

@@ -5,31 +5,25 @@ use axum::{
     extract::{FromRef, FromRequestParts},
     http::request::Parts,
 };
-use jsonwebtoken::{DecodingKey, EncodingKey};
+use axum_extra::extract::cookie::Key;
 use rusqlite::Connection;
+use sha2::{Digest, Sha512};
 
 use crate::auth::AuthError;
 
 #[derive(Clone)]
-struct JwtKeys {
-    encoding_key: EncodingKey,
-    decoding_key: DecodingKey,
-}
-
-#[derive(Clone)]
-pub struct AppConfig {
+pub struct AppState {
     db_connection: Arc<Mutex<Connection>>,
-    jwt_keys: JwtKeys,
+    cookie_key: Key,
 }
 
-impl AppConfig {
-    pub fn new(db_connection: Connection, jwt_secret: String) -> AppConfig {
-        AppConfig {
+impl AppState {
+    pub fn new(db_connection: Connection, cookie_secret: String) -> Self {
+        let hash = Sha512::digest(cookie_secret);
+
+        Self {
             db_connection: Arc::new(Mutex::new(db_connection)),
-            jwt_keys: JwtKeys {
-                encoding_key: EncodingKey::from_secret(jwt_secret.as_ref()),
-                decoding_key: DecodingKey::from_secret(jwt_secret.as_ref()),
-            },
+            cookie_key: Key::from(&hash),
         }
     }
 
@@ -37,19 +31,20 @@ impl AppConfig {
         Arc::clone(&self.db_connection)
     }
 
-    /// The encoding key for JWTs.
-    pub fn encoding_key(&self) -> &EncodingKey {
-        &self.jwt_keys.encoding_key
+    pub fn cookie_key(&self) -> &Key {
+        &self.cookie_key
     }
+}
 
-    /// The decoding key for JWTs.
-    pub fn decoding_key(&self) -> &DecodingKey {
-        &self.jwt_keys.decoding_key
+// this impl tells `PrivateCookieJar` how to access the key from our state
+impl FromRef<AppState> for Key {
+    fn from_ref(state: &AppState) -> Self {
+        state.cookie_key.clone()
     }
 }
 
 #[async_trait]
-impl<S> FromRequestParts<S> for AppConfig
+impl<S> FromRequestParts<S> for AppState
 where
     Self: FromRef<S>,
     S: Send + Sync,

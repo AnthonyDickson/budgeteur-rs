@@ -14,13 +14,13 @@ The application consists of a single REST server that renders and serves HTML di
     ```
 2.  To start the server run the following command:
     ```shell
-    JWT_SECRET=YOUR_SECRET_HERE cargo run -- --db-path test.db --cert-path path/to/cert_and_key_pem
+    SECRET=YOUR_SECRET_HERE cargo run -- --db-path test.db --cert-path path/to/cert_and_key_pem
     ```
     By default this will serve on port 3000.
 
     If you want to automatically recompile and restart the server you can use the following command:
     ```shell
-    cargo watch -E JWT_SECRET=YOUR_SECRET_HERE -x 'run -- --db-path test.db --cert-path path/to/cert_and_key_pem'
+    cargo watch -E SECRET=YOUR_SECRET_HERE -x 'run -- --db-path test.db --cert-path path/to/cert_and_key_pem'
     ```
 
     `--cert-path` should contain the files `cert.pem` and `key.pem`.

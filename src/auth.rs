@@ -3,69 +3,25 @@
 use std::fmt::Debug;
 
 use axum::{
-    async_trait,
     body::Body,
-    extract::{FromRef, FromRequestParts, Json, State},
-    http::request::Parts,
+    extract::{Json, State},
     http::{Response, StatusCode},
     response::IntoResponse,
-    RequestPartsExt,
 };
-use axum_extra::{
-    headers::{authorization::Bearer, Authorization},
-    TypedHeader,
+use axum_extra::extract::{
+    cookie::{Cookie, SameSite},
+    PrivateCookieJar,
 };
-use chrono::{Duration, Utc};
 use email_address::EmailAddress;
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
+use time::{Duration, OffsetDateTime};
 
 use crate::{
-    config::AppConfig,
+    config::AppState,
     db::{DbError, SelectBy},
-    model::{RawPassword, User},
+    model::{RawPassword, User, UserID},
 };
-
-// Code in this module is adapted from https://github.com/ezesundayeze/axum--auth and https://github.com/tokio-rs/axum/blob/main/examples/jwt/src/main.rs
-
-/// The contents of a JSON Web Token.
-///
-/// Adding this to a request handler will require the requester to provide a valid JWT.
-#[derive(Serialize, Deserialize)]
-pub struct Claims {
-    /// The expiry time of the token.
-    pub exp: usize,
-    /// The time the token was issued.
-    pub iat: usize,
-    /// Email associated with the token.
-    pub email: EmailAddress,
-}
-
-#[async_trait]
-impl<S> FromRequestParts<S> for Claims
-where
-    AppConfig: FromRef<S>,
-    S: Send + Sync,
-{
-    type Rejection = AuthError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let TypedHeader(Authorization(bearer)) = parts
-            .extract::<TypedHeader<Authorization<Bearer>>>()
-            .await
-            .map_err(|_| AuthError::InvalidToken)?;
-
-        let app_config = parts
-            .extract_with_state::<AppConfig, _>(state)
-            .await
-            .map_err(|_| AuthError::InvalidToken)?;
-
-        let token_data = decode_jwt(bearer.token(), app_config.decoding_key())?;
-
-        Ok(token_data.claims)
-    }
-}
 
 #[derive(Deserialize)]
 pub struct Credentials {
@@ -115,9 +71,10 @@ impl IntoResponse for AuthError {
 /// - The password is not correct.
 /// - An internal error occurred when verifying the password.
 pub async fn sign_in(
-    State(state): State<AppConfig>,
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
     Json(user_data): Json<Credentials>,
-) -> Result<Json<String>, AuthError> {
+) -> Result<PrivateCookieJar, AuthError> {
     let user = User::select(&user_data.email, &state.db_connection().lock().unwrap()).map_err(
         |e| match e {
             DbError::NotFound => AuthError::WrongCredentials,
@@ -136,34 +93,85 @@ pub async fn sign_in(
         })
         .map(|password_is_correct| {
             if password_is_correct {
-                let token = encode_jwt(user.email(), state.encoding_key());
+                let updated_jar = set_auth_cookie(jar, user.id());
 
-                Ok(Json(token))
+                Ok(updated_jar)
             } else {
                 Err(AuthError::WrongCredentials)
             }
         })?
 }
 
-fn encode_jwt(email: &EmailAddress, encoding_key: &EncodingKey) -> String {
-    let now = Utc::now();
-    let exp = (now + Duration::minutes(15)).timestamp() as usize;
-    let iat = now.timestamp() as usize;
-    let claim = Claims {
-        exp,
-        iat,
-        email: email.to_owned(),
-    };
+pub(crate) const COOKIE_USER_ID: &str = "user_id";
+const COOKIE_DURATION: i64 = 15;
 
-    encode(&Header::default(), &claim, encoding_key).unwrap()
+fn set_auth_cookie(jar: PrivateCookieJar, user_id: UserID) -> PrivateCookieJar {
+    jar.add(
+        Cookie::build((COOKIE_USER_ID, user_id.as_i64().to_string()))
+            .expires(OffsetDateTime::now_utc() + Duration::minutes(COOKIE_DURATION))
+            .http_only(true)
+            .same_site(SameSite::Lax)
+            .secure(true),
+    )
 }
 
-fn decode_jwt(jwt_token: &str, decoding_key: &DecodingKey) -> Result<TokenData<Claims>, AuthError> {
-    decode(jwt_token, decoding_key, &Validation::default()).map_err(|_| AuthError::InvalidToken)
+pub fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<UserID, AuthError> {
+    match jar.get(COOKIE_USER_ID) {
+        Some(user_id_cookie) => user_id_cookie
+            .value_trimmed()
+            .parse()
+            .map(UserID::new)
+            .map_err(|_| AuthError::InvalidToken),
+        None => Err(AuthError::InvalidToken),
+    }
 }
 
 #[cfg(test)]
-mod tests {
+mod cookie_tests {
+    use axum_extra::extract::{cookie::Key, PrivateCookieJar};
+    use sha2::{Digest, Sha512};
+
+    use crate::{
+        auth::{get_user_id_from_auth_cookie, COOKIE_USER_ID},
+        model::UserID,
+    };
+
+    use super::set_auth_cookie;
+
+    fn get_key() -> Key {
+        let hash = Sha512::digest(b"foobar");
+
+        Key::from(&hash)
+    }
+
+    #[test]
+    fn test_set_cookie_succeeds() {
+        let key = get_key();
+        let jar = PrivateCookieJar::new(key);
+        let user_id = UserID::new(1);
+
+        let updated_jar = set_auth_cookie(jar, user_id);
+        let user_id_cookie = updated_jar.get(COOKIE_USER_ID).unwrap();
+
+        let retrieved_user_id = UserID::new(user_id_cookie.value_trimmed().parse().unwrap());
+
+        assert_eq!(retrieved_user_id, user_id);
+    }
+
+    #[test]
+    fn test_get_user_id_from_cookie_succeeds() {
+        let key = get_key();
+        let user_id = UserID::new(1);
+        let jar = set_auth_cookie(PrivateCookieJar::new(key), user_id);
+
+        let retrieved_user_id = get_user_id_from_auth_cookie(jar).unwrap();
+
+        assert_eq!(retrieved_user_id, user_id);
+    }
+}
+
+#[cfg(test)]
+mod auth_tests {
     use std::str::FromStr;
 
     use axum::{
@@ -172,43 +180,28 @@ mod tests {
         routing::{get, post},
         Router,
     };
+    use axum_extra::extract::PrivateCookieJar;
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::config::AppConfig;
     use crate::db::initialize;
     use crate::{
         auth,
         db::Insert,
         model::{NewUser, PasswordHash, RawPassword},
     };
+    use crate::{auth::COOKIE_USER_ID, config::AppState};
 
-    fn get_test_app_config() -> AppConfig {
+    use super::{get_user_id_from_auth_cookie, AuthError};
+
+    fn get_test_app_config() -> AppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppConfig::new(db_connection, "foobar".to_string())
-    }
-
-    #[test]
-    fn jwt_encode_does_not_panic() {
-        let email = EmailAddress::from_str("averyemail@email.com").unwrap();
-        auth::encode_jwt(&email, get_test_app_config().encoding_key());
-    }
-
-    #[test]
-    fn decode_jwt_gives_correct_email_address() {
-        let config = get_test_app_config();
-        let email = EmailAddress::from_str("averyemail@email.com").unwrap();
-        let jwt = auth::encode_jwt(&email, config.encoding_key());
-        let claims = auth::decode_jwt(&jwt, config.decoding_key())
-            .unwrap()
-            .claims;
-
-        assert_eq!(email, claims.email);
+        AppState::new(db_connection, "foobar".to_string())
     }
 
     #[tokio::test]
@@ -243,13 +236,13 @@ mod tests {
     #[tokio::test]
     async fn sign_in_fails_with_missing_credentials() {
         let app = Router::new()
-            .route("/signin", post(auth::sign_in))
+            .route("/sign_in", post(auth::sign_in))
             .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
         server
-            .post("/signin")
+            .post("/sign_in")
             .content_type("application/json")
             .await
             .assert_status(StatusCode::BAD_REQUEST);
@@ -258,13 +251,13 @@ mod tests {
     #[tokio::test]
     async fn sign_in_fails_with_invalid_credentials() {
         let app = Router::new()
-            .route("/signin", post(auth::sign_in))
+            .route("/sign_in", post(auth::sign_in))
             .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
         server
-            .post("/signin")
+            .post("/sign_in")
             .content_type("application/json")
             .json(&json!({
                 "email": "wrongemail@gmail.com",
@@ -274,12 +267,14 @@ mod tests {
             .assert_status(StatusCode::UNAUTHORIZED);
     }
 
-    async fn handler_with_auth(_: auth::Claims) -> Html<&'static str> {
-        Html("<h1>Hello, World!</h1>")
+    async fn handler_with_auth(jar: PrivateCookieJar) -> Result<Html<&'static str>, AuthError> {
+        get_user_id_from_auth_cookie(jar)?;
+
+        Ok(Html("<h1>Hello, World!</h1>"))
     }
 
     #[tokio::test]
-    async fn get_protected_route_with_valid_jwt() {
+    async fn get_protected_route_succeeds_with_valid_cookie() {
         let app_config = get_test_app_config();
 
         let raw_password = RawPassword::new("averysafeandsecurepassword".to_owned()).unwrap();
@@ -291,14 +286,14 @@ mod tests {
         .unwrap();
 
         let app = Router::new()
-            .route("/signin", post(auth::sign_in))
+            .route("/sign_in", post(auth::sign_in))
             .route("/protected", get(handler_with_auth))
             .with_state(app_config);
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
         let response = server
-            .post("/signin")
+            .post("/sign_in")
             .content_type("application/json")
             .json(&json!({
                 "email": &test_user.email(),
@@ -308,17 +303,17 @@ mod tests {
 
         response.assert_status_ok();
 
-        let token = response.json::<String>();
+        let auth_cookie = response.maybe_cookie(COOKIE_USER_ID).unwrap();
 
         server
             .get("/protected")
-            .authorization_bearer(token)
+            .add_cookie(auth_cookie)
             .await
             .assert_status_ok();
     }
 
     #[tokio::test]
-    async fn get_protected_route_with_missing_header() {
+    async fn get_protected_route_fails_with_no_auth_cookie() {
         let app_config = get_test_app_config();
 
         let app = Router::new()
@@ -329,23 +324,6 @@ mod tests {
 
         server
             .get("/protected")
-            .await
-            .assert_status(StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn get_protected_route_with_empty_token() {
-        let app_config = get_test_app_config();
-
-        let app = Router::new()
-            .route("/protected", get(handler_with_auth))
-            .with_state(app_config.clone());
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        server
-            .get("/protected")
-            .authorization_bearer("")
             .await
             .assert_status(StatusCode::BAD_REQUEST);
     }
