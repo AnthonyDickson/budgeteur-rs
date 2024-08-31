@@ -28,21 +28,33 @@ pub mod auth;
 mod config;
 pub mod db;
 
-// TODO: Create constants for route names and remove hardcoded values.
+/// The API endpoints.
+mod routes {
+    pub const COFFEE: &str = "/coffee";
+    pub const DASHBOARD: &str = "/dashboard";
+    pub const ROOT: &str = "/";
+    pub const SIGN_IN: &str = "/sign_in";
+    pub const USERS: &str = "/users";
+    pub const CATEGORIES: &str = "/categories";
+    pub const CATEGORY: &str = "/categories/:category_id";
+    pub const TRANSACTIONS: &str = "/transactions";
+    pub const TRANSACTION: &str = "/transactions/:transaction_id";
+}
+
 /// Return a router with all the app's routes.
 pub fn build_router() -> Router<AppState> {
     Router::new()
-        .route("/coffee", get(get_coffee))
-        .route("/", get(get_index_page))
-        .route("/dashboard", get(get_dashboard_page))
-        .route("/sign_in", get(get_sign_in_page))
+        .route(routes::COFFEE, get(get_coffee))
+        .route(routes::ROOT, get(get_index_page))
+        .route(routes::DASHBOARD, get(get_dashboard_page))
+        .route(routes::SIGN_IN, get(get_sign_in_page))
         // TODO: Update routes below to respond with HTML
-        .route("/sign_in", post(auth::sign_in))
-        .route("/user", post(create_user))
-        .route("/category", post(create_category))
-        .route("/category/:category_id", get(get_category))
-        .route("/transaction", post(create_transaction))
-        .route("/transaction/:transaction_id", get(get_transaction))
+        .route(routes::SIGN_IN, post(auth::sign_in))
+        .route(routes::USERS, post(create_user))
+        .route(routes::CATEGORIES, post(create_category))
+        .route(routes::CATEGORY, get(get_category))
+        .route(routes::TRANSACTIONS, post(create_transaction))
+        .route(routes::TRANSACTION, get(get_transaction))
 }
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
@@ -141,8 +153,8 @@ async fn get_coffee() -> Response {
 /// If a user is already signed in, the root path '/' will redirect to either the dashboard page, otherwise it will redirect to the sign in page.
 async fn get_index_page(jar: PrivateCookieJar) -> Redirect {
     match get_user_id_from_auth_cookie(jar.clone()) {
-        Ok(_) => Redirect::to("/dashboard"),
-        Err(_) => Redirect::to("/sign_in"),
+        Ok(_) => Redirect::to(routes::DASHBOARD),
+        Err(_) => Redirect::to(routes::SIGN_IN),
     }
 }
 
@@ -196,7 +208,7 @@ async fn get_dashboard_page(jar: PrivateCookieJar) -> Response {
 
             render_result_or_error(rendered_html)
         }
-        Err(_) => Redirect::to("/sign_in").into_response(),
+        Err(_) => Redirect::to(routes::SIGN_IN).into_response(),
     }
 }
 
@@ -341,7 +353,7 @@ mod root_route_tests {
         db::{initialize, Insert},
         get_index_page,
         model::{NewUser, PasswordHash, RawPassword},
-        AppState,
+        routes, AppState,
     };
 
     fn get_test_app_config() -> AppState {
@@ -363,20 +375,20 @@ mod root_route_tests {
     #[tokio::test]
     async fn root_redirects_to_sign_in_without_auth_cookie() {
         let app = Router::new()
-            .route("/", get(get_index_page))
+            .route(routes::ROOT, get(get_index_page))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
 
-        let response = server.get("/").await;
+        let response = server.get(routes::ROOT).await;
 
         response.assert_status(StatusCode::SEE_OTHER);
-        assert_eq!(response.header("location"), "/sign_in");
+        assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 
     #[tokio::test]
     async fn root_redirects_to_sign_in_with_invalid_auth_cookie() {
         let app = Router::new()
-            .route("/", get(get_index_page))
+            .route(routes::ROOT, get(get_index_page))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
         let fake_auth_cookie = Cookie::build((COOKIE_USER_ID, "1"))
@@ -385,21 +397,21 @@ mod root_route_tests {
             .same_site(axum_extra::extract::cookie::SameSite::Lax)
             .build();
 
-        let response = server.get("/").add_cookie(fake_auth_cookie).await;
+        let response = server.get(routes::ROOT).add_cookie(fake_auth_cookie).await;
 
         response.assert_status(StatusCode::SEE_OTHER);
-        assert_eq!(response.header("location"), "/sign_in");
+        assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 
     #[tokio::test]
     async fn root_redirects_to_sign_in_with_expired_auth_cookie() {
         let app = Router::new()
-            .route("/", get(get_index_page))
-            .route("/sign_in", post(sign_in))
+            .route(routes::ROOT, get(get_index_page))
+            .route(routes::SIGN_IN, post(sign_in))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
         let mut expired_auth_cookie = server
-            .post("/sign_in")
+            .post(routes::SIGN_IN)
             .json(&json!({
                 "email": "test@test.com",
                 "password": "test"
@@ -409,21 +421,24 @@ mod root_route_tests {
 
         expired_auth_cookie.set_expires(OffsetDateTime::now_utc() - Duration::weeks(1));
 
-        let response = server.get("/").add_cookie(expired_auth_cookie).await;
+        let response = server
+            .get(routes::ROOT)
+            .add_cookie(expired_auth_cookie)
+            .await;
 
         response.assert_status(StatusCode::SEE_OTHER);
-        assert_eq!(response.header("location"), "/sign_in");
+        assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 
     #[tokio::test]
     async fn root_redirects_to_dashboard_with_auth_cookie() {
         let app = Router::new()
-            .route("/", get(get_index_page))
-            .route("/sign_in", post(sign_in))
+            .route(routes::ROOT, get(get_index_page))
+            .route(routes::SIGN_IN, post(sign_in))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
         let auth_cookie = server
-            .post("/sign_in")
+            .post(routes::SIGN_IN)
             .json(&json!({
                 "email": "test@test.com",
                 "password": "test"
@@ -431,10 +446,10 @@ mod root_route_tests {
             .await
             .cookie(COOKIE_USER_ID);
 
-        let response = server.get("/").add_cookie(auth_cookie).await;
+        let response = server.get(routes::ROOT).add_cookie(auth_cookie).await;
 
         response.assert_status(StatusCode::SEE_OTHER);
-        assert_eq!(response.header("location"), "/dashboard");
+        assert_eq!(response.header("location"), routes::DASHBOARD);
     }
 }
 
@@ -457,7 +472,7 @@ mod dashboard_route_tests {
         db::{initialize, Insert},
         get_dashboard_page,
         model::{NewUser, PasswordHash, RawPassword},
-        AppState,
+        routes, AppState,
     };
 
     fn get_test_app_config() -> AppState {
@@ -479,20 +494,20 @@ mod dashboard_route_tests {
     #[tokio::test]
     async fn dashboard_redirects_to_sign_in_without_auth_cookie() {
         let app = Router::new()
-            .route("/dashboard", get(get_dashboard_page))
+            .route(routes::DASHBOARD, get(get_dashboard_page))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
 
-        let response = server.get("/dashboard").await;
+        let response = server.get(routes::DASHBOARD).await;
 
         response.assert_status(StatusCode::SEE_OTHER);
-        assert_eq!(response.header("location"), "/sign_in");
+        assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 
     #[tokio::test]
     async fn dashboard_redirects_to_sign_in_with_invalid_auth_cookie() {
         let app = Router::new()
-            .route("/dashboard", get(get_dashboard_page))
+            .route(routes::DASHBOARD, get(get_dashboard_page))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
 
@@ -501,21 +516,24 @@ mod dashboard_route_tests {
             .http_only(true)
             .same_site(axum_extra::extract::cookie::SameSite::Lax)
             .build();
-        let response = server.get("/dashboard").add_cookie(fake_auth_cookie).await;
+        let response = server
+            .get(routes::DASHBOARD)
+            .add_cookie(fake_auth_cookie)
+            .await;
 
         response.assert_status(StatusCode::SEE_OTHER);
-        assert_eq!(response.header("location"), "/sign_in");
+        assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 
     #[tokio::test]
     async fn dashboard_redirects_to_sign_in_with_expired_auth_cookie() {
         let app = Router::new()
-            .route("/dashboard", get(get_dashboard_page))
-            .route("/sign_in", post(sign_in))
+            .route(routes::DASHBOARD, get(get_dashboard_page))
+            .route(routes::SIGN_IN, post(sign_in))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
         let mut expired_auth_cookie = server
-            .post("/sign_in")
+            .post(routes::SIGN_IN)
             .json(&json!({
                 "email": "test@test.com",
                 "password": "test"
@@ -526,23 +544,23 @@ mod dashboard_route_tests {
         expired_auth_cookie.set_expires(OffsetDateTime::now_utc() - Duration::weeks(1));
 
         let response = server
-            .get("/dashboard")
+            .get(routes::DASHBOARD)
             .add_cookie(expired_auth_cookie)
             .await;
 
         response.assert_status(StatusCode::SEE_OTHER);
-        assert_eq!(response.header("location"), "/sign_in");
+        assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 
     #[tokio::test]
     async fn dashboard_displays_with_auth_cookie() {
         let app = Router::new()
-            .route("/dashboard", get(get_dashboard_page))
-            .route("/sign_in", post(sign_in))
+            .route(routes::DASHBOARD, get(get_dashboard_page))
+            .route(routes::SIGN_IN, post(sign_in))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
         let auth_cookie = server
-            .post("/sign_in")
+            .post(routes::SIGN_IN)
             .json(&json!({
                 "email": "test@test.com",
                 "password": "test"
@@ -551,7 +569,7 @@ mod dashboard_route_tests {
             .cookie(COOKIE_USER_ID);
 
         server
-            .get("/dashboard")
+            .get(routes::DASHBOARD)
             .add_cookie(auth_cookie)
             .await
             .assert_status_ok();
@@ -572,7 +590,7 @@ mod user_tests {
         create_user,
         db::initialize,
         model::{RawPassword, User},
-        AppState,
+        routes, AppState,
     };
 
     fn get_test_app_config() -> AppState {
@@ -586,7 +604,7 @@ mod user_tests {
     #[tokio::test]
     async fn test_create_user() {
         let app = Router::new()
-            .route("/user", post(create_user))
+            .route(routes::USERS, post(create_user))
             .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
@@ -595,7 +613,7 @@ mod user_tests {
         let password = RawPassword::new_unchecked("hunter2".to_owned());
 
         let response = server
-            .post("/user")
+            .post(routes::USERS)
             .content_type("application/json")
             .json(&json!({
                 "email": email,
@@ -623,7 +641,7 @@ mod category_tests {
         build_router,
         db::initialize,
         model::{Category, CategoryName, User},
-        AppState,
+        routes, AppState,
     };
 
     fn get_test_app_config() -> AppState {
@@ -643,7 +661,7 @@ mod category_tests {
         let password = "hunter2";
 
         let response = server
-            .post("/user")
+            .post(routes::USERS)
             .content_type("application/json")
             .json(&json!({
                 "email": email,
@@ -656,7 +674,7 @@ mod category_tests {
         let user = response.json::<User>();
 
         let response = server
-            .post("/sign_in")
+            .post(routes::SIGN_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": &user.email(),
@@ -674,7 +692,7 @@ mod category_tests {
         let (server, user, auth_cookie) = create_app_with_user().await;
 
         let category = server
-            .post("/category")
+            .post(routes::CATEGORIES)
             .add_cookie(auth_cookie.clone())
             .content_type("application/json")
             .json(&json!({
@@ -695,7 +713,7 @@ mod category_tests {
         let name = CategoryName::new("Foo".to_string()).unwrap();
 
         let response = server
-            .post("/category")
+            .post(routes::CATEGORIES)
             .add_cookie(auth_cookie)
             .content_type("application/json")
             .json(&json!({
@@ -718,7 +736,7 @@ mod category_tests {
         let (server, _, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let response = server
-            .get(&format!("/category/{}", category.id()))
+            .get(&format!("{}/{}", routes::CATEGORIES, category.id()))
             .add_cookie(auth_cookie)
             .await;
 
@@ -737,7 +755,7 @@ mod category_tests {
         let password = "hunter3";
 
         let user = server
-            .post("/user")
+            .post(routes::USERS)
             .content_type("application/json")
             .json(&json!({
                 "email": email,
@@ -747,7 +765,7 @@ mod category_tests {
             .json::<User>();
 
         let auth_cookie = server
-            .post("/sign_in")
+            .post(routes::SIGN_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": user.email(),
@@ -757,7 +775,7 @@ mod category_tests {
             .cookie(COOKIE_USER_ID);
 
         server
-            .get(&format!("/category/{}", category.id()))
+            .get(&format!("{}/{}", routes::CATEGORIES, category.id()))
             .add_cookie(auth_cookie)
             .await
             .assert_status_not_found();
@@ -777,7 +795,7 @@ mod transaction_tests {
         build_router,
         db::initialize,
         model::{Category, Transaction, User},
-        AppState,
+        routes, AppState,
     };
 
     fn get_test_app_config() -> AppState {
@@ -797,7 +815,7 @@ mod transaction_tests {
         let password = "hunter2";
 
         let response = server
-            .post("/user")
+            .post(routes::USERS)
             .content_type("application/json")
             .json(&json!({
                 "email": email,
@@ -810,7 +828,7 @@ mod transaction_tests {
         let user = response.json::<User>();
 
         let response = server
-            .post("/sign_in")
+            .post(routes::SIGN_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": &user.email(),
@@ -828,7 +846,7 @@ mod transaction_tests {
         let (server, user, auth_cookie) = create_app_with_user().await;
 
         let category = server
-            .post("/category")
+            .post(routes::CATEGORIES)
             .add_cookie(auth_cookie.clone())
             .content_type("application/json")
             .json(&json!({
@@ -851,7 +869,7 @@ mod transaction_tests {
         let description = "A thingymajig";
 
         let response = server
-            .post("/transaction")
+            .post(routes::TRANSACTIONS)
             .add_cookie(auth_cookie)
             .content_type("application/json")
             .json(&json!({
@@ -884,7 +902,7 @@ mod transaction_tests {
         let description = "A thingymajig";
 
         let inserted_transaction = server
-            .post("/transaction")
+            .post(routes::TRANSACTIONS)
             .add_cookie(auth_cookie.clone())
             .content_type("application/json")
             .json(&json!({
@@ -899,7 +917,11 @@ mod transaction_tests {
             .json::<Transaction>();
 
         let response = server
-            .get(&format!("/transaction/{}", inserted_transaction.id()))
+            .get(&format!(
+                "{}/{}",
+                routes::TRANSACTIONS,
+                inserted_transaction.id()
+            ))
             .add_cookie(auth_cookie)
             .await;
 
@@ -919,7 +941,7 @@ mod transaction_tests {
         let description = "A thingymajig";
 
         let inserted_transaction = server
-            .post("/transaction")
+            .post(routes::TRANSACTIONS)
             .add_cookie(auth_cookie.clone())
             .content_type("application/json")
             .json(&json!({
@@ -937,7 +959,7 @@ mod transaction_tests {
         let password = "hunter3";
 
         let user = server
-            .post("/user")
+            .post(routes::USERS)
             .content_type("application/json")
             .json(&json!({
                 "email": email,
@@ -947,7 +969,7 @@ mod transaction_tests {
             .json::<User>();
 
         let auth_cookie = server
-            .post("/sign_in")
+            .post(routes::SIGN_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": user.email(),
