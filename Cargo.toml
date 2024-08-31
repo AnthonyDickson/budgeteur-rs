@@ -5,6 +5,8 @@ edition = "2021"
 default-run = "server"
 
 [dependencies]
+askama = "0.12.1"
+askama_axum = "0.4.0"
 axum = "0.7.5"
 axum-extra = { version = "0.9.3", features = [
     "cookie-private",

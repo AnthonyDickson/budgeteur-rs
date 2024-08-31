@@ -1,18 +1,19 @@
 use std::time::Duration;
 
+use askama::Template;
 use auth::{get_user_id_from_auth_cookie, AuthError};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
 };
-use axum_extra::extract::PrivateCookieJar;
+use axum_extra::{extract::PrivateCookieJar, response::Html};
 use axum_server::Handle;
 use db::{Insert, SelectBy};
 use model::{
-    Category, DatabaseID, NewCategory, NewTransaction, NewUser, PasswordHash, Transaction,
+    Category, DatabaseID, NewCategory, NewTransaction, NewUser, PasswordHash, Transaction, UserID,
 };
 use serde_json::json;
 use tokio::signal;
@@ -27,12 +28,17 @@ pub mod auth;
 mod config;
 pub mod db;
 
+// TODO: Create constants for route names and remove hardcoded values.
 /// Return a router with all the app's routes.
 pub fn build_router() -> Router<AppState> {
     Router::new()
-        .route("/coffee", get(|| async { StatusCode::IM_A_TEAPOT }))
-        .route("/user", post(create_user))
+        .route("/coffee", get(get_coffee))
+        .route("/", get(get_index_page))
+        .route("/dashboard", get(get_dashboard_page))
+        .route("/sign_in", get(get_sign_in_page))
+        // TODO: Update routes below to respond with HTML
         .route("/sign_in", post(auth::sign_in))
+        .route("/user", post(create_user))
         .route("/category", post(create_category))
         .route("/category/:category_id", get(get_category))
         .route("/transaction", post(create_transaction))
@@ -125,6 +131,82 @@ impl From<DbError> for AppError {
 
         AppError::DatabaseError(e)
     }
+}
+
+/// Attempt to get a cup of coffee from the server.
+async fn get_coffee() -> Response {
+    (StatusCode::IM_A_TEAPOT, Html("I'm a teapot")).into_response()
+}
+
+/// If a user is already signed in, the root path '/' will redirect to either the dashboard page, otherwise it will redirect to the sign in page.
+async fn get_index_page(jar: PrivateCookieJar) -> Redirect {
+    match get_user_id_from_auth_cookie(jar.clone()) {
+        Ok(_) => Redirect::to("/dashboard"),
+        Err(_) => Redirect::to("/sign_in"),
+    }
+}
+
+const INTERNAL_SERVER_ERROR_HTML: &str = "
+    <!doctype html>
+    <html lang=\"en\">
+        <head>
+            <title>500 Internal Server Error</title>
+        </head>
+        <body>
+        <h1>Internal Server Error</h1>
+        <p>The server was unable to complete your request. Please try again later.</p>
+        </body>
+    </html>
+";
+
+/// Converts the result of an askama template render into a response.
+///
+/// If the template rendered successfully, the status code 200 OK is return along with the rendered HTML.
+/// Otherwise, the status code 500 INTERAL SERVER ERROR is returned along with a static error page.
+fn render_result_or_error(template_result: Result<String, askama::Error>) -> Response {
+    match template_result {
+        Ok(html) => (StatusCode::OK, Html(html)),
+        Err(e) => {
+            tracing::error!("Error rendering template: {}", e);
+
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                // Use a static string to avoid any other errors.
+                Html(INTERNAL_SERVER_ERROR_HTML.to_string()),
+            )
+        }
+    }
+    .into_response()
+}
+
+#[derive(Template)]
+#[template(path = "views/dashboard.html")]
+struct DashboardTemplate {
+    user_id: UserID,
+}
+
+/// Display a page with an overview of the users data.
+async fn get_dashboard_page(jar: PrivateCookieJar) -> Response {
+    // TODO: Refactor common pattern for protected routes where we check for a valid user id cookie and redirect to the sign in page if it is invalid.
+    match get_user_id_from_auth_cookie(jar.clone()) {
+        Ok(user_id) => {
+            let tempalte = DashboardTemplate { user_id };
+            // TODO: How to handle template render error?
+            let rendered_html = tempalte.render();
+
+            render_result_or_error(rendered_html)
+        }
+        Err(_) => Redirect::to("/sign_in").into_response(),
+    }
+}
+
+#[derive(Template)]
+#[template(path = "views/sign_in.html")]
+struct SignInTemplate;
+
+/// Display the sign-in page.
+async fn get_sign_in_page() -> Response {
+    render_result_or_error(SignInTemplate.render())
 }
 
 async fn create_user(
@@ -238,6 +320,242 @@ async fn get_transaction(
             }
         })
         .map(|transaction| (StatusCode::OK, Json(transaction)))
+}
+
+#[cfg(test)]
+mod root_route_tests {
+    use axum::{
+        http::StatusCode,
+        routing::{get, post},
+        Router,
+    };
+    use axum_extra::extract::cookie::Cookie;
+    use axum_test::TestServer;
+    use email_address::EmailAddress;
+    use rusqlite::Connection;
+    use serde_json::json;
+    use time::{Duration, OffsetDateTime};
+
+    use crate::{
+        auth::{sign_in, COOKIE_USER_ID},
+        db::{initialize, Insert},
+        get_index_page,
+        model::{NewUser, PasswordHash, RawPassword},
+        AppState,
+    };
+
+    fn get_test_app_config() -> AppState {
+        let db_connection =
+            Connection::open_in_memory().expect("Could not open database in memory.");
+        initialize(&db_connection).expect("Could not initialize database.");
+
+        NewUser {
+            email: EmailAddress::new_unchecked("test@test.com"),
+            password_hash: PasswordHash::new(RawPassword::new_unchecked("test".to_string()))
+                .unwrap(),
+        }
+        .insert(&db_connection)
+        .unwrap();
+
+        AppState::new(db_connection, "42".to_string())
+    }
+
+    #[tokio::test]
+    async fn root_redirects_to_sign_in_without_auth_cookie() {
+        let app = Router::new()
+            .route("/", get(get_index_page))
+            .with_state(get_test_app_config());
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let response = server.get("/").await;
+
+        response.assert_status(StatusCode::SEE_OTHER);
+        assert_eq!(response.header("location"), "/sign_in");
+    }
+
+    #[tokio::test]
+    async fn root_redirects_to_sign_in_with_invalid_auth_cookie() {
+        let app = Router::new()
+            .route("/", get(get_index_page))
+            .with_state(get_test_app_config());
+        let server = TestServer::new(app).expect("Could not create test server.");
+        let fake_auth_cookie = Cookie::build((COOKIE_USER_ID, "1"))
+            .secure(true)
+            .http_only(true)
+            .same_site(axum_extra::extract::cookie::SameSite::Lax)
+            .build();
+
+        let response = server.get("/").add_cookie(fake_auth_cookie).await;
+
+        response.assert_status(StatusCode::SEE_OTHER);
+        assert_eq!(response.header("location"), "/sign_in");
+    }
+
+    #[tokio::test]
+    async fn root_redirects_to_sign_in_with_expired_auth_cookie() {
+        let app = Router::new()
+            .route("/", get(get_index_page))
+            .route("/sign_in", post(sign_in))
+            .with_state(get_test_app_config());
+        let server = TestServer::new(app).expect("Could not create test server.");
+        let mut expired_auth_cookie = server
+            .post("/sign_in")
+            .json(&json!({
+                "email": "test@test.com",
+                "password": "test"
+            }))
+            .await
+            .cookie(COOKIE_USER_ID);
+
+        expired_auth_cookie.set_expires(OffsetDateTime::now_utc() - Duration::weeks(1));
+
+        let response = server.get("/").add_cookie(expired_auth_cookie).await;
+
+        response.assert_status(StatusCode::SEE_OTHER);
+        assert_eq!(response.header("location"), "/sign_in");
+    }
+
+    #[tokio::test]
+    async fn root_redirects_to_dashboard_with_auth_cookie() {
+        let app = Router::new()
+            .route("/", get(get_index_page))
+            .route("/sign_in", post(sign_in))
+            .with_state(get_test_app_config());
+        let server = TestServer::new(app).expect("Could not create test server.");
+        let auth_cookie = server
+            .post("/sign_in")
+            .json(&json!({
+                "email": "test@test.com",
+                "password": "test"
+            }))
+            .await
+            .cookie(COOKIE_USER_ID);
+
+        let response = server.get("/").add_cookie(auth_cookie).await;
+
+        response.assert_status(StatusCode::SEE_OTHER);
+        assert_eq!(response.header("location"), "/dashboard");
+    }
+}
+
+#[cfg(test)]
+mod dashboard_route_tests {
+    use axum::{
+        http::StatusCode,
+        routing::{get, post},
+        Router,
+    };
+    use axum_extra::extract::cookie::Cookie;
+    use axum_test::TestServer;
+    use email_address::EmailAddress;
+    use rusqlite::Connection;
+    use serde_json::json;
+    use time::{Duration, OffsetDateTime};
+
+    use crate::{
+        auth::{sign_in, COOKIE_USER_ID},
+        db::{initialize, Insert},
+        get_dashboard_page,
+        model::{NewUser, PasswordHash, RawPassword},
+        AppState,
+    };
+
+    fn get_test_app_config() -> AppState {
+        let db_connection =
+            Connection::open_in_memory().expect("Could not open database in memory.");
+        initialize(&db_connection).expect("Could not initialize database.");
+
+        NewUser {
+            email: EmailAddress::new_unchecked("test@test.com"),
+            password_hash: PasswordHash::new(RawPassword::new_unchecked("test".to_string()))
+                .unwrap(),
+        }
+        .insert(&db_connection)
+        .unwrap();
+
+        AppState::new(db_connection, "42".to_string())
+    }
+
+    #[tokio::test]
+    async fn dashboard_redirects_to_sign_in_without_auth_cookie() {
+        let app = Router::new()
+            .route("/dashboard", get(get_dashboard_page))
+            .with_state(get_test_app_config());
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let response = server.get("/dashboard").await;
+
+        response.assert_status(StatusCode::SEE_OTHER);
+        assert_eq!(response.header("location"), "/sign_in");
+    }
+
+    #[tokio::test]
+    async fn dashboard_redirects_to_sign_in_with_invalid_auth_cookie() {
+        let app = Router::new()
+            .route("/dashboard", get(get_dashboard_page))
+            .with_state(get_test_app_config());
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let fake_auth_cookie = Cookie::build((COOKIE_USER_ID, "1"))
+            .secure(true)
+            .http_only(true)
+            .same_site(axum_extra::extract::cookie::SameSite::Lax)
+            .build();
+        let response = server.get("/dashboard").add_cookie(fake_auth_cookie).await;
+
+        response.assert_status(StatusCode::SEE_OTHER);
+        assert_eq!(response.header("location"), "/sign_in");
+    }
+
+    #[tokio::test]
+    async fn dashboard_redirects_to_sign_in_with_expired_auth_cookie() {
+        let app = Router::new()
+            .route("/dashboard", get(get_dashboard_page))
+            .route("/sign_in", post(sign_in))
+            .with_state(get_test_app_config());
+        let server = TestServer::new(app).expect("Could not create test server.");
+        let mut expired_auth_cookie = server
+            .post("/sign_in")
+            .json(&json!({
+                "email": "test@test.com",
+                "password": "test"
+            }))
+            .await
+            .cookie(COOKIE_USER_ID);
+
+        expired_auth_cookie.set_expires(OffsetDateTime::now_utc() - Duration::weeks(1));
+
+        let response = server
+            .get("/dashboard")
+            .add_cookie(expired_auth_cookie)
+            .await;
+
+        response.assert_status(StatusCode::SEE_OTHER);
+        assert_eq!(response.header("location"), "/sign_in");
+    }
+
+    #[tokio::test]
+    async fn dashboard_displays_with_auth_cookie() {
+        let app = Router::new()
+            .route("/dashboard", get(get_dashboard_page))
+            .route("/sign_in", post(sign_in))
+            .with_state(get_test_app_config());
+        let server = TestServer::new(app).expect("Could not create test server.");
+        let auth_cookie = server
+            .post("/sign_in")
+            .json(&json!({
+                "email": "test@test.com",
+                "password": "test"
+            }))
+            .await
+            .cookie(COOKIE_USER_ID);
+
+        server
+            .get("/dashboard")
+            .add_cookie(auth_cookie)
+            .await
+            .assert_status_ok();
+    }
 }
 
 #[cfg(test)]

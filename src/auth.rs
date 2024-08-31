@@ -103,26 +103,26 @@ pub async fn sign_in(
 }
 
 pub(crate) const COOKIE_USER_ID: &str = "user_id";
-const COOKIE_DURATION: i64 = 15;
+const COOKIE_DURATION_MINUTES: i64 = 15;
 
-fn set_auth_cookie(jar: PrivateCookieJar, user_id: UserID) -> PrivateCookieJar {
+pub(crate) fn set_auth_cookie(jar: PrivateCookieJar, user_id: UserID) -> PrivateCookieJar {
     jar.add(
         Cookie::build((COOKIE_USER_ID, user_id.as_i64().to_string()))
-            .expires(OffsetDateTime::now_utc() + Duration::minutes(COOKIE_DURATION))
+            .expires(OffsetDateTime::now_utc() + Duration::minutes(COOKIE_DURATION_MINUTES))
             .http_only(true)
             .same_site(SameSite::Lax)
             .secure(true),
     )
 }
 
-pub fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<UserID, AuthError> {
+pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<UserID, AuthError> {
     match jar.get(COOKIE_USER_ID) {
+        None => Err(AuthError::InvalidToken),
         Some(user_id_cookie) => user_id_cookie
             .value_trimmed()
             .parse()
             .map(UserID::new)
             .map_err(|_| AuthError::InvalidToken),
-        None => Err(AuthError::InvalidToken),
     }
 }
 
@@ -138,16 +138,16 @@ mod cookie_tests {
 
     use super::set_auth_cookie;
 
-    fn get_key() -> Key {
+    fn get_jar() -> PrivateCookieJar {
         let hash = Sha512::digest(b"foobar");
+        let key = Key::from(&hash);
 
-        Key::from(&hash)
+        PrivateCookieJar::new(key)
     }
 
     #[test]
     fn test_set_cookie_succeeds() {
-        let key = get_key();
-        let jar = PrivateCookieJar::new(key);
+        let jar = get_jar();
         let user_id = UserID::new(1);
 
         let updated_jar = set_auth_cookie(jar, user_id);
@@ -160,9 +160,8 @@ mod cookie_tests {
 
     #[test]
     fn test_get_user_id_from_cookie_succeeds() {
-        let key = get_key();
         let user_id = UserID::new(1);
-        let jar = set_auth_cookie(PrivateCookieJar::new(key), user_id);
+        let jar = set_auth_cookie(get_jar(), user_id);
 
         let retrieved_user_id = get_user_id_from_auth_cookie(jar).unwrap();
 
