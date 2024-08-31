@@ -4,12 +4,13 @@ use std::fmt::Debug;
 
 use axum::{
     body::Body,
-    extract::{Json, State},
-    http::{Response, StatusCode},
-    response::IntoResponse,
+    extract::{FromRequestParts, Json, Request, State},
+    http::StatusCode,
+    middleware::Next,
+    response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::{
-    cookie::{Cookie, SameSite},
+    cookie::{Cookie, Key, SameSite},
     PrivateCookieJar,
 };
 use email_address::EmailAddress;
@@ -21,6 +22,7 @@ use crate::{
     config::AppState,
     db::{DbError, SelectBy},
     model::{RawPassword, User, UserID},
+    routes,
 };
 
 #[derive(Deserialize)]
@@ -126,6 +128,22 @@ pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<User
     }
 }
 
+/// Middleware function that checks for a valid authorization cookie.
+/// The request is performed normally if the cookie is valid, otherwise a redirect to the sign in page is returned.
+///
+/// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
+pub async fn auth_guard(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    let (mut parts, body) = request.into_parts();
+    let jar: PrivateCookieJar<Key> = PrivateCookieJar::from_request_parts(&mut parts, &state)
+        .await
+        .expect("could not get cookie jar from request parts");
+
+    match get_user_id_from_auth_cookie(jar) {
+        Ok(_) => next.run(Request::from_parts(parts, body)).await,
+        Err(_) => Redirect::to(routes::SIGN_IN).into_response(),
+    }
+}
+
 #[cfg(test)]
 mod cookie_tests {
     use axum_extra::extract::{cookie::Key, PrivateCookieJar};
@@ -173,27 +191,19 @@ mod cookie_tests {
 mod auth_tests {
     use std::str::FromStr;
 
-    use axum::{
-        http::StatusCode,
-        response::Html,
-        routing::{get, post},
-        Router,
-    };
-    use axum_extra::extract::PrivateCookieJar;
+    use axum::{http::StatusCode, routing::post, Router};
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
     use serde_json::json;
 
+    use crate::config::AppState;
     use crate::db::initialize;
     use crate::{
         auth,
         db::Insert,
         model::{NewUser, PasswordHash, RawPassword},
     };
-    use crate::{auth::COOKIE_USER_ID, config::AppState};
-
-    use super::{get_user_id_from_auth_cookie, AuthError};
 
     fn get_test_app_config() -> AppState {
         let db_connection =
@@ -265,34 +275,64 @@ mod auth_tests {
             .await
             .assert_status(StatusCode::UNAUTHORIZED);
     }
+}
 
-    async fn handler_with_auth(jar: PrivateCookieJar) -> Result<Html<&'static str>, AuthError> {
-        get_user_id_from_auth_cookie(jar)?;
+#[cfg(test)]
+mod auth_guard_tests {
+    use std::str::FromStr;
 
-        Ok(Html("<h1>Hello, World!</h1>"))
+    use axum::{
+        middleware,
+        routing::{get, post},
+        Router,
+    };
+    use axum_extra::response::Html;
+    use axum_test::TestServer;
+    use email_address::EmailAddress;
+    use rusqlite::Connection;
+    use serde_json::json;
+
+    use crate::{
+        auth::{auth_guard, sign_in, COOKIE_USER_ID},
+        db::{initialize, Insert},
+        model::{NewUser, PasswordHash, RawPassword},
+        routes, AppState,
+    };
+
+    fn get_test_app_state() -> AppState {
+        let db_connection =
+            Connection::open_in_memory().expect("Could not open database in memory.");
+        initialize(&db_connection).expect("Could not initialize database.");
+
+        AppState::new(db_connection, "foobar".to_string())
+    }
+
+    async fn test_handler() -> Html<&'static str> {
+        Html("<h1>Hello, World!</h1>")
     }
 
     #[tokio::test]
     async fn get_protected_route_succeeds_with_valid_cookie() {
-        let app_config = get_test_app_config();
+        let state = get_test_app_state();
 
         let raw_password = RawPassword::new("averysafeandsecurepassword".to_owned()).unwrap();
         let test_user = NewUser {
             email: EmailAddress::from_str("foo@bar.baz").unwrap(),
             password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
         }
-        .insert(&app_config.db_connection().lock().unwrap())
+        .insert(&state.db_connection().lock().unwrap())
         .unwrap();
 
         let app = Router::new()
-            .route("/sign_in", post(auth::sign_in))
-            .route("/protected", get(handler_with_auth))
-            .with_state(app_config);
+            .route("/protected", get(test_handler))
+            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
+            .route(routes::SIGN_IN, post(sign_in))
+            .with_state(state);
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
         let response = server
-            .post("/sign_in")
+            .post(routes::SIGN_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": &test_user.email(),
@@ -301,29 +341,28 @@ mod auth_tests {
             .await;
 
         response.assert_status_ok();
-
-        let auth_cookie = response.maybe_cookie(COOKIE_USER_ID).unwrap();
+        let auth_coookie = response.cookie(COOKIE_USER_ID);
 
         server
             .get("/protected")
-            .add_cookie(auth_cookie)
+            .add_cookie(auth_coookie)
             .await
             .assert_status_ok();
     }
 
     #[tokio::test]
-    async fn get_protected_route_fails_with_no_auth_cookie() {
-        let app_config = get_test_app_config();
-
+    async fn get_protected_route_with_no_auth_cookie_redirects_to_sign_in() {
+        let state = get_test_app_state();
         let app = Router::new()
-            .route("/protected", get(handler_with_auth))
-            .with_state(app_config.clone());
+            .route("/protected", get(test_handler))
+            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
+            .with_state(state);
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
-        server
-            .get("/protected")
-            .await
-            .assert_status(StatusCode::BAD_REQUEST);
+        let response = server.get("/protected").await;
+
+        response.assert_status_see_other();
+        assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 }

@@ -61,7 +61,7 @@ async fn main() {
     tracing::info!("HTTPS server listening on {}", addr);
     axum_server::bind_rustls(addr, tls_config)
         .handle(handle)
-        .serve(add_tracing_layer(build_router().with_state(app_config)).into_make_service())
+        .serve(add_tracing_layer(build_router(app_config)).into_make_service())
         .await
         .unwrap();
 }

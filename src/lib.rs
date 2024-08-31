@@ -1,10 +1,11 @@
 use std::time::Duration;
 
 use askama::Template;
-use auth::{get_user_id_from_auth_cookie, AuthError};
+use auth::{auth_guard, get_user_id_from_auth_cookie, AuthError};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
+    middleware::{self},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
@@ -41,20 +42,25 @@ mod routes {
     pub const TRANSACTION: &str = "/transactions/:transaction_id";
 }
 
+// TODO: Update existing routes to respond with HTML
 /// Return a router with all the app's routes.
-pub fn build_router() -> Router<AppState> {
-    Router::new()
+pub fn build_router(state: AppState) -> Router {
+    let unprotected_routes = Router::new()
         .route(routes::COFFEE, get(get_coffee))
+        .route(routes::SIGN_IN, get(get_sign_in_page))
+        .route(routes::SIGN_IN, post(auth::sign_in))
+        .route(routes::USERS, post(create_user));
+
+    let protected_routes = Router::new()
         .route(routes::ROOT, get(get_index_page))
         .route(routes::DASHBOARD, get(get_dashboard_page))
-        .route(routes::SIGN_IN, get(get_sign_in_page))
-        // TODO: Update routes below to respond with HTML
-        .route(routes::SIGN_IN, post(auth::sign_in))
-        .route(routes::USERS, post(create_user))
         .route(routes::CATEGORIES, post(create_category))
         .route(routes::CATEGORY, get(get_category))
         .route(routes::TRANSACTIONS, post(create_transaction))
         .route(routes::TRANSACTION, get(get_transaction))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
+
+    protected_routes.merge(unprotected_routes).with_state(state)
 }
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
@@ -150,12 +156,9 @@ async fn get_coffee() -> Response {
     (StatusCode::IM_A_TEAPOT, Html("I'm a teapot")).into_response()
 }
 
-/// If a user is already signed in, the root path '/' will redirect to either the dashboard page, otherwise it will redirect to the sign in page.
-async fn get_index_page(jar: PrivateCookieJar) -> Redirect {
-    match get_user_id_from_auth_cookie(jar.clone()) {
-        Ok(_) => Redirect::to(routes::DASHBOARD),
-        Err(_) => Redirect::to(routes::SIGN_IN),
-    }
+/// The root path '/' redirects to the dashboard page.
+async fn get_index_page() -> Redirect {
+    Redirect::to(routes::DASHBOARD)
 }
 
 const INTERNAL_SERVER_ERROR_HTML: &str = "
@@ -171,6 +174,7 @@ const INTERNAL_SERVER_ERROR_HTML: &str = "
     </html>
 ";
 
+// TODO: Replace below function with implementation of IntoResponse on Template newtype. Refer to https://github.com/tokio-rs/axum/blob/ef8a9e812c1b49b61d21813cb30f5982d8da56df/examples/templates/src/main.rs#L49C1-L65C2
 /// Converts the result of an askama template render into a response.
 ///
 /// If the template rendered successfully, the status code 200 OK is return along with the rendered HTML.
@@ -199,7 +203,7 @@ struct DashboardTemplate {
 
 /// Display a page with an overview of the users data.
 async fn get_dashboard_page(jar: PrivateCookieJar) -> Response {
-    // TODO: Refactor common pattern for protected routes where we check for a valid user id cookie and redirect to the sign in page if it is invalid.
+    // TODO: Pass user_id from `auth_guard` middleware using extensions: https://docs.rs/axum/latest/axum/middleware/index.html#passing-state-from-middleware-to-handlers
     match get_user_id_from_auth_cookie(jar.clone()) {
         Ok(user_id) => {
             let tempalte = DashboardTemplate { user_id };
@@ -336,20 +340,13 @@ async fn get_transaction(
 
 #[cfg(test)]
 mod root_route_tests {
-    use axum::{
-        http::StatusCode,
-        routing::{get, post},
-        Router,
-    };
-    use axum_extra::extract::cookie::Cookie;
+    use axum::{http::StatusCode, middleware, routing::get, Router};
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
-    use serde_json::json;
-    use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::{sign_in, COOKIE_USER_ID},
+        auth::auth_guard,
         db::{initialize, Insert},
         get_index_page,
         model::{NewUser, PasswordHash, RawPassword},
@@ -373,10 +370,16 @@ mod root_route_tests {
     }
 
     #[tokio::test]
-    async fn root_redirects_to_sign_in_without_auth_cookie() {
+    async fn root_redirects_to_dashbord() {
+        let app_state = get_test_app_config();
         let app = Router::new()
             .route(routes::ROOT, get(get_index_page))
-            .with_state(get_test_app_config());
+            .layer(middleware::from_fn_with_state(
+                app_state.clone(),
+                auth_guard,
+            ))
+            .route(routes::SIGN_IN, get(get_index_page))
+            .with_state(app_state);
         let server = TestServer::new(app).expect("Could not create test server.");
 
         let response = server.get(routes::ROOT).await;
@@ -384,79 +387,13 @@ mod root_route_tests {
         response.assert_status(StatusCode::SEE_OTHER);
         assert_eq!(response.header("location"), routes::SIGN_IN);
     }
-
-    #[tokio::test]
-    async fn root_redirects_to_sign_in_with_invalid_auth_cookie() {
-        let app = Router::new()
-            .route(routes::ROOT, get(get_index_page))
-            .with_state(get_test_app_config());
-        let server = TestServer::new(app).expect("Could not create test server.");
-        let fake_auth_cookie = Cookie::build((COOKIE_USER_ID, "1"))
-            .secure(true)
-            .http_only(true)
-            .same_site(axum_extra::extract::cookie::SameSite::Lax)
-            .build();
-
-        let response = server.get(routes::ROOT).add_cookie(fake_auth_cookie).await;
-
-        response.assert_status(StatusCode::SEE_OTHER);
-        assert_eq!(response.header("location"), routes::SIGN_IN);
-    }
-
-    #[tokio::test]
-    async fn root_redirects_to_sign_in_with_expired_auth_cookie() {
-        let app = Router::new()
-            .route(routes::ROOT, get(get_index_page))
-            .route(routes::SIGN_IN, post(sign_in))
-            .with_state(get_test_app_config());
-        let server = TestServer::new(app).expect("Could not create test server.");
-        let mut expired_auth_cookie = server
-            .post(routes::SIGN_IN)
-            .json(&json!({
-                "email": "test@test.com",
-                "password": "test"
-            }))
-            .await
-            .cookie(COOKIE_USER_ID);
-
-        expired_auth_cookie.set_expires(OffsetDateTime::now_utc() - Duration::weeks(1));
-
-        let response = server
-            .get(routes::ROOT)
-            .add_cookie(expired_auth_cookie)
-            .await;
-
-        response.assert_status(StatusCode::SEE_OTHER);
-        assert_eq!(response.header("location"), routes::SIGN_IN);
-    }
-
-    #[tokio::test]
-    async fn root_redirects_to_dashboard_with_auth_cookie() {
-        let app = Router::new()
-            .route(routes::ROOT, get(get_index_page))
-            .route(routes::SIGN_IN, post(sign_in))
-            .with_state(get_test_app_config());
-        let server = TestServer::new(app).expect("Could not create test server.");
-        let auth_cookie = server
-            .post(routes::SIGN_IN)
-            .json(&json!({
-                "email": "test@test.com",
-                "password": "test"
-            }))
-            .await
-            .cookie(COOKIE_USER_ID);
-
-        let response = server.get(routes::ROOT).add_cookie(auth_cookie).await;
-
-        response.assert_status(StatusCode::SEE_OTHER);
-        assert_eq!(response.header("location"), routes::DASHBOARD);
-    }
 }
 
 #[cfg(test)]
 mod dashboard_route_tests {
     use axum::{
         http::StatusCode,
+        middleware,
         routing::{get, post},
         Router,
     };
@@ -469,13 +406,14 @@ mod dashboard_route_tests {
 
     use crate::{
         auth::{sign_in, COOKIE_USER_ID},
+        auth_guard,
         db::{initialize, Insert},
         get_dashboard_page,
         model::{NewUser, PasswordHash, RawPassword},
         routes, AppState,
     };
 
-    fn get_test_app_config() -> AppState {
+    fn get_test_server() -> TestServer {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
@@ -488,15 +426,19 @@ mod dashboard_route_tests {
         .insert(&db_connection)
         .unwrap();
 
-        AppState::new(db_connection, "42".to_string())
+        let state = AppState::new(db_connection, "42".to_string());
+        let app = Router::new()
+            .route(routes::DASHBOARD, get(get_dashboard_page))
+            .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
+            .route(routes::SIGN_IN, post(sign_in))
+            .with_state(state);
+
+        TestServer::new(app).expect("Could not create test server.")
     }
 
     #[tokio::test]
     async fn dashboard_redirects_to_sign_in_without_auth_cookie() {
-        let app = Router::new()
-            .route(routes::DASHBOARD, get(get_dashboard_page))
-            .with_state(get_test_app_config());
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = get_test_server();
 
         let response = server.get(routes::DASHBOARD).await;
 
@@ -506,10 +448,7 @@ mod dashboard_route_tests {
 
     #[tokio::test]
     async fn dashboard_redirects_to_sign_in_with_invalid_auth_cookie() {
-        let app = Router::new()
-            .route(routes::DASHBOARD, get(get_dashboard_page))
-            .with_state(get_test_app_config());
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = get_test_server();
 
         let fake_auth_cookie = Cookie::build((COOKIE_USER_ID, "1"))
             .secure(true)
@@ -527,11 +466,7 @@ mod dashboard_route_tests {
 
     #[tokio::test]
     async fn dashboard_redirects_to_sign_in_with_expired_auth_cookie() {
-        let app = Router::new()
-            .route(routes::DASHBOARD, get(get_dashboard_page))
-            .route(routes::SIGN_IN, post(sign_in))
-            .with_state(get_test_app_config());
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = get_test_server();
         let mut expired_auth_cookie = server
             .post(routes::SIGN_IN)
             .json(&json!({
@@ -554,11 +489,8 @@ mod dashboard_route_tests {
 
     #[tokio::test]
     async fn dashboard_displays_with_auth_cookie() {
-        let app = Router::new()
-            .route(routes::DASHBOARD, get(get_dashboard_page))
-            .route(routes::SIGN_IN, post(sign_in))
-            .with_state(get_test_app_config());
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = get_test_server();
+
         let auth_cookie = server
             .post(routes::SIGN_IN)
             .json(&json!({
@@ -653,7 +585,7 @@ mod category_tests {
     }
 
     async fn create_app_with_user() -> (TestServer, User, Cookie<'static>) {
-        let app = build_router().with_state(get_test_app_config());
+        let app = build_router(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
@@ -807,7 +739,7 @@ mod transaction_tests {
     }
 
     async fn create_app_with_user() -> (TestServer, User, Cookie<'static>) {
-        let app = build_router().with_state(get_test_app_config());
+        let app = build_router(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
