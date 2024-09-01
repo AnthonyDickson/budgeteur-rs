@@ -24,7 +24,8 @@ pub mod endpoints {
     pub const COFFEE: &str = "/coffee";
     pub const DASHBOARD: &str = "/dashboard";
     pub const ROOT: &str = "/";
-    pub const SIGN_IN: &str = "/sign_in";
+    pub const LOG_IN: &str = "/log_in";
+    pub const REGISTER: &str = "/register";
     pub const USERS: &str = "/users";
     pub const CATEGORIES: &str = "/categories";
     pub const CATEGORY: &str = "/categories/:category_id";
@@ -32,13 +33,15 @@ pub mod endpoints {
     pub const TRANSACTION: &str = "/transactions/:transaction_id";
 }
 
+// TODO: Add handler for 404 not found
 // TODO: Update existing routes to respond with HTML
 /// Return a router with all the app's routes.
 pub fn build_router(state: AppState) -> Router {
     let unprotected_routes = Router::new()
         .route(endpoints::COFFEE, get(get_coffee))
-        .route(endpoints::SIGN_IN, get(get_sign_in_page))
-        .route(endpoints::SIGN_IN, post(sign_in))
+        .route(endpoints::LOG_IN, get(get_sign_in_page))
+        .route(endpoints::LOG_IN, post(sign_in))
+        .route(endpoints::REGISTER, get(get_register_page))
         .route(endpoints::USERS, post(create_user));
 
     let protected_routes = Router::new()
@@ -75,12 +78,31 @@ async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
 }
 
 #[derive(Template)]
-#[template(path = "views/sign_in.html")]
-struct SignInTemplate;
+#[template(path = "views/log_in.html")]
+struct SignInTemplate<'a> {
+    register_route: &'a str,
+}
 
 /// Display the sign-in page.
 async fn get_sign_in_page() -> Response {
-    HtmlTemplate(SignInTemplate).into_response()
+    HtmlTemplate(SignInTemplate {
+        register_route: endpoints::REGISTER,
+    })
+    .into_response()
+}
+
+#[derive(Template)]
+#[template(path = "views/register.html")]
+struct RegisterTemplate<'a> {
+    log_in_route: &'a str,
+}
+
+/// Display the registration page.
+async fn get_register_page() -> Response {
+    HtmlTemplate(RegisterTemplate {
+        log_in_route: endpoints::LOG_IN,
+    })
+    .into_response()
 }
 
 async fn create_user(
@@ -236,14 +258,14 @@ mod root_route_tests {
                 app_state.clone(),
                 auth_guard,
             ))
-            .route(endpoints::SIGN_IN, get(get_index_page))
+            .route(endpoints::LOG_IN, get(get_index_page))
             .with_state(app_state);
         let server = TestServer::new(app).expect("Could not create test server.");
 
         let response = server.get(endpoints::ROOT).await;
 
         response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::SIGN_IN);
+        assert_eq!(response.header("location"), endpoints::LOG_IN);
     }
 }
 
@@ -288,7 +310,7 @@ mod dashboard_route_tests {
         let app = Router::new()
             .route(endpoints::DASHBOARD, get(get_dashboard_page))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::SIGN_IN, post(sign_in))
+            .route(endpoints::LOG_IN, post(sign_in))
             .with_state(state);
 
         TestServer::new(app).expect("Could not create test server.")
@@ -301,7 +323,7 @@ mod dashboard_route_tests {
         let response = server.get(endpoints::DASHBOARD).await;
 
         response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::SIGN_IN);
+        assert_eq!(response.header("location"), endpoints::LOG_IN);
     }
 
     #[tokio::test]
@@ -319,14 +341,14 @@ mod dashboard_route_tests {
             .await;
 
         response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::SIGN_IN);
+        assert_eq!(response.header("location"), endpoints::LOG_IN);
     }
 
     #[tokio::test]
     async fn dashboard_redirects_to_sign_in_with_expired_auth_cookie() {
         let server = get_test_server();
         let mut expired_auth_cookie = server
-            .post(endpoints::SIGN_IN)
+            .post(endpoints::LOG_IN)
             .json(&json!({
                 "email": "test@test.com",
                 "password": "test"
@@ -342,7 +364,7 @@ mod dashboard_route_tests {
             .await;
 
         response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::SIGN_IN);
+        assert_eq!(response.header("location"), endpoints::LOG_IN);
     }
 
     #[tokio::test]
@@ -350,7 +372,7 @@ mod dashboard_route_tests {
         let server = get_test_server();
 
         let auth_cookie = server
-            .post(endpoints::SIGN_IN)
+            .post(endpoints::LOG_IN)
             .json(&json!({
                 "email": "test@test.com",
                 "password": "test"
@@ -466,7 +488,7 @@ mod category_tests {
         let user = response.json::<User>();
 
         let response = server
-            .post(endpoints::SIGN_IN)
+            .post(endpoints::LOG_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": &user.email(),
@@ -557,7 +579,7 @@ mod category_tests {
             .json::<User>();
 
         let auth_cookie = server
-            .post(endpoints::SIGN_IN)
+            .post(endpoints::LOG_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": user.email(),
@@ -622,7 +644,7 @@ mod transaction_tests {
         let user = response.json::<User>();
 
         let response = server
-            .post(endpoints::SIGN_IN)
+            .post(endpoints::LOG_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": &user.email(),
@@ -763,7 +785,7 @@ mod transaction_tests {
             .json::<User>();
 
         let auth_cookie = server
-            .post(endpoints::SIGN_IN)
+            .post(endpoints::LOG_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": user.email(),

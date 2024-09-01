@@ -9,6 +9,8 @@
         <script src="https://unpkg.com/htmx.org@2.0.2"></script>
     </head>
     <body>
-        <div class="container">{% block content %}{% endblock %}</div>
+        <div class="container max-w-full bg-gray-50 dark:bg-gray-900">
+            {% block content %}{% endblock %}
+        </div>
     </body>
 </html>

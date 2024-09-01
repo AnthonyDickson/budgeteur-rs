@@ -139,7 +139,7 @@ pub async fn auth_guard(State(state): State<AppState>, request: Request, next: N
 
             next.run(request).await
         }
-        Err(_) => Redirect::to(endpoints::SIGN_IN).into_response(),
+        Err(_) => Redirect::to(endpoints::LOG_IN).into_response(),
     }
 }
 
@@ -326,13 +326,13 @@ mod auth_guard_tests {
         let app = Router::new()
             .route("/protected", get(test_handler))
             .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::SIGN_IN, post(sign_in))
+            .route(endpoints::LOG_IN, post(sign_in))
             .with_state(state);
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
         let response = server
-            .post(endpoints::SIGN_IN)
+            .post(endpoints::LOG_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": &test_user.email(),
@@ -363,6 +363,6 @@ mod auth_guard_tests {
         let response = server.get("/protected").await;
 
         response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::SIGN_IN);
+        assert_eq!(response.header("location"), endpoints::LOG_IN);
     }
 }
