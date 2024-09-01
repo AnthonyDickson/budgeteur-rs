@@ -1,4 +1,4 @@
-/*! This module defines and implements the data structures, response handlers and functions for authenticating a user and generating JWTs (JSON Web Token). */
+/*! This module defines and implements the data structures, response handlers and functions for authenticating a user and handling cookie auth. */
 
 use std::fmt::Debug;
 
