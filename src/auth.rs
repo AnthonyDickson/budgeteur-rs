@@ -129,7 +129,9 @@ pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<User
 }
 
 /// Middleware function that checks for a valid authorization cookie.
-/// The request is performed normally if the cookie is valid, otherwise a redirect to the sign in page is returned.
+/// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the sign in page is returned.
+///
+/// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
 ///
 /// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
 pub async fn auth_guard(State(state): State<AppState>, request: Request, next: Next) -> Response {
@@ -139,7 +141,12 @@ pub async fn auth_guard(State(state): State<AppState>, request: Request, next: N
         .expect("could not get cookie jar from request parts");
 
     match get_user_id_from_auth_cookie(jar) {
-        Ok(_) => next.run(Request::from_parts(parts, body)).await,
+        Ok(user_id) => {
+            parts.extensions.insert(user_id);
+            let request = Request::from_parts(parts, body);
+
+            next.run(request).await
+        }
         Err(_) => Redirect::to(routes::SIGN_IN).into_response(),
     }
 }

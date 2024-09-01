@@ -8,7 +8,7 @@ use axum::{
     middleware::{self},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use axum_extra::{extract::PrivateCookieJar, response::Html};
 use axum_server::Handle;
@@ -201,19 +201,13 @@ struct DashboardTemplate {
     user_id: UserID,
 }
 
-/// Display a page with an overview of the users data.
-async fn get_dashboard_page(jar: PrivateCookieJar) -> Response {
-    // TODO: Pass user_id from `auth_guard` middleware using extensions: https://docs.rs/axum/latest/axum/middleware/index.html#passing-state-from-middleware-to-handlers
-    match get_user_id_from_auth_cookie(jar.clone()) {
-        Ok(user_id) => {
-            let tempalte = DashboardTemplate { user_id };
-            // TODO: How to handle template render error?
-            let rendered_html = tempalte.render();
+/// Display a page with an overview of the user's data.
+async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
+    let tempalte = DashboardTemplate { user_id };
+    // TODO: How to handle template render error?
+    let rendered_html = tempalte.render();
 
-            render_result_or_error(rendered_html)
-        }
-        Err(_) => Redirect::to(routes::SIGN_IN).into_response(),
-    }
+    render_result_or_error(rendered_html)
 }
 
 #[derive(Template)]
@@ -340,7 +334,7 @@ async fn get_transaction(
 
 #[cfg(test)]
 mod root_route_tests {
-    use axum::{http::StatusCode, middleware, routing::get, Router};
+    use axum::{middleware, routing::get, Router};
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
@@ -384,7 +378,7 @@ mod root_route_tests {
 
         let response = server.get(routes::ROOT).await;
 
-        response.assert_status(StatusCode::SEE_OTHER);
+        response.assert_status_see_other();
         assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 }
@@ -392,7 +386,6 @@ mod root_route_tests {
 #[cfg(test)]
 mod dashboard_route_tests {
     use axum::{
-        http::StatusCode,
         middleware,
         routing::{get, post},
         Router,
@@ -442,7 +435,7 @@ mod dashboard_route_tests {
 
         let response = server.get(routes::DASHBOARD).await;
 
-        response.assert_status(StatusCode::SEE_OTHER);
+        response.assert_status_see_other();
         assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 
@@ -460,7 +453,7 @@ mod dashboard_route_tests {
             .add_cookie(fake_auth_cookie)
             .await;
 
-        response.assert_status(StatusCode::SEE_OTHER);
+        response.assert_status_see_other();
         assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 
@@ -483,7 +476,7 @@ mod dashboard_route_tests {
             .add_cookie(expired_auth_cookie)
             .await;
 
-        response.assert_status(StatusCode::SEE_OTHER);
+        response.assert_status_see_other();
         assert_eq!(response.header("location"), routes::SIGN_IN);
     }
 
