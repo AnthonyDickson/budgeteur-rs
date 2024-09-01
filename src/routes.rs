@@ -33,7 +33,6 @@ pub mod endpoints {
     pub const TRANSACTION: &str = "/transactions/:transaction_id";
 }
 
-// TODO: Add handler for 404 not found
 // TODO: Update existing routes to respond with HTML
 /// Return a router with all the app's routes.
 pub fn build_router(state: AppState) -> Router {
@@ -53,7 +52,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::TRANSACTION, get(get_transaction))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
 
-    protected_routes.merge(unprotected_routes).with_state(state)
+    protected_routes
+        .merge(unprotected_routes)
+        .fallback(get_404_not_found)
+        .with_state(state)
 }
 
 /// Attempt to get a cup of coffee from the server.
@@ -64,6 +66,14 @@ async fn get_coffee() -> Response {
 /// The root path '/' redirects to the dashboard page.
 async fn get_index_page() -> Redirect {
     Redirect::to(endpoints::DASHBOARD)
+}
+
+#[derive(Template)]
+#[template(path = "views/not_found_404.html")]
+struct NotFoundTemplate;
+
+async fn get_404_not_found() -> Response {
+    (StatusCode::NOT_FOUND, HtmlTemplate(NotFoundTemplate)).into_response()
 }
 
 #[derive(Template)]
