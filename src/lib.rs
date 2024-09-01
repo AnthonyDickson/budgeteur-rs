@@ -174,25 +174,46 @@ const INTERNAL_SERVER_ERROR_HTML: &str = "
     </html>
 ";
 
-// TODO: Replace below function with implementation of IntoResponse on Template newtype. Refer to https://github.com/tokio-rs/axum/blob/ef8a9e812c1b49b61d21813cb30f5982d8da56df/examples/templates/src/main.rs#L49C1-L65C2
-/// Converts the result of an askama template render into a response.
+/// Newtype wrapper for `askama::Template`.
+/// Implements `axum::response::IntoResponse` to reduce repetitive boilerplate code for handling rendering and its errors.
 ///
-/// If the template rendered successfully, the status code 200 OK is return along with the rendered HTML.
-/// Otherwise, the status code 500 INTERAL SERVER ERROR is returned along with a static error page.
-fn render_result_or_error(template_result: Result<String, askama::Error>) -> Response {
-    match template_result {
-        Ok(html) => (StatusCode::OK, Html(html)),
-        Err(e) => {
-            tracing::error!("Error rendering template: {}", e);
+/// # Examples
+/// ```no_run
+/// use askama::Template;
+/// use axum::{Extension, response::{IntoResponse, Response}};
+/// #
+/// # use backrooms_rs::{HtmlTemplate, model::UserID};
+///
+/// #[derive(Template)]
+/// #[template(path = "views/dashboard.html")]
+/// struct DashboardTemplate {
+///     user_id: UserID,
+/// }
+///
+/// async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
+///    HtmlTemplate(DashboardTemplate { user_id }).into_response()
+/// }
+/// ```
+pub struct HtmlTemplate<T>(pub T);
 
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                // Use a static string to avoid any other errors.
-                Html(INTERNAL_SERVER_ERROR_HTML.to_string()),
-            )
+impl<T> IntoResponse for HtmlTemplate<T>
+where
+    T: Template,
+{
+    fn into_response(self) -> Response {
+        match self.0.render() {
+            Ok(html) => (StatusCode::OK, Html(html)).into_response(),
+            Err(err) => {
+                tracing::error!("Failed to render template. Error: {err}");
+
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    INTERNAL_SERVER_ERROR_HTML,
+                )
+                    .into_response()
+            }
         }
     }
-    .into_response()
 }
 
 #[derive(Template)]
@@ -203,11 +224,7 @@ struct DashboardTemplate {
 
 /// Display a page with an overview of the user's data.
 async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
-    let tempalte = DashboardTemplate { user_id };
-    // TODO: How to handle template render error?
-    let rendered_html = tempalte.render();
-
-    render_result_or_error(rendered_html)
+    HtmlTemplate(DashboardTemplate { user_id }).into_response()
 }
 
 #[derive(Template)]
@@ -216,7 +233,7 @@ struct SignInTemplate;
 
 /// Display the sign-in page.
 async fn get_sign_in_page() -> Response {
-    render_result_or_error(SignInTemplate.render())
+    HtmlTemplate(SignInTemplate).into_response()
 }
 
 async fn create_user(
