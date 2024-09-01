@@ -743,28 +743,6 @@ pub fn initialize(connection: &Connection) -> Result<(), DbError> {
     Ok(())
 }
 
-// TODO: Separate types for recurring schedule (current RecurringTransaction type) and join result row of transaction and recurring schedule to create a RecurringTransaction?
-pub fn select_recurring_transactions_by_user(
-    user: &User,
-    connection: &Connection,
-) -> Result<Vec<(Transaction, RecurringTransaction)>, DbError> {
-    connection
-        .prepare(
-            "SELECT l.id, l.amount, l.date, l.description, l.category_id, l.user_id, r.transaction_id, r.end_date, r.frequency
-            FROM \"transaction\" l
-            INNER JOIN recurring_transaction r ON r.transaction_id = l.id
-            WHERE l.user_id = :user_id;",
-        )?
-        .query_and_then(&[(":user_id", &user.id().as_i64())], |row| {
-            let transaction = Transaction::map_row(row)?;
-            let recurring_transaction = RecurringTransaction::map_row_with_offset(row, 6)?;
-
-            Ok((transaction, recurring_transaction))
-        })?
-        .map(|item| item.map_err(DbError::SqlError))
-        .collect()
-}
-
 #[cfg(test)]
 mod user_tests {
     use std::str::FromStr;
@@ -1320,12 +1298,9 @@ mod recurring_transaction_tests {
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::{
-        db::select_recurring_transactions_by_user,
-        model::{
-            CategoryName, Frequency, NewCategory, NewRecurringTransaction, NewTransaction, NewUser,
-            PasswordHash, Transaction, User,
-        },
+    use crate::model::{
+        CategoryName, Frequency, NewCategory, NewRecurringTransaction, NewTransaction, NewUser,
+        PasswordHash, Transaction, User,
     };
 
     use super::{initialize, Category, Insert};
@@ -1389,35 +1364,5 @@ mod recurring_transaction_tests {
         assert_eq!(recurring.transaction_id(), transaction.id());
         assert_eq!(recurring.end_date(), end_date.as_ref());
         assert_eq!(recurring.frequency(), Frequency::Weekly);
-    }
-
-    #[test]
-    fn select_recurring_transactions_succeeds() {
-        let (conn, test_user, _, transaction) =
-            create_database_and_insert_test_user_category_and_transaction();
-
-        let end_date = transaction.date().checked_add_months(Months::new(3));
-
-        let inserted_recurring_transction =
-            NewRecurringTransaction::new(&transaction, end_date, Frequency::Weekly)
-                .unwrap()
-                .insert(&conn)
-                .unwrap();
-
-        let expected = vec![(transaction, inserted_recurring_transction)];
-
-        let results = select_recurring_transactions_by_user(&test_user, &conn).unwrap();
-
-        assert_eq!(results, expected);
-    }
-
-    #[test]
-    fn select_recurring_transactions_returns_empty_list() {
-        let (conn, test_user) = create_database_and_insert_test_user();
-
-        let expected = vec![];
-        let results = select_recurring_transactions_by_user(&test_user, &conn).unwrap();
-
-        assert_eq!(results, expected);
     }
 }
