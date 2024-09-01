@@ -7,11 +7,12 @@ default-run = "server"
 [dependencies]
 askama = "0.12.1"
 askama_axum = "0.4.0"
-axum = "0.7.5"
+axum = { version = "0.7.5", features = ["form", "macros"] }
 axum-extra = { version = "0.9.3", features = [
     "cookie-private",
     "typed-header",
 ] }
+axum-htmx = "0.6.0"
 axum-server = { version = "0.7.1", features = ["tls-rustls"] }
 axum-test = "15.3.0"
 bcrypt = "0.15.1"

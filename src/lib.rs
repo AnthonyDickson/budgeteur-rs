@@ -57,8 +57,6 @@ pub async fn graceful_shutdown(handle: Handle) {
 }
 
 enum AppError {
-    /// An error occurred in a third-party library.
-    InternalError,
     /// An error occurred while creating a user.
     UserCreation(String),
     /// The requested resource was not found. The client should check that the parameters (e.g., ID) are correct and that the resource has been created.
@@ -78,10 +76,6 @@ impl From<AuthError> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppError::InternalError => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            ),
             AppError::UserCreation(description) => (StatusCode::OK, description),
             AppError::DatabaseError(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
