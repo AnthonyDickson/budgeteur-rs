@@ -516,9 +516,9 @@ mod category_tests {
 mod transaction_tests {
     use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
-    use chrono::Utc;
     use rusqlite::Connection;
     use serde_json::json;
+    use time::OffsetDateTime;
 
     use crate::{
         auth::COOKIE_USER_ID,
@@ -597,7 +597,7 @@ mod transaction_tests {
         let (server, user_id, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let amount = -10.0;
-        let date = Utc::now().date_naive();
+        let date = OffsetDateTime::now_utc();
         let description = "A thingymajig";
 
         let response = server
@@ -630,7 +630,7 @@ mod transaction_tests {
         let (server, user_id, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let amount = -10.0;
-        let date = Utc::now().date_naive();
+        let date = OffsetDateTime::now_utc();
         let description = "A thingymajig";
 
         let inserted_transaction = server
@@ -669,7 +669,7 @@ mod transaction_tests {
         let (server, user_id, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let amount = -10.0;
-        let date = Utc::now().date_naive();
+        let date = OffsetDateTime::now_utc();
         let description = "A thingymajig";
 
         let inserted_transaction = server

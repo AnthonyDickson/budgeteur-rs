@@ -1,5 +1,5 @@
-use chrono::NaiveDate;
 use thiserror::Error;
+use time::OffsetDateTime;
 
 use crate::model::{DatabaseID, Transaction};
 
@@ -48,7 +48,7 @@ pub struct RecurringTransactionError(pub String);
 #[derive(Debug, PartialEq)]
 pub struct RecurringTransaction {
     transaction_id: DatabaseID,
-    end_date: Option<NaiveDate>,
+    end_date: Option<OffsetDateTime>,
     frequency: Frequency,
 }
 
@@ -65,7 +65,7 @@ impl RecurringTransaction {
     /// This function will return an error if `end_date` is a date before or equal to `transaction.date()`.
     pub fn new(
         transaction: &Transaction,
-        end_date: Option<NaiveDate>,
+        end_date: Option<OffsetDateTime>,
         frequency: Frequency,
     ) -> Result<Self, RecurringTransactionError> {
         match end_date {
@@ -88,7 +88,7 @@ impl RecurringTransaction {
     /// This function has `_unchecked` in the name but is not `unsafe`, because if the `end_date` invariant is violated it will cause incorrect behaviour but not affect memory safety.
     pub fn new_unchecked(
         transaction_id: DatabaseID,
-        end_date: Option<NaiveDate>,
+        end_date: Option<OffsetDateTime>,
         frequency: Frequency,
     ) -> Self {
         Self {
@@ -102,7 +102,7 @@ impl RecurringTransaction {
         self.transaction_id
     }
 
-    pub fn end_date(&self) -> Option<&NaiveDate> {
+    pub fn end_date(&self) -> Option<&OffsetDateTime> {
         self.end_date.as_ref()
     }
 
@@ -113,7 +113,7 @@ impl RecurringTransaction {
 
 pub struct NewRecurringTransaction {
     transaction_id: DatabaseID,
-    end_date: Option<NaiveDate>,
+    end_date: Option<OffsetDateTime>,
     frequency: Frequency,
 }
 
@@ -129,7 +129,7 @@ impl NewRecurringTransaction {
     /// This function will return an error if `end_date` is a date before or equal to `transaction.date()`.
     pub fn new(
         transaction: &Transaction,
-        end_date: Option<NaiveDate>,
+        end_date: Option<OffsetDateTime>,
         frequency: Frequency,
     ) -> Result<Self, RecurringTransactionError> {
         match end_date {
@@ -149,7 +149,7 @@ impl NewRecurringTransaction {
         self.transaction_id
     }
 
-    pub fn end_date(&self) -> Option<&NaiveDate> {
+    pub fn end_date(&self) -> Option<&OffsetDateTime> {
         self.end_date.as_ref()
     }
 
@@ -162,7 +162,7 @@ impl NewRecurringTransaction {
 mod recurring_transaction_tests {
     use std::f64::consts::PI;
 
-    use chrono::{Days, NaiveDate};
+    use time::{Date, Duration, Month, OffsetDateTime, Time};
 
     use crate::model::{
         recurring_transaction::RecurringTransactionError, Frequency, RecurringTransaction,
@@ -173,7 +173,10 @@ mod recurring_transaction_tests {
         Transaction::new(
             1,
             PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            OffsetDateTime::new_utc(
+                Date::from_calendar_date(2024, Month::August, 7).unwrap(),
+                Time::from_hms(12, 0, 0).unwrap(),
+            ),
             "Rust Pie".to_string(),
             2,
             UserID::new(3),
@@ -187,7 +190,7 @@ mod recurring_transaction_tests {
 
         let new_recurring_transaction = RecurringTransaction::new(
             &transaction,
-            transaction.date().checked_add_days(Days::new(1)),
+            transaction.date().checked_add(Duration::days(1)),
             Frequency::Weekly,
         );
 
@@ -213,7 +216,7 @@ mod recurring_transaction_tests {
 
         let new_recurring_transaction = RecurringTransaction::new(
             &transaction,
-            transaction.date().checked_sub_days(Days::new(1)),
+            transaction.date().checked_sub(Duration::days(1)),
             Frequency::Weekly,
         );
 
@@ -228,7 +231,7 @@ mod recurring_transaction_tests {
 mod new_recurring_transaction_tests {
     use std::f64::consts::PI;
 
-    use chrono::{Days, NaiveDate};
+    use time::{Date, Duration, Month, OffsetDateTime, Time};
 
     use crate::model::{
         recurring_transaction::RecurringTransactionError, Frequency, NewRecurringTransaction,
@@ -239,7 +242,10 @@ mod new_recurring_transaction_tests {
         Transaction::new(
             1,
             PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            OffsetDateTime::new_utc(
+                Date::from_calendar_date(2024, Month::August, 7).unwrap(),
+                Time::from_hms(12, 0, 0).unwrap(),
+            ),
             "Rust Pie".to_string(),
             2,
             UserID::new(3),
@@ -253,7 +259,7 @@ mod new_recurring_transaction_tests {
 
         let new_recurring_transaction = NewRecurringTransaction::new(
             &transaction,
-            transaction.date().checked_add_days(Days::new(1)),
+            transaction.date().checked_add(Duration::days(1)),
             Frequency::Weekly,
         );
 
@@ -282,7 +288,7 @@ mod new_recurring_transaction_tests {
 
         let new_recurring_transaction = NewRecurringTransaction::new(
             &transaction,
-            transaction.date().checked_sub_days(Days::new(1)),
+            transaction.date().checked_sub(Duration::days(1)),
             Frequency::Weekly,
         );
 

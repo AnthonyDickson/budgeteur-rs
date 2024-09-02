@@ -1,6 +1,6 @@
-use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use time::OffsetDateTime;
 
 use crate::model::{DatabaseID, UserID};
 
@@ -11,7 +11,7 @@ use crate::model::{DatabaseID, UserID};
 pub struct Transaction {
     id: DatabaseID,
     amount: f64,
-    date: NaiveDate,
+    date: OffsetDateTime,
     description: String,
     category_id: DatabaseID,
     user_id: UserID,
@@ -29,12 +29,12 @@ impl Transaction {
     pub fn new(
         id: DatabaseID,
         amount: f64,
-        date: NaiveDate,
+        date: OffsetDateTime,
         description: String,
         category_id: DatabaseID,
         user_id: UserID,
     ) -> Result<Self, NewTransactionError> {
-        match date <= Utc::now().date_naive() {
+        match date <= OffsetDateTime::now_utc() {
             true => Ok(Self {
                 id,
                 amount,
@@ -55,7 +55,7 @@ impl Transaction {
     pub fn new_unchecked(
         id: DatabaseID,
         amount: f64,
-        date: NaiveDate,
+        date: OffsetDateTime,
         description: String,
         category_id: DatabaseID,
         user_id: UserID,
@@ -78,7 +78,7 @@ impl Transaction {
         self.amount
     }
 
-    pub fn date(&self) -> &NaiveDate {
+    pub fn date(&self) -> &OffsetDateTime {
         &self.date
     }
 
@@ -97,12 +97,12 @@ impl Transaction {
 
 #[derive(Debug, Error)]
 #[error("{0} is not a valid date for a transaction")]
-pub struct NewTransactionError(NaiveDate);
+pub struct NewTransactionError(OffsetDateTime);
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NewTransaction {
     amount: f64,
-    date: NaiveDate,
+    date: OffsetDateTime,
     description: String,
     category_id: DatabaseID,
     user_id: UserID,
@@ -116,12 +116,12 @@ impl NewTransaction {
     /// This function will return an error if `date` is after today (server time).
     pub fn new(
         amount: f64,
-        date: NaiveDate,
+        date: OffsetDateTime,
         description: String,
         category_id: DatabaseID,
         user_id: UserID,
     ) -> Result<Self, NewTransactionError> {
-        match date <= Utc::now().date_naive() {
+        match date <= OffsetDateTime::now_utc() {
             true => Ok(Self {
                 amount,
                 date,
@@ -137,7 +137,7 @@ impl NewTransaction {
         self.amount
     }
 
-    pub fn date(&self) -> NaiveDate {
+    pub fn date(&self) -> OffsetDateTime {
         self.date
     }
 
@@ -156,7 +156,7 @@ impl NewTransaction {
 
 #[cfg(test)]
 mod recurring_transaction_tests {
-    use chrono::{Days, Utc};
+    use time::{Duration, OffsetDateTime};
 
     use crate::model::{transaction::NewTransactionError, UserID};
 
@@ -167,9 +167,8 @@ mod recurring_transaction_tests {
         let new_transaction = Transaction::new(
             1,
             123.45,
-            Utc::now()
-                .date_naive()
-                .checked_add_days(Days::new(1))
+            OffsetDateTime::now_utc()
+                .checked_add(Duration::days(1))
                 .unwrap(),
             "".to_string(),
             1,
@@ -184,7 +183,7 @@ mod recurring_transaction_tests {
         let new_transaction = Transaction::new(
             1,
             123.45,
-            Utc::now().date_naive(),
+            OffsetDateTime::now_utc(),
             "".to_string(),
             1,
             UserID::new(2),
@@ -198,9 +197,8 @@ mod recurring_transaction_tests {
         let new_transaction = Transaction::new(
             1,
             123.45,
-            Utc::now()
-                .date_naive()
-                .checked_sub_days(Days::new(1))
+            OffsetDateTime::now_utc()
+                .checked_sub(Duration::days(1))
                 .unwrap(),
             "".to_string(),
             1,
@@ -213,7 +211,8 @@ mod recurring_transaction_tests {
 
 #[cfg(test)]
 mod new_recurring_transaction_tests {
-    use chrono::{Days, Utc};
+
+    use time::{Duration, OffsetDateTime};
 
     use crate::model::{transaction::NewTransactionError, UserID};
 
@@ -223,9 +222,8 @@ mod new_recurring_transaction_tests {
     fn new_fails_on_future_date() {
         let new_transaction = NewTransaction::new(
             123.45,
-            Utc::now()
-                .date_naive()
-                .checked_add_days(Days::new(1))
+            OffsetDateTime::now_utc()
+                .checked_add(Duration::days(1))
                 .unwrap(),
             "".to_string(),
             1,
@@ -239,7 +237,7 @@ mod new_recurring_transaction_tests {
     fn new_succeeds_on_today() {
         let new_transaction = NewTransaction::new(
             123.45,
-            Utc::now().date_naive(),
+            OffsetDateTime::now_utc(),
             "".to_string(),
             1,
             UserID::new(2),
@@ -252,9 +250,8 @@ mod new_recurring_transaction_tests {
     fn new_succeeds_on_past_date() {
         let new_transaction = NewTransaction::new(
             123.45,
-            Utc::now()
-                .date_naive()
-                .checked_sub_days(Days::new(1))
+            OffsetDateTime::now_utc()
+                .checked_sub(Duration::days(1))
                 .unwrap(),
             "".to_string(),
             1,

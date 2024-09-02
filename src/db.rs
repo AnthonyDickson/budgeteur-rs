@@ -463,15 +463,18 @@ impl Insert for NewTransaction {
     ///
     /// # Examples
     /// ```
-    /// # use chrono::NaiveDate;
     /// # use rusqlite::Connection;
+    /// # use time::{Date, Month, OffsetDateTime, Time};
     /// #
     /// # use backrooms_rs::{db::Insert, model::{Category, NewTransaction, Transaction, User}};
     /// #
     /// fn create_transaction(user: &User, category: &Category, connection: &Connection) {
     ///     let transaction = NewTransaction::new(
     ///         3.14,
-    ///         NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+    ///         OffsetDateTime::new_utc(
+    ///             Date::from_calendar_date(2024, Month::August, 7).unwrap(),
+    ///             Time::from_hms(12, 0, 0).unwrap(),
+    ///         ),
     ///         "Rust Pie".to_string(),
     ///         category.id(),
     ///         user.id()
@@ -481,7 +484,13 @@ impl Insert for NewTransaction {
     ///     .unwrap();
     ///
     ///     assert_eq!(transaction.amount(), 3.14);
-    ///     assert_eq!(*transaction.date(), NaiveDate::from_ymd_opt(2024, 8, 7).unwrap());
+    ///     assert_eq!(
+    ///         *transaction.date(),
+    ///         OffsetDateTime::new_utc(
+    ///             Date::from_calendar_date(2024, Month::August, 7).unwrap(),
+    ///             Time::from_hms(12, 0, 0).unwrap(),
+    ///         )
+    ///     );
     ///     assert_eq!(transaction.description(), "Rust Pie");
     ///     assert_eq!(transaction.category_id(), category.id());
     ///     assert_eq!(transaction.user_id(), user.id());
@@ -694,7 +703,6 @@ impl Insert for NewRecurringTransaction {
     ///
     /// # Examples
     /// ```
-    /// use chrono::Utc;
     /// use rusqlite::Connection;
     ///
     /// use backrooms_rs::{db::Insert, model::{Frequency, NewRecurringTransaction, RecurringTransaction, Transaction}};
@@ -996,9 +1004,9 @@ mod category_tests {
 mod transaction_tests {
     use std::{f64::consts::PI, str::FromStr};
 
-    use chrono::{NaiveDate, Utc};
     use email_address::EmailAddress;
     use rusqlite::Connection;
+    use time::{Date, Month, OffsetDateTime, Time};
 
     use crate::{
         db::{initialize, Category, DbError, SelectBy, Transaction, User},
@@ -1038,7 +1046,7 @@ mod transaction_tests {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let amount = PI;
-        let date = Utc::now().date_naive();
+        let date = OffsetDateTime::now_utc();
         let description = "Rust Pie".to_string();
 
         let transaction = NewTransaction::new(
@@ -1064,7 +1072,7 @@ mod transaction_tests {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let amount = PI;
-        let date = Utc::now().date_naive();
+        let date = OffsetDateTime::now_utc();
         let description = "Rust Pie".to_string();
 
         let maybe_transaction = NewTransaction::new(
@@ -1085,7 +1093,7 @@ mod transaction_tests {
         let (conn, test_user, category) = create_database_and_insert_test_user_and_category();
 
         let amount = PI;
-        let date = Utc::now().date_naive();
+        let date = OffsetDateTime::now_utc();
         let description = "Rust Pie".to_string();
 
         let maybe_transaction = NewTransaction::new(
@@ -1115,7 +1123,7 @@ mod transaction_tests {
         .unwrap();
 
         let amount = PI;
-        let date = Utc::now().date_naive();
+        let date = OffsetDateTime::now_utc();
         let description = "Rust Pie".to_string();
 
         let maybe_transaction = NewTransaction::new(
@@ -1140,7 +1148,10 @@ mod transaction_tests {
 
         let inserted_transaction = NewTransaction::new(
             PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            OffsetDateTime::new_utc(
+                Date::from_calendar_date(2024, Month::August, 7).unwrap(),
+                Time::from_hms(12, 0, 0).unwrap(),
+            ),
             "Rust Pie".to_string(),
             category.id(),
             test_user.id(),
@@ -1160,7 +1171,10 @@ mod transaction_tests {
 
         let inserted_transaction = NewTransaction::new(
             PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            OffsetDateTime::new_utc(
+                Date::from_calendar_date(2024, Month::August, 7).unwrap(),
+                Time::from_hms(12, 0, 0).unwrap(),
+            ),
             "Rust Pie".to_string(),
             category.id(),
             test_user.id(),
@@ -1192,7 +1206,10 @@ mod transaction_tests {
         let expected_transactions = vec![
             NewTransaction::new(
                 PI,
-                NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+                OffsetDateTime::new_utc(
+                    Date::from_calendar_date(2024, Month::August, 7).unwrap(),
+                    Time::from_hms(12, 0, 0).unwrap(),
+                ),
                 "Rust Pie".to_string(),
                 category.id(),
                 test_user.id(),
@@ -1202,7 +1219,10 @@ mod transaction_tests {
             .unwrap(),
             NewTransaction::new(
                 PI + 1.0,
-                NaiveDate::from_ymd_opt(2024, 8, 8).unwrap(),
+                OffsetDateTime::new_utc(
+                    Date::from_calendar_date(2024, Month::August, 7).unwrap(),
+                    Time::from_hms(12, 0, 0).unwrap(),
+                ),
                 "Rust Pif".to_string(),
                 category.id(),
                 test_user.id(),
@@ -1222,9 +1242,9 @@ mod transaction_tests {
 mod savings_ratio_tests {
     use std::{f64::consts::PI, str::FromStr};
 
-    use chrono::NaiveDate;
     use email_address::EmailAddress;
     use rusqlite::Connection;
+    use time::{Date, Month, OffsetDateTime, Time};
 
     use crate::{
         db::{initialize, Transaction},
@@ -1261,7 +1281,10 @@ mod savings_ratio_tests {
 
         let transaction = NewTransaction::new(
             PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            OffsetDateTime::new_utc(
+                Date::from_calendar_date(2024, Month::August, 7).unwrap(),
+                Time::from_hms(12, 0, 0).unwrap(),
+            ),
             "Rust Pie".to_string(),
             category.id(),
             test_user.id(),
@@ -1294,9 +1317,9 @@ mod savings_ratio_tests {
 mod recurring_transaction_tests {
     use std::{f64::consts::PI, str::FromStr};
 
-    use chrono::{Months, NaiveDate};
     use email_address::EmailAddress;
     use rusqlite::Connection;
+    use time::{Date, Duration, Month, OffsetDateTime, Time};
 
     use crate::model::{
         CategoryName, Frequency, NewCategory, NewRecurringTransaction, NewTransaction, NewUser,
@@ -1337,7 +1360,10 @@ mod recurring_transaction_tests {
 
         let transaction = NewTransaction::new(
             PI,
-            NaiveDate::from_ymd_opt(2024, 8, 7).unwrap(),
+            OffsetDateTime::new_utc(
+                Date::from_calendar_date(2024, Month::August, 7).unwrap(),
+                Time::from_hms(12, 0, 0).unwrap(),
+            ),
             "Rust Pie".to_string(),
             category.id(),
             test_user.id(),
@@ -1354,7 +1380,7 @@ mod recurring_transaction_tests {
         let (conn, _, _, transaction) =
             create_database_and_insert_test_user_category_and_transaction();
 
-        let end_date = transaction.date().checked_add_months(Months::new(3));
+        let end_date = transaction.date().checked_add(Duration::weeks(12));
 
         let recurring = NewRecurringTransaction::new(&transaction, end_date, Frequency::Weekly)
             .unwrap()

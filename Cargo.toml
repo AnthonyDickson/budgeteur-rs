@@ -17,15 +17,13 @@ axum-server = { version = "0.7.1", features = ["tls-rustls"] }
 axum-test = "15.3.0"
 bcrypt = "0.15.1"
 clap = { version = "4.5.16", features = ["derive"] }
-# TODO: Replace chrono with time if possible.
-chrono = { version = "0.4.38", features = ["serde"] }
 email_address = "0.2.9"
-rusqlite = { version = "0.32.1", features = ["bundled", "chrono"] }
+rusqlite = { version = "0.32.1", features = ["bundled", "time"] }
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.121"
 sha2 = { version = "0.10.8" }
 thiserror = "1.0.63"
-time = "0.3.36"
+time = { version = "0.3.36", features = ["serde"] }
 tokio = { version = "1.39.2", features = ["full"] }
 tower-http = { version = "0.5.2", features = ["trace"] }
 tracing = "0.1.40"
