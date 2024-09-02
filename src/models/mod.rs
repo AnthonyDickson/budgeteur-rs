@@ -1,4 +1,3 @@
-// TODO: Rename module to 'models'
 mod category;
 pub use category::{Category, CategoryName, NewCategory};
 

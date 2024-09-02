@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::set_auth_cookie,
     db::{DbError, Insert},
-    model::{NewUser, PasswordHash, RawPassword},
+    models::{NewUser, PasswordHash, RawPassword},
     AppError, AppState, HtmlTemplate,
 };
 

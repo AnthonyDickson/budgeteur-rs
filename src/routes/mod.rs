@@ -13,7 +13,7 @@ use register::{create_user, get_register_page};
 use crate::{
     auth::{auth_guard, get_user_id_from_auth_cookie, sign_in},
     db::{Insert, SelectBy},
-    model::{Category, DatabaseID, NewCategory, NewTransaction, Transaction, UserID},
+    models::{Category, DatabaseID, NewCategory, NewTransaction, Transaction, UserID},
     AppError, AppState, HtmlTemplate,
 };
 
@@ -204,7 +204,7 @@ mod root_route_tests {
     use crate::{
         auth::auth_guard,
         db::{initialize, Insert},
-        model::{NewUser, PasswordHash, RawPassword},
+        models::{NewUser, PasswordHash, RawPassword},
         routes::{endpoints, get_index_page},
         AppState,
     };
@@ -262,7 +262,7 @@ mod dashboard_route_tests {
     use crate::{
         auth::{auth_guard, sign_in, COOKIE_USER_ID},
         db::{initialize, Insert},
-        model::{NewUser, PasswordHash, RawPassword},
+        models::{NewUser, PasswordHash, RawPassword},
         routes::endpoints,
         AppState,
     };
@@ -375,7 +375,7 @@ mod category_tests {
     use crate::{
         auth::COOKIE_USER_ID,
         db::initialize,
-        model::{Category, CategoryName, UserID},
+        models::{Category, CategoryName, UserID},
         routes::endpoints,
         AppState,
     };
@@ -523,7 +523,7 @@ mod transaction_tests {
     use crate::{
         auth::COOKIE_USER_ID,
         db::initialize,
-        model::{Category, Transaction, UserID},
+        models::{Category, Transaction, UserID},
         routes::endpoints,
         AppState,
     };

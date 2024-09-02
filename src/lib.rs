@@ -15,7 +15,7 @@ use tokio::signal;
 mod auth;
 mod config;
 pub mod db;
-pub mod model;
+pub mod models;
 mod routes;
 
 use crate::db::DbError;
@@ -125,7 +125,7 @@ const INTERNAL_SERVER_ERROR_HTML: &str = "
 /// use askama::Template;
 /// use axum::{Extension, response::{IntoResponse, Response}};
 /// #
-/// # use backrooms_rs::{HtmlTemplate, model::UserID};
+/// # use backrooms_rs::{HtmlTemplate, models::UserID};
 ///
 /// #[derive(Template)]
 /// #[template(path = "views/dashboard.html")]

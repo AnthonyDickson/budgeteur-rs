@@ -3,7 +3,7 @@ use std::fmt::Display;
 use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
-use crate::model::PasswordHash;
+use crate::models::PasswordHash;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserID(i64);

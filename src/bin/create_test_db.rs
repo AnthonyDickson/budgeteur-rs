@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 use backrooms_rs::{
     db::initialize,
-    model::{PasswordHash, RawPassword},
+    models::{PasswordHash, RawPassword},
 };
 
 /// A utility for creating a test database for the REST API server of backrooms_rs.

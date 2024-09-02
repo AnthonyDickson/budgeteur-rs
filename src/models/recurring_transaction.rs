@@ -1,7 +1,7 @@
 use thiserror::Error;
 use time::OffsetDateTime;
 
-use crate::model::{DatabaseID, Transaction};
+use crate::models::{DatabaseID, Transaction};
 
 #[derive(Debug, Error)]
 #[error("{0} is not a valid frequency code")]
@@ -164,7 +164,7 @@ mod recurring_transaction_tests {
 
     use time::{Date, Duration, Month, OffsetDateTime, Time};
 
-    use crate::model::{
+    use crate::models::{
         recurring_transaction::RecurringTransactionError, Frequency, RecurringTransaction,
         Transaction, UserID,
     };
@@ -233,7 +233,7 @@ mod new_recurring_transaction_tests {
 
     use time::{Date, Duration, Month, OffsetDateTime, Time};
 
-    use crate::model::{
+    use crate::models::{
         recurring_transaction::RecurringTransactionError, Frequency, NewRecurringTransaction,
         Transaction, UserID,
     };

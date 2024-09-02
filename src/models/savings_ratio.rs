@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::model::DatabaseID;
+use crate::models::DatabaseID;
 
 #[derive(Debug, Error)]
 #[error("{0} is not a valid ratio")]
@@ -39,7 +39,7 @@ impl Ratio {
 
 #[cfg(test)]
 mod ratio_tests {
-    use crate::model::savings_ratio::Ratio;
+    use crate::models::savings_ratio::Ratio;
 
     #[test]
     fn new_succeeds_on_valid_values() {

@@ -21,7 +21,7 @@ use time::{Duration, OffsetDateTime};
 use crate::{
     config::AppState,
     db::{DbError, SelectBy},
-    model::{RawPassword, User, UserID},
+    models::{RawPassword, User, UserID},
     routes::endpoints,
 };
 
@@ -150,7 +150,7 @@ mod cookie_tests {
 
     use crate::{
         auth::{get_user_id_from_auth_cookie, COOKIE_USER_ID},
-        model::UserID,
+        models::UserID,
     };
 
     use super::set_auth_cookie;
@@ -201,7 +201,7 @@ mod auth_tests {
     use crate::{
         auth,
         db::Insert,
-        model::{NewUser, PasswordHash, RawPassword},
+        models::{NewUser, PasswordHash, RawPassword},
     };
 
     fn get_test_app_config() -> AppState {
@@ -294,7 +294,7 @@ mod auth_guard_tests {
     use crate::{
         auth::{auth_guard, sign_in, COOKIE_USER_ID},
         db::{initialize, Insert},
-        model::{NewUser, PasswordHash, RawPassword},
+        models::{NewUser, PasswordHash, RawPassword},
         routes::endpoints,
         AppState,
     };

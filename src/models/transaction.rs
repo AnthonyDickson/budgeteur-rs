@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
 
-use crate::model::{DatabaseID, UserID};
+use crate::models::{DatabaseID, UserID};
 
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
@@ -158,7 +158,7 @@ impl NewTransaction {
 mod recurring_transaction_tests {
     use time::{Duration, OffsetDateTime};
 
-    use crate::model::{transaction::NewTransactionError, UserID};
+    use crate::models::{transaction::NewTransactionError, UserID};
 
     use super::Transaction;
 
@@ -214,7 +214,7 @@ mod new_recurring_transaction_tests {
 
     use time::{Duration, OffsetDateTime};
 
-    use crate::model::{transaction::NewTransactionError, UserID};
+    use crate::models::{transaction::NewTransactionError, UserID};
 
     use super::NewTransaction;
 
