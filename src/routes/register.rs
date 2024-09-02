@@ -100,7 +100,7 @@ pub async fn create_user(
     jar: PrivateCookieJar,
     Form(user_data): Form<RegisterForm>,
 ) -> Response {
-    // Cache templates that preserve the user's input since they are used multiple times in this function.
+    // Make templates ahead of time that preserve the user's input since they are used multiple times in this function.
     let email_input = EmailInputTemplate {
         value: &user_data.email,
         ..Default::default()
@@ -182,7 +182,7 @@ pub async fn create_user(
         DbError::DuplicateEmail => HtmlTemplate(RegisterFormTemplate {
             email_input: EmailInputTemplate {
                 value: &user_data.email,
-                error_message: &format!("The email address {} is already in use", &user_data.email),
+                error_message: "The email address is already in use",
                 ..Default::default()
             },
             password_input,

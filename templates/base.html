@@ -7,6 +7,19 @@
 
         <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
         <script src="https://unpkg.com/htmx.org@2.0.2"></script>
+        <style>
+            #indicator.htmx-indicator {
+                display: none;
+            }
+
+            #indicator.htmx-request .htmx-indicator {
+                display: inline;
+            }
+
+            #indicator.htmx-request.htmx-indicator {
+                display: inline;
+            }
+        </style>
     </head>
     <body>
         <div class="container max-w-full bg-gray-50 dark:bg-gray-900">

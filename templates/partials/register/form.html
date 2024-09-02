@@ -1,11 +1,19 @@
-<form class="space-y-4 md:space-y-6" hx-post="{{ create_user_route }}">
+<form
+    class="space-y-4 md:space-y-6"
+    hx-post="{{ create_user_route }}"
+    hx-indicator="#indicator"
+    hx-disabled-elt="#email, #password, #confirm-password, #submit-button"
+>
     {{ email_input|safe }} {{ password_input|safe }} {{
     confirm_password_input|safe }}
-    <!-- TODO: Show spinner while request is in progress: https://htmx.org/docs/#indicators -->
     <button
         type="submit"
-        class="w-full text-white bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 border border-gray-300 focus:ring-4 focus:outline-none focus:ring-primary-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:border-none dark:focus:ring-primary-800"
+        class="w-full text-white disabled:text-gray-300 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700 enabled:hover:bg-blue-600 dark:enabled:hover:bg-blue-700 border border-gray-300 focus:ring-4 focus:outline-none focus:ring-primary-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:border-none dark:focus:ring-primary-800"
+        id="submit-button"
     >
+        <span id="indicator" class="inline htmx-indicator">
+            {% include "components/spinner.html" %}
+        </span>
         Create account
     </button>
     <p class="text-sm font-light text-gray-500 dark:text-gray-400">
