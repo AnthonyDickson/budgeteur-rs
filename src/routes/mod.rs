@@ -1,13 +1,14 @@
 use askama::Template;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{StatusCode, Uri},
     middleware,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Extension, Json, Router,
 };
 use axum_extra::extract::PrivateCookieJar;
+use axum_htmx::HxRedirect;
 use register::{create_user, get_register_page};
 
 use crate::{
@@ -31,6 +32,7 @@ pub mod endpoints {
     pub const CATEGORY: &str = "/categories/:category_id";
     pub const TRANSACTIONS: &str = "/transactions";
     pub const TRANSACTION: &str = "/transactions/:transaction_id";
+    pub const INTERNAL_ERROR: &str = "/error500";
 }
 
 // TODO: Update existing routes to respond with HTML
@@ -41,7 +43,11 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::LOG_IN, get(get_sign_in_page))
         .route(endpoints::LOG_IN, post(sign_in))
         .route(endpoints::REGISTER, get(get_register_page))
-        .route(endpoints::USERS, post(create_user));
+        .route(endpoints::USERS, post(create_user))
+        .route(
+            endpoints::INTERNAL_ERROR,
+            get(get_internal_server_error_page),
+        );
 
     let protected_routes = Router::new()
         .route(endpoints::ROOT, get(get_index_page))
@@ -66,6 +72,26 @@ async fn get_coffee() -> Response {
 /// The root path '/' redirects to the dashboard page.
 async fn get_index_page() -> Redirect {
     Redirect::to(endpoints::DASHBOARD)
+}
+
+/// Get a response that will redirect the client to the internal server error 500 page.
+///
+/// **Note**: This redirect is intended to be served as a response to a POST request initiated by HTMX.
+/// Route handlers using GET should use `axum::response::Redirect`.
+pub(crate) fn get_internal_server_error_redirect() -> Response {
+    (
+        HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR)),
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+        .into_response()
+}
+
+#[derive(Template)]
+#[template(path = "views/internal_server_error_500.html")]
+struct InternalServerErrorPageTemplate;
+
+async fn get_internal_server_error_page() -> Response {
+    HtmlTemplate(InternalServerErrorPageTemplate).into_response()
 }
 
 #[derive(Template)]

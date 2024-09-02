@@ -17,7 +17,8 @@ use crate::{
     auth::set_auth_cookie,
     db::{DbError, Insert},
     models::{NewUser, PasswordHash, RawPassword},
-    AppError, AppState, HtmlTemplate,
+    routes::get_internal_server_error_redirect,
+    AppState, HtmlTemplate,
 };
 
 use super::endpoints;
@@ -152,17 +153,7 @@ pub async fn create_user(
         Err(e) => {
             tracing::error!("an error occurred while hashing a password: {e}");
 
-            return HtmlTemplate(RegisterFormTemplate {
-                email_input: EmailInputTemplate {
-                    value: &user_data.email,
-                    ..EmailInputTemplate::default()
-                },
-                password_input: PasswordInputTemplate {
-                    error_message: "An internal server error ocurred. You can either try again later, or try again with a different password",
-                },
-                ..RegisterFormTemplate::default()
-            })
-            .into_response();
+            return get_internal_server_error_redirect();
         }
     };
 
@@ -201,8 +192,11 @@ pub async fn create_user(
             ..RegisterFormTemplate::default()
         })
         .into_response(),
-        // TODO: Render form with error message indicating a internal server error.
-        _ => AppError::UserCreation(format!("Could not create user: {e:?}")).into_response(),
+        e => {
+            tracing::error!("An unhandled error occurred while inserting a new user: {e}");
+
+            get_internal_server_error_redirect()
+        }
     })
     .into_response()
 }

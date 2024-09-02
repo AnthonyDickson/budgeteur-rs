@@ -57,8 +57,6 @@ pub async fn graceful_shutdown(handle: Handle) {
 }
 
 enum AppError {
-    /// An error occurred while creating a user.
-    UserCreation(String),
     /// The requested resource was not found. The client should check that the parameters (e.g., ID) are correct and that the resource has been created.
     NotFound,
     /// An error occurred whlie accessing the application's database. This may be due to a database constraint being violated (e.g., foreign keys).
@@ -76,7 +74,6 @@ impl From<AuthError> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppError::UserCreation(description) => (StatusCode::OK, description),
             AppError::DatabaseError(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal server error: {e:?}"),
