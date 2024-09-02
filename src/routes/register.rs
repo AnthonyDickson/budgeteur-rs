@@ -3,7 +3,6 @@ use std::str::FromStr;
 
 use askama::Template;
 use axum::{
-    debug_handler,
     extract::State,
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
@@ -96,7 +95,6 @@ pub struct RegisterForm {
     pub confirm_password: String,
 }
 
-#[debug_handler]
 pub async fn create_user(
     State(state): State<AppState>,
     jar: PrivateCookieJar,
@@ -168,8 +166,6 @@ pub async fn create_user(
         }
     };
 
-    // TODO: Abstract away database interactions into a 'repository' struct. The repo should handle the CRUD operations.
-    // Routes should ideally should be simple and high-level. I should aim to have one function call to a repo, and then another function call to render a template.
     NewUser {
         email,
         password_hash,
@@ -184,7 +180,6 @@ pub async fn create_user(
             jar,
         )
     })
-    // TODO: Render error in form.
     .map_err(|e| match e {
         DbError::DuplicateEmail => HtmlTemplate(RegisterFormTemplate {
             email_input: EmailInputTemplate {

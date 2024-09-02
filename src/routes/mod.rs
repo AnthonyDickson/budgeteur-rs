@@ -194,6 +194,30 @@ async fn get_transaction(
         .map(|transaction| (StatusCode::OK, Json(transaction)))
 }
 
+// These tests are here so that we know when we call `Uri::from_shared` it will not panic.
+#[cfg(test)]
+mod endpoints_tests {
+    use axum::http::Uri;
+
+    use crate::routes::endpoints;
+
+    fn assert_endpoint_is_valid_uri(uri: &str) {
+        assert!(uri.parse::<Uri>().is_ok());
+    }
+
+    #[test]
+    fn endpoints_are_valid_uris() {
+        assert_endpoint_is_valid_uri(endpoints::CATEGORIES);
+        assert_endpoint_is_valid_uri(endpoints::CATEGORY);
+        assert_endpoint_is_valid_uri(endpoints::COFFEE);
+        assert_endpoint_is_valid_uri(endpoints::DASHBOARD);
+        assert_endpoint_is_valid_uri(endpoints::LOG_IN);
+        assert_endpoint_is_valid_uri(endpoints::REGISTER);
+        assert_endpoint_is_valid_uri(endpoints::ROOT);
+        assert_endpoint_is_valid_uri(endpoints::USERS);
+    }
+}
+
 #[cfg(test)]
 mod root_route_tests {
     use axum::{middleware, routing::get, Router};
