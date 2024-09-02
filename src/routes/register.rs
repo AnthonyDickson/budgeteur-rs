@@ -56,7 +56,6 @@ impl Default for RegisterFormTemplate<'_> {
 struct EmailInputTemplate<'a> {
     value: &'a str,
     error_message: &'a str,
-    validation_route: &'a str,
 }
 
 impl Default for EmailInputTemplate<'_> {
@@ -64,7 +63,6 @@ impl Default for EmailInputTemplate<'_> {
         Self {
             value: "",
             error_message: "",
-            validation_route: endpoints::USERS,
         }
     }
 }
@@ -72,6 +70,7 @@ impl Default for EmailInputTemplate<'_> {
 #[derive(Template, Default)]
 #[template(path = "partials/register/inputs/password.html")]
 struct PasswordInputTemplate<'a> {
+    value: &'a str,
     error_message: &'a str,
 }
 
@@ -101,16 +100,25 @@ pub async fn create_user(
     jar: PrivateCookieJar,
     Form(user_data): Form<RegisterForm>,
 ) -> Response {
+    // Cache templates that preserve the user's input since they are used multiple times in this function.
+    let email_input = EmailInputTemplate {
+        value: &user_data.email,
+        ..Default::default()
+    };
+
+    let password_input = PasswordInputTemplate {
+        value: &user_data.password,
+        ..Default::default()
+    };
+
     if user_data.password != user_data.confirm_password {
         return HtmlTemplate(RegisterFormTemplate {
-            email_input: EmailInputTemplate {
-                value: &user_data.email,
-                ..EmailInputTemplate::default()
-            },
+            email_input,
+            password_input,
             confirm_password_input: ConfirmPasswordInputTemplate {
                 error_message: "Passwords do not match",
             },
-            ..RegisterFormTemplate::default()
+            ..Default::default()
         })
         .into_response();
     }
@@ -123,26 +131,25 @@ pub async fn create_user(
                 email_input: EmailInputTemplate {
                     value: &user_data.email,
                     error_message: &format!("Invalid email address: {}", e),
-                    ..EmailInputTemplate::default()
+                    ..Default::default()
                 },
-                ..RegisterFormTemplate::default()
+                password_input,
+                ..Default::default()
             })
             .into_response();
         }
     };
 
-    let raw_password = match RawPassword::new(user_data.password) {
+    let raw_password = match RawPassword::new(user_data.password.to_string()) {
         Ok(password) => password,
         Err(e) => {
             return HtmlTemplate(RegisterFormTemplate {
-                email_input: EmailInputTemplate {
-                    value: &user_data.email,
-                    ..EmailInputTemplate::default()
-                },
+                email_input,
                 password_input: PasswordInputTemplate {
+                    value: &user_data.password,
                     error_message: e.to_string().as_ref(),
                 },
-                ..RegisterFormTemplate::default()
+                ..Default::default()
             })
             .into_response();
         }
@@ -176,20 +183,19 @@ pub async fn create_user(
             email_input: EmailInputTemplate {
                 value: &user_data.email,
                 error_message: &format!("The email address {} is already in use", &user_data.email),
-                ..EmailInputTemplate::default()
+                ..Default::default()
             },
-            ..RegisterFormTemplate::default()
+            password_input,
+            ..Default::default()
         })
         .into_response(),
         DbError::DuplicatePassword => HtmlTemplate(RegisterFormTemplate {
-            email_input: EmailInputTemplate {
-                value: &user_data.email,
-                ..EmailInputTemplate::default()
-            },
+            email_input,
             password_input: PasswordInputTemplate {
+                value: &user_data.password,
                 error_message: "The password is already in use",
             },
-            ..RegisterFormTemplate::default()
+            ..Default::default()
         })
         .into_response(),
         e => {

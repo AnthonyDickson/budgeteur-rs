@@ -16,8 +16,6 @@
         {%if
         !error_message.is_empty()%}autofocus{%endif%}
     />
-    <!-- TODO: Add route for validating email (format + whether it's already used) -->
-    <!-- hx-post="{{ validation_route }}" -->
 
     {% if !error_message.is_empty() %}
     <p class="text-red-500">{{ error_message }}</p>
