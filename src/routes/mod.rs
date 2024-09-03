@@ -9,10 +9,10 @@ use axum::{
 };
 use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
-use register::{create_user, get_register_page};
+use register::{create_user, get_register_page, EmailInputTemplate, PasswordInputTemplate};
 
 use crate::{
-    auth::{auth_guard, get_user_id_from_auth_cookie, sign_in},
+    auth::{auth_guard, get_user_id_from_auth_cookie, log_in},
     db::{Insert, SelectBy},
     models::{Category, DatabaseID, NewCategory, NewTransaction, Transaction, UserID},
     AppError, AppState, HtmlTemplate,
@@ -32,7 +32,7 @@ pub mod endpoints {
     pub const CATEGORY: &str = "/categories/:category_id";
     pub const TRANSACTIONS: &str = "/transactions";
     pub const TRANSACTION: &str = "/transactions/:transaction_id";
-    pub const INTERNAL_ERROR: &str = "/error500";
+    pub const INTERNAL_ERROR: &str = "/error";
 }
 
 // TODO: Update existing routes to respond with HTML
@@ -40,8 +40,8 @@ pub mod endpoints {
 pub fn build_router(state: AppState) -> Router {
     let unprotected_routes = Router::new()
         .route(endpoints::COFFEE, get(get_coffee))
-        .route(endpoints::LOG_IN, get(get_sign_in_page))
-        .route(endpoints::LOG_IN, post(sign_in))
+        .route(endpoints::LOG_IN, get(get_log_in_page))
+        .route(endpoints::LOG_IN, post(log_in))
         .route(endpoints::REGISTER, get(get_register_page))
         .route(endpoints::USERS, post(create_user))
         .route(
@@ -115,13 +115,17 @@ async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
 
 #[derive(Template)]
 #[template(path = "views/log_in.html")]
-struct SignInTemplate<'a> {
+struct LogInTemplate<'a> {
+    email_input: EmailInputTemplate<'a>,
+    password_input: PasswordInputTemplate<'a>,
     register_route: &'a str,
 }
 
-/// Display the sign-in page.
-async fn get_sign_in_page() -> Response {
-    HtmlTemplate(SignInTemplate {
+/// Display the log-in page.
+async fn get_log_in_page() -> Response {
+    HtmlTemplate(LogInTemplate {
+        email_input: Default::default(),
+        password_input: Default::default(),
         register_route: endpoints::REGISTER,
     })
     .into_response()
@@ -310,7 +314,7 @@ mod dashboard_route_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::{auth_guard, sign_in, COOKIE_USER_ID},
+        auth::{auth_guard, log_in, COOKIE_USER_ID},
         db::{initialize, Insert},
         models::{NewUser, PasswordHash, RawPassword},
         routes::endpoints,
@@ -336,14 +340,14 @@ mod dashboard_route_tests {
         let app = Router::new()
             .route(endpoints::DASHBOARD, get(get_dashboard_page))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::LOG_IN, post(sign_in))
+            .route(endpoints::LOG_IN, post(log_in))
             .with_state(state);
 
         TestServer::new(app).expect("Could not create test server.")
     }
 
     #[tokio::test]
-    async fn dashboard_redirects_to_sign_in_without_auth_cookie() {
+    async fn dashboard_redirects_to_log_in_without_auth_cookie() {
         let server = get_test_server();
 
         let response = server.get(endpoints::DASHBOARD).await;
@@ -353,7 +357,7 @@ mod dashboard_route_tests {
     }
 
     #[tokio::test]
-    async fn dashboard_redirects_to_sign_in_with_invalid_auth_cookie() {
+    async fn dashboard_redirects_to_log_in_with_invalid_auth_cookie() {
         let server = get_test_server();
 
         let fake_auth_cookie = Cookie::build((COOKIE_USER_ID, "1"))
@@ -371,7 +375,7 @@ mod dashboard_route_tests {
     }
 
     #[tokio::test]
-    async fn dashboard_redirects_to_sign_in_with_expired_auth_cookie() {
+    async fn dashboard_redirects_to_log_in_with_expired_auth_cookie() {
         let server = get_test_server();
         let mut expired_auth_cookie = server
             .post(endpoints::LOG_IN)

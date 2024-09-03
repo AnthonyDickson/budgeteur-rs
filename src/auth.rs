@@ -27,9 +27,9 @@ use crate::{
 
 #[derive(Deserialize)]
 pub struct Credentials {
-    /// Email entered during sign-in.
+    /// Email entered during log-in.
     pub email: EmailAddress,
-    /// Password entered during sign-in.
+    /// Password entered during log-in.
     pub password: RawPassword,
 }
 
@@ -56,7 +56,7 @@ impl IntoResponse for AuthError {
     }
 }
 
-/// Handler for sign-in requests.
+/// Handler for log-in requests.
 ///
 /// # Errors
 ///
@@ -64,7 +64,7 @@ impl IntoResponse for AuthError {
 /// - The email does not belong to a registered user.
 /// - The password is not correct.
 /// - An internal error occurred when verifying the password.
-pub async fn sign_in(
+pub async fn log_in(
     State(state): State<AppState>,
     jar: PrivateCookieJar,
     Json(user_data): Json<Credentials>,
@@ -198,6 +198,7 @@ mod auth_tests {
 
     use crate::config::AppState;
     use crate::db::initialize;
+    use crate::routes::endpoints;
     use crate::{
         auth,
         db::Insert,
@@ -213,7 +214,7 @@ mod auth_tests {
     }
 
     #[tokio::test]
-    async fn sign_in_succeeds_with_valid_credentials() {
+    async fn log_in_succeeds_with_valid_credentials() {
         let app_config = get_test_app_config();
 
         let raw_password = RawPassword::new("averysafeandsecurepassword".to_string()).unwrap();
@@ -225,13 +226,13 @@ mod auth_tests {
         .unwrap();
 
         let app = Router::new()
-            .route("/sign_in", post(auth::sign_in))
+            .route(endpoints::LOG_IN, post(auth::log_in))
             .with_state(app_config);
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
         server
-            .post("/sign_in")
+            .post(endpoints::LOG_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": &test_user.email(),
@@ -242,30 +243,30 @@ mod auth_tests {
     }
 
     #[tokio::test]
-    async fn sign_in_fails_with_missing_credentials() {
+    async fn log_in_fails_with_missing_credentials() {
         let app = Router::new()
-            .route("/sign_in", post(auth::sign_in))
+            .route(endpoints::LOG_IN, post(auth::log_in))
             .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
         server
-            .post("/sign_in")
+            .post(endpoints::LOG_IN)
             .content_type("application/json")
             .await
             .assert_status(StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
-    async fn sign_in_fails_with_invalid_credentials() {
+    async fn log_in_fails_with_invalid_credentials() {
         let app = Router::new()
-            .route("/sign_in", post(auth::sign_in))
+            .route(endpoints::LOG_IN, post(auth::log_in))
             .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
         server
-            .post("/sign_in")
+            .post(endpoints::LOG_IN)
             .content_type("application/json")
             .json(&json!({
                 "email": "wrongemail@gmail.com",
@@ -292,7 +293,7 @@ mod auth_guard_tests {
     use serde_json::json;
 
     use crate::{
-        auth::{auth_guard, sign_in, COOKIE_USER_ID},
+        auth::{auth_guard, log_in, COOKIE_USER_ID},
         db::{initialize, Insert},
         models::{NewUser, PasswordHash, RawPassword},
         routes::endpoints,
@@ -326,7 +327,7 @@ mod auth_guard_tests {
         let app = Router::new()
             .route("/protected", get(test_handler))
             .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::LOG_IN, post(sign_in))
+            .route(endpoints::LOG_IN, post(log_in))
             .with_state(state);
 
         let server = TestServer::new(app).expect("Could not create test server.");
@@ -351,7 +352,7 @@ mod auth_guard_tests {
     }
 
     #[tokio::test]
-    async fn get_protected_route_with_no_auth_cookie_redirects_to_sign_in() {
+    async fn get_protected_route_with_no_auth_cookie_redirects_to_log_in() {
         let state = get_test_app_state();
         let app = Router::new()
             .route("/protected", get(test_handler))

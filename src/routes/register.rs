@@ -23,6 +23,7 @@ use crate::{
 
 use super::endpoints;
 
+// TODO: Move templates to own module?
 #[derive(Template)]
 #[template(path = "views/register.html")]
 struct RegisterPageTemplate<'a> {
@@ -51,27 +52,18 @@ impl Default for RegisterFormTemplate<'_> {
     }
 }
 
-#[derive(Template)]
+#[derive(Template, Default)]
 #[template(path = "partials/register/inputs/email.html")]
-struct EmailInputTemplate<'a> {
-    value: &'a str,
-    error_message: &'a str,
-}
-
-impl Default for EmailInputTemplate<'_> {
-    fn default() -> Self {
-        Self {
-            value: "",
-            error_message: "",
-        }
-    }
+pub struct EmailInputTemplate<'a> {
+    pub value: &'a str,
+    pub error_message: &'a str,
 }
 
 #[derive(Template, Default)]
 #[template(path = "partials/register/inputs/password.html")]
-struct PasswordInputTemplate<'a> {
-    value: &'a str,
-    error_message: &'a str,
+pub struct PasswordInputTemplate<'a> {
+    pub value: &'a str,
+    pub error_message: &'a str,
 }
 
 #[derive(Template, Default)]
@@ -131,7 +123,6 @@ pub async fn create_user(
                 email_input: EmailInputTemplate {
                     value: &user_data.email,
                     error_message: &format!("Invalid email address: {}", e),
-                    ..Default::default()
                 },
                 password_input,
                 ..Default::default()
@@ -183,7 +174,6 @@ pub async fn create_user(
             email_input: EmailInputTemplate {
                 value: &user_data.email,
                 error_message: "The email address is already in use",
-                ..Default::default()
             },
             password_input,
             ..Default::default()

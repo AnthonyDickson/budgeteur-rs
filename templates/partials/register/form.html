@@ -8,7 +8,7 @@
     confirm_password_input|safe }}
     <button
         type="submit"
-        class="w-full text-white disabled:text-gray-300 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700 enabled:hover:bg-blue-600 dark:enabled:hover:bg-blue-700 border border-gray-300 focus:ring-4 focus:outline-none focus:ring-primary-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:border-none dark:focus:ring-primary-800"
+        class="{% include "styles/forms/button.html" %}"
         id="submit-button"
     >
         <span id="indicator" class="inline htmx-indicator">
@@ -16,7 +16,7 @@
         </span>
         Create account
     </button>
-    <p class="text-sm font-light text-gray-500 dark:text-gray-400">
+    <p class="text-sm font-light {% include "styles/text/plain.html" %}">
         Already have an account?
         <a
             href="{{ log_in_route }}"
