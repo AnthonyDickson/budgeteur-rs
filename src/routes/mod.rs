@@ -9,6 +9,7 @@ use axum::{
 };
 use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
+
 use register::{create_user, get_register_page, EmailInputTemplate, PasswordInputTemplate};
 
 use crate::{
@@ -114,21 +115,34 @@ async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
 }
 
 #[derive(Template)]
-#[template(path = "views/log_in.html")]
-struct LogInTemplate<'a> {
+#[template(path = "partials/log_in/form.html")]
+struct LogInFormTemplate<'a> {
     email_input: EmailInputTemplate<'a>,
     password_input: PasswordInputTemplate<'a>,
+    log_in_route: &'a str,
     register_route: &'a str,
+}
+
+impl Default for LogInFormTemplate<'_> {
+    fn default() -> Self {
+        Self {
+            email_input: Default::default(),
+            password_input: Default::default(),
+            log_in_route: endpoints::LOG_IN,
+            register_route: endpoints::REGISTER,
+        }
+    }
+}
+
+#[derive(Template, Default)]
+#[template(path = "views/log_in.html")]
+struct LogInTemplate<'a> {
+    log_in_form: LogInFormTemplate<'a>,
 }
 
 /// Display the log-in page.
 async fn get_log_in_page() -> Response {
-    HtmlTemplate(LogInTemplate {
-        email_input: Default::default(),
-        password_input: Default::default(),
-        register_route: endpoints::REGISTER,
-    })
-    .into_response()
+    HtmlTemplate(LogInTemplate::default()).into_response()
 }
 
 /// A route handler for creating a new category.
