@@ -712,7 +712,7 @@ impl Insert for NewRecurringTransaction {
     ///     frequency: Frequency,
     ///     connection: &Connection
     /// ) -> RecurringTransaction {
-    ///     NewRecurringTransaction::new(transaction.clone(), None, frequency)
+    ///     NewRecurringTransaction::new(transaction, None, frequency)
     ///         .unwrap()
     ///         .insert(connection)
     ///         .unwrap()
@@ -759,7 +759,7 @@ mod user_tests {
     use rusqlite::Connection;
 
     use crate::{
-        db::{DbError, initialize, Insert, SelectBy, User},
+        db::{initialize, DbError, Insert, SelectBy, User},
         models::{NewUser, PasswordHash},
     };
 
@@ -870,7 +870,7 @@ mod category_tests {
     use rusqlite::Connection;
 
     use crate::{
-        db::{Category, CategoryName, DbError, initialize, SelectBy, User, UserID},
+        db::{initialize, Category, CategoryName, DbError, SelectBy, User, UserID},
         models::{NewCategory, NewUser, PasswordHash},
     };
 
@@ -1009,7 +1009,7 @@ mod transaction_tests {
     use time::{Date, Month, OffsetDateTime, Time};
 
     use crate::{
-        db::{Category, DbError, initialize, SelectBy, Transaction, User},
+        db::{initialize, Category, DbError, SelectBy, Transaction, User},
         models::{CategoryName, NewCategory, NewTransaction, NewUser, PasswordHash, UserID},
     };
 
@@ -1326,7 +1326,7 @@ mod recurring_transaction_tests {
         PasswordHash, Transaction, User,
     };
 
-    use super::{Category, initialize, Insert};
+    use super::{initialize, Category, Insert};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

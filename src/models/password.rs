@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::ops::Deref;
 
 use bcrypt::{hash, verify, BcryptError, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
@@ -27,8 +28,8 @@ impl PasswordHash {
     /// # Errors
     ///
     /// This function will return an error if the password could not be hashed.
-    pub fn new(raw_password: RawPassword) -> Result<Self, PasswordError> {
-        match hash(&raw_password.0, DEFAULT_COST) {
+    pub fn new(password: ValidatedPassword) -> Result<Self, PasswordError> {
+        match hash(&password.0, DEFAULT_COST) {
             Ok(password_hash) => Ok(Self(password_hash)),
             Err(e) => Err(PasswordError::HashingError(e.to_string())),
         }
@@ -44,8 +45,8 @@ impl PasswordHash {
     }
 
     /// Check that `raw_password` matches the stored password.
-    pub fn verify(&self, raw_password: &RawPassword) -> Result<bool, BcryptError> {
-        verify(&raw_password.0, &self.0)
+    pub fn verify(&self, raw_password: &str) -> Result<bool, BcryptError> {
+        verify(raw_password, &self.0)
     }
 }
 
@@ -57,9 +58,9 @@ impl Display for PasswordHash {
 
 /// A password that has been validated, but not yet hashed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RawPassword(String);
+pub struct ValidatedPassword(String);
 
-impl RawPassword {
+impl ValidatedPassword {
     /// Create and validate a new password from a string.
     ///
     /// # Errors
@@ -80,7 +81,7 @@ impl RawPassword {
         }
     }
 
-    /// Create a new `RawPassword` without any validation.
+    /// Create a new `ValidatedPassword` without any validation.
     ///
     /// The caller should ensure that `raw_password_string` is a valid and secure password.
     ///
@@ -90,27 +91,35 @@ impl RawPassword {
     }
 }
 
+impl Deref for ValidatedPassword {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[cfg(test)]
-mod raw_password_tests {
-    use crate::models::{PasswordError, RawPassword};
+mod validated_password_tests {
+    use crate::models::{PasswordError, ValidatedPassword};
 
     #[test]
     fn new_fails_on_empty() {
-        let result = RawPassword::new("".to_string());
+        let result = ValidatedPassword::new("".to_string());
 
         assert!(matches!(result, Err(PasswordError::TooWeak(_))));
     }
 
     #[test]
     fn new_fails_on_short_password() {
-        let result = RawPassword::new("imtooshort".to_string());
+        let result = ValidatedPassword::new("imtooshort".to_string());
 
         assert!(matches!(result, Err(PasswordError::TooWeak(_))));
     }
 
     #[test]
     fn new_succeeds_on_long_password() {
-        let result = RawPassword::new("asomewhatlongpassword1".to_string());
+        let result = ValidatedPassword::new("asomewhatlongpassword1".to_string());
 
         assert!(result.is_ok());
     }
@@ -118,14 +127,14 @@ mod raw_password_tests {
 
 #[cfg(test)]
 mod password_hash_tests {
-    use crate::models::{PasswordHash, RawPassword};
+    use crate::models::{PasswordHash, ValidatedPassword};
 
     #[test]
     fn verify_password_succeeds_for_valid_password() {
         let hash = PasswordHash::new_unchecked(
             "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_owned(),
         );
-        let password = RawPassword::new_unchecked("okon".to_owned());
+        let password = ValidatedPassword::new_unchecked("okon".to_owned());
 
         assert!(hash.verify(&password).unwrap());
     }
@@ -135,15 +144,15 @@ mod password_hash_tests {
         let hash = PasswordHash::new_unchecked(
             "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_owned(),
         );
-        let password = RawPassword::new_unchecked("thewrongpassword".to_owned());
+        let password = ValidatedPassword::new_unchecked("thewrongpassword".to_owned());
 
         assert!(!hash.verify(&password).unwrap());
     }
 
     #[test]
     fn hash_password_produces_verifiable_hash() {
-        let password = RawPassword::new("roostersgocockledoodledoo".to_owned()).unwrap();
-        let wrong_password = RawPassword::new("the_wrong_password".to_owned()).unwrap();
+        let password = ValidatedPassword::new("roostersgocockledoodledoo".to_owned()).unwrap();
+        let wrong_password = ValidatedPassword::new("the_wrong_password".to_owned()).unwrap();
         let hash = PasswordHash::new(password.clone()).unwrap();
 
         assert!(hash.verify(&password).unwrap());
@@ -152,7 +161,7 @@ mod password_hash_tests {
 
     #[test]
     fn hash_duplicate_password_produces_unique_hash() {
-        let password = RawPassword::new("turkeysgogobblegobble".to_owned()).unwrap();
+        let password = ValidatedPassword::new("turkeysgogobblegobble".to_owned()).unwrap();
         let hash = PasswordHash::new(password.clone()).unwrap();
         let dupe_hash = PasswordHash::new(password.clone()).unwrap();
 

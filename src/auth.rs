@@ -8,29 +8,34 @@ use axum::{
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
+    Form,
 };
 use axum_extra::extract::{
     cookie::{Cookie, Key, SameSite},
     PrivateCookieJar,
 };
 use email_address::EmailAddress;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::{Duration, OffsetDateTime};
 
 use crate::{
     config::AppState,
     db::{DbError, SelectBy},
-    models::{RawPassword, User, UserID},
+    models::{User, UserID},
     routes::endpoints,
 };
 
-#[derive(Deserialize)]
-pub struct Credentials {
+/// The raw data entered by the user in the log-in form.
+///
+/// The email and password are stored as plain strings. There is no need for validation here since
+/// they will be compared against the email and password in the database, which have been verified.
+#[derive(Serialize, Deserialize)]
+pub struct LogInData {
     /// Email entered during log-in.
-    pub email: EmailAddress,
+    pub email: String,
     /// Password entered during log-in.
-    pub password: RawPassword,
+    pub password: String,
 }
 
 #[derive(Debug)]
@@ -67,17 +72,21 @@ impl IntoResponse for AuthError {
 pub async fn log_in(
     State(state): State<AppState>,
     jar: PrivateCookieJar,
-    Json(user_data): Json<Credentials>,
+    Form(user_data): Form<LogInData>,
 ) -> Result<PrivateCookieJar, AuthError> {
-    let user = User::select(&user_data.email, &state.db_connection().lock().unwrap()).map_err(
-        |e| match e {
+    let email: EmailAddress = match user_data.email.parse() {
+        Ok(email) => email,
+        Err(_) => return Err(AuthError::InvalidCredentials),
+    };
+
+    let user =
+        User::select(&email, &state.db_connection().lock().unwrap()).map_err(|e| match e {
             DbError::NotFound => AuthError::InvalidCredentials,
             _ => {
                 tracing::error!("Error matching user: {e:?}");
                 AuthError::InternalError
             }
-        },
-    )?;
+        })?;
 
     user.password_hash()
         .verify(&user_data.password)
@@ -194,15 +203,15 @@ mod auth_tests {
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
-    use serde_json::json;
 
+    use crate::auth::LogInData;
     use crate::config::AppState;
     use crate::db::initialize;
     use crate::routes::endpoints;
     use crate::{
         auth,
         db::Insert,
-        models::{NewUser, PasswordHash, RawPassword},
+        models::{NewUser, PasswordHash, ValidatedPassword},
     };
 
     fn get_test_app_config() -> AppState {
@@ -217,10 +226,11 @@ mod auth_tests {
     async fn log_in_succeeds_with_valid_credentials() {
         let app_config = get_test_app_config();
 
-        let raw_password = RawPassword::new("averysafeandsecurepassword".to_string()).unwrap();
+        let validated_password =
+            ValidatedPassword::new("averysafeandsecurepassword".to_string()).unwrap();
         let test_user = NewUser {
             email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
+            password_hash: PasswordHash::new(validated_password.clone()).unwrap(),
         }
         .insert(&app_config.db_connection().lock().unwrap())
         .unwrap();
@@ -233,11 +243,10 @@ mod auth_tests {
 
         server
             .post(endpoints::LOG_IN)
-            .content_type("application/json")
-            .json(&json!({
-                "email": &test_user.email(),
-                "password": raw_password,
-            }))
+            .form(&LogInData {
+                email: test_user.email().to_string(),
+                password: validated_password.to_string(),
+            })
             .await
             .assert_status_ok();
     }
@@ -252,9 +261,9 @@ mod auth_tests {
 
         server
             .post(endpoints::LOG_IN)
-            .content_type("application/json")
+            .content_type("application/x-www-form-urlencoded")
             .await
-            .assert_status(StatusCode::BAD_REQUEST);
+            .assert_status(StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[tokio::test]
@@ -267,11 +276,10 @@ mod auth_tests {
 
         server
             .post(endpoints::LOG_IN)
-            .content_type("application/json")
-            .json(&json!({
-                "email": "wrongemail@gmail.com",
-                "password": "definitelyNotTheCorrectPassword",
-            }))
+            .form(&LogInData {
+                email: "wrongemail@gmail.com".to_string(),
+                password: "definitelyNotTheCorrectPassword".to_string(),
+            })
             .await
             .assert_status(StatusCode::UNAUTHORIZED);
     }
@@ -290,12 +298,12 @@ mod auth_guard_tests {
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
-    use serde_json::json;
 
+    use crate::auth::LogInData;
     use crate::{
         auth::{auth_guard, log_in, COOKIE_USER_ID},
         db::{initialize, Insert},
-        models::{NewUser, PasswordHash, RawPassword},
+        models::{NewUser, PasswordHash, ValidatedPassword},
         routes::endpoints,
         AppState,
     };
@@ -316,10 +324,11 @@ mod auth_guard_tests {
     async fn get_protected_route_succeeds_with_valid_cookie() {
         let state = get_test_app_state();
 
-        let raw_password = RawPassword::new("averysafeandsecurepassword".to_owned()).unwrap();
+        let validated_password =
+            ValidatedPassword::new("averysafeandsecurepassword".to_owned()).unwrap();
         let test_user = NewUser {
             email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new(raw_password.clone()).unwrap(),
+            password_hash: PasswordHash::new(validated_password.clone()).unwrap(),
         }
         .insert(&state.db_connection().lock().unwrap())
         .unwrap();
@@ -334,11 +343,10 @@ mod auth_guard_tests {
 
         let response = server
             .post(endpoints::LOG_IN)
-            .content_type("application/json")
-            .json(&json!({
-                "email": &test_user.email(),
-                "password": raw_password,
-            }))
+            .form(&LogInData {
+                email: test_user.email().to_string(),
+                password: validated_password.to_string(),
+            })
             .await;
 
         response.assert_status_ok();

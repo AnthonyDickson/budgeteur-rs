@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::set_auth_cookie,
     db::{DbError, Insert},
-    models::{NewUser, PasswordHash, RawPassword},
+    models::{NewUser, PasswordHash, ValidatedPassword},
     routes::get_internal_server_error_redirect,
     AppState, HtmlTemplate,
 };
@@ -142,7 +142,7 @@ pub async fn create_user(
         }
     };
 
-    let raw_password = match RawPassword::new(user_data.password.to_string()) {
+    let validated_password = match ValidatedPassword::new(user_data.password.to_string()) {
         Ok(password) => password,
         Err(e) => {
             return HtmlTemplate(RegisterFormTemplate {
@@ -158,7 +158,7 @@ pub async fn create_user(
         }
     };
 
-    let password_hash = match PasswordHash::new(raw_password) {
+    let password_hash = match PasswordHash::new(validated_password) {
         Ok(hash) => hash,
         Err(e) => {
             tracing::error!("an error occurred while hashing a password: {e}");

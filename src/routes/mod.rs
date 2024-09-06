@@ -1,22 +1,22 @@
 use askama::Template;
 use axum::{
-    Extension,
     extract::{Path, State},
     http::{StatusCode, Uri},
-    Json,
     middleware,
-    response::{Html, IntoResponse, Redirect, Response}, Router, routing::{get, post},
+    response::{Html, IntoResponse, Redirect, Response},
+    routing::{get, post},
+    Extension, Json, Router,
 };
 use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
 
-use register::{create_user, EmailInputTemplate, get_register_page, PasswordInputTemplate};
+use register::{create_user, get_register_page, EmailInputTemplate, PasswordInputTemplate};
 
 use crate::{
-    AppError,
-    AppState,
     auth::{auth_guard, get_user_id_from_auth_cookie, log_in},
-    db::{Insert, SelectBy}, HtmlTemplate, models::{Category, DatabaseID, NewCategory, NewTransaction, Transaction, UserID},
+    db::{Insert, SelectBy},
+    models::{Category, DatabaseID, NewCategory, NewTransaction, Transaction, UserID},
+    AppError, AppState, HtmlTemplate,
 };
 
 pub mod register;
@@ -264,17 +264,17 @@ mod endpoints_tests {
 
 #[cfg(test)]
 mod root_route_tests {
-    use axum::{middleware, Router, routing::get};
+    use axum::{middleware, routing::get, Router};
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::{
-        AppState,
         auth::auth_guard,
         db::{initialize, Insert},
-        models::{NewUser, PasswordHash, RawPassword},
+        models::{NewUser, PasswordHash, ValidatedPassword},
         routes::{endpoints, get_index_page},
+        AppState,
     };
 
     fn get_test_app_config() -> AppState {
@@ -284,7 +284,7 @@ mod root_route_tests {
 
         NewUser {
             email: EmailAddress::new_unchecked("test@test.com"),
-            password_hash: PasswordHash::new(RawPassword::new_unchecked("test".to_string()))
+            password_hash: PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()))
                 .unwrap(),
         }
         .insert(&db_connection)
@@ -317,22 +317,22 @@ mod root_route_tests {
 mod dashboard_route_tests {
     use axum::{
         middleware,
-        Router,
         routing::{get, post},
+        Router,
     };
     use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
-    use serde_json::json;
     use time::{Duration, OffsetDateTime};
 
+    use crate::auth::LogInData;
     use crate::{
-        AppState,
-        auth::{auth_guard, COOKIE_USER_ID, log_in},
+        auth::{auth_guard, log_in, COOKIE_USER_ID},
         db::{initialize, Insert},
-        models::{NewUser, PasswordHash, RawPassword},
+        models::{NewUser, PasswordHash, ValidatedPassword},
         routes::endpoints,
+        AppState,
     };
 
     use super::get_dashboard_page;
@@ -344,7 +344,7 @@ mod dashboard_route_tests {
 
         NewUser {
             email: EmailAddress::new_unchecked("test@test.com"),
-            password_hash: PasswordHash::new(RawPassword::new_unchecked("test".to_string()))
+            password_hash: PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()))
                 .unwrap(),
         }
         .insert(&db_connection)
@@ -393,10 +393,10 @@ mod dashboard_route_tests {
         let server = get_test_server();
         let mut expired_auth_cookie = server
             .post(endpoints::LOG_IN)
-            .json(&json!({
-                "email": "test@test.com",
-                "password": "test"
-            }))
+            .form(&LogInData {
+                email: "test@test.com".to_string(),
+                password: "test".to_string(),
+            })
             .await
             .cookie(COOKIE_USER_ID);
 
@@ -417,10 +417,10 @@ mod dashboard_route_tests {
 
         let auth_cookie = server
             .post(endpoints::LOG_IN)
-            .json(&json!({
-                "email": "test@test.com",
-                "password": "test"
-            }))
+            .form(&LogInData {
+                email: "test@test.com".to_string(),
+                password: "test".to_string(),
+            })
             .await
             .cookie(COOKIE_USER_ID);
 
@@ -436,16 +436,16 @@ mod dashboard_route_tests {
 mod category_tests {
     use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
-    use email_address::EmailAddress;
     use rusqlite::Connection;
     use serde_json::json;
 
+    use crate::auth::LogInData;
     use crate::{
-        AppState,
         auth::COOKIE_USER_ID,
         db::initialize,
         models::{Category, CategoryName, UserID},
         routes::endpoints,
+        AppState,
     };
 
     use super::{build_router, register::RegisterForm};
@@ -548,15 +548,15 @@ mod category_tests {
     async fn get_category_fails_on_wrong_user() {
         let (server, _, _, category) = create_app_with_user_and_category().await;
 
-        let email = "test2@test.com";
-        let password = "averylongandsecurepassword";
+        let email = "test2@test.com".to_string();
+        let password = "averylongandsecurepassword".to_string();
 
         let response = server
             .post(endpoints::USERS)
             .form(&RegisterForm {
-                email: email.to_string(),
-                password: password.to_string(),
-                confirm_password: password.to_string(),
+                email: email.clone(),
+                password: password.clone(),
+                confirm_password: password.clone(),
             })
             .await;
 
@@ -564,11 +564,10 @@ mod category_tests {
 
         let auth_cookie = server
             .post(endpoints::LOG_IN)
-            .content_type("application/json")
-            .json(&json!({
-                "email": EmailAddress::new_unchecked(email),
-                "password": password
-            }))
+            .form(&LogInData {
+                email: email.clone(),
+                password: password.clone(),
+            })
             .await
             .cookie(COOKIE_USER_ID);
 
@@ -588,12 +587,13 @@ mod transaction_tests {
     use serde_json::json;
     use time::OffsetDateTime;
 
+    use crate::auth::LogInData;
     use crate::{
-        AppState,
         auth::COOKIE_USER_ID,
         db::initialize,
         models::{Category, Transaction, UserID},
         routes::endpoints,
+        AppState,
     };
 
     use super::{build_router, register::RegisterForm};
@@ -611,15 +611,15 @@ mod transaction_tests {
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
-        let email = "test@test.com";
-        let password = "averysafeandsecurepassword";
+        let email = "test@test.com".to_string();
+        let password = "averysafeandsecurepassword".to_string();
 
         let response = server
             .post(endpoints::USERS)
             .form(&RegisterForm {
-                email: email.to_string(),
-                password: password.to_string(),
-                confirm_password: password.to_string(),
+                email: email.clone(),
+                password: password.clone(),
+                confirm_password: password.clone(),
             })
             .await;
 
@@ -627,11 +627,7 @@ mod transaction_tests {
 
         let response = server
             .post(endpoints::LOG_IN)
-            .content_type("application/json")
-            .json(&json!({
-                "email": email,
-                "password": password,
-            }))
+            .form(&LogInData { email, password })
             .await;
 
         response.assert_status_ok();
@@ -755,15 +751,15 @@ mod transaction_tests {
             .await
             .json::<Transaction>();
 
-        let email = "test2@test.com";
-        let password = "averystrongandsecurepassword";
+        let email = "test2@test.com".to_string();
+        let password = "averystrongandsecurepassword".to_string();
 
         let response = server
             .post(endpoints::USERS)
             .form(&RegisterForm {
-                email: email.to_string(),
-                password: password.to_string(),
-                confirm_password: password.to_string(),
+                email: email.clone(),
+                password: password.clone(),
+                confirm_password: password.clone(),
             })
             .await;
 
@@ -771,11 +767,7 @@ mod transaction_tests {
 
         let auth_cookie = server
             .post(endpoints::LOG_IN)
-            .content_type("application/json")
-            .json(&json!({
-                "email": email,
-                "password": password
-            }))
+            .form(&LogInData { email, password })
             .await
             .cookie(COOKIE_USER_ID);
 
