@@ -1,26 +1,27 @@
 use std::time::Duration;
 
 use askama::Template;
-use auth::AuthError;
 use axum::{
     http::StatusCode,
-    response::{IntoResponse, Response},
     Json,
+    response::{IntoResponse, Response},
 };
 use axum_extra::response::Html;
 use axum_server::Handle;
 use serde_json::json;
 use tokio::signal;
 
+use auth::AuthError;
+pub use config::AppState;
+pub use routes::build_router;
+
+use crate::db::DbError;
+
 mod auth;
 mod config;
 pub mod db;
 pub mod models;
 mod routes;
-
-use crate::db::DbError;
-pub use config::AppState;
-pub use routes::build_router;
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
 /// then signals the server to shut down gracefully.
@@ -59,7 +60,7 @@ pub async fn graceful_shutdown(handle: Handle) {
 enum AppError {
     /// The requested resource was not found. The client should check that the parameters (e.g., ID) are correct and that the resource has been created.
     NotFound,
-    /// An error occurred whlie accessing the application's database. This may be due to a database constraint being violated (e.g., foreign keys).
+    /// An error occurred while accessing the application's database. This may be due to a database constraint being violated (e.g., foreign keys).
     DatabaseError(DbError),
     /// The user is not authenticated/authorized to access the given resource.
     AuthError(AuthError),

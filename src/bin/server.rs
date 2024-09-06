@@ -10,13 +10,13 @@ use axum::{
     extract::{MatchedPath, Request},
     Router,
 };
-use axum_server::{tls_rustls::RustlsConfig, Handle};
+use axum_server::{Handle, tls_rustls::RustlsConfig};
 use clap::Parser;
 use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
-use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use tracing_subscriber::{filter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
-use backrooms_rs::{build_router, graceful_shutdown, AppState};
+use backrooms_rs::{AppState, build_router, graceful_shutdown};
 
 /// The REST API server for backrooms_rs.
 #[derive(Parser, Debug)]
@@ -102,7 +102,7 @@ fn add_tracing_layer(router: Router) -> Router {
 
             tracing::debug_span!("request", %method, %uri, matched_path)
         })
-        // By default `TraceLayer` will log 5xx responses but we're doing our specific
+        // By default, `TraceLayer` will log 5xx responses but we're doing our specific
         // logging of errors so disable that
         .on_failure(());
 

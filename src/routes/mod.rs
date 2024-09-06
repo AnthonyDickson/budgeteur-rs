@@ -1,22 +1,22 @@
 use askama::Template;
 use axum::{
+    Extension,
     extract::{Path, State},
     http::{StatusCode, Uri},
+    Json,
     middleware,
-    response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post},
-    Extension, Json, Router,
+    response::{Html, IntoResponse, Redirect, Response}, Router, routing::{get, post},
 };
 use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
 
-use register::{create_user, get_register_page, EmailInputTemplate, PasswordInputTemplate};
+use register::{create_user, EmailInputTemplate, get_register_page, PasswordInputTemplate};
 
 use crate::{
+    AppError,
+    AppState,
     auth::{auth_guard, get_user_id_from_auth_cookie, log_in},
-    db::{Insert, SelectBy},
-    models::{Category, DatabaseID, NewCategory, NewTransaction, Transaction, UserID},
-    AppError, AppState, HtmlTemplate,
+    db::{Insert, SelectBy}, HtmlTemplate, models::{Category, DatabaseID, NewCategory, NewTransaction, Transaction, UserID},
 };
 
 pub mod register;
@@ -264,17 +264,17 @@ mod endpoints_tests {
 
 #[cfg(test)]
 mod root_route_tests {
-    use axum::{middleware, routing::get, Router};
+    use axum::{middleware, Router, routing::get};
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
     use crate::{
+        AppState,
         auth::auth_guard,
         db::{initialize, Insert},
         models::{NewUser, PasswordHash, RawPassword},
         routes::{endpoints, get_index_page},
-        AppState,
     };
 
     fn get_test_app_config() -> AppState {
@@ -294,7 +294,7 @@ mod root_route_tests {
     }
 
     #[tokio::test]
-    async fn root_redirects_to_dashbord() {
+    async fn root_redirects_to_dashboard() {
         let app_state = get_test_app_config();
         let app = Router::new()
             .route(endpoints::ROOT, get(get_index_page))
@@ -317,8 +317,8 @@ mod root_route_tests {
 mod dashboard_route_tests {
     use axum::{
         middleware,
-        routing::{get, post},
         Router,
+        routing::{get, post},
     };
     use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
@@ -328,11 +328,11 @@ mod dashboard_route_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::{auth_guard, log_in, COOKIE_USER_ID},
+        AppState,
+        auth::{auth_guard, COOKIE_USER_ID, log_in},
         db::{initialize, Insert},
         models::{NewUser, PasswordHash, RawPassword},
         routes::endpoints,
-        AppState,
     };
 
     use super::get_dashboard_page;
@@ -441,11 +441,11 @@ mod category_tests {
     use serde_json::json;
 
     use crate::{
+        AppState,
         auth::COOKIE_USER_ID,
         db::initialize,
         models::{Category, CategoryName, UserID},
         routes::endpoints,
-        AppState,
     };
 
     use super::{build_router, register::RegisterForm};
@@ -589,11 +589,11 @@ mod transaction_tests {
     use time::OffsetDateTime;
 
     use crate::{
+        AppState,
         auth::COOKIE_USER_ID,
         db::initialize,
         models::{Category, Transaction, UserID},
         routes::endpoints,
-        AppState,
     };
 
     use super::{build_router, register::RegisterForm};

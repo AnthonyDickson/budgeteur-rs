@@ -16,7 +16,7 @@ The application consists of a single REST server that renders and serves HTML di
     ```shell
     SECRET=YOUR_SECRET_HERE cargo run -- --db-path test.db --cert-path path/to/cert_and_key_pem
     ```
-    By default this will serve on port 3000.
+    By default, this will serve on port 3000.
 
     If you want to automatically recompile and restart the server you can use the following command:
     ```shell

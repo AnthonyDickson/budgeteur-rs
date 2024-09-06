@@ -1,4 +1,4 @@
-/*! This module defines and implements traits for interacting with the applications database. */
+/*! This module defines and implements traits for interacting with the application's database. */
 
 use std::fmt::Display;
 
@@ -759,7 +759,7 @@ mod user_tests {
     use rusqlite::Connection;
 
     use crate::{
-        db::{initialize, DbError, Insert, SelectBy, User},
+        db::{DbError, initialize, Insert, SelectBy, User},
         models::{NewUser, PasswordHash},
     };
 
@@ -870,7 +870,7 @@ mod category_tests {
     use rusqlite::Connection;
 
     use crate::{
-        db::{initialize, Category, CategoryName, DbError, SelectBy, User, UserID},
+        db::{Category, CategoryName, DbError, initialize, SelectBy, User, UserID},
         models::{NewCategory, NewUser, PasswordHash},
     };
 
@@ -1009,7 +1009,7 @@ mod transaction_tests {
     use time::{Date, Month, OffsetDateTime, Time};
 
     use crate::{
-        db::{initialize, Category, DbError, SelectBy, Transaction, User},
+        db::{Category, DbError, initialize, SelectBy, Transaction, User},
         models::{CategoryName, NewCategory, NewTransaction, NewUser, PasswordHash, UserID},
     };
 
@@ -1189,7 +1189,7 @@ mod transaction_tests {
     }
 
     #[test]
-    fn select_transactions_by_user_id_suceeds_with_no_transactions() {
+    fn select_transactions_by_user_id_succeeds_with_no_transactions() {
         let (conn, test_user, _category) = create_database_and_insert_test_user_and_category();
 
         let expected_transactions = vec![];
@@ -1326,7 +1326,7 @@ mod recurring_transaction_tests {
         PasswordHash, Transaction, User,
     };
 
-    use super::{initialize, Category, Insert};
+    use super::{Category, initialize, Insert};
 
     fn init_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

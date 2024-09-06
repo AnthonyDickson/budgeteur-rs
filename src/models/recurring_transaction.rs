@@ -36,7 +36,7 @@ impl TryFrom<i64> for Frequency {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 #[error("invalid recurring transaction: {0}")]
 pub struct RecurringTransactionError(pub String);
 
@@ -165,7 +165,7 @@ mod recurring_transaction_tests {
     use time::{Date, Duration, Month, OffsetDateTime, Time};
 
     use crate::models::{
-        recurring_transaction::RecurringTransactionError, Frequency, RecurringTransaction,
+        Frequency, recurring_transaction::RecurringTransactionError, RecurringTransaction,
         Transaction, UserID,
     };
 
@@ -234,7 +234,7 @@ mod new_recurring_transaction_tests {
     use time::{Date, Duration, Month, OffsetDateTime, Time};
 
     use crate::models::{
-        recurring_transaction::RecurringTransactionError, Frequency, NewRecurringTransaction,
+        Frequency, NewRecurringTransaction, recurring_transaction::RecurringTransactionError,
         Transaction, UserID,
     };
 

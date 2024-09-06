@@ -64,7 +64,7 @@ mod ratio_tests {
     }
 }
 
-/// The amount of an income transaction that should counted as savings.
+/// The amount of an income transaction that should count as savings.
 ///
 /// This object must be attached to an existing transaction and cannot exist independently.
 ///

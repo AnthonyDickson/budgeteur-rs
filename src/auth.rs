@@ -60,7 +60,7 @@ impl IntoResponse for AuthError {
 ///
 /// # Errors
 ///
-/// This function will return an error in a few situtations.
+/// This function will return an error in a few situations.
 /// - The email does not belong to a registered user.
 /// - The password is not correct.
 /// - An internal error occurred when verifying the password.
@@ -121,7 +121,7 @@ pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<User
 }
 
 /// Middleware function that checks for a valid authorization cookie.
-/// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the sign in page is returned.
+/// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the log-in page is returned.
 ///
 /// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
 ///
@@ -342,11 +342,11 @@ mod auth_guard_tests {
             .await;
 
         response.assert_status_ok();
-        let auth_coookie = response.cookie(COOKIE_USER_ID);
+        let auth_cookie = response.cookie(COOKIE_USER_ID);
 
         server
             .get("/protected")
-            .add_cookie(auth_coookie)
+            .add_cookie(auth_cookie)
             .await
             .assert_status_ok();
     }
