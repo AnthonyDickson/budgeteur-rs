@@ -21,12 +21,14 @@ use crate::{
     AppState, HtmlTemplate,
 };
 
-use super::endpoints;
+use super::{
+    common_templates::{EmailInputTemplate, PasswordInputTemplate},
+    endpoints,
+};
 
 /// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).
 const PASSWORD_INPUT_MIN_LENGTH: usize = 8;
 
-// TODO: Move templates to own module?
 #[derive(Template)]
 #[template(path = "views/register.html")]
 struct RegisterPageTemplate<'a> {
@@ -53,21 +55,6 @@ impl Default for RegisterFormTemplate<'_> {
             confirm_password_input: ConfirmPasswordInputTemplate::default(),
         }
     }
-}
-
-#[derive(Template, Default)]
-#[template(path = "partials/register/inputs/email.html")]
-pub struct EmailInputTemplate<'a> {
-    pub value: &'a str,
-    pub error_message: &'a str,
-}
-
-#[derive(Template, Default)]
-#[template(path = "partials/register/inputs/password.html")]
-pub struct PasswordInputTemplate<'a> {
-    pub value: &'a str,
-    pub min_length: usize,
-    pub error_message: &'a str,
 }
 
 #[derive(Template, Default)]

@@ -14,8 +14,8 @@ use crate::{
 };
 
 use super::{
+    common_templates::{EmailInputTemplate, PasswordInputTemplate},
     endpoints,
-    register::{EmailInputTemplate, PasswordInputTemplate},
 };
 
 #[derive(Template)]

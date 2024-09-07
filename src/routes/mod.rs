@@ -20,6 +20,7 @@ use crate::{
     AppError, AppState, HtmlTemplate,
 };
 
+mod common_templates;
 pub mod log_in;
 pub mod register;
 
