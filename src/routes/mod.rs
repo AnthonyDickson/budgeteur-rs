@@ -5,7 +5,7 @@ use axum::{
     middleware,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
-    Extension, Json, Router,
+    Extension, Form, Json, Router,
 };
 use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
@@ -13,7 +13,10 @@ use axum_htmx::HxRedirect;
 use register::{create_user, get_register_page, EmailInputTemplate, PasswordInputTemplate};
 
 use crate::{
-    auth::{auth_guard, get_user_id_from_auth_cookie, log_in},
+    auth::{
+        auth_guard, get_user_id_from_auth_cookie, set_auth_cookie, verify_credentials, AuthError,
+        LogInData,
+    },
     db::{Insert, SelectBy},
     models::{Category, DatabaseID, NewCategory, NewTransaction, Transaction, UserID},
     AppError, AppState, HtmlTemplate,
@@ -145,6 +148,54 @@ async fn get_log_in_page() -> Response {
     HtmlTemplate(LogInTemplate::default()).into_response()
 }
 
+/// Handler for log-in requests via the POST method.
+///
+/// On a successful log-in request, the auth cookie set and the client is redirected to the dashboard page.
+/// Otherwise, the form is return with an error message explaining the problem.
+///
+/// # Errors
+///
+/// This function will return an error in a few situations.
+/// - The email does not belong to a registered user.
+/// - The password is not correct.
+/// - An internal error occurred when verifying the password.
+async fn log_in(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Form(user_data): Form<LogInData>,
+) -> Response {
+    verify_credentials(user_data.clone(), &state.db_connection().lock().unwrap())
+        .map(|user| {
+            let jar = set_auth_cookie(jar, user.id());
+
+            (
+                StatusCode::SEE_OTHER,
+                HxRedirect(Uri::from_static(endpoints::DASHBOARD)),
+                jar,
+            )
+        })
+        .map_err(|e| {
+            HtmlTemplate(LogInFormTemplate {
+                email_input: EmailInputTemplate {
+                    value: &user_data.email,
+                    error_message: "",
+                },
+                password_input: PasswordInputTemplate {
+                    value: "",
+                    min_length: 0,
+                    error_message: match e {
+                        AuthError::InvalidCredentials => "Incorrect email or password.",
+                        AuthError::InternalError => {
+                            "An internal error occurred. Please try again later."
+                        }
+                    },
+                },
+                ..Default::default()
+            })
+        })
+        .into_response()
+}
+
 /// A route handler for creating a new category.
 ///
 /// # Panics
@@ -238,6 +289,109 @@ async fn get_transaction(
         .map(|transaction| (StatusCode::OK, Json(transaction)))
 }
 
+#[cfg(test)]
+mod log_in_tests {
+    use axum::{http::StatusCode, routing::post, Router};
+    use axum_test::TestServer;
+    use email_address::EmailAddress;
+    use rusqlite::Connection;
+
+    use crate::{
+        auth::LogInData,
+        db::{initialize, Insert},
+        models::{NewUser, PasswordHash, ValidatedPassword},
+        routes::{endpoints, log_in},
+        AppState,
+    };
+
+    fn get_test_app_config() -> AppState {
+        let db_connection =
+            Connection::open_in_memory().expect("Could not open database in memory.");
+        initialize(&db_connection).expect("Could not initialize database.");
+
+        NewUser {
+            email: EmailAddress::new_unchecked("test@test.com"),
+            password_hash: PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()))
+                .unwrap(),
+        }
+        .insert(&db_connection)
+        .unwrap();
+
+        AppState::new(db_connection, "42".to_string())
+    }
+
+    #[tokio::test]
+    async fn log_in_succeeds_with_valid_credentials() {
+        let app = Router::new()
+            .route(endpoints::LOG_IN, post(log_in))
+            .with_state(get_test_app_config());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        server
+            .post(endpoints::LOG_IN)
+            .form(&LogInData {
+                email: "test@test.com".to_string(),
+                password: "test".to_string(),
+            })
+            .await
+            .assert_status(StatusCode::SEE_OTHER);
+    }
+
+    #[tokio::test]
+    async fn log_in_fails_with_missing_credentials() {
+        let app = Router::new()
+            .route(endpoints::LOG_IN, post(log_in))
+            .with_state(get_test_app_config());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        server
+            .post(endpoints::LOG_IN)
+            .content_type("application/x-www-form-urlencoded")
+            .await
+            .assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn log_in_fails_with_incorrect_email() {
+        let app = Router::new()
+            .route(endpoints::LOG_IN, post(log_in))
+            .with_state(get_test_app_config());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        server
+            .post(endpoints::LOG_IN)
+            .form(&LogInData {
+                email: "wrong@email.com".to_string(),
+                password: "test".to_string(),
+            })
+            .await
+            .text()
+            .contains("invalid");
+    }
+
+    #[tokio::test]
+    async fn log_in_fails_with_incorrect_password() {
+        let app = Router::new()
+            .route(endpoints::LOG_IN, post(log_in))
+            .with_state(get_test_app_config());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        server
+            .post(endpoints::LOG_IN)
+            .form(&LogInData {
+                email: "test@test.com".to_string(),
+                password: "wrongpassword".to_string(),
+            })
+            .await
+            .text()
+            .contains("invalid");
+    }
+}
+
 // These tests are here so that we know when we call `Uri::from_shared` it will not panic.
 #[cfg(test)]
 mod endpoints_tests {
@@ -328,14 +482,14 @@ mod dashboard_route_tests {
 
     use crate::auth::LogInData;
     use crate::{
-        auth::{auth_guard, log_in, COOKIE_USER_ID},
+        auth::{auth_guard, COOKIE_USER_ID},
         db::{initialize, Insert},
         models::{NewUser, PasswordHash, ValidatedPassword},
         routes::endpoints,
         AppState,
     };
 
-    use super::get_dashboard_page;
+    use super::{get_dashboard_page, log_in};
 
     fn get_test_server() -> TestServer {
         let db_connection =
@@ -630,7 +784,7 @@ mod transaction_tests {
             .form(&LogInData { email, password })
             .await;
 
-        response.assert_status_ok();
+        response.assert_status_see_other();
         let auth_cookie = response.cookie(COOKIE_USER_ID);
 
         // TODO: Implement a way to get the user id from the auth cookie. For now, just guess the user id.

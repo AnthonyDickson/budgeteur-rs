@@ -8,13 +8,13 @@ use axum::{
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
-    Form,
 };
 use axum_extra::extract::{
     cookie::{Cookie, Key, SameSite},
     PrivateCookieJar,
 };
 use email_address::EmailAddress;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::{Duration, OffsetDateTime};
@@ -30,7 +30,7 @@ use crate::{
 ///
 /// The email and password are stored as plain strings. There is no need for validation here since
 /// they will be compared against the email and password in the database, which have been verified.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct LogInData {
     /// Email entered during log-in.
     pub email: String,
@@ -61,7 +61,7 @@ impl IntoResponse for AuthError {
     }
 }
 
-/// Handler for log-in requests.
+/// Verify the user `credentials` against the data in the database `connection`.
 ///
 /// # Errors
 ///
@@ -69,40 +69,35 @@ impl IntoResponse for AuthError {
 /// - The email does not belong to a registered user.
 /// - The password is not correct.
 /// - An internal error occurred when verifying the password.
-pub async fn log_in(
-    State(state): State<AppState>,
-    jar: PrivateCookieJar,
-    Form(user_data): Form<LogInData>,
-) -> Result<PrivateCookieJar, AuthError> {
-    let email: EmailAddress = match user_data.email.parse() {
-        Ok(email) => email,
-        Err(_) => return Err(AuthError::InvalidCredentials),
-    };
+pub fn verify_credentials(
+    credentials: LogInData,
+    connection: &Connection,
+) -> Result<User, AuthError> {
+    let email: EmailAddress = credentials
+        .email
+        .parse()
+        .map_err(|_| AuthError::InvalidCredentials)?;
 
-    let user =
-        User::select(&email, &state.db_connection().lock().unwrap()).map_err(|e| match e {
-            DbError::NotFound => AuthError::InvalidCredentials,
-            _ => {
-                tracing::error!("Error matching user: {e:?}");
-                AuthError::InternalError
-            }
+    let user = User::select(&email, connection).map_err(|e| match e {
+        DbError::NotFound => AuthError::InvalidCredentials,
+        _ => {
+            tracing::error!("Error matching user: {e}");
+            AuthError::InternalError
+        }
+    })?;
+
+    let is_password_correct = user
+        .password_hash()
+        .verify(&credentials.password)
+        .map_err(|e| {
+            tracing::error!("Error verifying password: {e}");
+            AuthError::InternalError
         })?;
 
-    user.password_hash()
-        .verify(&user_data.password)
-        .map_err(|e| {
-            tracing::error!("Error verifying password: {}", e);
-            AuthError::InternalError
-        })
-        .map(|password_is_correct| {
-            if password_is_correct {
-                let updated_jar = set_auth_cookie(jar, user.id());
-
-                Ok(updated_jar)
-            } else {
-                Err(AuthError::InvalidCredentials)
-            }
-        })?
+    match is_password_correct {
+        true => Ok(user),
+        false => Err(AuthError::InvalidCredentials),
+    }
 }
 
 pub(crate) const COOKIE_USER_ID: &str = "user_id";
@@ -199,17 +194,13 @@ mod cookie_tests {
 mod auth_tests {
     use std::str::FromStr;
 
-    use axum::{http::StatusCode, routing::post, Router};
-    use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::auth::LogInData;
+    use crate::auth::{verify_credentials, AuthError, LogInData};
     use crate::config::AppState;
     use crate::db::initialize;
-    use crate::routes::endpoints;
     use crate::{
-        auth,
         db::Insert,
         models::{NewUser, PasswordHash, ValidatedPassword},
     };
@@ -224,7 +215,7 @@ mod auth_tests {
 
     #[tokio::test]
     async fn log_in_succeeds_with_valid_credentials() {
-        let app_config = get_test_app_config();
+        let app_state = get_test_app_config();
 
         let validated_password =
             ValidatedPassword::new("averysafeandsecurepassword".to_string()).unwrap();
@@ -232,56 +223,28 @@ mod auth_tests {
             email: EmailAddress::from_str("foo@bar.baz").unwrap(),
             password_hash: PasswordHash::new(validated_password.clone()).unwrap(),
         }
-        .insert(&app_config.db_connection().lock().unwrap())
+        .insert(&app_state.db_connection().lock().unwrap())
         .unwrap();
 
-        let app = Router::new()
-            .route(endpoints::LOG_IN, post(auth::log_in))
-            .with_state(app_config);
+        let user_data = LogInData {
+            email: test_user.email().to_string(),
+            password: validated_password.to_string(),
+        };
 
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: test_user.email().to_string(),
-                password: validated_password.to_string(),
-            })
-            .await
-            .assert_status_ok();
-    }
-
-    #[tokio::test]
-    async fn log_in_fails_with_missing_credentials() {
-        let app = Router::new()
-            .route(endpoints::LOG_IN, post(auth::log_in))
-            .with_state(get_test_app_config());
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        server
-            .post(endpoints::LOG_IN)
-            .content_type("application/x-www-form-urlencoded")
-            .await
-            .assert_status(StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(verify_credentials(user_data, &app_state.db_connection().lock().unwrap()).is_ok());
     }
 
     #[tokio::test]
     async fn log_in_fails_with_invalid_credentials() {
-        let app = Router::new()
-            .route(endpoints::LOG_IN, post(auth::log_in))
-            .with_state(get_test_app_config());
+        let app_state = get_test_app_config();
+        let user_data = LogInData {
+            email: "wrongemail@gmail.com".to_string(),
+            password: "definitelyNotTheCorrectPassword".to_string(),
+        };
 
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let result = verify_credentials(user_data, &app_state.db_connection().lock().unwrap());
 
-        server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: "wrongemail@gmail.com".to_string(),
-                password: "definitelyNotTheCorrectPassword".to_string(),
-            })
-            .await
-            .assert_status(StatusCode::UNAUTHORIZED);
+        assert!(matches!(result, Err(AuthError::InvalidCredentials)));
     }
 }
 
@@ -289,24 +252,26 @@ mod auth_tests {
 mod auth_guard_tests {
     use std::str::FromStr;
 
-    use axum::{
-        middleware,
-        routing::{get, post},
-        Router,
-    };
-    use axum_extra::response::Html;
+    use axum::extract::State;
+    use axum::routing::post;
+    use axum::Form;
+    use axum::{middleware, routing::get, Router};
+    use axum_extra::extract::cookie::Cookie;
+    use axum_extra::{extract::PrivateCookieJar, response::Html};
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::auth::LogInData;
+    use crate::auth::{set_auth_cookie, LogInData};
     use crate::{
-        auth::{auth_guard, log_in, COOKIE_USER_ID},
+        auth::{auth_guard, verify_credentials, COOKIE_USER_ID},
         db::{initialize, Insert},
         models::{NewUser, PasswordHash, ValidatedPassword},
         routes::endpoints,
         AppState,
     };
+
+    use super::AuthError;
 
     fn get_test_app_state() -> AppState {
         let db_connection =
@@ -318,6 +283,15 @@ mod auth_guard_tests {
 
     async fn test_handler() -> Html<&'static str> {
         Html("<h1>Hello, World!</h1>")
+    }
+
+    async fn test_log_in_route(
+        State(state): State<AppState>,
+        jar: PrivateCookieJar,
+        Form(user_data): Form<LogInData>,
+    ) -> Result<PrivateCookieJar, AuthError> {
+        verify_credentials(user_data, &state.db_connection().lock().unwrap())
+            .map(|user| Ok(set_auth_cookie(jar, user.id())))?
     }
 
     #[tokio::test]
@@ -336,8 +310,8 @@ mod auth_guard_tests {
         let app = Router::new()
             .route("/protected", get(test_handler))
             .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::LOG_IN, post(log_in))
-            .with_state(state);
+            .route(endpoints::LOG_IN, post(test_log_in_route))
+            .with_state(state.clone());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
@@ -370,6 +344,25 @@ mod auth_guard_tests {
         let server = TestServer::new(app).expect("Could not create test server.");
 
         let response = server.get("/protected").await;
+
+        response.assert_status_see_other();
+        assert_eq!(response.header("location"), endpoints::LOG_IN);
+    }
+
+    #[tokio::test]
+    async fn get_protected_route_with_invalid_auth_cookie_redirects_to_log_in() {
+        let state = get_test_app_state();
+        let app = Router::new()
+            .route("/protected", get(test_handler))
+            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
+            .with_state(state);
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let response = server
+            .get("/protected")
+            .add_cookie(Cookie::build((COOKIE_USER_ID, "1")).build())
+            .await;
 
         response.assert_status_see_other();
         assert_eq!(response.header("location"), endpoints::LOG_IN);
