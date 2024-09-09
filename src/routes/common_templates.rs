@@ -16,3 +16,17 @@ pub struct PasswordInputTemplate<'a> {
     pub min_length: usize,
     pub error_message: &'a str,
 }
+
+#[derive(Template)]
+#[template(path = "components/nav_link.html")]
+pub struct Link<'a> {
+    pub url: &'a str,
+    pub title: &'a str,
+    pub is_current: bool,
+}
+
+#[derive(Template)]
+#[template(path = "partials/navbar.html")]
+pub struct NavbarTemplate<'a> {
+    pub links: Vec<Link<'a>>,
+}

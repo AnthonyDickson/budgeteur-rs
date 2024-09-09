@@ -10,7 +10,9 @@ use axum::{
 use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
 
+use common_templates::{Link, NavbarTemplate};
 use log_in::{get_log_in_page, post_log_in};
+use log_out::get_log_out;
 use register::{create_user, get_register_page};
 
 use crate::{
@@ -21,23 +23,10 @@ use crate::{
 };
 
 mod common_templates;
+pub mod endpoints;
 pub mod log_in;
+mod log_out;
 pub mod register;
-
-/// The API endpoints URIs.
-pub mod endpoints {
-    pub const COFFEE: &str = "/coffee";
-    pub const DASHBOARD: &str = "/dashboard";
-    pub const ROOT: &str = "/";
-    pub const LOG_IN: &str = "/log_in";
-    pub const REGISTER: &str = "/register";
-    pub const USERS: &str = "/users";
-    pub const CATEGORIES: &str = "/categories";
-    pub const CATEGORY: &str = "/categories/:category_id";
-    pub const TRANSACTIONS: &str = "/transactions";
-    pub const TRANSACTION: &str = "/transactions/:transaction_id";
-    pub const INTERNAL_ERROR: &str = "/error";
-}
 
 // TODO: Update existing routes to respond with HTML
 /// Return a router with all the app's routes.
@@ -46,6 +35,7 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::COFFEE, get(get_coffee))
         .route(endpoints::LOG_IN, get(get_log_in_page))
         .route(endpoints::LOG_IN, post(post_log_in))
+        .route(endpoints::LOG_OUT, get(get_log_out))
         .route(endpoints::REGISTER, get(get_register_page))
         .route(endpoints::USERS, post(create_user))
         .route(
@@ -108,14 +98,30 @@ async fn get_404_not_found() -> Response {
 
 #[derive(Template)]
 #[template(path = "views/dashboard.html")]
-struct DashboardTemplate {
+struct DashboardTemplate<'a> {
+    navbar: NavbarTemplate<'a>,
     user_id: UserID,
 }
 
-// TODO: Add log out button.
 /// Display a page with an overview of the user's data.
 async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
-    HtmlTemplate(DashboardTemplate { user_id }).into_response()
+    // TODO: Create function that returns this list, with the item matching the URL argument being marked as the current link.
+    let links = vec![
+        Link {
+            url: endpoints::DASHBOARD,
+            title: "Dashboard",
+            is_current: true,
+        },
+        Link {
+            url: endpoints::LOG_OUT,
+            title: "Log out",
+            is_current: false,
+        },
+    ];
+
+    let navbar = NavbarTemplate { links };
+
+    HtmlTemplate(DashboardTemplate { navbar, user_id }).into_response()
 }
 
 /// A route handler for creating a new category.
@@ -349,7 +355,8 @@ mod dashboard_route_tests {
             .await
             .cookie(COOKIE_USER_ID);
 
-        expired_auth_cookie.set_expires(OffsetDateTime::now_utc() - Duration::weeks(1));
+        expired_auth_cookie.set_max_age(Duration::ZERO);
+        expired_auth_cookie.set_expires(OffsetDateTime::UNIX_EPOCH);
 
         let response = server
             .get(endpoints::DASHBOARD)

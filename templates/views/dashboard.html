@@ -1,2 +1,4 @@
 {% extends "base.html" %} {% block title %}Home{% endblock %} {% block content
-%} Hello, you are user #{{ user_id }}. {% endblock %}
+%} {{ navbar|safe }}
+<p>Hello, you are user #{{ user_id }}.</p>
+{% endblock %}

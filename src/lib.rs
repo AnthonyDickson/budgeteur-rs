@@ -3,8 +3,8 @@ use std::time::Duration;
 use askama::Template;
 use axum::{
     http::StatusCode,
-    Json,
     response::{IntoResponse, Response},
+    Json,
 };
 use axum_extra::response::Html;
 use axum_server::Handle;
@@ -126,13 +126,13 @@ const INTERNAL_SERVER_ERROR_HTML: &str = "
 /// # use backrooms_rs::{HtmlTemplate, models::UserID};
 ///
 /// #[derive(Template)]
-/// #[template(path = "views/dashboard.html")]
-/// struct DashboardTemplate {
+/// #[template(source = "<p>Hello, User #{{ user_id }}!</p>", ext = "html")]
+/// struct HelloUserTemplate {
 ///     user_id: UserID,
 /// }
 ///
 /// async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
-///    HtmlTemplate(DashboardTemplate { user_id }).into_response()
+///     HtmlTemplate(HelloUserTemplate { user_id }).into_response()
 /// }
 /// ```
 pub struct HtmlTemplate<T>(pub T);

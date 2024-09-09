@@ -101,14 +101,28 @@ pub fn verify_credentials(
 }
 
 pub(crate) const COOKIE_USER_ID: &str = "user_id";
-const COOKIE_DURATION_MINUTES: i64 = 15;
+const COOKIE_DURATION_MINUTES: i64 = 5;
 
+/// Add an auth cookie to the cookie jar, indicating that a user is logged in and authenticated.
 pub(crate) fn set_auth_cookie(jar: PrivateCookieJar, user_id: UserID) -> PrivateCookieJar {
     jar.add(
         Cookie::build((COOKIE_USER_ID, user_id.as_i64().to_string()))
+            .max_age(Duration::minutes(COOKIE_DURATION_MINUTES))
             .expires(OffsetDateTime::now_utc() + Duration::minutes(COOKIE_DURATION_MINUTES))
             .http_only(true)
-            .same_site(SameSite::Lax)
+            .same_site(SameSite::Strict)
+            .secure(true),
+    )
+}
+
+/// Set the auth cookie to an invalid value and set its max age to zero, which should delete the cookie on the client side.
+pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar {
+    jar.add(
+        Cookie::build((COOKIE_USER_ID, "deleted"))
+            .max_age(Duration::ZERO)
+            .expires(OffsetDateTime::UNIX_EPOCH)
+            .http_only(true)
+            .same_site(SameSite::Strict)
             .secure(true),
     )
 }
@@ -149,15 +163,19 @@ pub async fn auth_guard(State(state): State<AppState>, request: Request, next: N
 
 #[cfg(test)]
 mod cookie_tests {
-    use axum_extra::extract::{cookie::Key, PrivateCookieJar};
+    use axum_extra::extract::{
+        cookie::{Expiration, Key},
+        PrivateCookieJar,
+    };
     use sha2::{Digest, Sha512};
+    use time::{Duration, OffsetDateTime};
 
     use crate::{
         auth::{get_user_id_from_auth_cookie, COOKIE_USER_ID},
         models::UserID,
     };
 
-    use super::set_auth_cookie;
+    use super::{invalidate_auth_cookie, set_auth_cookie};
 
     fn get_jar() -> PrivateCookieJar {
         let hash = Sha512::digest(b"foobar");
@@ -167,7 +185,7 @@ mod cookie_tests {
     }
 
     #[test]
-    fn test_set_cookie_succeeds() {
+    fn set_cookie_succeeds() {
         let jar = get_jar();
         let user_id = UserID::new(1);
 
@@ -180,13 +198,29 @@ mod cookie_tests {
     }
 
     #[test]
-    fn test_get_user_id_from_cookie_succeeds() {
+    fn get_user_id_from_cookie_succeeds() {
         let user_id = UserID::new(1);
         let jar = set_auth_cookie(get_jar(), user_id);
 
         let retrieved_user_id = get_user_id_from_auth_cookie(jar).unwrap();
 
         assert_eq!(retrieved_user_id, user_id);
+    }
+
+    #[test]
+    fn invalidate_auth_cookie_succeeds() {
+        let user_id = UserID::new(1);
+        let jar = set_auth_cookie(get_jar(), user_id);
+
+        let jar = invalidate_auth_cookie(jar);
+        let cookie = jar.get(COOKIE_USER_ID).unwrap();
+
+        assert_eq!(cookie.value(), "deleted");
+        assert_eq!(cookie.max_age(), Some(Duration::ZERO));
+        assert_eq!(
+            cookie.expires(),
+            Some(Expiration::DateTime(OffsetDateTime::UNIX_EPOCH))
+        );
     }
 }
 
@@ -261,6 +295,7 @@ mod auth_guard_tests {
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
+    use time::{Duration, OffsetDateTime};
 
     use crate::auth::{set_auth_cookie, LogInData};
     use crate::{
@@ -366,5 +401,46 @@ mod auth_guard_tests {
 
         response.assert_status_see_other();
         assert_eq!(response.header("location"), endpoints::LOG_IN);
+    }
+
+    #[tokio::test]
+    async fn get_protected_route_with_expired_auth_cookie_redirects_to_log_in() {
+        let state = get_test_app_state();
+
+        let validated_password =
+            ValidatedPassword::new("averysafeandsecurepassword".to_owned()).unwrap();
+        let test_user = NewUser {
+            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
+            password_hash: PasswordHash::new(validated_password.clone()).unwrap(),
+        }
+        .insert(&state.db_connection().lock().unwrap())
+        .unwrap();
+
+        let app = Router::new()
+            .route("/protected", get(test_handler))
+            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
+            .route(endpoints::LOG_IN, post(test_log_in_route))
+            .with_state(state.clone());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let response = server
+            .post(endpoints::LOG_IN)
+            .form(&LogInData {
+                email: test_user.email().to_string(),
+                password: validated_password.to_string(),
+            })
+            .await;
+
+        response.assert_status_ok();
+        let mut auth_cookie = response.cookie(COOKIE_USER_ID);
+        auth_cookie.set_max_age(Duration::ZERO);
+        auth_cookie.set_expires(OffsetDateTime::UNIX_EPOCH);
+
+        server
+            .get("/protected")
+            .add_cookie(auth_cookie)
+            .await
+            .assert_status_see_other();
     }
 }
