@@ -1,3 +1,7 @@
+//! This file defines types that handle password validation and hashing.
+//! `ValidatedPassword` wraps a string and ensure it is a strong password.
+//! `PasswordHash` converts a `ValidatedPassword` into a salted and hashed password.
+
 use std::fmt::Display;
 use std::ops::Deref;
 
@@ -6,8 +10,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zxcvbn::{feedback::Feedback, zxcvbn, Score};
 
+/// Errors that can occur when creating or hashing a password.
 #[derive(Debug, Error)]
 pub enum PasswordError {
+    /// The provided password is too easy to guess.
     #[error("password is too weak: {0}")]
     TooWeak(String),
 
@@ -17,43 +23,6 @@ pub enum PasswordError {
     /// When communicating with the application client this error should be replaced with a general error type indicating an internal server error.
     #[error("hashing failed: {0}")]
     HashingError(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PasswordHash(String);
-
-impl PasswordHash {
-    /// Create a hashed password from a validated password.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the password could not be hashed.
-    pub fn new(password: ValidatedPassword) -> Result<Self, PasswordError> {
-        match hash(&password.0, DEFAULT_COST) {
-            Ok(password_hash) => Ok(Self(password_hash)),
-            Err(e) => Err(PasswordError::HashingError(e.to_string())),
-        }
-    }
-
-    /// Create a new `PasswordHash` without any validation.
-    ///
-    /// The caller should ensure that `raw_password_hash` is a valid password hash string.
-    ///
-    /// This function has `_unchecked` in the name but is not `unsafe`, because if an invalid hash is provided it will cause incorrect behaviour but not affect memory safety.
-    pub fn new_unchecked(raw_password_hash: String) -> Self {
-        Self(raw_password_hash)
-    }
-
-    /// Check that `raw_password` matches the stored password.
-    pub fn verify(&self, raw_password: &str) -> Result<bool, BcryptError> {
-        verify(raw_password, &self.0)
-    }
-}
-
-impl Display for PasswordHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 /// A password that has been validated, but not yet hashed.
@@ -91,11 +60,50 @@ impl ValidatedPassword {
     }
 }
 
+// TODO: Where is this used? What needs to read the password string? Remove this if possible.
 impl Deref for ValidatedPassword {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+/// A salted and hashed password.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PasswordHash(String);
+
+impl PasswordHash {
+    /// Create a hashed password from a validated password.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the password could not be hashed.
+    pub fn new(password: ValidatedPassword) -> Result<Self, PasswordError> {
+        match hash(&password.0, DEFAULT_COST) {
+            Ok(password_hash) => Ok(Self(password_hash)),
+            Err(e) => Err(PasswordError::HashingError(e.to_string())),
+        }
+    }
+
+    /// Create a new `PasswordHash` without any validation.
+    ///
+    /// The caller should ensure that `raw_password_hash` is a valid password hash.
+    ///
+    /// This function has `_unchecked` in the name but is not `unsafe`, because if an invalid hash is provided it will cause incorrect behaviour but not affect memory safety.
+    pub fn new_unchecked(raw_password_hash: String) -> Self {
+        Self(raw_password_hash)
+    }
+
+    /// Check that `raw_password` matches the stored password.
+    pub fn verify(&self, raw_password: &str) -> Result<bool, BcryptError> {
+        verify(raw_password, &self.0)
+    }
+}
+
+impl Display for PasswordHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

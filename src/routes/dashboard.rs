@@ -1,3 +1,5 @@
+//! This file defines the dashboard route and its handlers.
+
 use super::{
     common_templates::{Link, NavbarTemplate},
     endpoints,
@@ -10,6 +12,7 @@ use axum::{
 
 use crate::{models::UserID, HtmlTemplate};
 
+/// Renders the dashboard page.
 #[derive(Template)]
 #[template(path = "views/dashboard.html")]
 struct DashboardTemplate<'a> {

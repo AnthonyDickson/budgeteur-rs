@@ -1,3 +1,6 @@
+//! This file defines the high-level log-in route logic.
+//! The auth module handles the lower level authentication and cookie auth logic.
+
 use askama::Template;
 use axum::{
     extract::State,
@@ -18,6 +21,7 @@ use super::{
     endpoints,
 };
 
+/// Renders a log-in form with client-side and server-side validation.
 #[derive(Template)]
 #[template(path = "partials/log_in/form.html")]
 struct LogInFormTemplate<'a> {
@@ -38,6 +42,7 @@ impl Default for LogInFormTemplate<'_> {
     }
 }
 
+///  Renders the full log-in page.
 #[derive(Template, Default)]
 #[template(path = "views/log_in.html")]
 struct LogInTemplate<'a> {

@@ -1,11 +1,17 @@
+//! This file defines the savings ratio type.
+//! This type extends an ordinary transaction by indicating how much of an income transaction
+//! should be counted as savings and excluded from the budget.
+
 use thiserror::Error;
 
 use crate::models::DatabaseID;
 
+/// An error that occurs when an out-of-range float is used to create a ratio.
 #[derive(Debug, Error)]
 #[error("{0} is not a valid ratio")]
 pub struct RatioError(String);
 
+/// A ratio between zero and one.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Ratio(f64);
 

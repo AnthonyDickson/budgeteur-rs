@@ -1,3 +1,6 @@
+//! This file defines the type `Transaction`, the core type of the budgeting part of the
+//! application.
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -95,10 +98,12 @@ impl Transaction {
     }
 }
 
+/// An error that occurs when a future date is used to create a transaction.
 #[derive(Debug, Error)]
 #[error("{0} is not a valid date for a transaction")]
 pub struct NewTransactionError(OffsetDateTime);
 
+/// A type for validating and creating new transactions.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NewTransaction {
     amount: f64,

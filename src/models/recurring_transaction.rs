@@ -1,8 +1,13 @@
+//! This file defines recurring transactions.
+//! Recurring transactions extend ordinary (one-off) transactions by adding data indicating how
+//! often and for how long a transaction should repeat.
+
 use thiserror::Error;
 use time::OffsetDateTime;
 
 use crate::models::{DatabaseID, Transaction};
 
+/// An error occurred when parsing an integer as a `Frequency`.
 #[derive(Debug, Error)]
 #[error("{0} is not a valid frequency code")]
 pub struct FrequencyError(i64);
@@ -36,6 +41,7 @@ impl TryFrom<i64> for Frequency {
     }
 }
 
+/// An error that occurs when invalid dates are given when creating a recurring transaction.
 #[derive(Debug, Error)]
 #[error("invalid recurring transaction: {0}")]
 pub struct RecurringTransactionError(pub String);
@@ -111,6 +117,8 @@ impl RecurringTransaction {
     }
 }
 
+// TODO: Change New... types to use builder pattern.
+/// A type for validating and creating recurring transactions.
 pub struct NewRecurringTransaction {
     transaction_id: DatabaseID,
     end_date: Option<OffsetDateTime>,
@@ -165,7 +173,7 @@ mod recurring_transaction_tests {
     use time::{Date, Duration, Month, OffsetDateTime, Time};
 
     use crate::models::{
-        Frequency, recurring_transaction::RecurringTransactionError, RecurringTransaction,
+        recurring_transaction::RecurringTransactionError, Frequency, RecurringTransaction,
         Transaction, UserID,
     };
 
@@ -234,7 +242,7 @@ mod new_recurring_transaction_tests {
     use time::{Date, Duration, Month, OffsetDateTime, Time};
 
     use crate::models::{
-        Frequency, NewRecurringTransaction, recurring_transaction::RecurringTransactionError,
+        recurring_transaction::RecurringTransactionError, Frequency, NewRecurringTransaction,
         Transaction, UserID,
     };
 

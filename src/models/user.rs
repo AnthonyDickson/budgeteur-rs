@@ -1,3 +1,5 @@
+//! This file defines a user of the application and its supporting types.
+
 use std::fmt::Display;
 
 use email_address::EmailAddress;
@@ -5,6 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::PasswordHash;
 
+/// A newtype wrapper for integer user IDs.
+/// This helps disambiguate user IDs from other types of IDs, leading to better compile time
+/// errors, and more flexible generics that can have distinct implementations for multiple ID types.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserID(i64);
 
@@ -59,3 +64,5 @@ pub struct NewUser {
     pub email: EmailAddress,
     pub password_hash: PasswordHash,
 }
+
+// `User` is a simple container with no variants (the contained types handle this), so there isn't much to test.

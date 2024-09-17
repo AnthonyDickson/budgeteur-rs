@@ -1,3 +1,5 @@
+//! This module defines the domain data types.
+
 pub use category::{Category, CategoryName, NewCategory};
 pub use password::{PasswordError, PasswordHash, ValidatedPassword};
 pub use recurring_transaction::{Frequency, NewRecurringTransaction, RecurringTransaction};

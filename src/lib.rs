@@ -1,3 +1,13 @@
+//! [![github]](https://github.com/AnthonyDickson/backrooms-rs)&ensp;
+//!
+//! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
+//!
+//! <br>
+//!
+//! Backrooms-rs is a web app for managing your budget and personal finances.
+//!
+//! This library provides a REST API that directly serves HTML pages.
+
 use std::time::Duration;
 
 use askama::Template;
@@ -12,16 +22,16 @@ use serde_json::json;
 use tokio::signal;
 
 use auth::AuthError;
-pub use config::AppState;
 pub use routes::build_router;
+pub use state::AppState;
 
 use crate::db::DbError;
 
 mod auth;
-mod config;
 pub mod db;
 pub mod models;
 mod routes;
+mod state;
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
 /// then signals the server to shut down gracefully.
@@ -57,6 +67,7 @@ pub async fn graceful_shutdown(handle: Handle) {
     }
 }
 
+/// The errors that may occur in the application.
 enum AppError {
     /// The requested resource was not found. The client should check that the parameters (e.g., ID) are correct and that the resource has been created.
     NotFound,
@@ -102,6 +113,8 @@ impl From<DbError> for AppError {
     }
 }
 
+/// A basic HTML page to display when there is an unhandled error on the server.
+/// This HTML page is only used when there has been an error while rendering an Askama template.
 const INTERNAL_SERVER_ERROR_HTML: &str = "
     <!doctype html>
     <html lang=\"en\">
@@ -135,7 +148,7 @@ const INTERNAL_SERVER_ERROR_HTML: &str = "
 ///     HtmlTemplate(HelloUserTemplate { user_id }).into_response()
 /// }
 /// ```
-pub struct HtmlTemplate<T>(pub T);
+pub(crate) struct HtmlTemplate<T>(pub T);
 
 impl<T> IntoResponse for HtmlTemplate<T>
 where

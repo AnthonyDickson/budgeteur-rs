@@ -20,10 +20,10 @@ use serde_json::json;
 use time::{Duration, OffsetDateTime};
 
 use crate::{
-    config::AppState,
     db::{DbError, SelectBy},
     models::{User, UserID},
     routes::endpoints,
+    state::AppState,
 };
 
 /// The raw data entered by the user in the log-in form.
@@ -232,8 +232,8 @@ mod auth_tests {
     use rusqlite::Connection;
 
     use crate::auth::{verify_credentials, AuthError, LogInData};
-    use crate::config::AppState;
     use crate::db::initialize;
+    use crate::state::AppState;
     use crate::{
         db::Insert,
         models::{NewUser, PasswordHash, ValidatedPassword},

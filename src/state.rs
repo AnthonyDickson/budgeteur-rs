@@ -1,3 +1,5 @@
+//! Implements a struct that holds the state of the REST server.
+
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -11,9 +13,12 @@ use sha2::{Digest, Sha512};
 
 use crate::auth::AuthError;
 
+/// The state of the REST server.
 #[derive(Clone)]
 pub struct AppState {
+    /// The connection to the application's database.
     db_connection: Arc<Mutex<Connection>>,
+    /// The secret used to encrypt auth cookies.
     cookie_key: Key,
 }
 

@@ -1,7 +1,11 @@
+//! This file defines the `Category` type and the types needed to create a category.
+//! A category acts like a tag for a transaction, however a transaction may only have one category.
+
 use serde::{Deserialize, Serialize};
 
 use crate::models::{DatabaseID, UserID};
 
+/// An error that occurs when creating a category name.
 #[derive(thiserror::Error, Debug)]
 #[error("{0} is not a valid category name")]
 pub struct CategoryNameError(pub String);

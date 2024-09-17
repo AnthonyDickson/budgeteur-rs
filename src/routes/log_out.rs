@@ -1,3 +1,6 @@
+//! This file defines the high-level log-out route logic.
+//! The underlying auth logic is handled by the auth module.
+
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::PrivateCookieJar;
 

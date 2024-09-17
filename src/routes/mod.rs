@@ -1,3 +1,5 @@
+//! This module defines the REST API's routes and their handlers.
+
 use askama::Template;
 use axum::{
     extract::{Path, State},
