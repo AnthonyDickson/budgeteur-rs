@@ -148,7 +148,7 @@ const INTERNAL_SERVER_ERROR_HTML: &str = "
 ///     HtmlTemplate(HelloUserTemplate { user_id }).into_response()
 /// }
 /// ```
-pub(crate) struct HtmlTemplate<T>(pub T);
+pub struct HtmlTemplate<T>(pub T);
 
 impl<T> IntoResponse for HtmlTemplate<T>
 where
