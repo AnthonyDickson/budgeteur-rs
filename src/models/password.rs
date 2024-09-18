@@ -3,7 +3,6 @@
 //! `PasswordHash` converts a `ValidatedPassword` into a salted and hashed password.
 
 use std::fmt::Display;
-use std::ops::Deref;
 
 use bcrypt::{hash, verify, BcryptError, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
@@ -60,12 +59,9 @@ impl ValidatedPassword {
     }
 }
 
-// TODO: Where is this used? What needs to read the password string? Remove this if possible.
-impl Deref for ValidatedPassword {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl Display for ValidatedPassword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", str::repeat("*", 8))
     }
 }
 
@@ -142,9 +138,9 @@ mod password_hash_tests {
         let hash = PasswordHash::new_unchecked(
             "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_owned(),
         );
-        let password = ValidatedPassword::new_unchecked("okon".to_owned());
+        let password = "okon";
 
-        assert!(hash.verify(&password).unwrap());
+        assert!(hash.verify(password).unwrap());
     }
 
     #[test]
@@ -152,19 +148,19 @@ mod password_hash_tests {
         let hash = PasswordHash::new_unchecked(
             "$2b$12$Gwf0uvxH3L7JLfo0CC/NCOoijK2vQ/wbgP.LeNup8vj6gg31IiFkm".to_owned(),
         );
-        let password = ValidatedPassword::new_unchecked("thewrongpassword".to_owned());
+        let password = "thewrongpassword";
 
-        assert!(!hash.verify(&password).unwrap());
+        assert!(!hash.verify(password).unwrap());
     }
 
     #[test]
     fn hash_password_produces_verifiable_hash() {
-        let password = ValidatedPassword::new("roostersgocockledoodledoo".to_owned()).unwrap();
-        let wrong_password = ValidatedPassword::new("the_wrong_password".to_owned()).unwrap();
-        let hash = PasswordHash::new(password.clone()).unwrap();
+        let password = "roostersgocockledoodledoo";
+        let wrong_password = "the_wrong_password";
+        let hash = PasswordHash::new(ValidatedPassword::new(password.to_owned()).unwrap()).unwrap();
 
-        assert!(hash.verify(&password).unwrap());
-        assert!(!hash.verify(&wrong_password).unwrap());
+        assert!(hash.verify(password).unwrap());
+        assert!(!hash.verify(wrong_password).unwrap());
     }
 
     #[test]

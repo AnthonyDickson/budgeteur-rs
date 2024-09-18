@@ -251,18 +251,18 @@ mod auth_tests {
     async fn log_in_succeeds_with_valid_credentials() {
         let app_state = get_test_app_config();
 
-        let validated_password =
-            ValidatedPassword::new("averysafeandsecurepassword".to_string()).unwrap();
+        let password = "averysafeandsecurepassword".to_string();
+        let validated_password = ValidatedPassword::new(password.clone()).unwrap();
         let test_user = NewUser {
             email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new(validated_password.clone()).unwrap(),
+            password_hash: PasswordHash::new(validated_password).unwrap(),
         }
         .insert(&app_state.db_connection().lock().unwrap())
         .unwrap();
 
         let user_data = LogInData {
             email: test_user.email().to_string(),
-            password: validated_password.to_string(),
+            password,
         };
 
         assert!(verify_credentials(user_data, &app_state.db_connection().lock().unwrap()).is_ok());
@@ -333,11 +333,11 @@ mod auth_guard_tests {
     async fn get_protected_route_succeeds_with_valid_cookie() {
         let state = get_test_app_state();
 
-        let validated_password =
-            ValidatedPassword::new("averysafeandsecurepassword".to_owned()).unwrap();
+        let password = "averysafeandsecurepassword".to_string();
+        let validated_password = ValidatedPassword::new(password.clone()).unwrap();
         let test_user = NewUser {
             email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new(validated_password.clone()).unwrap(),
+            password_hash: PasswordHash::new(validated_password).unwrap(),
         }
         .insert(&state.db_connection().lock().unwrap())
         .unwrap();
@@ -354,7 +354,7 @@ mod auth_guard_tests {
             .post(endpoints::LOG_IN)
             .form(&LogInData {
                 email: test_user.email().to_string(),
-                password: validated_password.to_string(),
+                password,
             })
             .await;
 
@@ -407,11 +407,11 @@ mod auth_guard_tests {
     async fn get_protected_route_with_expired_auth_cookie_redirects_to_log_in() {
         let state = get_test_app_state();
 
-        let validated_password =
-            ValidatedPassword::new("averysafeandsecurepassword".to_owned()).unwrap();
+        let password = "averysafeandsecurepassword".to_string();
+        let validated_password = ValidatedPassword::new(password.clone()).unwrap();
         let test_user = NewUser {
             email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new(validated_password.clone()).unwrap(),
+            password_hash: PasswordHash::new(validated_password).unwrap(),
         }
         .insert(&state.db_connection().lock().unwrap())
         .unwrap();
@@ -428,7 +428,7 @@ mod auth_guard_tests {
             .post(endpoints::LOG_IN)
             .form(&LogInData {
                 email: test_user.email().to_string(),
-                password: validated_password.to_string(),
+                password,
             })
             .await;
 
