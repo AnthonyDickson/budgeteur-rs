@@ -1,5 +1,5 @@
 [package]
-name = "backrooms_rs"
+name = "budgeteur_rs"
 version = "0.1.0"
 edition = "2021"
 default-run = "server"

@@ -79,7 +79,7 @@ pub trait CreateTable {
 /// ```
 /// use rusqlite::{Connection, Error, Row};
 ///
-/// use backrooms_rs::db::{DbError, CreateTable, MapRow};
+/// use budgeteur_rs::db::{DbError, CreateTable, MapRow};
 ///
 /// struct Foo {
 ///     id: i64,
@@ -255,7 +255,7 @@ impl SelectBy<&EmailAddress> for User {
     /// use email_address::EmailAddress;
     /// use rusqlite::Connection;
     ///
-    /// # use backrooms_rs::{db::{DbError, SelectBy}, models::User};
+    /// # use budgeteur_rs::{db::{DbError, SelectBy}, models::User};
     /// #
     /// fn get_user(email: &EmailAddress, connection: &Connection) -> Result<User, DbError> {
     ///     let user = User::select(email, connection)?;
@@ -316,7 +316,7 @@ impl Insert for NewCategory {
     /// ```
     /// # use rusqlite::Connection;
     /// #
-    /// # use backrooms_rs::{db::{DbError, Insert}, models::{Category, CategoryName, NewCategory, User}};
+    /// # use budgeteur_rs::{db::{DbError, Insert}, models::{Category, CategoryName, NewCategory, User}};
     /// #
     /// fn create_category(name: String, user: &User, connection: &Connection) -> Result<Category, DbError> {
     ///     let name = CategoryName::new(name).unwrap();
@@ -354,7 +354,7 @@ impl SelectBy<DatabaseID> for Category {
     /// ```
     /// # use rusqlite::Connection;
     /// #
-    /// # use backrooms_rs::{db::SelectBy, models::{Category, DatabaseID}};
+    /// # use budgeteur_rs::{db::SelectBy, models::{Category, DatabaseID}};
     /// #
     /// fn get_category(id: DatabaseID, connection: &Connection) -> Option<Category> {
     ///     Category::select(id, &connection).ok()
@@ -383,7 +383,7 @@ impl SelectBy<UserID> for Category {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::{db::{Insert, SelectBy}, models::{Category, CategoryName, NewCategory, User}};
+    /// use budgeteur_rs::{db::{Insert, SelectBy}, models::{Category, CategoryName, NewCategory, User}};
     ///
     /// fn create_and_validate_categories(user: &User, connection: &Connection) -> Vec<Category> {
     ///     let inserted_categories = vec![
@@ -466,7 +466,7 @@ impl Insert for NewTransaction {
     /// # use rusqlite::Connection;
     /// # use time::{Date, Month, OffsetDateTime, Time};
     /// #
-    /// # use backrooms_rs::{db::Insert, models::{Category, NewTransaction, Transaction, User}};
+    /// # use budgeteur_rs::{db::Insert, models::{Category, NewTransaction, Transaction, User}};
     /// #
     /// fn create_transaction(user: &User, category: &Category, connection: &Connection) {
     ///     let transaction = NewTransaction::new(
@@ -544,7 +544,7 @@ impl SelectBy<DatabaseID> for Transaction {
     /// ```
     /// # use rusqlite::Connection;
     /// #
-    /// # use backrooms_rs::{db::{DbError, SelectBy}, models::{DatabaseID, Transaction}};
+    /// # use budgeteur_rs::{db::{DbError, SelectBy}, models::{DatabaseID, Transaction}};
     /// #
     /// fn get_transaction(id: DatabaseID, connection: &Connection) -> Result<Transaction, DbError> {
     ///     Transaction::select(id, &connection)
@@ -571,7 +571,7 @@ impl SelectBy<UserID> for Transaction {
     ///
     /// # Examples
     /// ```
-    /// use backrooms_rs::{db::SelectBy, models::{Transaction, User}};
+    /// use budgeteur_rs::{db::SelectBy, models::{Transaction, User}};
     ///
     /// fn sum_transaction_amount_for_user(user: &User, conn: &rusqlite::Connection) -> f64 {
     ///     let transactions = Transaction::select(user.id(), conn).unwrap();
@@ -628,7 +628,7 @@ impl Insert for NewSavingsRatio {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::{db::Insert, models::{Ratio, NewSavingsRatio, SavingsRatio, Transaction}};
+    /// use budgeteur_rs::{db::Insert, models::{Ratio, NewSavingsRatio, SavingsRatio, Transaction}};
     ///
     /// fn set_savings_ratio(transaction: &Transaction, ratio: Ratio, connection: &Connection) -> SavingsRatio {
     ///     NewSavingsRatio {
@@ -705,7 +705,7 @@ impl Insert for NewRecurringTransaction {
     /// ```
     /// use rusqlite::Connection;
     ///
-    /// use backrooms_rs::{db::Insert, models::{Frequency, NewRecurringTransaction, RecurringTransaction, Transaction}};
+    /// use budgeteur_rs::{db::Insert, models::{Frequency, NewRecurringTransaction, RecurringTransaction, Transaction}};
     ///
     /// fn set_recurring(
     ///     transaction: &Transaction,

@@ -16,9 +16,9 @@ use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{filter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
-use backrooms_rs::{AppState, build_router, graceful_shutdown};
+use budgeteur_rs::{AppState, build_router, graceful_shutdown};
 
-/// The REST API server for backrooms_rs.
+/// The REST API server for budgeteur_rs.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {

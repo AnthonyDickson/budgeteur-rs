@@ -1,5 +1,5 @@
-# backrooms-rs
-Backrooms-rs is a budgeting and personal finance web-app.
+# Budgeteur-rs
+Budgeteur is a budgeting and personal finance web-app.
 
 This app provides two services:
 * Budgeting: Recording your income and expenses, and tracking savings targets.

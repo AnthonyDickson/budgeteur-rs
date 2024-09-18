@@ -5,12 +5,12 @@ use std::process::exit;
 use clap::Parser;
 use rusqlite::Connection;
 
-use backrooms_rs::{
+use budgeteur_rs::{
     db::initialize,
     models::{PasswordHash, ValidatedPassword},
 };
 
-/// A utility for creating a test database for the REST API server of backrooms_rs.
+/// A utility for creating a test database for the REST API server of budgeteur_rs.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
