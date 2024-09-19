@@ -7,7 +7,7 @@ use axum::{
     middleware,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
-    Json, Router,
+    Form, Json, Router,
 };
 use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
@@ -16,11 +16,12 @@ use dashboard::get_dashboard_page;
 use log_in::{get_log_in_page, post_log_in};
 use log_out::get_log_out;
 use register::{create_user, get_register_page};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::{auth_guard, get_user_id_from_auth_cookie},
     db::{Insert, SelectBy},
-    models::{Category, DatabaseID, NewCategory, NewTransaction, Transaction},
+    models::{Category, CategoryName, DatabaseID, NewTransaction, Transaction, UserID},
     AppError, AppState, HtmlTemplate,
 };
 
@@ -49,7 +50,7 @@ pub fn build_router(state: AppState) -> Router {
     let protected_routes = Router::new()
         .route(endpoints::ROOT, get(get_index_page))
         .route(endpoints::DASHBOARD, get(get_dashboard_page))
-        .route(endpoints::CATEGORIES, post(create_category))
+        .route(endpoints::USER_CATEGORIES, post(create_category))
         .route(endpoints::CATEGORY, get(get_category))
         .route(endpoints::TRANSACTIONS, post(create_transaction))
         .route(endpoints::TRANSACTION, get(get_transaction))
@@ -99,6 +100,11 @@ async fn get_404_not_found() -> Response {
     (StatusCode::NOT_FOUND, HtmlTemplate(NotFoundTemplate)).into_response()
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct CategoryData {
+    name: String,
+}
+
 /// A route handler for creating a new category.
 ///
 /// # Panics
@@ -106,16 +112,20 @@ async fn get_404_not_found() -> Response {
 /// Panics if the lock for the database connection is already held by the same thread.
 async fn create_category(
     State(state): State<AppState>,
-    _jar: PrivateCookieJar,
-    Json(new_category): Json<NewCategory>,
+    Path(user_id): Path<i64>,
+    _: PrivateCookieJar,
+    Form(new_category): Form<CategoryData>,
 ) -> impl IntoResponse {
     let connection_mutex = state.db_connection();
     let connection = connection_mutex.lock().unwrap();
 
-    new_category
+    let name = CategoryName::new(new_category.name)?;
+    let user_id = UserID::new(user_id);
+
+    Category::build(name, user_id)
         .insert(&connection)
         .map(|category| (StatusCode::OK, Json(category)))
-        .map_err(AppError::DatabaseError)
+        .map_err(AppError::CategoryError)
 }
 
 /// A route handler for getting a category by its database ID.
@@ -134,7 +144,7 @@ async fn get_category(
     let connection = connection_mutex.lock().unwrap();
 
     Category::select(category_id, &connection)
-        .map_err(AppError::DatabaseError)
+        .map_err(AppError::CategoryError)
         .and_then(|category| {
             let user_id = get_user_id_from_auth_cookie(jar)?;
 
@@ -247,7 +257,6 @@ mod category_tests {
     use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
     use rusqlite::Connection;
-    use serde_json::json;
 
     use crate::auth::LogInData;
     use crate::{
@@ -258,6 +267,7 @@ mod category_tests {
         AppState,
     };
 
+    use super::CategoryData;
     use super::{build_router, register::RegisterForm};
 
     fn get_test_app_config() -> AppState {
@@ -299,14 +309,12 @@ mod category_tests {
         let (server, user_id, auth_cookie) = create_app_with_user().await;
 
         let category = server
-            .post(endpoints::CATEGORIES)
+            .post(&endpoints::USER_CATEGORIES.replace(":user_id", &user_id.to_string()))
             .add_cookie(auth_cookie.clone())
             .content_type("application/json")
-            .json(&json!({
-                "id": 0,
-                "name": "foo",
-                "user_id": user_id,
-            }))
+            .form(&CategoryData {
+                name: "foo".to_string(),
+            })
             .await
             .json::<Category>();
 
@@ -320,14 +328,12 @@ mod category_tests {
         let name = CategoryName::new("Foo".to_string()).unwrap();
 
         let response = server
-            .post(endpoints::CATEGORIES)
+            .post(&endpoints::USER_CATEGORIES.replace(":user_id", &user_id.to_string()))
             .add_cookie(auth_cookie)
             .content_type("application/json")
-            .json(&json!({
-                "id": 0,
-                "name": name,
-                "user_id": user_id,
-            }))
+            .form(&CategoryData {
+                name: String::from("Foo"),
+            })
             .await;
 
         response.assert_status_ok();
@@ -406,6 +412,7 @@ mod transaction_tests {
         AppState,
     };
 
+    use super::CategoryData;
     use super::{build_router, register::RegisterForm};
 
     fn get_test_app_config() -> AppState {
@@ -452,14 +459,12 @@ mod transaction_tests {
         let (server, user_id, auth_cookie) = create_app_with_user().await;
 
         let category = server
-            .post(endpoints::CATEGORIES)
+            .post(&endpoints::USER_CATEGORIES.replace(":user_id", &user_id.to_string()))
             .add_cookie(auth_cookie.clone())
             .content_type("application/json")
-            .json(&json!({
-                "id": 0,
-                "name": "foo",
-                "user_id": user_id,
-            }))
+            .form(&CategoryData {
+                name: "foo".to_string(),
+            })
             .await
             .json::<Category>();
 

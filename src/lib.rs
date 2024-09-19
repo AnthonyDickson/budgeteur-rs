@@ -18,6 +18,7 @@ use axum::{
 };
 use axum_extra::response::Html;
 use axum_server::Handle;
+use models::CategoryError;
 use serde_json::json;
 use tokio::signal;
 
@@ -71,6 +72,8 @@ pub async fn graceful_shutdown(handle: Handle) {
 enum AppError {
     /// The requested resource was not found. The client should check that the parameters (e.g., ID) are correct and that the resource has been created.
     NotFound,
+    /// An error occurred while operating on a category.
+    CategoryError(CategoryError),
     /// An error occurred while accessing the application's database. This may be due to a database constraint being violated (e.g., foreign keys).
     DatabaseError(DbError),
     /// The user is not authenticated/authorized to access the given resource.
@@ -90,6 +93,10 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal server error: {e:?}"),
             ),
+            AppError::CategoryError(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Internal server error: {e:?}"),
+            ),
             AppError::AuthError(e) => (StatusCode::UNAUTHORIZED, format!("Auth error: {e:?}")),
             AppError::NotFound => (
                 StatusCode::NOT_FOUND,
@@ -102,6 +109,14 @@ impl IntoResponse for AppError {
         }));
 
         (status, body).into_response()
+    }
+}
+
+impl From<CategoryError> for AppError {
+    fn from(e: CategoryError) -> Self {
+        tracing::error!("{e:?}");
+
+        AppError::CategoryError(e)
     }
 }
 

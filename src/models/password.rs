@@ -25,6 +25,8 @@ pub enum PasswordError {
 }
 
 /// A password that has been validated, but not yet hashed.
+///
+/// This struct can be used to construct a [PasswordHash].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ValidatedPassword(String);
 

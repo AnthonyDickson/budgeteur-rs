@@ -5,7 +5,7 @@ use std::fmt::Display;
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
 use crate::models::{
-    Category, CategoryName, DatabaseID, NewCategory, NewTransaction, Transaction, User, UserID,
+    Category, CategoryError, DatabaseID, NewTransaction, Transaction, User, UserID,
 };
 
 /// Errors originating from operations on the app's database.
@@ -26,6 +26,8 @@ pub enum DbError {
     NotFound,
     /// Wrapper for Sqlite errors not handled by the other enum entries.
     SqlError(Error),
+    /// An unexpected error occurred.
+    Unspecified(String),
 }
 
 impl Display for DbError {
@@ -189,149 +191,6 @@ pub trait SelectBy<T> {
     fn select(field: T, connection: &Connection) -> Result<Self::ResultType, DbError>;
 }
 
-impl CreateTable for Category {
-    fn create_table(connection: &Connection) -> Result<(), Error> {
-        connection.execute(
-            "CREATE TABLE category (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                user_id INTEGER NOT NULL,
-                FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
-                )",
-            (),
-        )?;
-
-        Ok(())
-    }
-}
-
-impl MapRow for Category {
-    type ReturnType = Self;
-
-    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
-        let id = row.get(offset)?;
-
-        let raw_name: String = row.get(offset + 1)?;
-        let name = CategoryName::new_unchecked(raw_name);
-
-        let raw_user_id = row.get(offset + 2)?;
-        let user_id = UserID::new(raw_user_id);
-
-        Ok(Self::new(id, name, user_id))
-    }
-}
-
-impl Insert for NewCategory {
-    type ResultType = Category;
-
-    /// Create a new category in the database.
-    ///
-    /// # Examples
-    /// ```
-    /// # use rusqlite::Connection;
-    /// #
-    /// # use budgeteur_rs::{db::{DbError, Insert}, models::{Category, CategoryName, NewCategory, User}};
-    /// #
-    /// fn create_category(name: String, user: &User, connection: &Connection) -> Result<Category, DbError> {
-    ///     let name = CategoryName::new(name).unwrap();
-    ///     let category = NewCategory { name: name.clone(), user_id: user.id() }.insert(&connection)?;
-    ///
-    ///     assert_eq!(category.name(), &name);
-    ///     assert_eq!(category.user_id(), user.id());
-    ///
-    ///     Ok(category)
-    /// }
-    /// ```
-    ///
-    /// # Errors
-    /// This function will return an error if:
-    /// - `user_id` does not refer to a valid user,
-    /// - or there is some other SQL error.
-    fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
-        connection.execute(
-            "INSERT INTO category (name, user_id) VALUES (?1, ?2)",
-            (self.name.as_ref(), self.user_id.as_i64()),
-        )?;
-
-        let category_id = connection.last_insert_rowid();
-
-        Ok(Self::ResultType::new(category_id, self.name, self.user_id))
-    }
-}
-
-impl SelectBy<DatabaseID> for Category {
-    type ResultType = Self;
-
-    /// Retrieve a category in the database by its `id`.
-    ///
-    /// # Examples
-    /// ```
-    /// # use rusqlite::Connection;
-    /// #
-    /// # use budgeteur_rs::{db::SelectBy, models::{Category, DatabaseID}};
-    /// #
-    /// fn get_category(id: DatabaseID, connection: &Connection) -> Option<Category> {
-    ///     Category::select(id, &connection).ok()
-    /// }
-    /// ```
-    ///
-    /// # Errors
-    /// This function will return an error if:
-    /// - `id` does not refer to a valid category,
-    /// - or there is some other SQL error.
-    fn select(id: DatabaseID, connection: &Connection) -> Result<Self::ResultType, DbError> {
-        let category = connection
-            .prepare("SELECT id, name, user_id FROM category WHERE id = :id")?
-            .query_row(&[(":id", &id)], Category::map_row)?;
-
-        Ok(category)
-    }
-}
-
-impl SelectBy<UserID> for Category {
-    type ResultType = Vec<Self>;
-
-    /// Retrieve categories in the database for the user `user_id`.
-    ///
-    /// # Examples
-    /// ```
-    /// use rusqlite::Connection;
-    ///
-    /// use budgeteur_rs::{db::{Insert, SelectBy}, models::{Category, CategoryName, NewCategory, User}};
-    ///
-    /// fn create_and_validate_categories(user: &User, connection: &Connection) -> Vec<Category> {
-    ///     let inserted_categories = vec![
-    ///         NewCategory {
-    ///             name: CategoryName::new_unchecked("Foo".to_string()),
-    ///             user_id: user.id(),
-    ///         }.insert(&connection)
-    ///         .unwrap(),
-    ///         NewCategory {
-    ///             name: CategoryName::new_unchecked("Bar".to_string()),
-    ///             user_id: user.id(),
-    ///         }.insert(&connection)
-    ///         .unwrap(),
-    ///     ];
-    ///
-    ///     let selected_categories = Category::select(user.id(), &connection).unwrap();
-    ///
-    ///     assert_eq!(inserted_categories, selected_categories);
-    ///
-    ///     selected_categories
-    /// }
-    /// ```
-    ///
-    /// # Errors
-    /// This function will return an error if there is an SQL error.
-    fn select(user_id: UserID, connection: &Connection) -> Result<Self::ResultType, DbError> {
-        connection
-            .prepare("SELECT id, name, user_id FROM category WHERE user_id = :user_id")?
-            .query_map(&[(":user_id", &user_id.as_i64())], Category::map_row)?
-            .map(|maybe_category| maybe_category.map_err(DbError::SqlError))
-            .collect()
-    }
-}
-
 impl CreateTable for Transaction {
     fn create_table(connection: &Connection) -> Result<(), Error> {
         connection
@@ -421,8 +280,12 @@ impl Insert for NewTransaction {
         let category = Category::select(self.category_id(), connection).map_err(|e| match e {
             // A 'not found' error does not make sense on an insert function,
             // so we instead indicate that the category id (a foreign key) is invalid.
-            DbError::NotFound => DbError::InvalidForeignKey,
-            e => e,
+            CategoryError::NotFound => DbError::InvalidForeignKey,
+            CategoryError::SqlError(error) => DbError::SqlError(error),
+            e => {
+                tracing::error!("An unexpected error occurred: {e}");
+                DbError::Unspecified(e.to_string())
+            }
         })?;
 
         if self.user_id() != category.user_id() {
@@ -518,144 +381,6 @@ pub fn initialize(connection: &Connection) -> Result<(), DbError> {
 }
 
 #[cfg(test)]
-mod category_tests {
-    use std::str::FromStr;
-
-    use email_address::EmailAddress;
-    use rusqlite::Connection;
-
-    use crate::{
-        db::{initialize, Category, CategoryName, DbError, SelectBy, UserID},
-        models::{NewCategory, PasswordHash, User},
-    };
-
-    use super::Insert;
-
-    fn init_db() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
-        conn
-    }
-
-    fn create_database_and_insert_test_user() -> (Connection, User) {
-        let conn = init_db();
-
-        let test_user = User::build(
-            EmailAddress::from_str("foo@bar.baz").unwrap(),
-            PasswordHash::new_unchecked("hunter2".to_string()),
-        )
-        .insert(&conn)
-        .unwrap();
-
-        (conn, test_user)
-    }
-
-    #[test]
-    fn insert_category_succeeds() {
-        let (conn, test_user) = create_database_and_insert_test_user();
-
-        let name = CategoryName::new("Categorically a category".to_string()).unwrap();
-
-        let category = NewCategory {
-            name: name.clone(),
-            user_id: test_user.id(),
-        }
-        .insert(&conn)
-        .unwrap();
-
-        assert!(category.id() > 0);
-        assert_eq!(category.name(), &name);
-        assert_eq!(category.user_id(), test_user.id());
-    }
-
-    #[test]
-    fn insert_category_fails_with_invalid_user_id() {
-        let conn = init_db();
-        let name = CategoryName::new_unchecked("Foo".to_string());
-
-        let maybe_category = NewCategory {
-            name,
-            user_id: UserID::new(42),
-        }
-        .insert(&conn);
-
-        assert_eq!(maybe_category, Err(DbError::InvalidForeignKey));
-    }
-
-    #[test]
-    fn select_category_succeeds() {
-        let (conn, test_user) = create_database_and_insert_test_user();
-        let name = CategoryName::new_unchecked("Foo".to_string());
-        let inserted_category = NewCategory {
-            name,
-            user_id: test_user.id(),
-        }
-        .insert(&conn)
-        .unwrap();
-
-        let selected_category = Category::select(inserted_category.id(), &conn).unwrap();
-
-        assert_eq!(inserted_category, selected_category);
-    }
-
-    #[test]
-    fn select_category_fails_with_invalid_id() {
-        let conn = init_db();
-
-        let selected_category = Category::select(1337, &conn);
-
-        assert_eq!(selected_category, Err(DbError::NotFound));
-    }
-
-    #[test]
-    fn select_category_with_user_id() {
-        let (conn, test_user) = create_database_and_insert_test_user();
-        let inserted_categories = vec![
-            NewCategory {
-                name: CategoryName::new_unchecked("Foo".to_string()),
-                user_id: test_user.id(),
-            }
-            .insert(&conn)
-            .unwrap(),
-            NewCategory {
-                name: CategoryName::new_unchecked("Bar".to_string()),
-                user_id: test_user.id(),
-            }
-            .insert(&conn)
-            .unwrap(),
-        ];
-
-        let selected_categories = Category::select(test_user.id(), &conn).unwrap();
-
-        assert_eq!(inserted_categories, selected_categories);
-    }
-
-    #[test]
-    fn select_category_with_invalid_user_id() {
-        let (conn, test_user) = create_database_and_insert_test_user();
-
-        NewCategory {
-            name: CategoryName::new_unchecked("Foo".to_string()),
-            user_id: test_user.id(),
-        }
-        .insert(&conn)
-        .unwrap();
-
-        NewCategory {
-            name: CategoryName::new_unchecked("Bar".to_string()),
-            user_id: test_user.id(),
-        }
-        .insert(&conn)
-        .unwrap();
-
-        let selected_categories =
-            Category::select(UserID::new(test_user.id().as_i64() + 1), &conn).unwrap();
-
-        assert_eq!(selected_categories, []);
-    }
-}
-
-#[cfg(test)]
 mod transaction_tests {
     use std::{f64::consts::PI, str::FromStr};
 
@@ -664,8 +389,8 @@ mod transaction_tests {
     use time::{Date, Month, OffsetDateTime, Time};
 
     use crate::{
-        db::{initialize, Category, DbError, SelectBy, Transaction},
-        models::{CategoryName, NewCategory, NewTransaction, PasswordHash, User, UserID},
+        db::{initialize, DbError, SelectBy, Transaction},
+        models::{Category, CategoryName, NewTransaction, PasswordHash, User, UserID},
     };
 
     use super::Insert;
@@ -686,10 +411,10 @@ mod transaction_tests {
         .insert(&conn)
         .unwrap();
 
-        let category = NewCategory {
-            name: CategoryName::new("Food".to_string()).unwrap(),
-            user_id: test_user.id(),
-        }
+        let category = Category::build(
+            CategoryName::new("Food".to_string()).unwrap(),
+            test_user.id(),
+        )
         .insert(&conn)
         .unwrap();
 

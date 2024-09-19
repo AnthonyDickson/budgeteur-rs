@@ -13,9 +13,10 @@ use crate::{
 };
 
 /// A newtype wrapper for integer user IDs.
+///
 /// This helps disambiguate user IDs from other types of IDs, leading to better compile time
 /// errors, and more flexible generics that can have distinct implementations for multiple ID types.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct UserID(i64);
 
 impl UserID {
