@@ -22,8 +22,8 @@ use crate::{
 };
 
 use super::{
-    common_templates::{EmailInputTemplate, PasswordInputTemplate},
     endpoints,
+    templates::{EmailInputTemplate, PasswordInputTemplate},
 };
 
 /// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).

@@ -1,8 +1,8 @@
 //! This file defines the dashboard route and its handlers.
 
 use super::{
-    common_templates::{Link, NavbarTemplate},
     endpoints,
+    navigation::{get_nav_bar, NavbarTemplate},
 };
 use askama::Template;
 use axum::{
@@ -22,21 +22,7 @@ struct DashboardTemplate<'a> {
 
 /// Display a page with an overview of the user's data.
 pub async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
-    // TODO: Create function that returns this list, with the item matching the URL argument being marked as the current link.
-    let links = vec![
-        Link {
-            url: endpoints::DASHBOARD,
-            title: "Dashboard",
-            is_current: true,
-        },
-        Link {
-            url: endpoints::LOG_OUT,
-            title: "Log out",
-            is_current: false,
-        },
-    ];
-
-    let navbar = NavbarTemplate { links };
+    let navbar = get_nav_bar(endpoints::DASHBOARD);
 
     HtmlTemplate(DashboardTemplate { navbar, user_id }).into_response()
 }

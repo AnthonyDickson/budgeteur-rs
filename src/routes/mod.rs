@@ -24,12 +24,13 @@ use crate::{
     AppError, AppState, HtmlTemplate,
 };
 
-mod common_templates;
 mod dashboard;
 pub mod endpoints;
 pub mod log_in;
 mod log_out;
+mod navigation;
 pub mod register;
+mod templates;
 
 // TODO: Update existing routes to respond with HTML
 /// Return a router with all the app's routes.

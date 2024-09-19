@@ -17,8 +17,8 @@ use crate::{
 };
 
 use super::{
-    common_templates::{EmailInputTemplate, PasswordInputTemplate},
     endpoints,
+    templates::{EmailInputTemplate, PasswordInputTemplate},
 };
 
 /// Renders a log-in form with client-side and server-side validation.
