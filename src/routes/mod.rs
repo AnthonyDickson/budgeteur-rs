@@ -32,7 +32,6 @@ mod navigation;
 pub mod register;
 mod templates;
 
-// TODO: Update existing routes to respond with HTML
 /// Return a router with all the app's routes.
 pub fn build_router(state: AppState) -> Router {
     let unprotected_routes = Router::new()
@@ -202,8 +201,8 @@ mod root_route_tests {
 
     use crate::{
         auth::auth_guard,
-        db::{initialize, Insert},
-        models::{NewUser, PasswordHash, ValidatedPassword},
+        db::initialize,
+        models::{PasswordHash, User, ValidatedPassword},
         routes::{endpoints, get_index_page},
         AppState,
     };
@@ -213,11 +212,10 @@ mod root_route_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        NewUser {
-            email: EmailAddress::new_unchecked("test@test.com"),
-            password_hash: PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()))
-                .unwrap(),
-        }
+        User::build(
+            EmailAddress::new_unchecked("test@test.com"),
+            PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+        )
         .insert(&db_connection)
         .unwrap();
 

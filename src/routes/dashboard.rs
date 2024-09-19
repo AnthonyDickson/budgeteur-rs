@@ -36,15 +36,14 @@ mod dashboard_route_tests {
     };
     use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
-    use email_address::EmailAddress;
     use rusqlite::Connection;
     use time::{Duration, OffsetDateTime};
 
-    use crate::{auth::LogInData, routes::log_in::post_log_in};
+    use crate::{auth::LogInData, models::User, routes::log_in::post_log_in};
     use crate::{
         auth::{auth_guard, COOKIE_USER_ID},
-        db::{initialize, Insert},
-        models::{NewUser, PasswordHash, ValidatedPassword},
+        db::initialize,
+        models::{PasswordHash, ValidatedPassword},
         routes::endpoints,
         AppState,
     };
@@ -56,11 +55,10 @@ mod dashboard_route_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        NewUser {
-            email: EmailAddress::new_unchecked("test@test.com"),
-            password_hash: PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()))
-                .unwrap(),
-        }
+        User::build(
+            "test@test.com".parse().unwrap(),
+            PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+        )
         .insert(&db_connection)
         .unwrap();
 

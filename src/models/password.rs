@@ -91,6 +91,18 @@ impl PasswordHash {
         Self(raw_password_hash)
     }
 
+    /// Try to create a password hash from a raw password string.
+    ///
+    /// This is a convenience function that allows one to skip the intermediate `ValidatedPassword`
+    /// type.
+    ///
+    /// This function is used instead of `From<String>` or `FromStr` to make it a bit clearer that
+    /// we are not parsing an existing password hash.
+    pub fn from_string(raw_password: String) -> Result<Self, PasswordError> {
+        let validated_password = ValidatedPassword::new(raw_password)?;
+        PasswordHash::new(validated_password)
+    }
+
     /// Check that `raw_password` matches the stored password.
     pub fn verify(&self, raw_password: &str) -> Result<bool, BcryptError> {
         verify(raw_password, &self.0)
@@ -170,5 +182,19 @@ mod password_hash_tests {
         let dupe_hash = PasswordHash::new(password.clone()).unwrap();
 
         assert_ne!(hash, dupe_hash);
+    }
+
+    #[test]
+    fn from_string_fails_on_weak_password() {
+        let hash = PasswordHash::from_string("password1234".to_owned());
+
+        assert!(hash.is_err());
+    }
+
+    #[test]
+    fn from_string_succeeds_on_string_password() {
+        let hash = PasswordHash::from_string("thisisaverysecurepassword!!!!".to_owned());
+
+        assert!(hash.is_ok());
     }
 }

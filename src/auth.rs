@@ -20,8 +20,7 @@ use serde_json::json;
 use time::{Duration, OffsetDateTime};
 
 use crate::{
-    db::{DbError, SelectBy},
-    models::{User, UserID},
+    models::{User, UserError, UserID},
     routes::endpoints,
     state::AppState,
 };
@@ -79,7 +78,7 @@ pub fn verify_credentials(
         .map_err(|_| AuthError::InvalidCredentials)?;
 
     let user = User::select(&email, connection).map_err(|e| match e {
-        DbError::NotFound => AuthError::InvalidCredentials,
+        UserError::NotFound => AuthError::InvalidCredentials,
         _ => {
             tracing::error!("Error matching user: {e}");
             AuthError::InternalError
@@ -233,11 +232,8 @@ mod auth_tests {
 
     use crate::auth::{verify_credentials, AuthError, LogInData};
     use crate::db::initialize;
+    use crate::models::{PasswordHash, User};
     use crate::state::AppState;
-    use crate::{
-        db::Insert,
-        models::{NewUser, PasswordHash, ValidatedPassword},
-    };
 
     fn get_test_app_config() -> AppState {
         let db_connection =
@@ -252,11 +248,10 @@ mod auth_tests {
         let app_state = get_test_app_config();
 
         let password = "averysafeandsecurepassword".to_string();
-        let validated_password = ValidatedPassword::new(password.clone()).unwrap();
-        let test_user = NewUser {
-            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new(validated_password).unwrap(),
-        }
+        let test_user = User::build(
+            EmailAddress::from_str("foo@bar.baz").unwrap(),
+            PasswordHash::from_string(password.clone()).unwrap(),
+        )
         .insert(&app_state.db_connection().lock().unwrap())
         .unwrap();
 
@@ -300,8 +295,8 @@ mod auth_guard_tests {
     use crate::auth::{set_auth_cookie, LogInData};
     use crate::{
         auth::{auth_guard, verify_credentials, COOKIE_USER_ID},
-        db::{initialize, Insert},
-        models::{NewUser, PasswordHash, ValidatedPassword},
+        db::initialize,
+        models::{PasswordHash, User},
         routes::endpoints,
         AppState,
     };
@@ -334,11 +329,10 @@ mod auth_guard_tests {
         let state = get_test_app_state();
 
         let password = "averysafeandsecurepassword".to_string();
-        let validated_password = ValidatedPassword::new(password.clone()).unwrap();
-        let test_user = NewUser {
-            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new(validated_password).unwrap(),
-        }
+        let test_user = User::build(
+            EmailAddress::from_str("foo@bar.baz").unwrap(),
+            PasswordHash::from_string(password.clone()).unwrap(),
+        )
         .insert(&state.db_connection().lock().unwrap())
         .unwrap();
 
@@ -408,11 +402,10 @@ mod auth_guard_tests {
         let state = get_test_app_state();
 
         let password = "averysafeandsecurepassword".to_string();
-        let validated_password = ValidatedPassword::new(password.clone()).unwrap();
-        let test_user = NewUser {
-            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new(validated_password).unwrap(),
-        }
+        let test_user = User::build(
+            EmailAddress::from_str("foo@bar.baz").unwrap(),
+            PasswordHash::from_string(password.clone()).unwrap(),
+        )
         .insert(&state.db_connection().lock().unwrap())
         .unwrap();
 

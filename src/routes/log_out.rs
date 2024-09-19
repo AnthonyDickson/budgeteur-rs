@@ -20,14 +20,13 @@ mod log_out_tests {
     use axum::{routing::post, Router};
     use axum_extra::extract::cookie::Expiration;
     use axum_test::TestServer;
-    use email_address::EmailAddress;
     use rusqlite::Connection;
     use time::{Duration, OffsetDateTime};
 
     use crate::{
         auth::{LogInData, COOKIE_USER_ID},
-        db::{initialize, Insert},
-        models::{NewUser, PasswordHash, ValidatedPassword},
+        db::initialize,
+        models::{PasswordHash, User, ValidatedPassword},
         routes::{endpoints, log_in::post_log_in, log_out::get_log_out},
         AppState,
     };
@@ -37,11 +36,10 @@ mod log_out_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        NewUser {
-            email: EmailAddress::new_unchecked("test@test.com"),
-            password_hash: PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()))
-                .unwrap(),
-        }
+        User::build(
+            "test@test.com".parse().unwrap(),
+            PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+        )
         .insert(&db_connection)
         .unwrap();
 

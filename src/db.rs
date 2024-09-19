@@ -2,13 +2,11 @@
 
 use std::fmt::Display;
 
-use email_address::EmailAddress;
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
 use crate::models::{
     Category, CategoryName, DatabaseID, NewCategory, NewRecurringTransaction, NewSavingsRatio,
-    NewTransaction, NewUser, PasswordHash, Ratio, RecurringTransaction, SavingsRatio, Transaction,
-    User, UserID,
+    NewTransaction, Ratio, RecurringTransaction, SavingsRatio, Transaction, User, UserID,
 };
 
 /// Errors originating from operations on the app's database.
@@ -70,7 +68,7 @@ pub trait CreateTable {
     ///
     /// # Errors
     /// Returns an error if the table already exists or if there is an SQL error.
-    fn create_table(connection: &Connection) -> Result<(), DbError>;
+    fn create_table(connection: &Connection) -> Result<(), Error>;
 }
 
 /// A trait for mapping from a `rusqlite::Row` from a SQLite database to a concrete rust type.
@@ -87,7 +85,7 @@ pub trait CreateTable {
 /// }
 ///
 /// impl CreateTable for Foo {
-///    fn create_table(connection: &Connection) -> Result<(), DbError> {
+///    fn create_table(connection: &Connection) -> Result<(), Error> {
 ///        connection.execute(
 ///            "CREATE TABLE foo (id INTEGER PRIMARY KEY, desc TEXT NOT NULL)",
 ///            (),
@@ -114,7 +112,7 @@ pub trait CreateTable {
 /// }
 ///
 /// impl CreateTable for Bar {
-///    fn create_table(connection: &Connection) -> Result<(), DbError> {
+///    fn create_table(connection: &Connection) -> Result<(), Error> {
 ///        connection.execute(
 ///            "CREATE TABLE bar (id INTEGER PRIMARY KEY, desc TEXT NOT NULL)",
 ///            (),
@@ -192,91 +190,8 @@ pub trait SelectBy<T> {
     fn select(field: T, connection: &Connection) -> Result<Self::ResultType, DbError>;
 }
 
-impl CreateTable for User {
-    fn create_table(connection: &Connection) -> Result<(), DbError> {
-        connection.execute(
-            "CREATE TABLE user (
-                    id INTEGER PRIMARY KEY,
-                    email TEXT UNIQUE NOT NULL,
-                    password TEXT UNIQUE NOT NULL
-                    )",
-            (),
-        )?;
-
-        Ok(())
-    }
-}
-
-impl MapRow for User {
-    type ReturnType = Self;
-
-    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, Error> {
-        let raw_id = row.get(offset)?;
-        let raw_email: String = row.get(offset + 1)?;
-        let raw_password_hash = row.get(offset + 2)?;
-
-        let id = UserID::new(raw_id);
-        let email = EmailAddress::new_unchecked(raw_email);
-        let password_hash = PasswordHash::new_unchecked(raw_password_hash);
-
-        Ok(Self::new(id, email, password_hash))
-    }
-}
-
-impl Insert for NewUser {
-    type ResultType = User;
-
-    /// Create a new user in the database.
-    ///
-    /// # Error
-    /// This function will return an error if there was a problem executing the SQL query. This could be due to:
-    /// - a syntax error in the SQL string,
-    /// - the email is already in use, or
-    /// - the password hash is not unique (very unlikely).
-    fn insert(self, connection: &Connection) -> Result<Self::ResultType, DbError> {
-        connection.execute(
-            "INSERT INTO user (email, password) VALUES (?1, ?2)",
-            (&self.email.to_string(), self.password_hash.to_string()),
-        )?;
-
-        let id = UserID::new(connection.last_insert_rowid());
-
-        Ok(User::new(id, self.email, self.password_hash))
-    }
-}
-
-impl SelectBy<&EmailAddress> for User {
-    type ResultType = User;
-
-    /// Get the user from the database that has the specified `email` address or `None` if such user does not exist.
-    ///
-    /// # Examples
-    /// ```
-    /// use email_address::EmailAddress;
-    /// use rusqlite::Connection;
-    ///
-    /// # use budgeteur_rs::{db::{DbError, SelectBy}, models::User};
-    /// #
-    /// fn get_user(email: &EmailAddress, connection: &Connection) -> Result<User, DbError> {
-    ///     let user = User::select(email, connection)?;
-    ///     assert_eq!(user.email(), email);
-    ///
-    ///     Ok(user)
-    /// }
-    /// ```
-    /// # Panics
-    ///
-    /// Panics if there is no user with the specified email or there are SQL related errors.
-    fn select(email: &EmailAddress, connection: &Connection) -> Result<Self::ResultType, DbError> {
-        connection
-            .prepare("SELECT id, email, password FROM user WHERE email = :email")?
-            .query_row(&[(":email", &email.to_string())], User::map_row)
-            .map_err(|e| e.into())
-    }
-}
-
 impl CreateTable for Category {
-    fn create_table(connection: &Connection) -> Result<(), DbError> {
+    fn create_table(connection: &Connection) -> Result<(), Error> {
         connection.execute(
             "CREATE TABLE category (
                 id INTEGER PRIMARY KEY,
@@ -419,7 +334,7 @@ impl SelectBy<UserID> for Category {
 }
 
 impl CreateTable for Transaction {
-    fn create_table(connection: &Connection) -> Result<(), DbError> {
+    fn create_table(connection: &Connection) -> Result<(), Error> {
         connection
                 .execute(
                     "CREATE TABLE \"transaction\" (
@@ -591,7 +506,7 @@ impl SelectBy<UserID> for Transaction {
 }
 
 impl CreateTable for SavingsRatio {
-    fn create_table(connection: &Connection) -> Result<(), DbError> {
+    fn create_table(connection: &Connection) -> Result<(), Error> {
         connection
             .execute(
                 "CREATE TABLE savings_ratio (
@@ -656,7 +571,7 @@ impl Insert for NewSavingsRatio {
 }
 
 impl CreateTable for RecurringTransaction {
-    fn create_table(connection: &Connection) -> Result<(), DbError> {
+    fn create_table(connection: &Connection) -> Result<(), Error> {
         connection
             .execute(
                 "CREATE TABLE recurring_transaction (
@@ -752,117 +667,6 @@ pub fn initialize(connection: &Connection) -> Result<(), DbError> {
 }
 
 #[cfg(test)]
-mod user_tests {
-    use std::str::FromStr;
-
-    use email_address::EmailAddress;
-    use rusqlite::Connection;
-
-    use crate::{
-        db::{initialize, DbError, Insert, SelectBy, User},
-        models::{NewUser, PasswordHash},
-    };
-
-    fn init_db() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
-        conn
-    }
-
-    #[test]
-    fn insert_user_succeeds() {
-        let conn = init_db();
-
-        let email = EmailAddress::from_str("hello@world.com").unwrap();
-        let password_hash = PasswordHash::new_unchecked("hunter2".to_string());
-
-        let inserted_user = NewUser {
-            email: email.clone(),
-            password_hash: password_hash.clone(),
-        }
-        .insert(&conn)
-        .unwrap();
-
-        assert!(inserted_user.id().as_i64() > 0);
-        assert_eq!(inserted_user.email(), &email);
-        assert_eq!(inserted_user.password_hash(), &password_hash);
-    }
-
-    #[test]
-    fn insert_user_fails_on_duplicate_email() {
-        let conn = init_db();
-
-        let email = EmailAddress::from_str("hello@world.com").unwrap();
-
-        assert!(NewUser {
-            email: email.clone(),
-            password_hash: PasswordHash::new_unchecked("hunter2".to_string())
-        }
-        .insert(&conn)
-        .is_ok());
-
-        assert_eq!(
-            NewUser {
-                email: email.clone(),
-                password_hash: PasswordHash::new_unchecked("hunter3".to_string())
-            }
-            .insert(&conn),
-            Err(DbError::DuplicateEmail)
-        );
-    }
-
-    #[test]
-    fn insert_user_fails_on_duplicate_password() {
-        let conn = init_db();
-
-        let email = EmailAddress::from_str("hello@world.com").unwrap();
-        let password = PasswordHash::new_unchecked("hunter2".to_string());
-
-        assert!(NewUser {
-            email,
-            password_hash: password.clone()
-        }
-        .insert(&conn)
-        .is_ok());
-
-        assert_eq!(
-            NewUser {
-                email: EmailAddress::from_str("bye@world.com").unwrap(),
-                password_hash: password.clone()
-            }
-            .insert(&conn),
-            Err(DbError::DuplicatePassword)
-        );
-    }
-
-    #[test]
-    fn select_user_fails_with_non_existent_email() {
-        let conn = init_db();
-
-        // This email is not in the database.
-        let email = EmailAddress::from_str("notavalidemail@foo.bar").unwrap();
-
-        assert_eq!(User::select(&email, &conn), Err(DbError::NotFound));
-    }
-
-    #[test]
-    fn select_user_succeeds_with_existing_email() {
-        let conn = init_db();
-
-        let test_user = NewUser {
-            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-        }
-        .insert(&conn)
-        .unwrap();
-
-        let retrieved_user = User::select(test_user.email(), &conn).unwrap();
-
-        assert_eq!(retrieved_user, test_user);
-    }
-}
-
-#[cfg(test)]
 mod category_tests {
     use std::str::FromStr;
 
@@ -870,8 +674,8 @@ mod category_tests {
     use rusqlite::Connection;
 
     use crate::{
-        db::{initialize, Category, CategoryName, DbError, SelectBy, User, UserID},
-        models::{NewCategory, NewUser, PasswordHash},
+        db::{initialize, Category, CategoryName, DbError, SelectBy, UserID},
+        models::{NewCategory, PasswordHash, User},
     };
 
     use super::Insert;
@@ -885,10 +689,10 @@ mod category_tests {
     fn create_database_and_insert_test_user() -> (Connection, User) {
         let conn = init_db();
 
-        let test_user = NewUser {
-            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-        }
+        let test_user = User::build(
+            EmailAddress::from_str("foo@bar.baz").unwrap(),
+            PasswordHash::new_unchecked("hunter2".to_string()),
+        )
         .insert(&conn)
         .unwrap();
 
@@ -1009,8 +813,8 @@ mod transaction_tests {
     use time::{Date, Month, OffsetDateTime, Time};
 
     use crate::{
-        db::{initialize, Category, DbError, SelectBy, Transaction, User},
-        models::{CategoryName, NewCategory, NewTransaction, NewUser, PasswordHash, UserID},
+        db::{initialize, Category, DbError, SelectBy, Transaction},
+        models::{CategoryName, NewCategory, NewTransaction, PasswordHash, User, UserID},
     };
 
     use super::Insert;
@@ -1024,10 +828,10 @@ mod transaction_tests {
     fn create_database_and_insert_test_user_and_category() -> (Connection, User, Category) {
         let conn = init_db();
 
-        let test_user = NewUser {
-            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-        }
+        let test_user = User::build(
+            EmailAddress::from_str("foo@bar.baz").unwrap(),
+            PasswordHash::new_unchecked("hunter2".to_string()),
+        )
         .insert(&conn)
         .unwrap();
 
@@ -1115,10 +919,10 @@ mod transaction_tests {
         let (conn, _test_user, someone_elses_category) =
             create_database_and_insert_test_user_and_category();
 
-        let unauthorized_user = NewUser {
-            email: EmailAddress::from_str("bar@baz.qux").unwrap(),
-            password_hash: PasswordHash::new_unchecked("hunter3".to_string()),
-        }
+        let unauthorized_user = User::build(
+            EmailAddress::from_str("bar@baz.qux").unwrap(),
+            PasswordHash::new_unchecked("hunter3".to_string()),
+        )
         .insert(&conn)
         .unwrap();
 
@@ -1249,8 +1053,7 @@ mod savings_ratio_tests {
     use crate::{
         db::{initialize, Transaction},
         models::{
-            CategoryName, NewCategory, NewSavingsRatio, NewTransaction, NewUser, PasswordHash,
-            Ratio,
+            CategoryName, NewCategory, NewSavingsRatio, NewTransaction, PasswordHash, Ratio, User,
         },
     };
 
@@ -1265,10 +1068,10 @@ mod savings_ratio_tests {
     fn create_database_and_insert_test_transaction() -> (Connection, Transaction) {
         let conn = init_db();
 
-        let test_user = NewUser {
-            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-        }
+        let test_user = User::build(
+            EmailAddress::from_str("foo@bar.baz").unwrap(),
+            PasswordHash::new_unchecked("hunter2".to_string()),
+        )
         .insert(&conn)
         .unwrap();
 
@@ -1322,7 +1125,7 @@ mod recurring_transaction_tests {
     use time::{Date, Duration, Month, OffsetDateTime, Time};
 
     use crate::models::{
-        CategoryName, Frequency, NewCategory, NewRecurringTransaction, NewTransaction, NewUser,
+        CategoryName, Frequency, NewCategory, NewRecurringTransaction, NewTransaction,
         PasswordHash, Transaction, User,
     };
 
@@ -1337,10 +1140,10 @@ mod recurring_transaction_tests {
     fn create_database_and_insert_test_user() -> (Connection, User) {
         let conn = init_db();
 
-        let test_user = NewUser {
-            email: EmailAddress::from_str("foo@bar.baz").unwrap(),
-            password_hash: PasswordHash::new_unchecked("hunter2".to_string()),
-        }
+        let test_user = User::build(
+            EmailAddress::from_str("foo@bar.baz").unwrap(),
+            PasswordHash::new_unchecked("hunter2".to_string()),
+        )
         .insert(&conn)
         .unwrap();
 

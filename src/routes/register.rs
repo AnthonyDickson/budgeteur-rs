@@ -15,8 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::set_auth_cookie,
-    db::{DbError, Insert},
-    models::{NewUser, PasswordHash, ValidatedPassword},
+    models::{PasswordHash, User, UserError, ValidatedPassword},
     routes::get_internal_server_error_redirect,
     AppState, HtmlTemplate,
 };
@@ -154,47 +153,44 @@ pub async fn create_user(
         }
     };
 
-    NewUser {
-        email,
-        password_hash,
-    }
-    .insert(&state.db_connection().lock().unwrap())
-    .map(|user| {
-        let jar = set_auth_cookie(jar, user.id());
+    User::build(email, password_hash)
+        .insert(&state.db_connection().lock().unwrap())
+        .map(|user| {
+            let jar = set_auth_cookie(jar, user.id());
 
-        (
-            StatusCode::SEE_OTHER,
-            HxRedirect(Uri::from_static(endpoints::LOG_IN)),
-            jar,
-        )
-    })
-    .map_err(|e| match e {
-        DbError::DuplicateEmail => HtmlTemplate(RegisterFormTemplate {
-            email_input: EmailInputTemplate {
-                value: &user_data.email,
-                error_message: "The email address is already in use",
-            },
-            password_input,
-            ..Default::default()
+            (
+                StatusCode::SEE_OTHER,
+                HxRedirect(Uri::from_static(endpoints::LOG_IN)),
+                jar,
+            )
         })
-        .into_response(),
-        DbError::DuplicatePassword => HtmlTemplate(RegisterFormTemplate {
-            email_input,
-            password_input: PasswordInputTemplate {
-                value: &user_data.password,
-                min_length: PASSWORD_INPUT_MIN_LENGTH,
-                error_message: "The password is already in use",
-            },
-            ..Default::default()
-        })
-        .into_response(),
-        e => {
-            tracing::error!("An unhandled error occurred while inserting a new user: {e}");
+        .map_err(|e| match e {
+            UserError::DuplicateEmail => HtmlTemplate(RegisterFormTemplate {
+                email_input: EmailInputTemplate {
+                    value: &user_data.email,
+                    error_message: "The email address is already in use",
+                },
+                password_input,
+                ..Default::default()
+            })
+            .into_response(),
+            UserError::DuplicatePassword => HtmlTemplate(RegisterFormTemplate {
+                email_input,
+                password_input: PasswordInputTemplate {
+                    value: &user_data.password,
+                    min_length: PASSWORD_INPUT_MIN_LENGTH,
+                    error_message: "The password is already in use",
+                },
+                ..Default::default()
+            })
+            .into_response(),
+            e => {
+                tracing::error!("An unhandled error occurred while inserting a new user: {e}");
 
-            get_internal_server_error_redirect()
-        }
-    })
-    .into_response()
+                get_internal_server_error_redirect()
+            }
+        })
+        .into_response()
 }
 
 #[cfg(test)]

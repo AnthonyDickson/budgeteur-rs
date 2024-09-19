@@ -115,8 +115,8 @@ mod log_in_tests {
 
     use crate::{
         auth::LogInData,
-        db::{initialize, Insert},
-        models::{NewUser, PasswordHash, ValidatedPassword},
+        db::initialize,
+        models::{PasswordHash, User, ValidatedPassword},
         routes::{endpoints, log_in::post_log_in},
         AppState,
     };
@@ -126,11 +126,10 @@ mod log_in_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        NewUser {
-            email: EmailAddress::new_unchecked("test@test.com"),
-            password_hash: PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()))
-                .unwrap(),
-        }
+        User::build(
+            EmailAddress::new_unchecked("test@test.com"),
+            PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+        )
         .insert(&db_connection)
         .unwrap();
 
