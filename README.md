@@ -1,13 +1,13 @@
 # Budgeteur-rs
 Budgeteur is a budgeting and personal finance web-app.
 
-This app provides two services:
+This app aims to provide two services:
 * Budgeting: Recording your income and expenses, and tracking savings targets.
 * Personal Finance: Keeping track of your net worth.
 
 The application consists of a single REST server that renders and serves HTML directly.
 
-## Quickstart
+## Quick Start
 1.  (First time only) Run the below script to create the test database:
     ```shell
     cargo run --bin create_test_db test.db
@@ -36,3 +36,14 @@ The application consists of a single REST server that renders and serves HTML di
     content-length: 0
     date: Thu, 22 Aug 2024 03:00:58 GMT
     ```
+
+## Status and Next Steps
+Currently, user registration, log in and log out have been implemented on both the backend and frontend.
+
+![Preview of the registration page.](readme/register.png)
+![Preview of the log in page.](readme/log_in.png)
+![Preview of the dashboard page with a log out button.](readme/dashboard.png)
+
+The next steps will be to work on CRUD functionality for transactions. 
+This will allow for the fundamental budgeting functionality.
+
