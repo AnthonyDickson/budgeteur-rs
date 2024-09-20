@@ -16,13 +16,13 @@ use super::{Category, CategoryError};
 /// Errors that can occur during the creation or retrieval of a transaction.
 #[derive(Debug, Error, PartialEq)]
 pub enum TransactionError {
-    /// A date in the future was used to create a transaction. 
+    /// A date in the future was used to create a transaction.
     ///
     /// Transactions record events that have already happened, therefore future dates are disallowed.
     #[error("transaction dates must not be later than the current date")]
     FutureDate,
 
-    /// The category ID used to create a transaction did not match a valid category. 
+    /// The category ID used to create a transaction did not match a valid category.
     #[error("the category ID does not refer to a valid category")]
     InvalidCategory,
 
@@ -59,7 +59,7 @@ impl From<rusqlite::Error> for TransactionError {
 ///
 /// To create a new `Transaction`, use [Transaction::build]. To retrieve an existing
 /// transaction, use [Transaction::select] to get a transaction by its ID and
-/// [Transaction::select_by_user] to get transactions by user. 
+/// [Transaction::select_by_user] to get transactions by user.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Transaction {
     id: DatabaseID,
@@ -77,7 +77,7 @@ impl Transaction {
     ///
     /// If you are trying to retrieve an exisiting transaction, see [Transaction::select] and
     /// [Transaction::select_by_user].
-        pub fn build(amount: f64, user_id: UserID) -> TransactionBuilder {
+    pub fn build(amount: f64, user_id: UserID) -> TransactionBuilder {
         TransactionBuilder::new(amount, user_id)
     }
 
@@ -129,7 +129,7 @@ impl Transaction {
     }
 
     /// Retrieve the transactions in the database that have `user_id`.
-    /// 
+    ///
     /// An empty vector is returned if the specified user has no transactions.
     ///
     /// # Errors
@@ -214,7 +214,7 @@ impl TransactionBuilder {
         }
     }
 
-    /// Set the date for the transaction. 
+    /// Set the date for the transaction.
     ///
     /// # Errors
     /// This function will return an error if `date` is a date in the future.
@@ -280,7 +280,7 @@ impl TransactionBuilder {
                     rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
                         TransactionError::InvalidUser
                     }
-                    error => TransactionError::SqlError(error) 
+                    error => TransactionError::SqlError(error)
                 })?;
 
         let transaction_id = connection.last_insert_rowid();
@@ -436,7 +436,9 @@ mod transaction_tests {
         .insert(&conn)
         .unwrap();
 
-        let maybe_transaction = Transaction::build(PI, unauthorized_user.id()).category(Some(someone_elses_category.id())).insert(&conn);
+        let maybe_transaction = Transaction::build(PI, unauthorized_user.id())
+            .category(Some(someone_elses_category.id()))
+            .insert(&conn);
 
         // The server should not give any information indicating to the client that the category exists or belongs to another user,
         // so we give the same error as if the referenced category does not exist.

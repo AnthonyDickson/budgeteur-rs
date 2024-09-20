@@ -20,13 +20,12 @@ use axum_extra::response::Html;
 use axum_server::Handle;
 use models::{CategoryError, TransactionError};
 use serde_json::json;
+use thiserror::Error;
 use tokio::signal;
 
 use auth::AuthError;
 pub use routes::build_router;
 pub use state::AppState;
-
-use crate::db::DbError;
 
 mod auth;
 pub mod db;
@@ -69,22 +68,36 @@ pub async fn graceful_shutdown(handle: Handle) {
 }
 
 /// The errors that may occur in the application.
+#[derive(Debug, Error)]
 enum AppError {
     /// The requested resource was not found. The client should check that the parameters (e.g., ID) are correct and that the resource has been created.
+    #[error("the requested resource could not be found")]
     NotFound,
+
     /// An error occurred while operating on a category.
+    #[error("category error")]
     CategoryError(CategoryError),
+
     /// An error occurred while operating on a transaction.
+    #[error("transaction error")]
     TransactionError(TransactionError),
-    /// An error occurred while accessing the application's database. This may be due to a database constraint being violated (e.g., foreign keys).
-    DatabaseError(DbError),
+
     /// The user is not authenticated/authorized to access the given resource.
+    #[error("auth error")]
     AuthError(AuthError),
 }
 
 impl From<AuthError> for AppError {
     fn from(value: AuthError) -> Self {
         AppError::AuthError(value)
+    }
+}
+
+impl From<CategoryError> for AppError {
+    fn from(e: CategoryError) -> Self {
+        tracing::error!("{e:?}");
+
+        AppError::CategoryError(e)
     }
 }
 
@@ -97,10 +110,6 @@ impl From<TransactionError> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppError::DatabaseError(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Internal server error: {e:?}"),
-            ),
             AppError::CategoryError(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal server error: {e:?}"),
@@ -122,22 +131,6 @@ impl IntoResponse for AppError {
         }));
 
         (status, body).into_response()
-    }
-}
-
-impl From<CategoryError> for AppError {
-    fn from(e: CategoryError) -> Self {
-        tracing::error!("{e:?}");
-
-        AppError::CategoryError(e)
-    }
-}
-
-impl From<DbError> for AppError {
-    fn from(e: DbError) -> Self {
-        tracing::error!("{e:?}");
-
-        AppError::DatabaseError(e)
     }
 }
 

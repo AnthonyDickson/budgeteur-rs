@@ -114,20 +114,6 @@ impl User {
 
     /// Get the user from the database that has the specified `email` address, or return [UserError::NotFound] if such user does not exist.
     ///
-    /// # Examples
-    /// ```
-    /// use email_address::EmailAddress;
-    /// use rusqlite::Connection;
-    ///
-    /// # use budgeteur_rs::{db::{DbError, SelectBy}, models::User, models::UserError};
-    /// #
-    /// fn get_user(email: &EmailAddress, connection: &Connection) -> Result<User, UserError> {
-    ///     let user = User::select(email, connection)?;
-    ///     assert_eq!(user.email(), email);
-    ///
-    ///     Ok(user)
-    /// }
-    /// ```
     /// # Panics
     ///
     /// Panics if there is no user with the specified email or there are SQL related errors.
