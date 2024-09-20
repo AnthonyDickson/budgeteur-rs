@@ -112,7 +112,7 @@ struct CategoryData {
 /// Panics if the lock for the database connection is already held by the same thread.
 async fn create_category(
     State(state): State<AppState>,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<UserID>,
     _: PrivateCookieJar,
     Form(new_category): Form<CategoryData>,
 ) -> impl IntoResponse {
@@ -120,7 +120,6 @@ async fn create_category(
     let connection = connection_mutex.lock().unwrap();
 
     let name = CategoryName::new(new_category.name)?;
-    let user_id = UserID::new(user_id);
 
     Category::build(name, user_id)
         .insert(&connection)
@@ -161,7 +160,7 @@ async fn get_category(
 #[derive(Debug, Serialize, Deserialize)]
 struct TransactionData {
     amount: f64,
-    // FIXME: Date should be a date type. A datetime tpye is used as a workaround since I
+    // HACK: Date should be a date type. A datetime tpye is used as a workaround since I
     // encountered issues serializing dates with axum_test (this uses serde_urlencoded).
     #[serde(with = "time::serde::iso8601")]
     date: OffsetDateTime,
@@ -177,12 +176,9 @@ struct TransactionData {
 async fn create_transaction(
     State(state): State<AppState>,
     _jar: PrivateCookieJar,
-    // TODO: Replace Path<i64> with Path<UserID>.
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<UserID>,
     Form(data): Form<TransactionData>,
 ) -> impl IntoResponse {
-    let user_id = UserID::new(user_id);
-
     Transaction::build(data.amount, user_id)
         .description(data.description)
         .category(data.category_id)
