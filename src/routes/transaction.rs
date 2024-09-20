@@ -84,9 +84,9 @@ mod transaction_tests {
 
     use crate::auth::LogInData;
     use crate::build_router;
+    use crate::routes::category::CategoryData;
     use crate::routes::register::RegisterForm;
     use crate::routes::transaction::TransactionData;
-    use crate::routes::CategoryData;
     use crate::{
         auth::COOKIE_USER_ID,
         db::initialize,
