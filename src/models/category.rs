@@ -10,17 +10,22 @@ use crate::{
     models::{DatabaseID, UserID},
 };
 
+/// Errors that can occur when creating or retrieving a category.
 #[derive(Debug, Error, PartialEq)]
 pub enum CategoryError {
+    /// There was no category that matches the given details.
     #[error("a category with the given details could not found in the database")]
     NotFound,
 
+    /// An empty string was used to create a category name.
     #[error("an empty string is not a valid category name")]
     InvalidName,
 
+    /// The user ID used to create a category does not refer to a valid user.
     #[error("the user ID does not refer to a valid user.")]
     InvalidUser,
 
+    /// An unexpected and unhandled SQL error occurred.
     #[error("an unexpected error occurred: {0}")]
     SqlError(rusqlite::Error),
 }

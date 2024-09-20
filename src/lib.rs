@@ -27,11 +27,11 @@ use auth::AuthError;
 pub use routes::build_router;
 pub use state::AppState;
 
-mod auth;
+pub mod auth;
 pub mod db;
 pub mod models;
-mod routes;
-mod state;
+pub mod routes;
+pub mod state;
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
 /// then signals the server to shut down gracefully.

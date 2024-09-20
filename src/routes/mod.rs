@@ -23,10 +23,10 @@ use crate::{auth::auth_guard, AppState, HtmlTemplate};
 mod category;
 mod dashboard;
 pub mod endpoints;
-pub mod log_in;
+mod log_in;
 mod log_out;
 mod navigation;
-pub mod register;
+mod register;
 mod templates;
 mod transaction;
 
