@@ -177,6 +177,8 @@ impl CreateTable for User {
 /// Builder for creating new [User]s.
 ///
 /// The function for finalizing the builder is [UserBuilder::insert].
+///
+/// If you are trying to retrieve an exsiting user, see [User::select].
 pub struct UserBuilder {
     email: EmailAddress,
     password_hash: PasswordHash,
@@ -186,6 +188,8 @@ impl UserBuilder {
     /// Create a new user and insert it into the application database.
     ///
     /// Finalize the builder with [UserBuilder::insert].
+    ///
+    /// If you are trying to retrieve an exsiting user, see [User::select].
     pub fn new(email: EmailAddress, password_hash: PasswordHash) -> Self {
         Self {
             email,

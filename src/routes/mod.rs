@@ -17,11 +17,11 @@ use log_in::{get_log_in_page, post_log_in};
 use log_out::get_log_out;
 use register::{create_user, get_register_page};
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::{
     auth::{auth_guard, get_user_id_from_auth_cookie},
-    db::{Insert, SelectBy},
-    models::{Category, CategoryName, DatabaseID, NewTransaction, Transaction, UserID},
+    models::{Category, CategoryName, DatabaseID, Transaction, UserID},
     AppError, AppState, HtmlTemplate,
 };
 
@@ -52,7 +52,7 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::DASHBOARD, get(get_dashboard_page))
         .route(endpoints::USER_CATEGORIES, post(create_category))
         .route(endpoints::CATEGORY, get(get_category))
-        .route(endpoints::TRANSACTIONS, post(create_transaction))
+        .route(endpoints::USER_TRANSACTIONS, post(create_transaction))
         .route(endpoints::TRANSACTION, get(get_transaction))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
 
@@ -158,6 +158,17 @@ async fn get_category(
         .map(|category| (StatusCode::OK, Json(category)))
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct TransactionData {
+    amount: f64,
+    // FIXME: Date should be a date type. A datetime tpye is used as a workaround since I
+    // encountered issues serializing dates with axum_test (this uses serde_urlencoded).
+    #[serde(with = "time::serde::iso8601")]
+    date: OffsetDateTime,
+    description: String,
+    category_id: Option<DatabaseID>,
+}
+
 /// A route handler for creating a new transaction.
 ///
 /// # Panics
@@ -166,12 +177,19 @@ async fn get_category(
 async fn create_transaction(
     State(state): State<AppState>,
     _jar: PrivateCookieJar,
-    Json(new_transaction): Json<NewTransaction>,
+    // TODO: Replace Path<i64> with Path<UserID>.
+    Path(user_id): Path<i64>,
+    Form(data): Form<TransactionData>,
 ) -> impl IntoResponse {
-    new_transaction
+    let user_id = UserID::new(user_id);
+
+    Transaction::build(data.amount, user_id)
+        .description(data.description)
+        .category(data.category_id)
+        .date(data.date.date())?
         .insert(&state.db_connection().lock().unwrap())
         .map(|transaction| (StatusCode::OK, Json(transaction)))
-        .map_err(AppError::DatabaseError)
+        .map_err(AppError::TransactionError)
 }
 
 /// A route handler for getting a transaction by its database ID.
@@ -190,7 +208,7 @@ async fn get_transaction(
     let connection = connection_mutex.lock().unwrap();
 
     Transaction::select(transaction_id, &connection)
-        .map_err(AppError::DatabaseError)
+        .map_err(AppError::TransactionError)
         .and_then(|transaction| {
             if get_user_id_from_auth_cookie(jar)? == transaction.user_id() {
                 Ok(transaction)
@@ -400,10 +418,10 @@ mod transaction_tests {
     use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
     use rusqlite::Connection;
-    use serde_json::json;
     use time::OffsetDateTime;
 
     use crate::auth::LogInData;
+    use crate::routes::TransactionData;
     use crate::{
         auth::COOKIE_USER_ID,
         db::initialize,
@@ -461,7 +479,6 @@ mod transaction_tests {
         let category = server
             .post(&endpoints::USER_CATEGORIES.replace(":user_id", &user_id.to_string()))
             .add_cookie(auth_cookie.clone())
-            .content_type("application/json")
             .form(&CategoryData {
                 name: "foo".to_string(),
             })
@@ -480,27 +497,26 @@ mod transaction_tests {
         let description = "A thingymajig";
 
         let response = server
-            .post(endpoints::TRANSACTIONS)
+            .post(&endpoints::USER_TRANSACTIONS.replace(":user_id", &user_id.to_string()))
             .add_cookie(auth_cookie)
-            .content_type("application/json")
-            .json(&json!({
-                "id": 0,
-                "amount": amount,
-                "date": date,
-                "description": description,
-                "category_id": category.id(),
-                "user_id": user_id,
-            }))
+            .form(&TransactionData {
+                amount,
+                date,
+                description: description.to_string(),
+                category_id: Some(category.id()),
+            })
             .await;
 
         response.assert_status_ok();
 
+        dbg!(response.text());
+
         let transaction = response.json::<Transaction>();
 
         assert_eq!(transaction.amount(), amount);
-        assert_eq!(*transaction.date(), date);
+        assert_eq!(*transaction.date(), date.date());
         assert_eq!(transaction.description(), description);
-        assert_eq!(transaction.category_id(), category.id());
+        assert_eq!(transaction.category_id(), Some(category.id()));
         assert_eq!(transaction.user_id(), user_id);
     }
 
@@ -513,17 +529,14 @@ mod transaction_tests {
         let description = "A thingymajig";
 
         let inserted_transaction = server
-            .post(endpoints::TRANSACTIONS)
+            .post(&endpoints::USER_TRANSACTIONS.replace(":user_id", &user_id.to_string()))
             .add_cookie(auth_cookie.clone())
-            .content_type("application/json")
-            .json(&json!({
-                "id": 0,
-                "amount": amount,
-                "date": date,
-                "description": description,
-                "category_id": category.id(),
-                "user_id": user_id,
-            }))
+            .form(&TransactionData {
+                amount,
+                date,
+                description: description.to_string(),
+                category_id: Some(category.id()),
+            })
             .await
             .json::<Transaction>();
 
@@ -552,17 +565,14 @@ mod transaction_tests {
         let description = "A thingymajig";
 
         let inserted_transaction = server
-            .post(endpoints::TRANSACTIONS)
+            .post(&endpoints::USER_TRANSACTIONS.replace(":user_id", &user_id.to_string()))
             .add_cookie(auth_cookie.clone())
-            .content_type("application/json")
-            .json(&json!({
-                "id": 0,
-                "amount": amount,
-                "date": date,
-                "description": description,
-                "category_id": category.id(),
-                "user_id": user_id,
-            }))
+            .form(&TransactionData {
+                amount,
+                date,
+                description: description.to_string(),
+                category_id: Some(category.id()),
+            })
             .await
             .json::<Transaction>();
 

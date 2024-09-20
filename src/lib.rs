@@ -18,7 +18,7 @@ use axum::{
 };
 use axum_extra::response::Html;
 use axum_server::Handle;
-use models::CategoryError;
+use models::{CategoryError, TransactionError};
 use serde_json::json;
 use tokio::signal;
 
@@ -74,6 +74,8 @@ enum AppError {
     NotFound,
     /// An error occurred while operating on a category.
     CategoryError(CategoryError),
+    /// An error occurred while operating on a transaction.
+    TransactionError(TransactionError),
     /// An error occurred while accessing the application's database. This may be due to a database constraint being violated (e.g., foreign keys).
     DatabaseError(DbError),
     /// The user is not authenticated/authorized to access the given resource.
@@ -83,6 +85,12 @@ enum AppError {
 impl From<AuthError> for AppError {
     fn from(value: AuthError) -> Self {
         AppError::AuthError(value)
+    }
+}
+
+impl From<TransactionError> for AppError {
+    fn from(value: TransactionError) -> Self {
+        AppError::TransactionError(value)
     }
 }
 
@@ -97,6 +105,11 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal server error: {e:?}"),
             ),
+            AppError::TransactionError(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Internal server error: {e:?}"),
+            ),
+
             AppError::AuthError(e) => (StatusCode::UNAUTHORIZED, format!("Auth error: {e:?}")),
             AppError::NotFound => (
                 StatusCode::NOT_FOUND,

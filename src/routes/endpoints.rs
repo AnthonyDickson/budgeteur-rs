@@ -8,6 +8,7 @@ pub const LOG_OUT: &str = "/log_out";
 pub const REGISTER: &str = "/register";
 pub const USERS: &str = "/users";
 pub const USER_CATEGORIES: &str = "/users/:user_id/categories";
+pub const USER_TRANSACTIONS: &str = "/users/:user_id/transactions";
 pub const CATEGORIES: &str = "/categories";
 pub const CATEGORY: &str = "/categories/:category_id";
 pub const TRANSACTIONS: &str = "/transactions";
@@ -37,5 +38,6 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::ROOT);
         assert_endpoint_is_valid_uri(endpoints::USERS);
         assert_endpoint_is_valid_uri(endpoints::USER_CATEGORIES);
+        assert_endpoint_is_valid_uri(endpoints::USER_TRANSACTIONS);
     }
 }

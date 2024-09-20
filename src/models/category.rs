@@ -174,6 +174,9 @@ impl MapRow for Category {
 /// Builder for creating a new [Category].
 ///
 /// The function for finalizing the builder is [CategoryBuilder::insert].
+///
+/// If you are trying to retrieve an existing category, see [Category::select] and
+/// [Category::select_by_user].
 pub struct CategoryBuilder {
     name: CategoryName,
     user_id: UserID,
@@ -183,6 +186,9 @@ impl CategoryBuilder {
     /// Create a new category and insert it into the application database.
     ///
     /// Finalize the builder with [CategoryBuilder::insert].
+    ///
+    /// If you are trying to retrieve an existing category, see [Category::select] and
+    /// [Category::select_by_user].
     fn new(name: CategoryName, user_id: UserID) -> Self {
         Self { name, user_id }
     }
