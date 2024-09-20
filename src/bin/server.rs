@@ -10,13 +10,13 @@ use axum::{
     extract::{MatchedPath, Request},
     Router,
 };
-use axum_server::{Handle, tls_rustls::RustlsConfig};
+use axum_server::{tls_rustls::RustlsConfig, Handle};
 use clap::Parser;
 use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
-use tracing_subscriber::{filter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-use budgeteur_rs::{AppState, build_router, graceful_shutdown};
+use budgeteur_rs::{build_router, graceful_shutdown, AppState};
 
 /// The REST API server for budgeteur_rs.
 #[derive(Parser, Debug)]
@@ -58,10 +58,12 @@ async fn main() {
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));
 
+    let router = add_tracing_layer(build_router(app_config));
+
     tracing::info!("HTTPS server listening on {}", addr);
     axum_server::bind_rustls(addr, tls_config)
         .handle(handle)
-        .serve(add_tracing_layer(build_router(app_config)).into_make_service())
+        .serve(router.into_make_service())
         .await
         .unwrap();
 }

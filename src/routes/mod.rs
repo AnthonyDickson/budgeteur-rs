@@ -18,6 +18,7 @@ use log_out::get_log_out;
 use register::{create_user, get_register_page};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use tower_http::services::ServeDir;
 
 use crate::{
     auth::{auth_guard, get_user_id_from_auth_cookie},
@@ -58,6 +59,7 @@ pub fn build_router(state: AppState) -> Router {
 
     protected_routes
         .merge(unprotected_routes)
+        .nest_service("/assets", ServeDir::new("assets/"))
         .fallback(get_404_not_found)
         .with_state(state)
 }

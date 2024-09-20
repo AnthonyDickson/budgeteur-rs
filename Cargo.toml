@@ -9,8 +9,8 @@ askama = "0.12.1"
 askama_axum = "0.4.0"
 axum = { version = "0.7.5", features = ["form", "macros"] }
 axum-extra = { version = "0.9.3", features = [
-    "cookie-private",
-    "typed-header",
+  "cookie-private",
+  "typed-header",
 ] }
 axum-htmx = "0.6.0"
 axum-server = { version = "0.7.1", features = ["tls-rustls"] }
@@ -25,7 +25,7 @@ sha2 = { version = "0.10.8" }
 thiserror = "1.0.63"
 time = { version = "0.3.36", features = ["serde"] }
 tokio = { version = "1.39.2", features = ["full"] }
-tower-http = { version = "0.5.2", features = ["trace"] }
+tower-http = { version = "0.6.0", features = ["trace", "fs"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 zxcvbn = "3.1.0"
