@@ -25,6 +25,7 @@ struct DashboardTemplate<'a> {
     user_id: UserID,
     /// How much over or under budget the user is for this week.
     balance: f64,
+    /// The user's transactions for this week.
     transactions: Vec<Transaction>,
 }
 
