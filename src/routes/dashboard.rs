@@ -6,11 +6,16 @@ use super::{
 };
 use askama::Template;
 use axum::{
+    extract::State,
     response::{IntoResponse, Response},
     Extension,
 };
+use time::OffsetDateTime;
 
-use crate::{models::UserID, HtmlTemplate};
+use crate::{
+    models::{Transaction, UserID},
+    AppError, AppState, HtmlTemplate,
+};
 
 /// Renders the dashboard page.
 #[derive(Template)]
@@ -18,13 +23,44 @@ use crate::{models::UserID, HtmlTemplate};
 struct DashboardTemplate<'a> {
     navbar: NavbarTemplate<'a>,
     user_id: UserID,
+    /// How much over or under budget the user is for this week.
+    balance: f64,
 }
 
 /// Display a page with an overview of the user's data.
-pub async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
+pub async fn get_dashboard_page(
+    State(state): State<AppState>,
+    Extension(user_id): Extension<UserID>,
+) -> Response {
     let navbar = get_nav_bar(endpoints::DASHBOARD);
 
-    HtmlTemplate(DashboardTemplate { navbar, user_id }).into_response()
+    // TODO: Create function for getting transactions within a time span (time::Duration).
+    let transactions = Transaction::select_by_user(user_id, &state.db_connection().lock().unwrap())
+        .map_err(AppError::TransactionError);
+    let transactions = match transactions {
+        Ok(transactions) => transactions,
+        Err(error) => return error.into_response(),
+    };
+
+    let today = OffsetDateTime::now_utc().date();
+    let week = today.monday_based_week();
+    let balance = transactions
+        .iter()
+        .filter_map(|transaction| {
+            if transaction.date().monday_based_week() == week {
+                Some(transaction.amount())
+            } else {
+                None
+            }
+        })
+        .sum();
+
+    HtmlTemplate(DashboardTemplate {
+        navbar,
+        user_id,
+        balance,
+    })
+    .into_response()
 }
 
 #[cfg(test)]
