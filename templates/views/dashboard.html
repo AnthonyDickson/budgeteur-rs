@@ -1,7 +1,7 @@
 {% extends "base.html" %} {% block title %}Home{% endblock %} {% block content
 %} {{ navbar|safe }}
-<div class="flex flex-col items-center px-6 py-8 mx-auto md:h-screen lg:py-0"/>
-  <p class="text-gray-900 dark:text-white">Hello, you are user #{{ user_id }}.</p>
+<div class="flex flex-col items-center px-6 py-8 mx-auto md:h-screen lg:py-0 text-gray-900 dark:text-white"/>
+  <p>Hello, you are user #{{ user_id }}.</p>
   <div>
     {# TODO: Get abs filter working with balance. 
        It seems to be an issue with balance being converted into a reference, 
@@ -11,6 +11,61 @@
     {% else %}
       <p>You are ${{ balance }} over budget.</p>
     {% endif %}  
+  </div>
+
+  <div class="relative overflow-x-auto">
+      <table class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400">
+          <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+              <tr>
+                  <th scope="col" class="px-6 py-3">
+                    ID 
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    Amount 
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    Date   
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    Description 
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    Category 
+                  </th>
+              </tr>
+          </thead>
+          <tbody>
+              {% for transaction in transactions %}
+              <tr class="bg-white dark:bg-gray-800 {% if !loop.last %}border-b dark:border-gray-700{% endif %}">
+                <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white">
+                  {{ transaction.id() }} 
+                </th>
+                <td class="px-6 py-4">
+                  ${{ "{:.2}"|format(transaction.amount()) }}    
+                </td>
+                <td class="px-6 py-4">
+                  {{ transaction.date() }} 
+                </td>
+                <td class="px-6 py-4">
+                  {{ transaction.description() }} 
+                </td>
+                <td class="px-6 py-4">
+                  {% if let Some(category_id) = transaction.category_id() %}
+                    {{ category_id }} 
+                  {% else %}
+                    - 
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+
+              {% if transactions.is_empty() %}
+              <tr>
+                <th>Nothing here yet.</th>
+              </tr> 
+              {% endif %}
+          </tbody>
+      </table>
   </div>
 </div>
 {% endblock %}

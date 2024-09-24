@@ -25,6 +25,7 @@ struct DashboardTemplate<'a> {
     user_id: UserID,
     /// How much over or under budget the user is for this week.
     balance: f64,
+    transactions: Vec<Transaction>,
 }
 
 /// Display a page with an overview of the user's data.
@@ -59,6 +60,7 @@ pub async fn get_dashboard_page(
         navbar,
         user_id,
         balance,
+        transactions,
     }
     .into_response()
 }
