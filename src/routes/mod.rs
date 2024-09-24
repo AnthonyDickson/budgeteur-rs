@@ -1,6 +1,6 @@
 //! This module defines the REST API's routes and their handlers.
 
-use askama::Template;
+use askama_axum::Template;
 use axum::{
     http::{StatusCode, Uri},
     middleware,
@@ -18,7 +18,7 @@ use register::{create_user, get_register_page};
 use tower_http::services::ServeDir;
 use transaction::{create_transaction, get_transaction};
 
-use crate::{auth::auth_guard, AppState, HtmlTemplate};
+use crate::{auth::auth_guard, AppState};
 
 mod category;
 mod dashboard;
@@ -87,7 +87,7 @@ pub(crate) fn get_internal_server_error_redirect() -> Response {
 struct InternalServerErrorPageTemplate;
 
 async fn get_internal_server_error_page() -> Response {
-    HtmlTemplate(InternalServerErrorPageTemplate).into_response()
+    InternalServerErrorPageTemplate.into_response()
 }
 
 #[derive(Template)]
@@ -95,7 +95,7 @@ async fn get_internal_server_error_page() -> Response {
 struct NotFoundTemplate;
 
 async fn get_404_not_found() -> Response {
-    (StatusCode::NOT_FOUND, HtmlTemplate(NotFoundTemplate)).into_response()
+    (StatusCode::NOT_FOUND, NotFoundTemplate).into_response()
 }
 
 #[cfg(test)]

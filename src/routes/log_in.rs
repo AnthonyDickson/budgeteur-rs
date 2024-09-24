@@ -13,7 +13,7 @@ use axum_htmx::HxRedirect;
 
 use crate::{
     auth::{set_auth_cookie, verify_credentials, AuthError, LogInData},
-    AppState, HtmlTemplate,
+    AppState,
 };
 
 use super::{
@@ -51,7 +51,7 @@ struct LogInTemplate<'a> {
 
 /// Display the log-in page.
 pub async fn get_log_in_page() -> Response {
-    HtmlTemplate(LogInTemplate::default()).into_response()
+    LogInTemplate::default().into_response()
 }
 
 /// Handler for log-in requests via the POST method.
@@ -84,24 +84,22 @@ pub async fn post_log_in(
                 jar,
             )
         })
-        .map_err(|e| {
-            HtmlTemplate(LogInFormTemplate {
-                email_input: EmailInputTemplate {
-                    value: &user_data.email,
-                    error_message: "",
+        .map_err(|e| LogInFormTemplate {
+            email_input: EmailInputTemplate {
+                value: &user_data.email,
+                error_message: "",
+            },
+            password_input: PasswordInputTemplate {
+                value: "",
+                min_length: 0,
+                error_message: match e {
+                    AuthError::InvalidCredentials => "Incorrect email or password.",
+                    AuthError::InternalError => {
+                        "An internal error occurred. Please try again later."
+                    }
                 },
-                password_input: PasswordInputTemplate {
-                    value: "",
-                    min_length: 0,
-                    error_message: match e {
-                        AuthError::InvalidCredentials => "Incorrect email or password.",
-                        AuthError::InternalError => {
-                            "An internal error occurred. Please try again later."
-                        }
-                    },
-                },
-                ..Default::default()
-            })
+            },
+            ..Default::default()
         })
         .into_response()
 }

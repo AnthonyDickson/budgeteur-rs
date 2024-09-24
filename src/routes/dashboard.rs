@@ -4,7 +4,7 @@ use super::{
     endpoints,
     navigation::{get_nav_bar, NavbarTemplate},
 };
-use askama::Template;
+use askama_axum::Template;
 use axum::{
     extract::State,
     response::{IntoResponse, Response},
@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 
 use crate::{
     models::{Transaction, UserID},
-    AppError, AppState, HtmlTemplate,
+    AppError, AppState,
 };
 
 /// Renders the dashboard page.
@@ -55,11 +55,11 @@ pub async fn get_dashboard_page(
         })
         .sum();
 
-    HtmlTemplate(DashboardTemplate {
+    DashboardTemplate {
         navbar,
         user_id,
         balance,
-    })
+    }
     .into_response()
 }
 

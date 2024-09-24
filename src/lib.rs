@@ -10,13 +10,11 @@
 
 use std::time::Duration;
 
-use askama::Template;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
-use axum_extra::response::Html;
 use axum_server::Handle;
 use models::{CategoryError, TransactionError};
 use serde_json::json;
@@ -131,62 +129,5 @@ impl IntoResponse for AppError {
         }));
 
         (status, body).into_response()
-    }
-}
-
-/// A basic HTML page to display when there is an unhandled error on the server.
-/// This HTML page is only used when there has been an error while rendering an Askama template.
-const INTERNAL_SERVER_ERROR_HTML: &str = "
-    <!doctype html>
-    <html lang=\"en\">
-        <head>
-            <title>500 Internal Server Error</title>
-        </head>
-        <body>
-        <h1>Internal Server Error</h1>
-        <p>The server was unable to complete your request. Please try again later.</p>
-        </body>
-    </html>
-";
-
-/// Newtype wrapper for `askama::Template`.
-/// Implements `axum::response::IntoResponse` to reduce repetitive boilerplate code for handling rendering and its errors.
-///
-/// # Examples
-/// ```no_run
-/// use askama::Template;
-/// use axum::{Extension, response::{IntoResponse, Response}};
-/// #
-/// # use budgeteur_rs::{HtmlTemplate, models::UserID};
-///
-/// #[derive(Template)]
-/// #[template(source = "<p>Hello, User #{{ user_id }}!</p>", ext = "html")]
-/// struct HelloUserTemplate {
-///     user_id: UserID,
-/// }
-///
-/// async fn get_dashboard_page(Extension(user_id): Extension<UserID>) -> Response {
-///     HtmlTemplate(HelloUserTemplate { user_id }).into_response()
-/// }
-/// ```
-pub struct HtmlTemplate<T>(pub T);
-
-impl<T> IntoResponse for HtmlTemplate<T>
-where
-    T: Template,
-{
-    fn into_response(self) -> Response {
-        match self.0.render() {
-            Ok(html) => (StatusCode::OK, Html(html)).into_response(),
-            Err(err) => {
-                tracing::error!("Failed to render template. Error: {err}");
-
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    INTERNAL_SERVER_ERROR_HTML,
-                )
-                    .into_response()
-            }
-        }
     }
 }

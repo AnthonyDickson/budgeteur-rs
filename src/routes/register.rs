@@ -17,7 +17,7 @@ use crate::{
     auth::set_auth_cookie,
     models::{PasswordHash, User, UserError, ValidatedPassword},
     routes::get_internal_server_error_redirect,
-    AppState, HtmlTemplate,
+    AppState,
 };
 
 use super::{
@@ -64,7 +64,7 @@ struct ConfirmPasswordInputTemplate<'a> {
 
 /// Display the registration page.
 pub async fn get_register_page() -> Response {
-    HtmlTemplate(RegisterPageTemplate {
+    RegisterPageTemplate {
         register_form: RegisterFormTemplate {
             password_input: PasswordInputTemplate {
                 min_length: PASSWORD_INPUT_MIN_LENGTH,
@@ -72,7 +72,7 @@ pub async fn get_register_page() -> Response {
             },
             ..Default::default()
         },
-    })
+    }
     .into_response()
 }
 
@@ -101,14 +101,14 @@ pub async fn create_user(
     };
 
     if user_data.password != user_data.confirm_password {
-        return HtmlTemplate(RegisterFormTemplate {
+        return RegisterFormTemplate {
             email_input,
             password_input,
             confirm_password_input: ConfirmPasswordInputTemplate {
                 error_message: "Passwords do not match",
             },
             ..Default::default()
-        })
+        }
         .into_response();
     }
 
@@ -116,14 +116,14 @@ pub async fn create_user(
         Ok(email) => email,
         // Due to the client-side validation, the below error will not happen very often, but it still pays to check.
         Err(e) => {
-            return HtmlTemplate(RegisterFormTemplate {
+            return RegisterFormTemplate {
                 email_input: EmailInputTemplate {
                     value: &user_data.email,
                     error_message: &format!("Invalid email address: {}", e),
                 },
                 password_input,
                 ..Default::default()
-            })
+            }
             .into_response();
         }
     };
@@ -131,7 +131,7 @@ pub async fn create_user(
     let validated_password = match ValidatedPassword::new(user_data.password.to_string()) {
         Ok(password) => password,
         Err(e) => {
-            return HtmlTemplate(RegisterFormTemplate {
+            return RegisterFormTemplate {
                 email_input,
                 password_input: PasswordInputTemplate {
                     value: &user_data.password,
@@ -139,7 +139,7 @@ pub async fn create_user(
                     error_message: e.to_string().as_ref(),
                 },
                 ..Default::default()
-            })
+            }
             .into_response();
         }
     };
@@ -165,16 +165,16 @@ pub async fn create_user(
             )
         })
         .map_err(|e| match e {
-            UserError::DuplicateEmail => HtmlTemplate(RegisterFormTemplate {
+            UserError::DuplicateEmail => RegisterFormTemplate {
                 email_input: EmailInputTemplate {
                     value: &user_data.email,
                     error_message: "The email address is already in use",
                 },
                 password_input,
                 ..Default::default()
-            })
+            }
             .into_response(),
-            UserError::DuplicatePassword => HtmlTemplate(RegisterFormTemplate {
+            UserError::DuplicatePassword => RegisterFormTemplate {
                 email_input,
                 password_input: PasswordInputTemplate {
                     value: &user_data.password,
@@ -182,7 +182,7 @@ pub async fn create_user(
                     error_message: "The password is already in use",
                 },
                 ..Default::default()
-            })
+            }
             .into_response(),
             e => {
                 tracing::error!("An unhandled error occurred while inserting a new user: {e}");
