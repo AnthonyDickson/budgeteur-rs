@@ -65,14 +65,14 @@ pub async fn get_dashboard_page(
     // TODO: Create system for buiding endpoint URIs without hardcoding strings.
     let id_placeholder = ":user_id";
     let create_transaction_route = endpoints::USER_TRANSACTIONS
-        .replace(":user_id", &user_id.to_string())
+        .replace(id_placeholder, &user_id.to_string())
         .parse();
 
     let create_transaction_route = match create_transaction_route {
         Ok(uri) => uri,
         Err(error) => {
             tracing::error!(
-                "An error ocurred while creating route URI using the endpoint {}: {error}",
+                "An error ocurred while creating route URI using the endpoint {} and replacement pattern {id_placeholder}: {error}",
                 endpoints::USER_TRANSACTIONS
             );
             return get_internal_server_error_redirect();
