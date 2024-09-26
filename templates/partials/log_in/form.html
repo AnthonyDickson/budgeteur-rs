@@ -6,14 +6,14 @@
 >
     {{ email_input|safe }} {{ password_input|safe }}
     <button
-            class="{% include "styles/forms/button.html" %}"
-            styles type="submit"
-    id="submit-button"
+        class="{% include "styles/forms/button.html" %}"
+        type="submit"
+        id="submit-button"
     >
-    <span class="inline htmx-indicator" id="indicator">
+        <span class="inline htmx-indicator" id="indicator">
             {% include "components/spinner.html" %}
         </span>
-    Log in
+        Log in
     </button>
     <p class="text-sm font-light text-gray-500 dark:text-gray-400">
         Don't have an account?

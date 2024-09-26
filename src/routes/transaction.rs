@@ -19,7 +19,7 @@ use crate::{
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TransactionData {
     amount: f64,
-    // HACK: Date should be a date type. A datetime tpye is used as a workaround since I
+    // HACK: Date should be a date type. A datetime type is used as a workaround since I
     // encountered issues serializing dates with axum_test (this uses serde_urlencoded).
     #[serde(with = "time::serde::iso8601")]
     date: OffsetDateTime,
