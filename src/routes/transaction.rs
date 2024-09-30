@@ -85,6 +85,7 @@ mod transaction_tests {
     use crate::auth::LogInData;
     use crate::build_router;
     use crate::routes::category::CategoryData;
+    use crate::routes::endpoints::format_endpoint;
     use crate::routes::register::RegisterForm;
     use crate::routes::transaction::TransactionData;
     use crate::{
@@ -139,7 +140,10 @@ mod transaction_tests {
         let (server, user_id, auth_cookie) = create_app_with_user().await;
 
         let category = server
-            .post(&endpoints::USER_CATEGORIES.replace(":user_id", &user_id.to_string()))
+            .post(&format_endpoint(
+                endpoints::USER_CATEGORIES,
+                user_id.as_i64(),
+            ))
             .add_cookie(auth_cookie.clone())
             .form(&CategoryData {
                 name: "foo".to_string(),
@@ -159,7 +163,10 @@ mod transaction_tests {
         let description = "A thingymajig";
 
         let response = server
-            .post(&endpoints::USER_TRANSACTIONS.replace(":user_id", &user_id.to_string()))
+            .post(&format_endpoint(
+                endpoints::USER_TRANSACTIONS,
+                user_id.as_i64(),
+            ))
             .add_cookie(auth_cookie)
             .form(&TransactionData {
                 amount,
@@ -191,7 +198,10 @@ mod transaction_tests {
         let description = "A thingymajig";
 
         let inserted_transaction = server
-            .post(&endpoints::USER_TRANSACTIONS.replace(":user_id", &user_id.to_string()))
+            .post(&format_endpoint(
+                endpoints::USER_TRANSACTIONS,
+                user_id.as_i64(),
+            ))
             .add_cookie(auth_cookie.clone())
             .form(&TransactionData {
                 amount,
@@ -227,7 +237,10 @@ mod transaction_tests {
         let description = "A thingymajig";
 
         let inserted_transaction = server
-            .post(&endpoints::USER_TRANSACTIONS.replace(":user_id", &user_id.to_string()))
+            .post(&format_endpoint(
+                endpoints::USER_TRANSACTIONS,
+                user_id.as_i64(),
+            ))
             .add_cookie(auth_cookie.clone())
             .form(&TransactionData {
                 amount,

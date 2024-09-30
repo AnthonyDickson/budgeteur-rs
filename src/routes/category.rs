@@ -81,6 +81,7 @@ mod category_tests {
 
     use crate::auth::LogInData;
     use crate::build_router;
+    use crate::routes::endpoints::format_endpoint;
     use crate::routes::register::RegisterForm;
     use crate::{
         auth::COOKIE_USER_ID,
@@ -131,7 +132,10 @@ mod category_tests {
         let (server, user_id, auth_cookie) = create_app_with_user().await;
 
         let category = server
-            .post(&endpoints::USER_CATEGORIES.replace(":user_id", &user_id.to_string()))
+            .post(&format_endpoint(
+                endpoints::USER_CATEGORIES,
+                user_id.as_i64(),
+            ))
             .add_cookie(auth_cookie.clone())
             .content_type("application/json")
             .form(&CategoryData {
@@ -150,7 +154,10 @@ mod category_tests {
         let name = CategoryName::new("Foo".to_string()).unwrap();
 
         let response = server
-            .post(&endpoints::USER_CATEGORIES.replace(":user_id", &user_id.to_string()))
+            .post(&format_endpoint(
+                endpoints::USER_CATEGORIES,
+                user_id.as_i64(),
+            ))
             .add_cookie(auth_cookie)
             .content_type("application/json")
             .form(&CategoryData {

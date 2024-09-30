@@ -1,7 +1,8 @@
 //! This file defines the dashboard route and its handlers.
 
 use super::{
-    endpoints, get_internal_server_error_redirect,
+    endpoints::{self, format_endpoint},
+    get_internal_server_error_redirect,
     navigation::{get_nav_bar, NavbarTemplate},
 };
 use askama_axum::Template;
@@ -62,17 +63,14 @@ pub async fn get_dashboard_page(
         })
         .sum();
 
-    // TODO: Create system for buiding endpoint URIs without hardcoding strings.
-    let id_placeholder = ":user_id";
-    let create_transaction_route = endpoints::USER_TRANSACTIONS
-        .replace(id_placeholder, &user_id.to_string())
-        .parse();
+    let create_transaction_route =
+        format_endpoint(endpoints::USER_TRANSACTIONS, user_id.as_i64()).parse();
 
     let create_transaction_route = match create_transaction_route {
         Ok(uri) => uri,
         Err(error) => {
             tracing::error!(
-                "An error ocurred while creating route URI using the endpoint {} and replacement pattern {id_placeholder}: {error}",
+                "An error ocurred while creating route URI using the endpoint {}: {error}",
                 endpoints::USER_TRANSACTIONS
             );
             return get_internal_server_error_redirect();
