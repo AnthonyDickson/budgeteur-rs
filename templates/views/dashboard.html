@@ -61,7 +61,7 @@
 
               <tr class="text-gray-900">
                 <form 
-                  hx-disabled-jelt="#amount, #date, #description, #category, #submit-button"
+                  hx-disabled-elt="#amount, #date, #description, #category, #submit-button"
                   hx-indicator="#indicator"
                   hx-post="{{ create_transaction_route }}"
                 >
@@ -81,17 +81,17 @@ focus:dark:ring-primary-800">
                     </button>
                   </th>
                   <td>
-                    <input id="amount" name="amount" type="number" min="0.01" step=".01" placeholder="0.00">
+                    <input id="amount" name="amount" type="number" min="0.01" step=".01" placeholder="0.00" required="">
                   </td>
                   <td>
-                    <input id="date" name="date" type="date" max="{{ today }}" value="{{ today }}"/>
+                    <input id="date" name="date" type="date" max="{{ today }}" value="{{ today }}" required=""/>
                   </td>
                   <td>
                     <input id="description" name="description" type="text" placeholder="description"/>            
                   </td>
                   <td>
-                    <select id="category" name="category">
-                      <option value="">None</option>
+                    <select id="category" name="category_id">
+                      <option value="0">None</option>
                     </select>
                   </td>
                 </form>
