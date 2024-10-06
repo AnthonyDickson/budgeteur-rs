@@ -7,8 +7,8 @@ use axum::{
     Form, Json,
 };
 use axum_extra::extract::PrivateCookieJar;
-use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use serde::Deserialize;
+use time::Date;
 
 use crate::{
     auth::get_user_id_from_auth_cookie,
@@ -16,15 +16,19 @@ use crate::{
     AppError, AppState,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TransactionData {
+/// The form data for creating a transaction.
+#[derive(Debug, Deserialize)]
+pub struct TransactionForm {
+    /// The value of the transaction in dollars.
     amount: f64,
-    // HACK: Date should be a date type. A datetime type is used as a workaround since I
-    // encountered issues serializing dates with axum_test (this uses serde_urlencoded).
-    #[serde(with = "time::serde::iso8601")]
-    date: OffsetDateTime,
+    /// The date when the transaction ocurred.
+    date: Date,
+    /// Text detailing the transaction.
     description: String,
-    category_id: Option<DatabaseID>,
+    /// The ID of the category to assign the transaction to.
+    ///
+    /// Zero should be interpreted as `None`.
+    category_id: DatabaseID,
 }
 
 /// A route handler for creating a new transaction.
@@ -36,12 +40,19 @@ pub async fn create_transaction(
     State(state): State<AppState>,
     _jar: PrivateCookieJar,
     Path(user_id): Path<UserID>,
-    Form(data): Form<TransactionData>,
+    Form(data): Form<TransactionForm>,
 ) -> impl IntoResponse {
+    // HACK: Zero is used as a sentinel value for None. Currently, options do not work with empty
+    // form values. For example, the URL encoded form "num=" will return an error.
+    let category = match data.category_id {
+        0 => None,
+        id => Some(id),
+    };
+
     Transaction::build(data.amount, user_id)
         .description(data.description)
-        .category(data.category_id)
-        .date(data.date.date())?
+        .category(category)
+        .date(data.date)?
         .insert(&state.db_connection().lock().unwrap())
         .map(|transaction| (StatusCode::OK, Json(transaction)))
         .map_err(AppError::TransactionError)
@@ -77,17 +88,19 @@ pub async fn get_transaction(
 
 #[cfg(test)]
 mod transaction_tests {
+    use std::collections::HashMap;
+
     use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
     use rusqlite::Connection;
-    use time::OffsetDateTime;
+    use time::{Date, OffsetDateTime};
 
     use crate::auth::LogInData;
     use crate::build_router;
+    use crate::models::DatabaseID;
     use crate::routes::category::CategoryData;
     use crate::routes::endpoints::format_endpoint;
     use crate::routes::register::RegisterForm;
-    use crate::routes::transaction::TransactionData;
     use crate::{
         auth::COOKIE_USER_ID,
         db::initialize,
@@ -154,13 +167,35 @@ mod transaction_tests {
         (server, user_id, auth_cookie, category)
     }
 
+    /// Create a hash map to use as a form for creating a transaction.
+    ///
+    /// A map of strings is used to avoid errors from trying to serialize `Date` structs in
+    /// `TransactionForm`.
+    fn transaction_form_as_map(
+        amount: f64,
+        date: Date,
+        description: &str,
+        category_id: DatabaseID,
+    ) -> HashMap<String, String> {
+        let mut form = HashMap::new();
+
+        form.insert(String::from("amount"), amount.to_string());
+        form.insert(String::from("date"), date.to_string());
+        form.insert(String::from("description"), description.to_string());
+        form.insert(String::from("category_id"), category_id.to_string());
+
+        form
+    }
+
     #[tokio::test]
     async fn create_transaction() {
         let (server, user_id, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let amount = -10.0;
-        let date = OffsetDateTime::now_utc();
+        let date = OffsetDateTime::now_utc().date();
         let description = "A thingymajig";
+
+        let form = transaction_form_as_map(amount, date, description, category.id());
 
         let response = server
             .post(&format_endpoint(
@@ -168,12 +203,7 @@ mod transaction_tests {
                 user_id.as_i64(),
             ))
             .add_cookie(auth_cookie)
-            .form(&TransactionData {
-                amount,
-                date,
-                description: description.to_string(),
-                category_id: Some(category.id()),
-            })
+            .form(&form)
             .await;
 
         response.assert_status_ok();
@@ -183,7 +213,7 @@ mod transaction_tests {
         let transaction = response.json::<Transaction>();
 
         assert_eq!(transaction.amount(), amount);
-        assert_eq!(*transaction.date(), date.date());
+        assert_eq!(*transaction.date(), date);
         assert_eq!(transaction.description(), description);
         assert_eq!(transaction.category_id(), Some(category.id()));
         assert_eq!(transaction.user_id(), user_id);
@@ -194,8 +224,10 @@ mod transaction_tests {
         let (server, user_id, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let amount = -10.0;
-        let date = OffsetDateTime::now_utc();
+        let date = OffsetDateTime::now_utc().date();
         let description = "A thingymajig";
+
+        let form = transaction_form_as_map(amount, date, description, category.id());
 
         let inserted_transaction = server
             .post(&format_endpoint(
@@ -203,12 +235,7 @@ mod transaction_tests {
                 user_id.as_i64(),
             ))
             .add_cookie(auth_cookie.clone())
-            .form(&TransactionData {
-                amount,
-                date,
-                description: description.to_string(),
-                category_id: Some(category.id()),
-            })
+            .form(&form)
             .await
             .json::<Transaction>();
 
@@ -233,8 +260,10 @@ mod transaction_tests {
         let (server, user_id, auth_cookie, category) = create_app_with_user_and_category().await;
 
         let amount = -10.0;
-        let date = OffsetDateTime::now_utc();
+        let date = OffsetDateTime::now_utc().date();
         let description = "A thingymajig";
+
+        let form = transaction_form_as_map(amount, date, description, category.id());
 
         let inserted_transaction = server
             .post(&format_endpoint(
@@ -242,12 +271,7 @@ mod transaction_tests {
                 user_id.as_i64(),
             ))
             .add_cookie(auth_cookie.clone())
-            .form(&TransactionData {
-                amount,
-                date,
-                description: description.to_string(),
-                category_id: Some(category.id()),
-            })
+            .form(&form)
             .await
             .json::<Transaction>();
 
