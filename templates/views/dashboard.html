@@ -36,27 +36,7 @@
           </thead>
           <tbody>
               {% for transaction in transactions %}
-              <tr class="bg-white dark:bg-gray-800 {% if !loop.last %}border-b dark:border-gray-700{% endif %}">
-                <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white">
-                  {{ transaction.id() }} 
-                </th>
-                <td class="px-6 py-4">
-                  ${{ "{:.2}"|format(transaction.amount()) }}    
-                </td>
-                <td class="px-6 py-4">
-                  {{ transaction.date() }} 
-                </td>
-                <td class="px-6 py-4">
-                  {{ transaction.description() }} 
-                </td>
-                <td class="px-6 py-4">
-                  {% if let Some(category_id) = transaction.category_id() %}
-                    {{ category_id }} 
-                  {% else %}
-                    - 
-                  {% endif %}
-                </td>
-              </tr>
+                {{ transaction|safe }}
               {% endfor %}
 
               <tr class="text-gray-900">
@@ -64,6 +44,8 @@
                   hx-disabled-elt="#amount, #date, #description, #category, #submit-button"
                   hx-indicator="#indicator"
                   hx-post="{{ create_transaction_route }}"
+                  hx-target="closest tr"
+                  hx-swap="beforebegin"
                 >
                   <th>
                     <button 

@@ -16,6 +16,8 @@ use crate::{
     AppError, AppState,
 };
 
+use super::templates::TransactionRow;
+
 /// The form data for creating a transaction.
 #[derive(Debug, Deserialize)]
 pub struct TransactionForm {
@@ -31,7 +33,7 @@ pub struct TransactionForm {
     category_id: DatabaseID,
 }
 
-/// A route handler for creating a new transaction.
+/// A route handler for creating a new transaction, returns [TransactionRow] as a [Response] on success.
 ///
 /// # Panics
 ///
@@ -54,7 +56,7 @@ pub async fn create_transaction(
         .category(category)
         .date(data.date)?
         .insert(&state.db_connection().lock().unwrap())
-        .map(|transaction| (StatusCode::OK, Json(transaction)))
+        .map(|transaction| (StatusCode::OK, TransactionRow { transaction }))
         .map_err(AppError::TransactionError)
 }
 
@@ -210,13 +212,12 @@ mod transaction_tests {
 
         dbg!(response.text());
 
-        let transaction = response.json::<Transaction>();
+        let html_response = response.text();
 
-        assert_eq!(transaction.amount(), amount);
-        assert_eq!(*transaction.date(), date);
-        assert_eq!(transaction.description(), description);
-        assert_eq!(transaction.category_id(), Some(category.id()));
-        assert_eq!(transaction.user_id(), user_id);
+        assert!(html_response.contains(&amount.to_string()));
+        assert!(html_response.contains(&date.to_string()));
+        assert!(html_response.contains(description));
+        assert!(html_response.contains(&category.id().to_string()));
     }
 
     #[tokio::test]
@@ -229,21 +230,20 @@ mod transaction_tests {
 
         let form = transaction_form_as_map(amount, date, description, category.id());
 
-        let inserted_transaction = server
+        server
             .post(&format_endpoint(
                 endpoints::USER_TRANSACTIONS,
                 user_id.as_i64(),
             ))
             .add_cookie(auth_cookie.clone())
             .form(&form)
-            .await
-            .json::<Transaction>();
+            .await;
 
         let response = server
-            .get(&format!(
-                "{}/{}",
-                endpoints::TRANSACTIONS,
-                inserted_transaction.id()
+            .get(&format_endpoint(
+                endpoints::TRANSACTION,
+                // Just guess the transaction ID since parsing the HTML response is a PITA.
+                1,
             ))
             .add_cookie(auth_cookie)
             .await;
@@ -252,7 +252,10 @@ mod transaction_tests {
 
         let selected_transaction = response.json::<Transaction>();
 
-        assert_eq!(selected_transaction, inserted_transaction);
+        assert_eq!(amount, selected_transaction.amount());
+        assert_eq!(&date, selected_transaction.date());
+        assert_eq!(description, selected_transaction.description());
+        assert_eq!(Some(category.id()), selected_transaction.category_id());
     }
 
     #[tokio::test]
@@ -265,15 +268,14 @@ mod transaction_tests {
 
         let form = transaction_form_as_map(amount, date, description, category.id());
 
-        let inserted_transaction = server
+        server
             .post(&format_endpoint(
                 endpoints::USER_TRANSACTIONS,
                 user_id.as_i64(),
             ))
             .add_cookie(auth_cookie.clone())
             .form(&form)
-            .await
-            .json::<Transaction>();
+            .await;
 
         let email = "test2@test.com".to_string();
         let password = "averystrongandsecurepassword".to_string();
@@ -296,7 +298,8 @@ mod transaction_tests {
             .cookie(COOKIE_USER_ID);
 
         server
-            .get(&format!("/transaction/{}", inserted_transaction.id()))
+            // Just guess the transaction ID since parsing the HTML response is a PITA.
+            .get(&format_endpoint(endpoints::TRANSACTION, 1))
             .add_cookie(auth_cookie)
             .await
             .assert_status_not_found();

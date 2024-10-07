@@ -4,6 +4,7 @@ use super::{
     endpoints::{self, format_endpoint},
     get_internal_server_error_redirect,
     navigation::{get_nav_bar, NavbarTemplate},
+    templates::TransactionRow,
 };
 use askama_axum::Template;
 use axum::{
@@ -27,8 +28,8 @@ struct DashboardTemplate<'a> {
     user_id: UserID,
     /// How much over or under budget the user is for this week.
     balance: f64,
-    /// The user's transactions for this week.
-    transactions: Vec<Transaction>,
+    /// The user's transactions for this week, as Askama templates.
+    transactions: Vec<TransactionRow>,
     /// Today's date, i.e. the date the template was rendered.
     today: Date,
     /// The route for creating a new transaction for the current user.
@@ -43,11 +44,10 @@ pub async fn get_dashboard_page(
     let navbar = get_nav_bar(endpoints::DASHBOARD);
 
     // TODO: Create function for getting transactions within a time span (time::Duration).
-    let transactions = Transaction::select_by_user(user_id, &state.db_connection().lock().unwrap())
-        .map_err(AppError::TransactionError);
+    let transactions = Transaction::select_by_user(user_id, &state.db_connection().lock().unwrap());
     let transactions = match transactions {
         Ok(transactions) => transactions,
-        Err(error) => return error.into_response(),
+        Err(error) => return AppError::TransactionError(error).into_response(),
     };
 
     let today = OffsetDateTime::now_utc().date();
@@ -76,6 +76,11 @@ pub async fn get_dashboard_page(
             return get_internal_server_error_redirect();
         }
     };
+
+    let transactions = transactions
+        .into_iter()
+        .map(|transaction| TransactionRow { transaction })
+        .collect();
 
     DashboardTemplate {
         navbar,

@@ -18,7 +18,10 @@ use register::{create_user, get_register_page};
 use tower_http::services::ServeDir;
 use transaction::{create_transaction, get_transaction};
 
-use crate::{auth::auth_guard, AppState};
+use crate::{
+    auth::{auth_guard, auth_guard_hx},
+    AppState,
+};
 
 mod category;
 mod dashboard;
@@ -47,11 +50,18 @@ pub fn build_router(state: AppState) -> Router {
     let protected_routes = Router::new()
         .route(endpoints::ROOT, get(get_index_page))
         .route(endpoints::DASHBOARD, get(get_dashboard_page))
-        .route(endpoints::USER_CATEGORIES, post(create_category))
         .route(endpoints::CATEGORY, get(get_category))
-        .route(endpoints::USER_TRANSACTIONS, post(create_transaction))
         .route(endpoints::TRANSACTION, get(get_transaction))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
+
+    // These POST routes need to use the HX-REDIRECT header for auth redirects to work properly for
+    // HTMX requests.
+    let protected_routes = protected_routes.merge(
+        Router::new()
+            .route(endpoints::USER_CATEGORIES, post(create_category))
+            .route(endpoints::USER_TRANSACTIONS, post(create_transaction))
+            .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),
+    );
 
     protected_routes
         .merge(unprotected_routes)

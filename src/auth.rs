@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use axum::{
     body::Body,
     extract::{FromRequestParts, Json, Request, State},
-    http::StatusCode,
+    http::{StatusCode, Uri},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
@@ -13,6 +13,7 @@ use axum_extra::extract::{
     cookie::{Cookie, Key, SameSite},
     PrivateCookieJar,
 };
+use axum_htmx::HxRedirect;
 use email_address::EmailAddress;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -128,22 +129,28 @@ pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar 
 
 pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<UserID, AuthError> {
     match jar.get(COOKIE_USER_ID) {
-        None => Err(AuthError::InvalidCredentials),
         Some(user_id_cookie) => user_id_cookie
             .value_trimmed()
             .parse()
             .map(UserID::new)
             .map_err(|_| AuthError::InvalidCredentials),
+        _ => Err(AuthError::InvalidCredentials),
     }
 }
 
 /// Middleware function that checks for a valid authorization cookie.
-/// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the log-in page is returned.
+/// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the log-in page is returned using `get_redirect`.
 ///
 /// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
 ///
 /// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
-pub async fn auth_guard(State(state): State<AppState>, request: Request, next: Next) -> Response {
+#[inline]
+async fn auth_guard_internal(
+    state: AppState,
+    request: Request,
+    next: Next,
+    get_redirect: fn() -> Response,
+) -> Response {
     let (mut parts, body) = request.into_parts();
     let jar: PrivateCookieJar<Key> = PrivateCookieJar::from_request_parts(&mut parts, &state)
         .await
@@ -156,8 +163,42 @@ pub async fn auth_guard(State(state): State<AppState>, request: Request, next: N
 
             next.run(request).await
         }
-        Err(_) => Redirect::to(endpoints::LOG_IN).into_response(),
+        Err(_) => get_redirect(),
     }
+}
+
+/// Middleware function that checks for a valid authorization cookie.
+/// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the log-in page is returned.
+///
+/// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
+///
+/// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
+pub async fn auth_guard(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    auth_guard_internal(state, request, next, || {
+        Redirect::to(endpoints::LOG_IN).into_response()
+    })
+    .await
+}
+
+/// Middleware function that checks for a valid authorization cookie.
+/// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a HTMX redirect to the log-in page is returned.
+///
+/// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
+///
+/// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
+pub async fn auth_guard_hx(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    auth_guard_internal(state, request, next, || {
+        (
+            HxRedirect(Uri::from_static(endpoints::LOG_IN)),
+            StatusCode::OK,
+        )
+            .into_response()
+    })
+    .await
 }
 
 #[cfg(test)]
