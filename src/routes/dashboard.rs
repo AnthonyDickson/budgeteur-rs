@@ -1,19 +1,16 @@
 //! This file defines the dashboard route and its handlers.
 
 use super::{
-    endpoints::{self, format_endpoint},
-    get_internal_server_error_redirect,
+    endpoints::{self},
     navigation::{get_nav_bar, NavbarTemplate},
-    templates::TransactionRow,
 };
 use askama_axum::Template;
 use axum::{
     extract::State,
-    http::Uri,
     response::{IntoResponse, Response},
     Extension,
 };
-use time::{Date, OffsetDateTime};
+use time::OffsetDateTime;
 
 use crate::{
     models::{Transaction, UserID},
@@ -28,12 +25,6 @@ struct DashboardTemplate<'a> {
     user_id: UserID,
     /// How much over or under budget the user is for this week.
     balance: f64,
-    /// The user's transactions for this week, as Askama templates.
-    transactions: Vec<TransactionRow>,
-    /// Today's date, i.e. the date the template was rendered.
-    today: Date,
-    /// The route for creating a new transaction for the current user.
-    create_transaction_route: Uri,
 }
 
 /// Display a page with an overview of the user's data.
@@ -63,32 +54,10 @@ pub async fn get_dashboard_page(
         })
         .sum();
 
-    let create_transaction_route =
-        format_endpoint(endpoints::USER_TRANSACTIONS, user_id.as_i64()).parse();
-
-    let create_transaction_route = match create_transaction_route {
-        Ok(uri) => uri,
-        Err(error) => {
-            tracing::error!(
-                "An error ocurred while creating route URI using the endpoint {}: {error}",
-                endpoints::USER_TRANSACTIONS
-            );
-            return get_internal_server_error_redirect();
-        }
-    };
-
-    let transactions = transactions
-        .into_iter()
-        .map(|transaction| TransactionRow { transaction })
-        .collect();
-
     DashboardTemplate {
         navbar,
         user_id,
         balance,
-        transactions,
-        today,
-        create_transaction_route,
     }
     .into_response()
 }

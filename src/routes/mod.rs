@@ -17,6 +17,7 @@ use log_out::get_log_out;
 use register::{create_user, get_register_page};
 use tower_http::services::ServeDir;
 use transaction::{create_transaction, get_transaction};
+use transactions::get_transactions_page;
 
 use crate::{
     auth::{auth_guard, auth_guard_hx},
@@ -32,6 +33,7 @@ mod navigation;
 mod register;
 mod templates;
 mod transaction;
+mod transactions;
 
 /// Return a router with all the app's routes.
 pub fn build_router(state: AppState) -> Router {
@@ -52,6 +54,7 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::DASHBOARD, get(get_dashboard_page))
         .route(endpoints::CATEGORY, get(get_category))
         .route(endpoints::TRANSACTION, get(get_transaction))
+        .route(endpoints::TRANSACTIONS, get(get_transactions_page))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
 
     // These POST routes need to use the HX-REDIRECT header for auth redirects to work properly for

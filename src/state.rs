@@ -14,7 +14,7 @@ use sha2::{Digest, Sha512};
 use crate::auth::AuthError;
 
 /// The state of the REST server.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct AppState {
     /// The connection to the application's database.
     db_connection: Arc<Mutex<Connection>>,

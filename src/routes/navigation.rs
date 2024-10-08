@@ -34,6 +34,11 @@ pub fn get_nav_bar(active_endpoint: &str) -> NavbarTemplate {
             is_current: active_endpoint == endpoints::DASHBOARD,
         },
         Link {
+            url: endpoints::TRANSACTIONS,
+            title: "Transactions",
+            is_current: active_endpoint == endpoints::TRANSACTIONS,
+        },
+        Link {
             url: endpoints::LOG_OUT,
             title: "Log out",
             is_current: false,
