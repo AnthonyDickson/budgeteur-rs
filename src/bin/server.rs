@@ -53,7 +53,7 @@ async fn main() {
     let secret = env::var("SECRET").expect("The environment variable 'SECRET' must be set");
 
     let conn = Connection::open(&args.db_path).unwrap();
-    let app_config = AppState::new(conn, secret);
+    let app_config = AppState::new(conn, &secret);
 
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));

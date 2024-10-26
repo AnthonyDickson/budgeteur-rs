@@ -43,7 +43,7 @@ mod log_out_tests {
         .insert(&db_connection)
         .unwrap();
 
-        AppState::new(db_connection, "42".to_string())
+        AppState::new(db_connection, "42")
     }
 
     #[tokio::test]

@@ -281,7 +281,7 @@ mod auth_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppState::new(db_connection, "foobar".to_string())
+        AppState::new(db_connection, "foobar")
     }
 
     #[tokio::test]
@@ -349,7 +349,7 @@ mod auth_guard_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppState::new(db_connection, "foobar".to_string())
+        AppState::new(db_connection, "foobar")
     }
 
     async fn test_handler() -> Html<&'static str> {

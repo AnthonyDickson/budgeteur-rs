@@ -2,7 +2,10 @@
 
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
-use crate::models::{Category, Transaction, User};
+use crate::{
+    models::{Transaction, User},
+    store::SQLiteCategoryStore,
+};
 
 /// A trait for adding an object schema to a database.
 pub trait CreateTable {
@@ -120,7 +123,7 @@ pub fn initialize(connection: &Connection) -> Result<(), Error> {
         SqlTransaction::new_unchecked(connection, rusqlite::TransactionBehavior::Exclusive)?;
 
     User::create_table(&transaction)?;
-    Category::create_table(&transaction)?;
+    SQLiteCategoryStore::create_table(&transaction)?;
     Transaction::create_table(&transaction)?;
 
     transaction.commit()?;

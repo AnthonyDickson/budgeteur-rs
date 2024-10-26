@@ -97,7 +97,7 @@ mod dashboard_route_tests {
         .insert(&db_connection)
         .unwrap();
 
-        let state = AppState::new(db_connection, "42".to_string());
+        let state = AppState::new(db_connection, "42");
         let app = Router::new()
             .route(endpoints::DASHBOARD, get(get_dashboard_page))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard))

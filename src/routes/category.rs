@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::get_user_id_from_auth_cookie,
-    models::{Category, CategoryName, DatabaseID, UserID},
+    models::{CategoryName, DatabaseID, UserID},
+    store::CategoryStore,
     AppError, AppState,
 };
 
@@ -32,13 +33,11 @@ pub async fn create_category(
     _: PrivateCookieJar,
     Form(new_category): Form<CategoryData>,
 ) -> impl IntoResponse {
-    let connection_mutex = state.db_connection();
-    let connection = connection_mutex.lock().unwrap();
+    let name = CategoryName::new(&new_category.name)?;
 
-    let name = CategoryName::new(new_category.name)?;
-
-    Category::build(name, user_id)
-        .insert(&connection)
+    state
+        .category_store()
+        .create(name, user_id)
         .map(|category| (StatusCode::OK, Json(category)))
         .map_err(AppError::CategoryError)
 }
@@ -55,10 +54,9 @@ pub async fn get_category(
     jar: PrivateCookieJar,
     Path(category_id): Path<DatabaseID>,
 ) -> impl IntoResponse {
-    let connection_mutex = state.db_connection();
-    let connection = connection_mutex.lock().unwrap();
-
-    Category::select(category_id, &connection)
+    state
+        .category_store()
+        .select(category_id)
         .map_err(AppError::CategoryError)
         .and_then(|category| {
             let user_id = get_user_id_from_auth_cookie(jar)?;
@@ -98,7 +96,7 @@ mod category_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppState::new(db_connection, "42".to_string())
+        AppState::new(db_connection, "42")
     }
 
     async fn create_app_with_user() -> (TestServer, UserID, Cookie<'static>) {
@@ -151,7 +149,7 @@ mod category_tests {
     async fn create_category() {
         let (server, user_id, auth_cookie) = create_app_with_user().await;
 
-        let name = CategoryName::new("Foo".to_string()).unwrap();
+        let name = CategoryName::new("Foo").unwrap();
 
         let response = server
             .post(&format_endpoint(

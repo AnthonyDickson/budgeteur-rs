@@ -112,7 +112,7 @@ mod transactions_route_tests {
         .insert(&db_connection)
         .unwrap();
 
-        let state = AppState::new(db_connection, "42".to_string());
+        let state = AppState::new(db_connection, "42");
         let app = Router::new()
             .route(endpoints::TRANSACTIONS, get(get_transactions_page))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
@@ -131,20 +131,17 @@ mod transactions_route_tests {
         let mut transactions = Vec::new();
 
         {
-            let db_connection_mutex = state.db_connection();
-            let db_connection = db_connection_mutex.lock().unwrap();
-
             transactions.push(
                 Transaction::build(1.0, user.id())
                     .description("foo".to_string())
-                    .insert(&db_connection)
+                    .insert(&state)
                     .unwrap(),
             );
 
             transactions.push(
                 Transaction::build(2.0, user.id())
                     .description("bar".to_string())
-                    .insert(&db_connection)
+                    .insert(&state)
                     .unwrap(),
             );
         }

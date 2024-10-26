@@ -214,7 +214,7 @@ mod user_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppState::new(db_connection, "42".to_string())
+        AppState::new(db_connection, "42")
     }
 
     #[derive(Serialize, Deserialize)]

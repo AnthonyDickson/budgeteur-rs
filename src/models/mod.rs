@@ -1,6 +1,6 @@
 //! This module defines the domain data types.
 
-pub use category::{Category, CategoryBuilder, CategoryError, CategoryName};
+pub use category::{Category, CategoryError, CategoryName};
 pub use password::{PasswordError, PasswordHash, ValidatedPassword};
 pub use transaction::{Transaction, TransactionBuilder, TransactionError};
 pub use user::{User, UserBuilder, UserError, UserID};

@@ -55,7 +55,7 @@ pub async fn create_transaction(
         .description(data.description)
         .category(category)
         .date(data.date)?
-        .insert(&state.db_connection().lock().unwrap())
+        .insert(&state)
         .map(|transaction| (StatusCode::OK, TransactionRow { transaction }))
         .map_err(AppError::TransactionError)
 }
@@ -116,7 +116,7 @@ mod transaction_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppState::new(db_connection, "42".to_string())
+        AppState::new(db_connection, "42")
     }
 
     async fn create_app_with_user() -> (TestServer, UserID, Cookie<'static>) {

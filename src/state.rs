@@ -11,7 +11,7 @@ use axum_extra::extract::cookie::Key;
 use rusqlite::Connection;
 use sha2::{Digest, Sha512};
 
-use crate::auth::AuthError;
+use crate::{auth::AuthError, store::SQLiteCategoryStore};
 
 /// The state of the REST server.
 #[derive(Debug, Clone)]
@@ -20,15 +20,19 @@ pub struct AppState {
     db_connection: Arc<Mutex<Connection>>,
     /// The secret used to encrypt auth cookies.
     cookie_key: Key,
+    category_store: SQLiteCategoryStore,
 }
 
 impl AppState {
-    pub fn new(db_connection: Connection, cookie_secret: String) -> Self {
+    pub fn new(db_connection: Connection, cookie_secret: &str) -> Self {
         let hash = Sha512::digest(cookie_secret);
 
+        let db_connection = Arc::new(Mutex::new(db_connection));
+
         Self {
-            db_connection: Arc::new(Mutex::new(db_connection)),
+            db_connection: db_connection.clone(),
             cookie_key: Key::from(&hash),
+            category_store: SQLiteCategoryStore::new(db_connection.clone()),
         }
     }
 
@@ -38,6 +42,10 @@ impl AppState {
 
     pub fn cookie_key(&self) -> &Key {
         &self.cookie_key
+    }
+
+    pub fn category_store(&self) -> &SQLiteCategoryStore {
+        &self.category_store
     }
 }
 

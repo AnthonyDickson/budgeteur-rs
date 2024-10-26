@@ -9,9 +9,11 @@ use time::{Date, OffsetDateTime};
 use crate::{
     db::{CreateTable, MapRow},
     models::{DatabaseID, UserID},
+    store::CategoryStore,
+    AppState,
 };
 
-use super::{Category, CategoryError};
+use super::CategoryError;
 
 /// Errors that can occur during the creation or retrieval of a transaction.
 #[derive(Debug, Error, PartialEq)]
@@ -249,18 +251,21 @@ impl TransactionBuilder {
     /// - [TransactionError::InvalidUser] if `user_id` does not refer to a valid user,
     /// - [TransactionError::SqlError] if there is some other SQL error,
     /// - or [TransactionError::Unspecified] if there was an unexpected error.
-    pub fn insert(&mut self, connection: &Connection) -> Result<Transaction, TransactionError> {
+    pub fn insert(&mut self, state: &AppState) -> Result<Transaction, TransactionError> {
         if let Some(category_id) = self.category_id {
-            let category = Category::select(category_id, connection).map_err(|e| match e {
-                // A 'not found' error does not make sense on an insert function,
-                // so we instead indicate that the category id (a foreign key) is invalid.
-                CategoryError::NotFound => TransactionError::InvalidCategory,
-                CategoryError::SqlError(error) => TransactionError::SqlError(error),
-                e => {
-                    tracing::error!("An unexpected error occurred: {e}");
-                    TransactionError::Unspecified(e.to_string())
-                }
-            })?;
+            let category = state
+                .category_store()
+                .select(category_id)
+                .map_err(|e| match e {
+                    // A 'not found' error does not make sense on an insert function,
+                    // so we instead indicate that the category id (a foreign key) is invalid.
+                    CategoryError::NotFound => TransactionError::InvalidCategory,
+                    CategoryError::SqlError(error) => TransactionError::SqlError(error),
+                    e => {
+                        tracing::error!("An unexpected error occurred: {e}");
+                        TransactionError::Unspecified(e.to_string())
+                    }
+                })?;
 
             if self.user_id != category.user_id() {
                 // The server should not give any information indicating to the client that the category exists or belongs to another user,
@@ -268,6 +273,9 @@ impl TransactionBuilder {
                 return Err(TransactionError::InvalidCategory);
             }
         }
+
+        let connection = state.db_connection();
+        let connection = connection.lock().unwrap();
 
         connection
                 .execute(
@@ -310,11 +318,13 @@ mod transaction_tests {
     use crate::models::PasswordHash;
     use crate::models::User;
     use crate::models::UserID;
+    use crate::store::CategoryStore;
+    use crate::AppState;
 
     use super::Transaction;
     use super::TransactionError;
 
-    fn get_user_id_and_db_connection() -> (User, Connection) {
+    fn get_user_id_and_app_state() -> (User, AppState) {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
@@ -324,12 +334,14 @@ mod transaction_tests {
 
         let user = User::build(email, password_hash).insert(&conn).unwrap();
 
-        (user, conn)
+        let state = AppState::new(conn, "ertsirsenrt");
+
+        (user, state)
     }
 
     #[test]
     fn new_fails_on_future_date() {
-        let (user, _) = get_user_id_and_db_connection();
+        let (user, _) = get_user_id_and_app_state();
 
         let tomorrow = OffsetDateTime::now_utc()
             .date()
@@ -345,16 +357,16 @@ mod transaction_tests {
 
     #[test]
     fn new_succeeds_on_today() {
-        let (user, connection) = get_user_id_and_db_connection();
+        let (user, state) = get_user_id_and_app_state();
 
-        let new_transaction = Transaction::build(123.45, user.id()).insert(&connection);
+        let new_transaction = Transaction::build(123.45, user.id()).insert(&state);
 
         assert!(new_transaction.is_ok())
     }
 
     #[test]
     fn new_succeeds_on_past_date() {
-        let (user, connection) = get_user_id_and_db_connection();
+        let (user, connection) = get_user_id_and_app_state();
 
         let date = OffsetDateTime::now_utc()
             .date()
@@ -370,19 +382,20 @@ mod transaction_tests {
         assert_eq!(new_transaction.unwrap().date(), &date);
     }
 
-    fn get_user_id_category_and_db_connection() -> (User, Category, Connection) {
-        let (user, conn) = get_user_id_and_db_connection();
+    fn get_user_id_category_and_app_state() -> (User, Category, AppState) {
+        let (user, state) = get_user_id_and_app_state();
 
-        let category = Category::build(CategoryName::new("Food".to_string()).unwrap(), user.id())
-            .insert(&conn)
+        let category = state
+            .category_store()
+            .create(CategoryName::new_unchecked("Food"), user.id())
             .unwrap();
 
-        (user, category, conn)
+        (user, category, state)
     }
 
     #[test]
     fn insert_transaction_succeeds() {
-        let (user, category, conn) = get_user_id_category_and_db_connection();
+        let (user, category, conn) = get_user_id_category_and_app_state();
 
         let amount = PI;
         let date = OffsetDateTime::now_utc().date();
@@ -405,7 +418,7 @@ mod transaction_tests {
 
     #[test]
     fn insert_transaction_fails_on_invalid_user_id() {
-        let (user, _, conn) = get_user_id_category_and_db_connection();
+        let (user, _, conn) = get_user_id_category_and_app_state();
 
         let transaction =
             Transaction::build(PI, UserID::new(user.id().as_i64() + 42)).insert(&conn);
@@ -415,7 +428,7 @@ mod transaction_tests {
 
     #[test]
     fn insert_transaction_fails_on_invalid_category_id() {
-        let (user, category, conn) = get_user_id_category_and_db_connection();
+        let (user, category, conn) = get_user_id_category_and_app_state();
 
         let transaction = Transaction::build(PI, user.id())
             .category(Some(category.id() + 198371))
@@ -427,18 +440,20 @@ mod transaction_tests {
     #[test]
     fn insert_transaction_fails_on_user_id_mismatch() {
         // `_user` is the owner of `someone_elses_category`.
-        let (_user, someone_elses_category, conn) = get_user_id_category_and_db_connection();
+        let (_user, someone_elses_category, state) = get_user_id_category_and_app_state();
 
-        let unauthorized_user = User::build(
-            "bar@baz.qux".parse().unwrap(),
-            PasswordHash::new_unchecked("hunter3".to_string()),
-        )
-        .insert(&conn)
-        .unwrap();
+        let unauthorized_user = {
+            User::build(
+                "bar@baz.qux".parse().unwrap(),
+                PasswordHash::new_unchecked("hunter3".to_string()),
+            )
+            .insert(&state.db_connection().lock().unwrap())
+            .unwrap()
+        };
 
         let maybe_transaction = Transaction::build(PI, unauthorized_user.id())
             .category(Some(someone_elses_category.id()))
-            .insert(&conn);
+            .insert(&state);
 
         // The server should not give any information indicating to the client that the category exists or belongs to another user,
         // so we give the same error as if the referenced category does not exist.
@@ -447,49 +462,53 @@ mod transaction_tests {
 
     #[test]
     fn select_transaction_by_id_succeeds() {
-        let (user, conn) = get_user_id_and_db_connection();
+        let (user, state) = get_user_id_and_app_state();
 
-        let transaction = Transaction::build(PI, user.id()).insert(&conn).unwrap();
+        let transaction = Transaction::build(PI, user.id()).insert(&state).unwrap();
 
-        let selected_transaction = Transaction::select(transaction.id(), &conn).unwrap();
+        let selected_transaction =
+            Transaction::select(transaction.id(), &state.db_connection().lock().unwrap()).unwrap();
 
         assert_eq!(transaction, selected_transaction);
     }
 
     #[test]
     fn select_transaction_fails_on_invalid_id() {
-        let (user, conn) = get_user_id_and_db_connection();
+        let (user, state) = get_user_id_and_app_state();
 
-        let transaction = Transaction::build(PI, user.id()).insert(&conn).unwrap();
+        let transaction = Transaction::build(PI, user.id()).insert(&state).unwrap();
 
-        let maybe_transaction = Transaction::select(transaction.id() + 1, &conn);
+        let maybe_transaction =
+            Transaction::select(transaction.id() + 1, &state.db_connection().lock().unwrap());
 
         assert_eq!(maybe_transaction, Err(TransactionError::NotFound));
     }
 
     #[test]
     fn select_transactions_by_user_id_succeeds_with_no_transactions() {
-        let (user, conn) = get_user_id_and_db_connection();
+        let (user, state) = get_user_id_and_app_state();
 
         let expected_transactions = vec![];
 
-        let transactions = Transaction::select_by_user(user.id(), &conn).unwrap();
+        let transactions =
+            Transaction::select_by_user(user.id(), &state.db_connection().lock().unwrap()).unwrap();
 
         assert_eq!(transactions, expected_transactions);
     }
 
     #[test]
     fn select_transactions_by_user_id_succeeds() {
-        let (user, conn) = get_user_id_and_db_connection();
+        let (user, state) = get_user_id_and_app_state();
 
         let expected_transactions = vec![
-            Transaction::build(PI, user.id()).insert(&conn).unwrap(),
+            Transaction::build(PI, user.id()).insert(&state).unwrap(),
             Transaction::build(PI + 1.0, user.id())
-                .insert(&conn)
+                .insert(&state)
                 .unwrap(),
         ];
 
-        let transactions = Transaction::select_by_user(user.id(), &conn).unwrap();
+        let transactions =
+            Transaction::select_by_user(user.id(), &state.db_connection().lock().unwrap()).unwrap();
 
         assert_eq!(transactions, expected_transactions);
     }
