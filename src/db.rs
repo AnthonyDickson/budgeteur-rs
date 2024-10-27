@@ -4,7 +4,7 @@ use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
 use crate::{
     models::{Transaction, User},
-    store::SQLiteCategoryStore,
+    stores::SQLiteCategoryStore,
 };
 
 /// A trait for adding an object schema to a database.

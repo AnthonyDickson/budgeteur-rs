@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::get_user_id_from_auth_cookie,
     models::{CategoryName, DatabaseID, UserID},
-    store::CategoryStore,
+    stores::CategoryStore,
     AppError, AppState,
 };
 

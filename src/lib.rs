@@ -30,7 +30,7 @@ pub mod db;
 pub mod models;
 pub mod routes;
 pub mod state;
-pub mod store;
+pub mod stores;
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
 /// then signals the server to shut down gracefully.

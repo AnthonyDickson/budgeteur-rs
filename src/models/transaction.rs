@@ -9,7 +9,7 @@ use time::{Date, OffsetDateTime};
 use crate::{
     db::{CreateTable, MapRow},
     models::{DatabaseID, UserID},
-    store::CategoryStore,
+    stores::CategoryStore,
     AppState,
 };
 
@@ -318,7 +318,7 @@ mod transaction_tests {
     use crate::models::PasswordHash;
     use crate::models::User;
     use crate::models::UserID;
-    use crate::store::CategoryStore;
+    use crate::stores::CategoryStore;
     use crate::AppState;
 
     use super::Transaction;

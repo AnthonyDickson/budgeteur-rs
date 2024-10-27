@@ -11,7 +11,7 @@ use axum_extra::extract::cookie::Key;
 use rusqlite::Connection;
 use sha2::{Digest, Sha512};
 
-use crate::{auth::AuthError, store::SQLiteCategoryStore};
+use crate::{auth::AuthError, stores::SQLiteCategoryStore};
 
 /// The state of the REST server.
 #[derive(Debug, Clone)]
