@@ -89,6 +89,7 @@ mod transactions_route_tests {
         auth::LogInData,
         models::{Transaction, User},
         routes::log_in::post_log_in,
+        stores::UserStore,
     };
     use crate::{
         auth::{auth_guard, COOKIE_USER_ID},
@@ -105,14 +106,16 @@ mod transactions_route_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        let user = User::build(
-            "test@test.com".parse().unwrap(),
-            PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
-        )
-        .insert(&db_connection)
-        .unwrap();
-
         let state = AppState::new(db_connection, "42");
+
+        let user = state
+            .user_store()
+            .create(
+                "test@test.com".parse().unwrap(),
+                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+            )
+            .unwrap();
+
         let app = Router::new()
             .route(endpoints::TRANSACTIONS, get(get_transactions_page))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard))

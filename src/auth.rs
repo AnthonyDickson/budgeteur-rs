@@ -15,15 +15,16 @@ use axum_extra::extract::{
 };
 use axum_htmx::HxRedirect;
 use email_address::EmailAddress;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::{Duration, OffsetDateTime};
 
 use crate::{
-    models::{User, UserError, UserID},
+    models::{User, UserID},
     routes::endpoints,
     state::AppState,
+    stores::UserError,
+    stores::UserStore,
 };
 
 /// The raw data entered by the user in the log-in form.
@@ -71,14 +72,14 @@ impl IntoResponse for AuthError {
 /// - An internal error occurred when verifying the password.
 pub fn verify_credentials(
     credentials: LogInData,
-    connection: &Connection,
+    store: &impl UserStore,
 ) -> Result<User, AuthError> {
     let email: EmailAddress = credentials
         .email
         .parse()
         .map_err(|_| AuthError::InvalidCredentials)?;
 
-    let user = User::select(&email, connection).map_err(|e| match e {
+    let user = store.get_by_email(&email).map_err(|e| match e {
         UserError::NotFound => AuthError::InvalidCredentials,
         _ => {
             tracing::error!("Error matching user: {e}");
@@ -273,8 +274,9 @@ mod auth_tests {
 
     use crate::auth::{verify_credentials, AuthError, LogInData};
     use crate::db::initialize;
-    use crate::models::{PasswordHash, User};
+    use crate::models::PasswordHash;
     use crate::state::AppState;
+    use crate::stores::UserStore;
 
     fn get_test_app_config() -> AppState {
         let db_connection =
@@ -289,19 +291,20 @@ mod auth_tests {
         let app_state = get_test_app_config();
 
         let password = "averysafeandsecurepassword".to_string();
-        let test_user = User::build(
-            EmailAddress::from_str("foo@bar.baz").unwrap(),
-            PasswordHash::from_string(password.clone()).unwrap(),
-        )
-        .insert(&app_state.db_connection().lock().unwrap())
-        .unwrap();
+        let test_user = app_state
+            .user_store()
+            .create(
+                EmailAddress::from_str("foo@bar.baz").unwrap(),
+                PasswordHash::from_string(password.clone()).unwrap(),
+            )
+            .unwrap();
 
         let user_data = LogInData {
             email: test_user.email().to_string(),
             password,
         };
 
-        assert!(verify_credentials(user_data, &app_state.db_connection().lock().unwrap()).is_ok());
+        assert!(verify_credentials(user_data, app_state.user_store()).is_ok());
     }
 
     #[tokio::test]
@@ -312,7 +315,7 @@ mod auth_tests {
             password: "definitelyNotTheCorrectPassword".to_string(),
         };
 
-        let result = verify_credentials(user_data, &app_state.db_connection().lock().unwrap());
+        let result = verify_credentials(user_data, app_state.user_store());
 
         assert!(matches!(result, Err(AuthError::InvalidCredentials)));
     }
@@ -334,10 +337,11 @@ mod auth_guard_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::auth::{set_auth_cookie, LogInData};
+    use crate::stores::UserStore;
     use crate::{
         auth::{auth_guard, verify_credentials, COOKIE_USER_ID},
         db::initialize,
-        models::{PasswordHash, User},
+        models::PasswordHash,
         routes::endpoints,
         AppState,
     };
@@ -361,7 +365,7 @@ mod auth_guard_tests {
         jar: PrivateCookieJar,
         Form(user_data): Form<LogInData>,
     ) -> Result<PrivateCookieJar, AuthError> {
-        verify_credentials(user_data, &state.db_connection().lock().unwrap())
+        verify_credentials(user_data, state.user_store())
             .map(|user| Ok(set_auth_cookie(jar, user.id())))?
     }
 
@@ -370,12 +374,13 @@ mod auth_guard_tests {
         let state = get_test_app_state();
 
         let password = "averysafeandsecurepassword".to_string();
-        let test_user = User::build(
-            EmailAddress::from_str("foo@bar.baz").unwrap(),
-            PasswordHash::from_string(password.clone()).unwrap(),
-        )
-        .insert(&state.db_connection().lock().unwrap())
-        .unwrap();
+        let test_user = state
+            .user_store()
+            .create(
+                EmailAddress::from_str("foo@bar.baz").unwrap(),
+                PasswordHash::from_string(password.clone()).unwrap(),
+            )
+            .unwrap();
 
         let app = Router::new()
             .route("/protected", get(test_handler))
@@ -443,12 +448,13 @@ mod auth_guard_tests {
         let state = get_test_app_state();
 
         let password = "averysafeandsecurepassword".to_string();
-        let test_user = User::build(
-            EmailAddress::from_str("foo@bar.baz").unwrap(),
-            PasswordHash::from_string(password.clone()).unwrap(),
-        )
-        .insert(&state.db_connection().lock().unwrap())
-        .unwrap();
+        let test_user = state
+            .user_store()
+            .create(
+                EmailAddress::from_str("foo@bar.baz").unwrap(),
+                PasswordHash::from_string(password.clone()).unwrap(),
+            )
+            .unwrap();
 
         let app = Router::new()
             .route("/protected", get(test_handler))

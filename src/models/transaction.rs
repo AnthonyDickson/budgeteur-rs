@@ -319,6 +319,7 @@ mod transaction_tests {
     use crate::models::User;
     use crate::models::UserID;
     use crate::stores::CategoryStore;
+    use crate::stores::UserStore;
     use crate::AppState;
 
     use super::Transaction;
@@ -328,13 +329,13 @@ mod transaction_tests {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
 
+        let state = AppState::new(conn, "ertsirsenrt");
+
         let email = "test@test.com".parse::<EmailAddress>().unwrap();
         let password_hash =
             PasswordHash::from_string("averysecretandsecurepassword".to_string()).unwrap();
 
-        let user = User::build(email, password_hash).insert(&conn).unwrap();
-
-        let state = AppState::new(conn, "ertsirsenrt");
+        let user = state.user_store().create(email, password_hash).unwrap();
 
         (user, state)
     }
@@ -443,12 +444,13 @@ mod transaction_tests {
         let (_user, someone_elses_category, state) = get_user_id_category_and_app_state();
 
         let unauthorized_user = {
-            User::build(
-                "bar@baz.qux".parse().unwrap(),
-                PasswordHash::new_unchecked("hunter3".to_string()),
-            )
-            .insert(&state.db_connection().lock().unwrap())
-            .unwrap()
+            state
+                .user_store()
+                .create(
+                    "bar@baz.qux".parse().unwrap(),
+                    PasswordHash::new_unchecked("hunter3".to_string()),
+                )
+                .unwrap()
         };
 
         let maybe_transaction = Transaction::build(PI, unauthorized_user.id())

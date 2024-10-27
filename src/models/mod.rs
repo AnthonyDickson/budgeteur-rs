@@ -3,7 +3,7 @@
 pub use category::{Category, CategoryError, CategoryName};
 pub use password::{PasswordError, PasswordHash, ValidatedPassword};
 pub use transaction::{Transaction, TransactionBuilder, TransactionError};
-pub use user::{User, UserBuilder, UserError, UserID};
+pub use user::{User, UserID};
 
 mod category;
 mod password;

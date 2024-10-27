@@ -26,8 +26,9 @@ mod log_out_tests {
     use crate::{
         auth::{LogInData, COOKIE_USER_ID},
         db::initialize,
-        models::{PasswordHash, User, ValidatedPassword},
+        models::{PasswordHash, ValidatedPassword},
         routes::{endpoints, log_in::post_log_in, log_out::get_log_out},
+        stores::UserStore,
         AppState,
     };
 
@@ -36,14 +37,17 @@ mod log_out_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        User::build(
-            "test@test.com".parse().unwrap(),
-            PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
-        )
-        .insert(&db_connection)
-        .unwrap();
+        let state = AppState::new(db_connection, "42");
 
-        AppState::new(db_connection, "42")
+        state
+            .user_store()
+            .create(
+                "test@test.com".parse().unwrap(),
+                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+            )
+            .unwrap();
+
+        state
     }
 
     #[tokio::test]

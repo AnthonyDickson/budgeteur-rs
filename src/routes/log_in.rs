@@ -74,7 +74,7 @@ pub async fn post_log_in(
     jar: PrivateCookieJar,
     Form(user_data): Form<LogInData>,
 ) -> Response {
-    verify_credentials(user_data.clone(), &state.db_connection().lock().unwrap())
+    verify_credentials(user_data.clone(), state.user_store())
         .map(|user| {
             let jar = set_auth_cookie(jar, user.id());
 
@@ -114,8 +114,9 @@ mod log_in_tests {
     use crate::{
         auth::LogInData,
         db::initialize,
-        models::{PasswordHash, User, ValidatedPassword},
+        models::{PasswordHash, ValidatedPassword},
         routes::{endpoints, log_in::post_log_in},
+        stores::UserStore,
         AppState,
     };
 
@@ -124,14 +125,17 @@ mod log_in_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        User::build(
-            EmailAddress::new_unchecked("test@test.com"),
-            PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
-        )
-        .insert(&db_connection)
-        .unwrap();
+        let state = AppState::new(db_connection, "42");
 
-        AppState::new(db_connection, "42")
+        state
+            .user_store()
+            .create(
+                EmailAddress::new_unchecked("test@test.com"),
+                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+            )
+            .unwrap();
+
+        state
     }
 
     #[tokio::test]

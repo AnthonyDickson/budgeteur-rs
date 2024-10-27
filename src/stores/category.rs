@@ -113,21 +113,23 @@ mod category_tests {
     use crate::models::{
         CategoryError, CategoryName, PasswordHash, User, UserID, ValidatedPassword,
     };
+    use crate::stores::{SQLiteUserStore, UserStore};
 
     use super::{CategoryStore, SQLiteCategoryStore};
 
     fn get_store_and_user() -> (SQLiteCategoryStore, User) {
         let connection = Connection::open_in_memory().unwrap();
         initialize(&connection).unwrap();
+        let connection = Arc::new(Mutex::new(connection));
 
-        let user = User::build(
-            "foo@bar.baz".parse().unwrap(),
-            PasswordHash::new(ValidatedPassword::new_unchecked("foo".to_string())).unwrap(),
-        )
-        .insert(&connection)
-        .unwrap();
+        let user = SQLiteUserStore::new(connection.clone())
+            .create(
+                "foo@bar.baz".parse().unwrap(),
+                PasswordHash::new(ValidatedPassword::new_unchecked("foo".to_string())).unwrap(),
+            )
+            .unwrap();
 
-        let store = SQLiteCategoryStore::new(Arc::new(Mutex::new(connection)));
+        let store = SQLiteCategoryStore::new(connection.clone());
 
         (store, user)
     }

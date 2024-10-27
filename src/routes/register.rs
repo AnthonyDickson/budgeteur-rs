@@ -15,8 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     auth::set_auth_cookie,
-    models::{PasswordHash, User, UserError, ValidatedPassword},
+    models::{PasswordHash, ValidatedPassword},
     routes::get_internal_server_error_redirect,
+    stores::{UserError, UserStore},
     AppState,
 };
 
@@ -153,8 +154,9 @@ pub async fn create_user(
         }
     };
 
-    User::build(email, password_hash)
-        .insert(&state.db_connection().lock().unwrap())
+    state
+        .user_store()
+        .create(email, password_hash)
         .map(|user| {
             let jar = set_auth_cookie(jar, user.id());
 

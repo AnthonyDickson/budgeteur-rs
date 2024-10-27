@@ -121,8 +121,9 @@ mod root_route_tests {
     use crate::{
         auth::auth_guard,
         db::initialize,
-        models::{PasswordHash, User, ValidatedPassword},
+        models::{PasswordHash, ValidatedPassword},
         routes::{endpoints, get_index_page},
+        stores::UserStore,
         AppState,
     };
 
@@ -131,14 +132,17 @@ mod root_route_tests {
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        User::build(
-            EmailAddress::new_unchecked("test@test.com"),
-            PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
-        )
-        .insert(&db_connection)
-        .unwrap();
+        let state = AppState::new(db_connection, "42");
 
-        AppState::new(db_connection, "42")
+        state
+            .user_store()
+            .create(
+                EmailAddress::new_unchecked("test@test.com"),
+                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+            )
+            .unwrap();
+
+        state
     }
 
     #[tokio::test]
