@@ -46,7 +46,7 @@ impl CategoryStore for SQLiteCategoryStore {
             .lock()
             .unwrap()
             .prepare("SELECT id, name, user_id FROM category WHERE id = :id")?
-            .query_row(&[(":id", &category_id)], Category::map_row)
+            .query_row(&[(":id", &category_id)], SQLiteCategoryStore::map_row)
             .map_err(|error| error.into())
     }
 
@@ -59,7 +59,10 @@ impl CategoryStore for SQLiteCategoryStore {
             .lock()
             .unwrap()
             .prepare("SELECT id, name, user_id FROM category WHERE user_id = :user_id")?
-            .query_map(&[(":user_id", &user_id.as_i64())], Category::map_row)?
+            .query_map(
+                &[(":user_id", &user_id.as_i64())],
+                SQLiteCategoryStore::map_row,
+            )?
             .map(|maybe_category| maybe_category.map_err(CategoryError::SqlError))
             .collect()
     }
@@ -82,10 +85,10 @@ impl CreateTable for SQLiteCategoryStore {
     }
 }
 
-impl MapRow for Category {
-    type ReturnType = Self;
+impl MapRow for SQLiteCategoryStore {
+    type ReturnType = Category;
 
-    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self, rusqlite::Error> {
+    fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self::ReturnType, rusqlite::Error> {
         let id = row.get(offset)?;
 
         let raw_name: String = row.get(offset + 1)?;
@@ -94,7 +97,7 @@ impl MapRow for Category {
         let raw_user_id = row.get(offset + 2)?;
         let user_id = UserID::new(raw_user_id);
 
-        Ok(Self::new(id, name, user_id))
+        Ok(Self::ReturnType::new(id, name, user_id))
     }
 }
 
