@@ -241,7 +241,7 @@ mod user_tests {
     }
 
     #[test]
-    fn select_user_fails_with_non_existent_id() {
+    fn get_user_fails_with_non_existent_id() {
         let store = get_store();
 
         let id = UserID::new(42);
@@ -250,7 +250,7 @@ mod user_tests {
     }
 
     #[test]
-    fn select_user_succeeds_with_existing_id() {
+    fn get_user_succeeds_with_existing_id() {
         let store = get_store();
 
         let test_user = store
@@ -266,7 +266,7 @@ mod user_tests {
     }
 
     #[test]
-    fn select_user_fails_with_non_existent_email() {
+    fn get_user_fails_with_non_existent_email() {
         let store = get_store();
 
         // This email is not in the database.
@@ -276,7 +276,7 @@ mod user_tests {
     }
 
     #[test]
-    fn select_user_succeeds_with_existing_email() {
+    fn get_user_succeeds_with_existing_email() {
         let store = get_store();
 
         let test_user = store

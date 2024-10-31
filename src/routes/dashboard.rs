@@ -12,10 +12,7 @@ use axum::{
 };
 use time::OffsetDateTime;
 
-use crate::{
-    models::{Transaction, UserID},
-    AppError, AppState,
-};
+use crate::{models::UserID, stores::TransactionStore, AppError, AppState};
 
 /// Renders the dashboard page.
 #[derive(Template)]
@@ -34,8 +31,8 @@ pub async fn get_dashboard_page(
 ) -> Response {
     let navbar = get_nav_bar(endpoints::DASHBOARD);
 
-    // TODO: Create function for getting transactions within a time span (time::Duration).
-    let transactions = Transaction::select_by_user(user_id, &state.db_connection().lock().unwrap());
+    // TODO: Create function for getting transactions within a time span (time::Duration) in TransactionStore.
+    let transactions = state.transaction_store().get_by_user_id(user_id);
     let transactions = match transactions {
         Ok(transactions) => transactions,
         Err(error) => return AppError::TransactionError(error).into_response(),

@@ -13,7 +13,7 @@ use sha2::{Digest, Sha512};
 
 use crate::{
     auth::AuthError,
-    stores::{SQLiteCategoryStore, SQLiteUserStore},
+    stores::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore},
 };
 
 /// The state of the REST server.
@@ -25,6 +25,7 @@ pub struct AppState {
     cookie_key: Key,
     category_store: SQLiteCategoryStore,
     user_store: SQLiteUserStore,
+    transaction_store: SQLiteTransactionStore,
 }
 
 impl AppState {
@@ -38,6 +39,7 @@ impl AppState {
             cookie_key: Key::from(&hash),
             category_store: SQLiteCategoryStore::new(db_connection.clone()),
             user_store: SQLiteUserStore::new(db_connection.clone()),
+            transaction_store: SQLiteTransactionStore::new(db_connection.clone()),
         }
     }
 
@@ -55,6 +57,10 @@ impl AppState {
 
     pub fn user_store(&self) -> &SQLiteUserStore {
         &self.user_store
+    }
+
+    pub fn transaction_store(&self) -> &SQLiteTransactionStore {
+        &self.transaction_store
     }
 }
 

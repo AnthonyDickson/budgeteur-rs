@@ -13,6 +13,7 @@ use time::Date;
 use crate::{
     auth::get_user_id_from_auth_cookie,
     models::{DatabaseID, Transaction, UserID},
+    stores::TransactionStore,
     AppError, AppState,
 };
 
@@ -51,11 +52,14 @@ pub async fn create_transaction(
         id => Some(id),
     };
 
-    Transaction::build(data.amount, user_id)
+    let transaction = Transaction::build(data.amount, user_id)
         .description(data.description)
         .category(category)
-        .date(data.date)?
-        .insert(&state)
+        .date(data.date)?;
+
+    state
+        .transaction_store()
+        .create_from_builder(transaction)
         .map(|transaction| (StatusCode::OK, TransactionRow { transaction }))
         .map_err(AppError::TransactionError)
 }
@@ -72,10 +76,9 @@ pub async fn get_transaction(
     jar: PrivateCookieJar,
     Path(transaction_id): Path<DatabaseID>,
 ) -> impl IntoResponse {
-    let connection_mutex = state.db_connection();
-    let connection = connection_mutex.lock().unwrap();
-
-    Transaction::select(transaction_id, &connection)
+    state
+        .transaction_store()
+        .get(transaction_id)
         .map_err(AppError::TransactionError)
         .and_then(|transaction| {
             if get_user_id_from_auth_cookie(jar)? == transaction.user_id() {

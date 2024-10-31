@@ -10,7 +10,7 @@ use crate::{
 pub trait CategoryStore {
     fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, CategoryError>;
     fn select(&self, category_id: DatabaseID) -> Result<Category, CategoryError>;
-    fn select_by_user(&self, user_id: UserID) -> Result<Vec<Category>, CategoryError>;
+    fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, CategoryError>;
 }
 
 #[derive(Debug, Clone)]
@@ -54,7 +54,7 @@ impl CategoryStore for SQLiteCategoryStore {
     ///
     /// # Errors
     /// This function will return an error if there is an SQL error.
-    fn select_by_user(&self, user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+    fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, CategoryError> {
         self.connection
             .lock()
             .unwrap()
@@ -147,7 +147,7 @@ mod category_tests {
     }
 
     #[test]
-    fn select_category_succeeds() {
+    fn get_category_succeeds() {
         let (store, user) = get_store_and_user();
 
         let name = CategoryName::new_unchecked("Foo");
@@ -159,7 +159,7 @@ mod category_tests {
     }
 
     #[test]
-    fn select_category_with_invalid_id_returns_not_found() {
+    fn get_category_with_invalid_id_returns_not_found() {
         let (store, user) = get_store_and_user();
         let inserted_category = store
             .create(CategoryName::new_unchecked("Foo"), user.id())
@@ -171,7 +171,7 @@ mod category_tests {
     }
 
     #[test]
-    fn select_category_with_user_id() {
+    fn get_category_with_user_id() {
         let (store, user) = get_store_and_user();
 
         let inserted_categories = HashSet::from([
@@ -183,14 +183,14 @@ mod category_tests {
                 .unwrap(),
         ]);
 
-        let selected_categories = store.select_by_user(user.id()).unwrap();
+        let selected_categories = store.get_by_user(user.id()).unwrap();
         let selected_categories = HashSet::from_iter(selected_categories);
 
         assert_eq!(inserted_categories, selected_categories);
     }
 
     #[test]
-    fn select_category_with_invalid_user_id() {
+    fn get_category_with_invalid_user_id() {
         let (store, user) = get_store_and_user();
 
         store
@@ -200,7 +200,7 @@ mod category_tests {
             .create(CategoryName::new_unchecked("Bar"), user.id())
             .unwrap();
 
-        let selected_categories = store.select_by_user(UserID::new(user.id().as_i64() + 123));
+        let selected_categories = store.get_by_user(UserID::new(user.id().as_i64() + 123));
 
         assert_eq!(selected_categories, Ok(vec![]));
     }

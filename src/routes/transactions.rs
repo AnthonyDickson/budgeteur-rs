@@ -8,9 +8,8 @@ use axum::{
 use time::{Date, OffsetDateTime};
 
 use crate::{
-    models::{Transaction, UserID},
-    routes::get_internal_server_error_redirect,
-    AppError, AppState,
+    models::UserID, routes::get_internal_server_error_redirect, stores::TransactionStore, AppError,
+    AppState,
 };
 
 use super::{
@@ -39,7 +38,7 @@ pub async fn get_transactions_page(
     let navbar = get_nav_bar(endpoints::TRANSACTIONS);
 
     // TODO: Create function for getting transactions within a time span (time::Duration).
-    let transactions = Transaction::select_by_user(user_id, &state.db_connection().lock().unwrap());
+    let transactions = state.transaction_store().get_by_user_id(user_id);
     let transactions = match transactions {
         Ok(transactions) => transactions,
         Err(error) => return AppError::TransactionError(error).into_response(),
@@ -89,7 +88,7 @@ mod transactions_route_tests {
         auth::LogInData,
         models::{Transaction, User},
         routes::log_in::post_log_in,
-        stores::UserStore,
+        stores::{TransactionStore, UserStore},
     };
     use crate::{
         auth::{auth_guard, COOKIE_USER_ID},
@@ -133,21 +132,23 @@ mod transactions_route_tests {
 
         let mut transactions = Vec::new();
 
-        {
-            transactions.push(
-                Transaction::build(1.0, user.id())
-                    .description("foo".to_string())
-                    .insert(&state)
-                    .unwrap(),
-            );
+        transactions.push(
+            state
+                .transaction_store()
+                .create_from_builder(
+                    Transaction::build(1.0, user.id()).description("foo".to_string()),
+                )
+                .unwrap(),
+        );
 
-            transactions.push(
-                Transaction::build(2.0, user.id())
-                    .description("bar".to_string())
-                    .insert(&state)
-                    .unwrap(),
-            );
-        }
+        transactions.push(
+            state
+                .transaction_store()
+                .create_from_builder(
+                    Transaction::build(2.0, user.id()).description("bar".to_string()),
+                )
+                .unwrap(),
+        );
 
         let auth_cookie = server
             .post(endpoints::LOG_IN)
