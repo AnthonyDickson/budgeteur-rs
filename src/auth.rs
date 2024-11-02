@@ -23,8 +23,7 @@ use crate::{
     models::{User, UserID},
     routes::endpoints,
     state::AppState,
-    stores::UserError,
-    stores::UserStore,
+    stores::{CategoryStore, TransactionStore, UserError, UserStore},
 };
 
 /// The raw data entered by the user in the log-in form.
@@ -146,12 +145,17 @@ pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<User
 ///
 /// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
 #[inline]
-async fn auth_guard_internal(
-    state: AppState,
+async fn auth_guard_internal<C, T, U>(
+    state: AppState<C, T, U>,
     request: Request,
     next: Next,
     get_redirect: fn() -> Response,
-) -> Response {
+) -> Response
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     let (mut parts, body) = request.into_parts();
     let jar: PrivateCookieJar<Key> = PrivateCookieJar::from_request_parts(&mut parts, &state)
         .await
@@ -174,7 +178,16 @@ async fn auth_guard_internal(
 /// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
 ///
 /// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
-pub async fn auth_guard(State(state): State<AppState>, request: Request, next: Next) -> Response {
+pub async fn auth_guard<C, T, U>(
+    State(state): State<AppState<C, T, U>>,
+    request: Request,
+    next: Next,
+) -> Response
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     auth_guard_internal(state, request, next, || {
         Redirect::to(endpoints::LOG_IN).into_response()
     })
@@ -187,11 +200,16 @@ pub async fn auth_guard(State(state): State<AppState>, request: Request, next: N
 /// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
 ///
 /// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
-pub async fn auth_guard_hx(
-    State(state): State<AppState>,
+pub async fn auth_guard_hx<C, T, U>(
+    State(state): State<AppState<C, T, U>>,
     request: Request,
     next: Next,
-) -> Response {
+) -> Response
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     auth_guard_internal(state, request, next, || {
         (
             HxRedirect(Uri::from_static(endpoints::LOG_IN)),
@@ -273,17 +291,15 @@ mod auth_tests {
     use rusqlite::Connection;
 
     use crate::auth::{verify_credentials, AuthError, LogInData};
-    use crate::db::initialize;
     use crate::models::PasswordHash;
-    use crate::state::AppState;
+    use crate::stores::sql_store::{create_app_state, SQLAppState};
     use crate::stores::UserStore;
 
-    fn get_test_app_config() -> AppState {
+    fn get_test_app_config() -> SQLAppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
-        initialize(&db_connection).expect("Could not initialize database.");
 
-        AppState::new(db_connection, "foobar")
+        create_app_state(db_connection, "eaunsnafouts").unwrap()
     }
 
     #[tokio::test]
@@ -337,23 +353,19 @@ mod auth_guard_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::auth::{set_auth_cookie, LogInData};
+    use crate::stores::sql_store::{create_app_state, SQLAppState};
     use crate::stores::UserStore;
     use crate::{
         auth::{auth_guard, verify_credentials, COOKIE_USER_ID},
-        db::initialize,
         models::PasswordHash,
         routes::endpoints,
-        AppState,
     };
 
     use super::AuthError;
 
-    fn get_test_app_state() -> AppState {
-        let db_connection =
-            Connection::open_in_memory().expect("Could not open database in memory.");
-        initialize(&db_connection).expect("Could not initialize database.");
-
-        AppState::new(db_connection, "foobar")
+    fn get_test_app_state() -> SQLAppState {
+        let conn = Connection::open_in_memory().unwrap();
+        create_app_state(conn, "nafstenoas").unwrap()
     }
 
     async fn test_handler() -> Html<&'static str> {
@@ -361,7 +373,7 @@ mod auth_guard_tests {
     }
 
     async fn test_log_in_route(
-        State(state): State<AppState>,
+        State(state): State<SQLAppState>,
         jar: PrivateCookieJar,
         Form(user_data): Form<LogInData>,
     ) -> Result<PrivateCookieJar, AuthError> {

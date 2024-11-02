@@ -12,7 +12,11 @@ use axum::{
 };
 use time::OffsetDateTime;
 
-use crate::{models::UserID, stores::TransactionStore, AppError, AppState};
+use crate::{
+    models::UserID,
+    stores::{CategoryStore, TransactionStore, UserStore},
+    AppError, AppState,
+};
 
 /// Renders the dashboard page.
 #[derive(Template)]
@@ -25,10 +29,15 @@ struct DashboardTemplate<'a> {
 }
 
 /// Display a page with an overview of the user's data.
-pub async fn get_dashboard_page(
-    State(state): State<AppState>,
+pub async fn get_dashboard_page<C, T, U>(
+    State(state): State<AppState<C, T, U>>,
     Extension(user_id): Extension<UserID>,
-) -> Response {
+) -> Response
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     let navbar = get_nav_bar(endpoints::DASHBOARD);
 
     // TODO: Create function for getting transactions within a time span (time::Duration) in TransactionStore.
@@ -71,13 +80,15 @@ mod dashboard_route_tests {
     use rusqlite::Connection;
     use time::{Duration, OffsetDateTime};
 
-    use crate::{auth::LogInData, routes::log_in::post_log_in, stores::UserStore};
+    use crate::{
+        auth::LogInData,
+        routes::log_in::post_log_in,
+        stores::{sql_store::create_app_state, UserStore},
+    };
     use crate::{
         auth::{auth_guard, COOKIE_USER_ID},
-        db::initialize,
         models::{PasswordHash, ValidatedPassword},
         routes::endpoints,
-        AppState,
     };
 
     use super::get_dashboard_page;
@@ -85,9 +96,8 @@ mod dashboard_route_tests {
     fn get_test_server() -> TestServer {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
-        initialize(&db_connection).expect("Could not initialize database.");
 
-        let state = AppState::new(db_connection, "42");
+        let state = create_app_state(db_connection, "42").unwrap();
 
         state
             .user_store()

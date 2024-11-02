@@ -1,6 +1,6 @@
 //! Implements a struct that holds the state of the REST server.
 
-use std::sync::{Arc, Mutex};
+use std::marker::{Send, Sync};
 
 use axum::{
     async_trait,
@@ -8,35 +8,47 @@ use axum::{
     http::request::Parts,
 };
 use axum_extra::extract::cookie::Key;
-use rusqlite::Connection;
 use sha2::{Digest, Sha512};
 
 use crate::{
     auth::AuthError,
-    stores::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore},
+    stores::{CategoryStore, TransactionStore, UserStore},
 };
 
 /// The state of the REST server.
 #[derive(Debug, Clone)]
-pub struct AppState {
+pub struct AppState<C, T, U>
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     /// The secret used to encrypt auth cookies.
     cookie_key: Key,
-    category_store: SQLiteCategoryStore,
-    user_store: SQLiteUserStore,
-    transaction_store: SQLiteTransactionStore,
+    category_store: C,
+    transaction_store: T,
+    user_store: U,
 }
 
-impl AppState {
-    pub fn new(db_connection: Connection, cookie_secret: &str) -> Self {
+impl<C, T, U> AppState<C, T, U>
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
+    pub fn new(
+        cookie_secret: &str,
+        category_store: C,
+        transaction_store: T,
+        user_store: U,
+    ) -> Self {
         let hash = Sha512::digest(cookie_secret);
-
-        let db_connection = Arc::new(Mutex::new(db_connection));
 
         Self {
             cookie_key: Key::from(&hash),
-            category_store: SQLiteCategoryStore::new(db_connection.clone()),
-            user_store: SQLiteUserStore::new(db_connection.clone()),
-            transaction_store: SQLiteTransactionStore::new(db_connection.clone()),
+            category_store,
+            transaction_store,
+            user_store,
         }
     }
 
@@ -44,31 +56,39 @@ impl AppState {
         &self.cookie_key
     }
 
-    pub fn category_store(&self) -> &SQLiteCategoryStore {
+    pub fn category_store(&self) -> &C {
         &self.category_store
     }
 
-    pub fn user_store(&self) -> &SQLiteUserStore {
-        &self.user_store
+    pub fn transaction_store(&self) -> &T {
+        &self.transaction_store
     }
 
-    pub fn transaction_store(&self) -> &SQLiteTransactionStore {
-        &self.transaction_store
+    pub fn user_store(&self) -> &U {
+        &self.user_store
     }
 }
 
 // this impl tells `PrivateCookieJar` how to access the key from our state
-impl FromRef<AppState> for Key {
-    fn from_ref(state: &AppState) -> Self {
+impl<C, T, U> FromRef<AppState<C, T, U>> for Key
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
+    fn from_ref(state: &AppState<C, T, U>) -> Self {
         state.cookie_key.clone()
     }
 }
 
 #[async_trait]
-impl<S> FromRequestParts<S> for AppState
+impl<S, C, T, U> FromRequestParts<S> for AppState<C, T, U>
 where
     Self: FromRef<S>,
     S: Send + Sync,
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
 {
     type Rejection = AuthError;
 

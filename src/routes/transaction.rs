@@ -13,7 +13,7 @@ use time::Date;
 use crate::{
     auth::get_user_id_from_auth_cookie,
     models::{DatabaseID, Transaction, UserID},
-    stores::TransactionStore,
+    stores::{CategoryStore, TransactionStore, UserStore},
     AppError, AppState,
 };
 
@@ -39,12 +39,17 @@ pub struct TransactionForm {
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn create_transaction(
-    State(state): State<AppState>,
+pub async fn create_transaction<C, T, U>(
+    State(state): State<AppState<C, T, U>>,
     _jar: PrivateCookieJar,
     Path(user_id): Path<UserID>,
     Form(data): Form<TransactionForm>,
-) -> impl IntoResponse {
+) -> impl IntoResponse
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     // HACK: Zero is used as a sentinel value for None. Currently, options do not work with empty
     // form values. For example, the URL encoded form "num=" will return an error.
     let category = match data.category_id {
@@ -71,11 +76,16 @@ pub async fn create_transaction(
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn get_transaction(
-    State(state): State<AppState>,
+pub async fn get_transaction<C, T, U>(
+    State(state): State<AppState<C, T, U>>,
     jar: PrivateCookieJar,
     Path(transaction_id): Path<DatabaseID>,
-) -> impl IntoResponse {
+) -> impl IntoResponse
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     state
         .transaction_store()
         .get(transaction_id)
@@ -94,6 +104,7 @@ pub async fn get_transaction(
 #[cfg(test)]
 mod transaction_tests {
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
     use axum_extra::extract::cookie::Cookie;
     use axum_test::TestServer;
@@ -106,6 +117,7 @@ mod transaction_tests {
     use crate::routes::category::CategoryData;
     use crate::routes::endpoints::format_endpoint;
     use crate::routes::register::RegisterForm;
+    use crate::stores::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore};
     use crate::{
         auth::COOKIE_USER_ID,
         db::initialize,
@@ -114,16 +126,23 @@ mod transaction_tests {
         AppState,
     };
 
-    fn get_test_app_config() -> AppState {
+    type SQLAppState = AppState<SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore>;
+
+    fn get_test_app_state() -> SQLAppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
 
-        AppState::new(db_connection, "42")
+        let connection = Arc::new(Mutex::new(db_connection));
+        let category_store = SQLiteCategoryStore::new(connection.clone());
+        let transaction_store = SQLiteTransactionStore::new(connection.clone());
+        let user_store = SQLiteUserStore::new(connection.clone());
+
+        AppState::new("foobar", category_store, transaction_store, user_store)
     }
 
     async fn create_app_with_user() -> (TestServer, UserID, Cookie<'static>) {
-        let app = build_router(get_test_app_config());
+        let app = build_router(get_test_app_state());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 

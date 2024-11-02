@@ -25,19 +25,19 @@ mod log_out_tests {
 
     use crate::{
         auth::{LogInData, COOKIE_USER_ID},
-        db::initialize,
         models::{PasswordHash, ValidatedPassword},
         routes::{endpoints, log_in::post_log_in, log_out::get_log_out},
-        stores::UserStore,
-        AppState,
+        stores::{
+            sql_store::{create_app_state, SQLAppState},
+            UserStore,
+        },
     };
 
-    fn get_test_app_config() -> AppState {
+    fn get_test_app_config() -> SQLAppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
-        initialize(&db_connection).expect("Could not initialize database.");
 
-        let state = AppState::new(db_connection, "42");
+        let state = create_app_state(db_connection, "42").unwrap();
 
         state
             .user_store()

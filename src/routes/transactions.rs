@@ -8,8 +8,10 @@ use axum::{
 use time::{Date, OffsetDateTime};
 
 use crate::{
-    models::UserID, routes::get_internal_server_error_redirect, stores::TransactionStore, AppError,
-    AppState,
+    models::UserID,
+    routes::get_internal_server_error_redirect,
+    stores::{CategoryStore, TransactionStore, UserStore},
+    AppError, AppState,
 };
 
 use super::{
@@ -31,10 +33,15 @@ struct TransactionsTemplate<'a> {
     create_transaction_route: Uri,
 }
 
-pub async fn get_transactions_page(
-    State(state): State<AppState>,
+pub async fn get_transactions_page<C, T, U>(
+    State(state): State<AppState<C, T, U>>,
     Extension(user_id): Extension<UserID>,
-) -> Response {
+) -> Response
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     let navbar = get_nav_bar(endpoints::TRANSACTIONS);
 
     // TODO: Create function for getting transactions within a time span (time::Duration).
@@ -88,24 +95,24 @@ mod transactions_route_tests {
         auth::LogInData,
         models::{Transaction, User},
         routes::log_in::post_log_in,
-        stores::{TransactionStore, UserStore},
+        stores::{
+            sql_store::{create_app_state, SQLAppState},
+            TransactionStore, UserStore,
+        },
     };
     use crate::{
         auth::{auth_guard, COOKIE_USER_ID},
-        db::initialize,
         models::{PasswordHash, ValidatedPassword},
         routes::endpoints,
-        AppState,
     };
 
     use super::get_transactions_page;
 
-    fn get_test_state_server_and_user() -> (AppState, TestServer, User) {
+    fn get_test_state_server_and_user() -> (SQLAppState, TestServer, User) {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
-        initialize(&db_connection).expect("Could not initialize database.");
 
-        let state = AppState::new(db_connection, "42");
+        let state = create_app_state(db_connection, "42").unwrap();
 
         let user = state
             .user_store()

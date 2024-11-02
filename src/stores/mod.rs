@@ -1,4 +1,5 @@
 pub mod category;
+pub mod sql_store;
 pub mod transaction;
 pub mod user;
 

@@ -3,7 +3,7 @@ use std::{
     fs::OpenOptions,
     net::SocketAddr,
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use axum::{
@@ -16,7 +16,11 @@ use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-use budgeteur_rs::{build_router, graceful_shutdown, AppState};
+use budgeteur_rs::{
+    build_router, graceful_shutdown,
+    stores::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore},
+    AppState,
+};
 
 /// The REST API server for budgeteur_rs.
 #[derive(Parser, Debug)]
@@ -53,7 +57,13 @@ async fn main() {
     let secret = env::var("SECRET").expect("The environment variable 'SECRET' must be set");
 
     let conn = Connection::open(&args.db_path).unwrap();
-    let app_config = AppState::new(conn, &secret);
+    let conn = Arc::new(Mutex::new(conn));
+    let app_config = AppState::new(
+        &secret,
+        SQLiteCategoryStore::new(conn.clone()),
+        SQLiteTransactionStore::new(conn.clone()),
+        SQLiteUserStore::new(conn.clone()),
+    );
 
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));

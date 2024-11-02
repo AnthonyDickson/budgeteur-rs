@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::get_user_id_from_auth_cookie,
     models::{CategoryName, DatabaseID, UserID},
-    stores::CategoryStore,
+    stores::{CategoryStore, TransactionStore, UserStore},
     AppError, AppState,
 };
 
@@ -27,12 +27,17 @@ pub struct CategoryData {
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn create_category(
-    State(state): State<AppState>,
+pub async fn create_category<C, T, U>(
+    State(state): State<AppState<C, T, U>>,
     Path(user_id): Path<UserID>,
     _: PrivateCookieJar,
     Form(new_category): Form<CategoryData>,
-) -> impl IntoResponse {
+) -> impl IntoResponse
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     let name = CategoryName::new(&new_category.name)?;
 
     state
@@ -49,11 +54,16 @@ pub async fn create_category(
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn get_category(
-    State(state): State<AppState>,
+pub async fn get_category<C, T, U>(
+    State(state): State<AppState<C, T, U>>,
     jar: PrivateCookieJar,
     Path(category_id): Path<DatabaseID>,
-) -> impl IntoResponse {
+) -> impl IntoResponse
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     state
         .category_store()
         .select(category_id)
@@ -81,22 +91,20 @@ mod category_tests {
     use crate::build_router;
     use crate::routes::endpoints::format_endpoint;
     use crate::routes::register::RegisterForm;
+    use crate::stores::sql_store::{create_app_state, SQLAppState};
     use crate::{
         auth::COOKIE_USER_ID,
-        db::initialize,
         models::{Category, CategoryName, UserID},
         routes::endpoints,
-        AppState,
     };
 
     use super::CategoryData;
 
-    fn get_test_app_config() -> AppState {
+    fn get_test_app_config() -> SQLAppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
-        initialize(&db_connection).expect("Could not initialize database.");
 
-        AppState::new(db_connection, "42")
+        create_app_state(db_connection, "42").unwrap()
     }
 
     async fn create_app_with_user() -> (TestServer, UserID, Cookie<'static>) {

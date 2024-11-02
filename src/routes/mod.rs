@@ -21,7 +21,7 @@ use transactions::get_transactions_page;
 
 use crate::{
     auth::{auth_guard, auth_guard_hx},
-    AppState,
+    stores::sql_store::SQLAppState,
 };
 
 mod category;
@@ -36,7 +36,7 @@ mod transaction;
 mod transactions;
 
 /// Return a router with all the app's routes.
-pub fn build_router(state: AppState) -> Router {
+pub fn build_router(state: SQLAppState) -> Router {
     let unprotected_routes = Router::new()
         .route(endpoints::COFFEE, get(get_coffee))
         .route(endpoints::LOG_IN, get(get_log_in_page))
@@ -120,19 +120,19 @@ mod root_route_tests {
 
     use crate::{
         auth::auth_guard,
-        db::initialize,
         models::{PasswordHash, ValidatedPassword},
         routes::{endpoints, get_index_page},
-        stores::UserStore,
-        AppState,
+        stores::{
+            sql_store::{create_app_state, SQLAppState},
+            UserStore,
+        },
     };
 
-    fn get_test_app_config() -> AppState {
+    fn get_test_app_config() -> SQLAppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
-        initialize(&db_connection).expect("Could not initialize database.");
 
-        let state = AppState::new(db_connection, "42");
+        let state = create_app_state(db_connection, "42").unwrap();
 
         state
             .user_store()

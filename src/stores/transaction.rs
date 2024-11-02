@@ -176,18 +176,16 @@ mod sqlite_transaction_store_tests {
 
     use rusqlite::Connection;
 
-    use crate::db::initialize;
     use crate::models::{PasswordHash, User, UserID};
+    use crate::stores::sql_store::{create_app_state, SQLAppState};
     use crate::stores::UserStore;
-    use crate::AppState;
 
     use super::TransactionError;
     use super::TransactionStore;
 
-    fn get_app_state_and_test_user() -> (AppState, User) {
+    fn get_app_state_and_test_user() -> (SQLAppState, User) {
         let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
-        let state = AppState::new(conn, "trtnarte");
+        let state = create_app_state(conn, "stneaoetse").unwrap();
 
         let test_user = state
             .user_store()

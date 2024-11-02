@@ -17,7 +17,7 @@ use crate::{
     auth::set_auth_cookie,
     models::{PasswordHash, ValidatedPassword},
     routes::get_internal_server_error_redirect,
-    stores::{UserError, UserStore},
+    stores::{CategoryStore, TransactionStore, UserError, UserStore},
     AppState,
 };
 
@@ -84,11 +84,16 @@ pub struct RegisterForm {
     pub confirm_password: String,
 }
 
-pub async fn create_user(
-    State(state): State<AppState>,
+pub async fn create_user<C, T, U>(
+    State(state): State<AppState<C, T, U>>,
     jar: PrivateCookieJar,
     Form(user_data): Form<RegisterForm>,
-) -> Response {
+) -> Response
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     // Make templates ahead of time that preserve the user's input since they are used multiple times in this function.
     let email_input = EmailInputTemplate {
         value: &user_data.email,
@@ -203,20 +208,18 @@ mod user_tests {
     use serde::{Deserialize, Serialize};
 
     use crate::{
-        db::initialize,
         routes::{
             endpoints,
             register::{create_user, RegisterForm},
         },
-        AppState,
+        stores::sql_store::{create_app_state, SQLAppState},
     };
 
-    fn get_test_app_config() -> AppState {
+    fn get_test_app_config() -> SQLAppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
-        initialize(&db_connection).expect("Could not initialize database.");
 
-        AppState::new(db_connection, "42")
+        create_app_state(db_connection, "42").unwrap()
     }
 
     #[derive(Serialize, Deserialize)]

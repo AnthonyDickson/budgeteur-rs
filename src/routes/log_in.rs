@@ -13,6 +13,7 @@ use axum_htmx::HxRedirect;
 
 use crate::{
     auth::{set_auth_cookie, verify_credentials, AuthError, LogInData},
+    stores::{CategoryStore, TransactionStore, UserStore},
     AppState,
 };
 
@@ -69,11 +70,16 @@ pub async fn get_log_in_page() -> Response {
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn post_log_in(
-    State(state): State<AppState>,
+pub async fn post_log_in<C, T, U>(
+    State(state): State<AppState<C, T, U>>,
     jar: PrivateCookieJar,
     Form(user_data): Form<LogInData>,
-) -> Response {
+) -> Response
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
     verify_credentials(user_data.clone(), state.user_store())
         .map(|user| {
             let jar = set_auth_cookie(jar, user.id());
@@ -113,19 +119,19 @@ mod log_in_tests {
 
     use crate::{
         auth::LogInData,
-        db::initialize,
         models::{PasswordHash, ValidatedPassword},
         routes::{endpoints, log_in::post_log_in},
-        stores::UserStore,
-        AppState,
+        stores::{
+            sql_store::{create_app_state, SQLAppState},
+            UserStore,
+        },
     };
 
-    fn get_test_app_config() -> AppState {
+    fn get_test_app_config() -> SQLAppState {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
-        initialize(&db_connection).expect("Could not initialize database.");
 
-        let state = AppState::new(db_connection, "42");
+        let state = create_app_state(db_connection, "42").unwrap();
 
         state
             .user_store()
