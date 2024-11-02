@@ -19,8 +19,6 @@ use crate::{
 /// The state of the REST server.
 #[derive(Debug, Clone)]
 pub struct AppState {
-    /// The connection to the application's database.
-    db_connection: Arc<Mutex<Connection>>,
     /// The secret used to encrypt auth cookies.
     cookie_key: Key,
     category_store: SQLiteCategoryStore,
@@ -35,16 +33,11 @@ impl AppState {
         let db_connection = Arc::new(Mutex::new(db_connection));
 
         Self {
-            db_connection: db_connection.clone(),
             cookie_key: Key::from(&hash),
             category_store: SQLiteCategoryStore::new(db_connection.clone()),
             user_store: SQLiteUserStore::new(db_connection.clone()),
             transaction_store: SQLiteTransactionStore::new(db_connection.clone()),
         }
-    }
-
-    pub fn db_connection(&self) -> Arc<Mutex<Connection>> {
-        Arc::clone(&self.db_connection)
     }
 
     pub fn cookie_key(&self) -> &Key {
