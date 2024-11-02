@@ -112,7 +112,7 @@ mod transactions_route_tests {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
 
-        let state = create_app_state(db_connection, "42").unwrap();
+        let mut state = create_app_state(db_connection, "42").unwrap();
 
         let user = state
             .user_store()

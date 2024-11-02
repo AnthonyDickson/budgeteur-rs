@@ -64,8 +64,8 @@ where
         &self.transaction_store
     }
 
-    pub fn user_store(&self) -> &U {
-        &self.user_store
+    pub fn user_store(&mut self) -> &mut U {
+        &mut self.user_store
     }
 }
 

@@ -71,7 +71,7 @@ pub async fn get_log_in_page() -> Response {
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn post_log_in<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+    State(mut state): State<AppState<C, T, U>>,
     jar: PrivateCookieJar,
     Form(user_data): Form<LogInData>,
 ) -> Response
@@ -131,7 +131,7 @@ mod log_in_tests {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
 
-        let state = create_app_state(db_connection, "42").unwrap();
+        let mut state = create_app_state(db_connection, "42").unwrap();
 
         state
             .user_store()

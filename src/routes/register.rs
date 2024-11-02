@@ -85,7 +85,7 @@ pub struct RegisterForm {
 }
 
 pub async fn create_user<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+    State(mut state): State<AppState<C, T, U>>,
     jar: PrivateCookieJar,
     Form(user_data): Form<RegisterForm>,
 ) -> Response
@@ -204,22 +204,107 @@ where
 mod user_tests {
     use axum::{routing::post, Router};
     use axum_test::TestServer;
-    use rusqlite::Connection;
     use serde::{Deserialize, Serialize};
 
     use crate::{
+        models::{
+            Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
+            TransactionBuilder, TransactionError, User, UserID,
+        },
         routes::{
             endpoints,
             register::{create_user, RegisterForm},
         },
-        stores::sql_store::{create_app_state, SQLAppState},
+        stores::{CategoryStore, TransactionStore, UserError, UserStore},
+        AppState,
     };
 
-    fn get_test_app_config() -> SQLAppState {
-        let db_connection =
-            Connection::open_in_memory().expect("Could not open database in memory.");
+    #[derive(Clone)]
+    struct StubUserStore {
+        users: Vec<User>,
+    }
 
-        create_app_state(db_connection, "42").unwrap()
+    impl UserStore for StubUserStore {
+        fn create(
+            &mut self,
+            email: email_address::EmailAddress,
+            password_hash: PasswordHash,
+        ) -> Result<User, UserError> {
+            let next_id = match self.users.last() {
+                Some(user) => UserID::new(user.id().as_i64() + 1),
+                _ => UserID::new(0),
+            };
+
+            let user = User::new(next_id, email, password_hash);
+            self.users.push(user.clone());
+
+            Ok(user)
+        }
+
+        fn get(&self, id: UserID) -> Result<User, UserError> {
+            self.users
+                .iter()
+                .find(|user| user.id() == id)
+                .ok_or(UserError::NotFound)
+                .map(|user| user.to_owned())
+        }
+
+        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, UserError> {
+            self.users
+                .iter()
+                .find(|user| user.email() == email)
+                .ok_or(UserError::NotFound)
+                .map(|user| user.to_owned())
+        }
+    }
+
+    #[derive(Clone)]
+    struct DummyCategoryStore;
+
+    impl CategoryStore for DummyCategoryStore {
+        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, CategoryError> {
+            todo!()
+        }
+
+        fn select(&self, _category_id: DatabaseID) -> Result<Category, CategoryError> {
+            todo!()
+        }
+
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+            todo!()
+        }
+    }
+
+    #[derive(Clone)]
+    struct DummyTransactionStore;
+
+    impl TransactionStore for DummyTransactionStore {
+        fn create(&self, _amount: f64, _user_id: UserID) -> Result<Transaction, TransactionError> {
+            todo!()
+        }
+
+        fn create_from_builder(
+            &self,
+            _builder: TransactionBuilder,
+        ) -> Result<Transaction, TransactionError> {
+            todo!()
+        }
+
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, TransactionError> {
+            todo!()
+        }
+
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+            todo!()
+        }
+    }
+
+    fn get_test_app_config() -> AppState<DummyCategoryStore, DummyTransactionStore, StubUserStore> {
+        let category_store = DummyCategoryStore {};
+        let transaction_store = DummyTransactionStore {};
+        let user_store = StubUserStore { users: vec![] };
+
+        AppState::new("42", category_store, transaction_store, user_store)
     }
 
     #[derive(Serialize, Deserialize)]

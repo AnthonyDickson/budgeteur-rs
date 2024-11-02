@@ -12,7 +12,11 @@ use crate::{
 /// Handles the creation and retrieval of User objects.
 pub trait UserStore {
     /// Create a new user.
-    fn create(&self, email: EmailAddress, password_hash: PasswordHash) -> Result<User, UserError>;
+    fn create(
+        &mut self,
+        email: EmailAddress,
+        password_hash: PasswordHash,
+    ) -> Result<User, UserError>;
 
     /// Get a user by their ID.
     fn get(&self, id: UserID) -> Result<User, UserError>;
@@ -85,7 +89,11 @@ impl UserStore for SQLiteUserStore {
     /// # Errors
     ///
     /// Returns a [UserError::SqlError] if an SQL related error occurred.
-    fn create(&self, email: EmailAddress, password_hash: PasswordHash) -> Result<User, UserError> {
+    fn create(
+        &mut self,
+        email: EmailAddress,
+        password_hash: PasswordHash,
+    ) -> Result<User, UserError> {
         let connection = self.connection.lock().unwrap();
 
         connection.execute(
@@ -188,7 +196,7 @@ mod user_tests {
 
     #[test]
     fn insert_user_succeeds() {
-        let store = get_store();
+        let mut store = get_store();
 
         let email = EmailAddress::from_str("hello@world.com").unwrap();
         let password_hash = PasswordHash::new_unchecked("hunter2".to_string());
@@ -202,7 +210,7 @@ mod user_tests {
 
     #[test]
     fn insert_user_fails_on_duplicate_email() {
-        let store = get_store();
+        let mut store = get_store();
 
         let email = EmailAddress::from_str("hello@world.com").unwrap();
 
@@ -224,7 +232,7 @@ mod user_tests {
 
     #[test]
     fn insert_user_fails_on_duplicate_password() {
-        let store = get_store();
+        let mut store = get_store();
 
         let email = EmailAddress::from_str("hello@world.com").unwrap();
         let password = PasswordHash::new_unchecked("hunter2".to_string());
@@ -251,7 +259,7 @@ mod user_tests {
 
     #[test]
     fn get_user_succeeds_with_existing_id() {
-        let store = get_store();
+        let mut store = get_store();
 
         let test_user = store
             .create(
@@ -277,7 +285,7 @@ mod user_tests {
 
     #[test]
     fn get_user_succeeds_with_existing_email() {
-        let store = get_store();
+        let mut store = get_store();
 
         let test_user = store
             .create(

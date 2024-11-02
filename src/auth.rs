@@ -304,7 +304,7 @@ mod auth_tests {
 
     #[tokio::test]
     async fn log_in_succeeds_with_valid_credentials() {
-        let app_state = get_test_app_config();
+        let mut app_state = get_test_app_config();
 
         let password = "averysafeandsecurepassword".to_string();
         let test_user = app_state
@@ -325,7 +325,7 @@ mod auth_tests {
 
     #[tokio::test]
     async fn log_in_fails_with_invalid_credentials() {
-        let app_state = get_test_app_config();
+        let mut app_state = get_test_app_config();
         let user_data = LogInData {
             email: "wrongemail@gmail.com".to_string(),
             password: "definitelyNotTheCorrectPassword".to_string(),
@@ -373,7 +373,7 @@ mod auth_guard_tests {
     }
 
     async fn test_log_in_route(
-        State(state): State<SQLAppState>,
+        State(mut state): State<SQLAppState>,
         jar: PrivateCookieJar,
         Form(user_data): Form<LogInData>,
     ) -> Result<PrivateCookieJar, AuthError> {
@@ -383,7 +383,7 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn get_protected_route_succeeds_with_valid_cookie() {
-        let state = get_test_app_state();
+        let mut state = get_test_app_state();
 
         let password = "averysafeandsecurepassword".to_string();
         let test_user = state
@@ -457,7 +457,7 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn get_protected_route_with_expired_auth_cookie_redirects_to_log_in() {
-        let state = get_test_app_state();
+        let mut state = get_test_app_state();
 
         let password = "averysafeandsecurepassword".to_string();
         let test_user = state

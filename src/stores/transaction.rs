@@ -185,7 +185,7 @@ mod sqlite_transaction_store_tests {
 
     fn get_app_state_and_test_user() -> (SQLAppState, User) {
         let conn = Connection::open_in_memory().unwrap();
-        let state = create_app_state(conn, "stneaoetse").unwrap();
+        let mut state = create_app_state(conn, "stneaoetse").unwrap();
 
         let test_user = state
             .user_store()
