@@ -49,7 +49,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Creating test user...");
 
-    let password_hash = PasswordHash::new(ValidatedPassword::new_unchecked("test".to_owned()))?;
+    let password_hash = PasswordHash::new(
+        ValidatedPassword::new_unchecked("test".to_owned()),
+        PasswordHash::DEFAULT_COST,
+    )?;
 
     conn.execute(
         "INSERT INTO user (email, password) VALUES (?1, ?2)",

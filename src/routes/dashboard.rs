@@ -82,12 +82,13 @@ mod dashboard_route_tests {
 
     use crate::{
         auth::LogInData,
+        models::ValidatedPassword,
         routes::log_in::post_log_in,
         stores::{sql_store::create_app_state, UserStore},
     };
     use crate::{
         auth::{auth_guard, COOKIE_USER_ID},
-        models::{PasswordHash, ValidatedPassword},
+        models::PasswordHash,
         routes::endpoints,
     };
 
@@ -103,7 +104,7 @@ mod dashboard_route_tests {
             .user_store()
             .create(
                 "test@test.com".parse().unwrap(),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()), 4).unwrap(),
             )
             .unwrap();
 

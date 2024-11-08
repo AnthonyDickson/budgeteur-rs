@@ -150,7 +150,7 @@ where
         }
     };
 
-    let password_hash = match PasswordHash::new(validated_password) {
+    let password_hash = match PasswordHash::new(validated_password, PasswordHash::DEFAULT_COST) {
         Ok(hash) => hash,
         Err(e) => {
             tracing::error!("an error occurred while hashing a password: {e}");

@@ -138,7 +138,7 @@ mod root_route_tests {
             .user_store()
             .create(
                 EmailAddress::new_unchecked("test@test.com"),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()), 4).unwrap(),
             )
             .unwrap();
 

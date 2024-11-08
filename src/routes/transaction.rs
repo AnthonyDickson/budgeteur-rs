@@ -113,11 +113,11 @@ mod transaction_tests {
 
     use crate::auth::LogInData;
     use crate::build_router;
-    use crate::models::DatabaseID;
+    use crate::models::{DatabaseID, PasswordHash};
     use crate::routes::category::CategoryData;
     use crate::routes::endpoints::format_endpoint;
     use crate::routes::register::RegisterForm;
-    use crate::stores::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore};
+    use crate::stores::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore, UserStore};
     use crate::{
         auth::COOKIE_USER_ID,
         db::initialize,
@@ -126,9 +126,7 @@ mod transaction_tests {
         AppState,
     };
 
-    type SQLAppState = AppState<SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore>;
-
-    fn get_test_app_state() -> SQLAppState {
+    async fn create_app_with_user() -> (TestServer, UserID, Cookie<'static>) {
         let db_connection =
             Connection::open_in_memory().expect("Could not open database in memory.");
         initialize(&db_connection).expect("Could not initialize database.");
@@ -136,29 +134,25 @@ mod transaction_tests {
         let connection = Arc::new(Mutex::new(db_connection));
         let category_store = SQLiteCategoryStore::new(connection.clone());
         let transaction_store = SQLiteTransactionStore::new(connection.clone());
-        let user_store = SQLiteUserStore::new(connection.clone());
-
-        AppState::new("foobar", category_store, transaction_store, user_store)
-    }
-
-    async fn create_app_with_user() -> (TestServer, UserID, Cookie<'static>) {
-        let app = build_router(get_test_app_state());
-
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let mut user_store = SQLiteUserStore::new(connection.clone());
 
         let email = "test@test.com".to_string();
         let password = "averysafeandsecurepassword".to_string();
+        let user = user_store
+            .create(
+                email.parse().unwrap(),
+                PasswordHash::from_raw_password(password.clone(), 4).unwrap(),
+            )
+            .unwrap();
 
-        let response = server
-            .post(endpoints::USERS)
-            .form(&RegisterForm {
-                email: email.clone(),
-                password: password.clone(),
-                confirm_password: password.clone(),
-            })
-            .await;
+        let app = build_router(AppState::new(
+            "foobar",
+            category_store,
+            transaction_store,
+            user_store,
+        ));
 
-        response.assert_status_see_other();
+        let server = TestServer::new(app).expect("Could not create test server.");
 
         let response = server
             .post(endpoints::LOG_IN)
@@ -168,8 +162,7 @@ mod transaction_tests {
         response.assert_status_see_other();
         let auth_cookie = response.cookie(COOKIE_USER_ID);
 
-        // TODO: Implement a way to get the user id from the auth cookie. For now, just guess the user id.
-        (server, UserID::new(1), auth_cookie)
+        (server, user.id(), auth_cookie)
     }
 
     async fn create_app_with_user_and_category() -> (TestServer, UserID, Cookie<'static>, Category)

@@ -34,7 +34,7 @@ pub struct SQLiteTransactionStore {
 impl SQLiteTransactionStore {
     /// Create a new store for the SQLite `connection`.
     pub fn new(connection: Arc<Mutex<Connection>>) -> Self {
-        return Self { connection };
+        Self { connection }
     }
 }
 

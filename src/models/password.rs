@@ -4,7 +4,7 @@
 
 use std::fmt::Display;
 
-use bcrypt::{hash, verify, BcryptError, DEFAULT_COST};
+use bcrypt::{hash, verify, BcryptError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zxcvbn::{feedback::Feedback, zxcvbn, Score};
@@ -72,15 +72,18 @@ impl Display for ValidatedPassword {
 pub struct PasswordHash(String);
 
 impl PasswordHash {
-    /// Create a hashed password from a validated password.
+    pub const DEFAULT_COST: u32 = bcrypt::DEFAULT_COST;
+
+    /// Create a hashed password from a validated password with the specified `cost`.
+    ///
+    /// `cost` increases the rounds of hashing and therefore the time needed to verify a password.
+    /// A value of at least 12 is recommended. Pass in [PasswordHash::DEFAULT_COST] to use the recommended cost.
     ///
     /// # Errors
     ///
     /// This function will return an error if the password could not be hashed.
-    pub fn new(password: ValidatedPassword) -> Result<Self, PasswordError> {
-        // TODO: Add cost as param or mocked version of PasswordHash that uses a lower cost to
-        // speed up unit tests.
-        match hash(&password.0, DEFAULT_COST) {
+    pub fn new(password: ValidatedPassword, cost: u32) -> Result<Self, PasswordError> {
+        match hash(&password.0, cost) {
             Ok(password_hash) => Ok(Self(password_hash)),
             Err(e) => Err(PasswordError::HashingError(e.to_string())),
         }
@@ -102,9 +105,9 @@ impl PasswordHash {
     ///
     /// This function is used instead of `From<String>` or `FromStr` to make it a bit clearer that
     /// we are not parsing an existing password hash.
-    pub fn from_raw_password(raw_password: String) -> Result<Self, PasswordError> {
+    pub fn from_raw_password(raw_password: String, cost: u32) -> Result<Self, PasswordError> {
         let validated_password = ValidatedPassword::new(raw_password)?;
-        PasswordHash::new(validated_password)
+        PasswordHash::new(validated_password, cost)
     }
 
     /// Check that `raw_password` matches the stored password.
@@ -173,7 +176,7 @@ mod password_hash_tests {
     fn hash_password_produces_verifiable_hash() {
         let password = "roostersgocockledoodledoo";
         let wrong_password = "the_wrong_password";
-        let hash = PasswordHash::new(ValidatedPassword::new(password.to_owned()).unwrap()).unwrap();
+        let hash = PasswordHash::from_raw_password(password.to_owned(), 4).unwrap();
 
         assert!(hash.verify(password).unwrap());
         assert!(!hash.verify(wrong_password).unwrap());
@@ -182,22 +185,22 @@ mod password_hash_tests {
     #[test]
     fn hash_duplicate_password_produces_unique_hash() {
         let password = ValidatedPassword::new("turkeysgogobblegobble".to_owned()).unwrap();
-        let hash = PasswordHash::new(password.clone()).unwrap();
-        let dupe_hash = PasswordHash::new(password.clone()).unwrap();
+        let hash = PasswordHash::new(password.clone(), 4).unwrap();
+        let dupe_hash = PasswordHash::new(password.clone(), 4).unwrap();
 
         assert_ne!(hash, dupe_hash);
     }
 
     #[test]
     fn from_string_fails_on_weak_password() {
-        let hash = PasswordHash::from_raw_password("password1234".to_owned());
+        let hash = PasswordHash::from_raw_password("password1234".to_owned(), 4);
 
         assert!(hash.is_err());
     }
 
     #[test]
     fn from_string_succeeds_on_string_password() {
-        let hash = PasswordHash::from_raw_password("thisisaverysecurepassword!!!!".to_owned());
+        let hash = PasswordHash::from_raw_password("thisisaverysecurepassword!!!!".to_owned(), 4);
 
         assert!(hash.is_ok());
     }

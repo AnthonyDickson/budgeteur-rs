@@ -110,9 +110,7 @@ mod category_tests {
     use rusqlite::Connection;
 
     use crate::db::initialize;
-    use crate::models::{
-        CategoryError, CategoryName, PasswordHash, User, UserID, ValidatedPassword,
-    };
+    use crate::models::{CategoryError, CategoryName, PasswordHash, User, UserID};
     use crate::stores::{SQLiteUserStore, UserStore};
 
     use super::{CategoryStore, SQLiteCategoryStore};
@@ -125,7 +123,7 @@ mod category_tests {
         let user = SQLiteUserStore::new(connection.clone())
             .create(
                 "foo@bar.baz".parse().unwrap(),
-                PasswordHash::new(ValidatedPassword::new_unchecked("foo".to_string())).unwrap(),
+                PasswordHash::from_raw_password("naetoafntseoafunts".to_string(), 4).unwrap(),
             )
             .unwrap();
 

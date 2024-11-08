@@ -93,7 +93,7 @@ mod transactions_route_tests {
 
     use crate::{
         auth::LogInData,
-        models::{Transaction, User},
+        models::{Transaction, User, ValidatedPassword},
         routes::log_in::post_log_in,
         stores::{
             sql_store::{create_app_state, SQLAppState},
@@ -102,7 +102,7 @@ mod transactions_route_tests {
     };
     use crate::{
         auth::{auth_guard, COOKIE_USER_ID},
-        models::{PasswordHash, ValidatedPassword},
+        models::PasswordHash,
         routes::endpoints,
     };
 
@@ -118,7 +118,7 @@ mod transactions_route_tests {
             .user_store()
             .create(
                 "test@test.com".parse().unwrap(),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string())).unwrap(),
+                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()), 4).unwrap(),
             )
             .unwrap();
 
@@ -137,25 +137,20 @@ mod transactions_route_tests {
     async fn transactions_page_displays_correct_info() {
         let (state, server, user) = get_test_state_server_and_user();
 
-        let mut transactions = Vec::new();
-
-        transactions.push(
+        let transactions = vec![
             state
                 .transaction_store()
                 .create_from_builder(
                     Transaction::build(1.0, user.id()).description("foo".to_string()),
                 )
                 .unwrap(),
-        );
-
-        transactions.push(
             state
                 .transaction_store()
                 .create_from_builder(
                     Transaction::build(2.0, user.id()).description("bar".to_string()),
                 )
                 .unwrap(),
-        );
+        ];
 
         let auth_cookie = server
             .post(endpoints::LOG_IN)
