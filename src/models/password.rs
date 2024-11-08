@@ -78,6 +78,8 @@ impl PasswordHash {
     ///
     /// This function will return an error if the password could not be hashed.
     pub fn new(password: ValidatedPassword) -> Result<Self, PasswordError> {
+        // TODO: Add cost as param or mocked version of PasswordHash that uses a lower cost to
+        // speed up unit tests.
         match hash(&password.0, DEFAULT_COST) {
             Ok(password_hash) => Ok(Self(password_hash)),
             Err(e) => Err(PasswordError::HashingError(e.to_string())),
@@ -100,7 +102,7 @@ impl PasswordHash {
     ///
     /// This function is used instead of `From<String>` or `FromStr` to make it a bit clearer that
     /// we are not parsing an existing password hash.
-    pub fn from_string(raw_password: String) -> Result<Self, PasswordError> {
+    pub fn from_raw_password(raw_password: String) -> Result<Self, PasswordError> {
         let validated_password = ValidatedPassword::new(raw_password)?;
         PasswordHash::new(validated_password)
     }
@@ -188,14 +190,14 @@ mod password_hash_tests {
 
     #[test]
     fn from_string_fails_on_weak_password() {
-        let hash = PasswordHash::from_string("password1234".to_owned());
+        let hash = PasswordHash::from_raw_password("password1234".to_owned());
 
         assert!(hash.is_err());
     }
 
     #[test]
     fn from_string_succeeds_on_string_password() {
-        let hash = PasswordHash::from_string("thisisaverysecurepassword!!!!".to_owned());
+        let hash = PasswordHash::from_raw_password("thisisaverysecurepassword!!!!".to_owned());
 
         assert!(hash.is_ok());
     }

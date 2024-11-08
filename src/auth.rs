@@ -311,7 +311,7 @@ mod auth_tests {
             .user_store()
             .create(
                 EmailAddress::from_str("foo@bar.baz").unwrap(),
-                PasswordHash::from_string(password.clone()).unwrap(),
+                PasswordHash::from_raw_password(password.clone()).unwrap(),
             )
             .unwrap();
 
@@ -390,7 +390,7 @@ mod auth_guard_tests {
             .user_store()
             .create(
                 EmailAddress::from_str("foo@bar.baz").unwrap(),
-                PasswordHash::from_string(password.clone()).unwrap(),
+                PasswordHash::from_raw_password(password.clone()).unwrap(),
             )
             .unwrap();
 
@@ -464,7 +464,7 @@ mod auth_guard_tests {
             .user_store()
             .create(
                 EmailAddress::from_str("foo@bar.baz").unwrap(),
-                PasswordHash::from_string(password.clone()).unwrap(),
+                PasswordHash::from_raw_password(password.clone()).unwrap(),
             )
             .unwrap();
 
