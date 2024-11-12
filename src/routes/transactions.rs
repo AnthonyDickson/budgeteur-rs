@@ -34,7 +34,7 @@ struct TransactionsTemplate<'a> {
 }
 
 pub async fn get_transactions_page<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+    State(mut state): State<AppState<C, T, U>>,
     Extension(user_id): Extension<UserID>,
 ) -> Response
 where
@@ -135,7 +135,7 @@ mod transactions_route_tests {
 
     #[tokio::test]
     async fn transactions_page_displays_correct_info() {
-        let (state, server, user) = get_test_state_server_and_user();
+        let (mut state, server, user) = get_test_state_server_and_user();
 
         let transactions = vec![
             state

@@ -52,7 +52,7 @@ impl From<rusqlite::Error> for TransactionError {
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
 /// To create a new `Transaction`, use [Transaction::build].
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transaction {
     id: DatabaseID,
     amount: f64,
@@ -104,7 +104,7 @@ impl Transaction {
 /// Builder for creating a new [Transaction].
 ///
 /// The function for finalizing the builder is [TransactionBuilder::finalise].
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TransactionBuilder {
     amount: f64,
     date: Date,

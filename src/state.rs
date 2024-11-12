@@ -60,8 +60,8 @@ where
         &self.category_store
     }
 
-    pub fn transaction_store(&self) -> &T {
-        &self.transaction_store
+    pub fn transaction_store(&mut self) -> &mut T {
+        &mut self.transaction_store
     }
 
     pub fn user_store(&mut self) -> &mut U {

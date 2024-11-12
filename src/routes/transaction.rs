@@ -23,15 +23,15 @@ use super::templates::TransactionRow;
 #[derive(Debug, Deserialize)]
 pub struct TransactionForm {
     /// The value of the transaction in dollars.
-    amount: f64,
+    pub amount: f64,
     /// The date when the transaction ocurred.
-    date: Date,
+    pub date: Date,
     /// Text detailing the transaction.
-    description: String,
+    pub description: String,
     /// The ID of the category to assign the transaction to.
     ///
     /// Zero should be interpreted as `None`.
-    category_id: DatabaseID,
+    pub category_id: DatabaseID,
 }
 
 /// A route handler for creating a new transaction, returns [TransactionRow] as a [Response] on success.
@@ -40,7 +40,7 @@ pub struct TransactionForm {
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn create_transaction<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+    State(mut state): State<AppState<C, T, U>>,
     _jar: PrivateCookieJar,
     Path(user_id): Path<UserID>,
     Form(data): Form<TransactionForm>,
@@ -77,7 +77,7 @@ where
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_transaction<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+    State(mut state): State<AppState<C, T, U>>,
     jar: PrivateCookieJar,
     Path(transaction_id): Path<DatabaseID>,
 ) -> impl IntoResponse
@@ -103,222 +103,275 @@ where
 
 #[cfg(test)]
 mod transaction_tests {
-    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
-    use axum_extra::extract::cookie::Cookie;
-    use axum_test::TestServer;
-    use rusqlite::Connection;
-    use time::{Date, OffsetDateTime};
+    use askama_axum::IntoResponse;
+    use axum::body::Body;
+    use axum::extract::{Path, State};
+    use axum::http::{Response, StatusCode};
+    use axum::Form;
+    use axum_extra::extract::PrivateCookieJar;
+    use time::OffsetDateTime;
 
-    use crate::auth::LogInData;
-    use crate::build_router;
-    use crate::models::{DatabaseID, PasswordHash};
-    use crate::routes::category::CategoryData;
-    use crate::routes::endpoints::format_endpoint;
-    use crate::routes::register::RegisterForm;
-    use crate::stores::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore, UserStore};
+    use crate::auth::set_auth_cookie;
+    use crate::models::{
+        CategoryError, DatabaseID, PasswordHash, TransactionBuilder, TransactionError,
+    };
+    use crate::routes::transaction::{create_transaction, get_transaction, TransactionForm};
+    use crate::stores::{CategoryStore, TransactionStore, UserStore};
     use crate::{
-        auth::COOKIE_USER_ID,
-        db::initialize,
         models::{Category, Transaction, UserID},
-        routes::endpoints,
         AppState,
     };
 
-    async fn create_app_with_user() -> (TestServer, UserID, Cookie<'static>) {
-        let db_connection =
-            Connection::open_in_memory().expect("Could not open database in memory.");
-        initialize(&db_connection).expect("Could not initialize database.");
+    #[derive(Clone)]
+    struct DummyUserStore {}
 
-        let connection = Arc::new(Mutex::new(db_connection));
-        let category_store = SQLiteCategoryStore::new(connection.clone());
-        let transaction_store = SQLiteTransactionStore::new(connection.clone());
-        let mut user_store = SQLiteUserStore::new(connection.clone());
+    impl UserStore for DummyUserStore {
+        fn create(
+            &mut self,
+            _email: email_address::EmailAddress,
+            _password_hash: PasswordHash,
+        ) -> Result<crate::models::User, crate::stores::UserError> {
+            todo!()
+        }
 
-        let email = "test@test.com".to_string();
-        let password = "averysafeandsecurepassword".to_string();
-        let user = user_store
-            .create(
-                email.parse().unwrap(),
-                PasswordHash::from_raw_password(password.clone(), 4).unwrap(),
+        fn get(&self, _id: UserID) -> Result<crate::models::User, crate::stores::UserError> {
+            todo!()
+        }
+
+        fn get_by_email(
+            &self,
+            _email: &email_address::EmailAddress,
+        ) -> Result<crate::models::User, crate::stores::UserError> {
+            todo!()
+        }
+    }
+
+    #[derive(Clone)]
+    struct DummyCategoryStore {}
+
+    impl CategoryStore for DummyCategoryStore {
+        fn create(
+            &self,
+            _name: crate::models::CategoryName,
+            _user_id: UserID,
+        ) -> Result<Category, CategoryError> {
+            todo!()
+        }
+
+        fn select(&self, _category_id: DatabaseID) -> Result<Category, CategoryError> {
+            todo!()
+        }
+
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+            todo!()
+        }
+    }
+
+    #[derive(Clone)]
+    struct FakeTransactionStore {
+        transactions: Vec<Transaction>,
+        create_calls: Arc<Mutex<Vec<Transaction>>>,
+    }
+
+    impl FakeTransactionStore {
+        fn new() -> Self {
+            Self {
+                transactions: Vec::new(),
+                create_calls: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    impl TransactionStore for FakeTransactionStore {
+        fn create(
+            &mut self,
+            amount: f64,
+            user_id: UserID,
+        ) -> Result<Transaction, TransactionError> {
+            self.create_from_builder(TransactionBuilder::new(amount, user_id))
+        }
+
+        fn create_from_builder(
+            &mut self,
+            builder: TransactionBuilder,
+        ) -> Result<Transaction, TransactionError> {
+            let next_id = match self.transactions.last() {
+                Some(transaction) => transaction.id() + 1,
+                None => 0,
+            };
+
+            let transaction = builder.finalise(next_id);
+
+            self.transactions.push(transaction.clone());
+            self.create_calls.lock().unwrap().push(transaction.clone());
+
+            Ok(transaction)
+        }
+
+        fn get(&self, id: DatabaseID) -> Result<Transaction, TransactionError> {
+            self.transactions
+                .iter()
+                .find(|transaction| transaction.id() == id)
+                .ok_or(TransactionError::NotFound)
+                .map(|transaction| transaction.to_owned())
+        }
+
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+            todo!()
+        }
+    }
+
+    #[tokio::test]
+    async fn can_create_transaction() {
+        let state = AppState::new(
+            "42",
+            DummyCategoryStore {},
+            FakeTransactionStore::new(),
+            DummyUserStore {},
+        );
+
+        let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
+
+        let user_id = UserID::new(123);
+
+        let want = Transaction::build(12.3, user_id)
+            .date(OffsetDateTime::now_utc().date())
+            .unwrap()
+            .description("aaaaaaaaaaaaa".to_string())
+            .category(Some(1))
+            .finalise(0);
+
+        let form = TransactionForm {
+            description: want.description().to_string(),
+            amount: want.amount(),
+            date: want.date().to_owned(),
+            category_id: want.category_id().unwrap(),
+        };
+
+        let response = create_transaction(State(state.clone()), jar, Path(user_id), Form(form))
+            .await
+            .into_response();
+
+        assert_create_calls(state, want.clone());
+        assert_response_contains_transaction(response, want).await;
+    }
+
+    #[tokio::test]
+    async fn can_get_transaction() {
+        let user_id = UserID::new(42);
+
+        let mut state = AppState::new(
+            "42",
+            DummyCategoryStore {},
+            FakeTransactionStore::new(),
+            DummyUserStore {},
+        );
+
+        let transaction = state
+            .transaction_store()
+            .create_from_builder(
+                TransactionBuilder::new(13.34, user_id)
+                    .category(Some(24))
+                    .description("foobar".to_string()),
             )
             .unwrap();
 
-        let app = build_router(AppState::new(
-            "foobar",
-            category_store,
-            transaction_store,
-            user_store,
+        let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
+        let jar = set_auth_cookie(jar, user_id);
+
+        let response = get_transaction(State(state), jar, Path(transaction.id()))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let json_response = extract_from_json(response).await;
+
+        assert_eq!(json_response, transaction);
+    }
+
+    #[tokio::test]
+    async fn cannot_get_transaction_with_unauthorized_user() {
+        let user_id = UserID::new(42);
+        let unauthorized_user_id = UserID::new(1337);
+
+        let mut state = AppState::new(
+            "42",
+            DummyCategoryStore {},
+            FakeTransactionStore::new(),
+            DummyUserStore {},
+        );
+
+        let transaction = state
+            .transaction_store()
+            .create_from_builder(
+                TransactionBuilder::new(12.34, user_id)
+                    .category(Some(24))
+                    .description("foobar".to_string()),
+            )
+            .unwrap();
+
+        let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
+        let jar = set_auth_cookie(jar, unauthorized_user_id);
+
+        let response = get_transaction(State(state), jar, Path(transaction.id()))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    async fn extract_text(response: Response<Body>) -> String {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+
+        String::from_utf8_lossy(&body).to_string()
+    }
+
+    async fn extract_from_json(response: Response<Body>) -> Transaction {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    fn assert_create_calls(
+        mut state: AppState<DummyCategoryStore, FakeTransactionStore, DummyUserStore>,
+        want: Transaction,
+    ) {
+        let create_calls = state
+            .transaction_store()
+            .create_calls
+            .lock()
+            .unwrap()
+            .clone();
+
+        assert_eq!(
+            create_calls.len(),
+            1,
+            "got {} calls to create transaction, want 1",
+            create_calls.len()
+        );
+
+        let got = &create_calls[0];
+        assert_eq!(got, &want, "got transaction {:#?} want {:#?}", got, want);
+    }
+
+    async fn assert_response_contains_transaction(response: Response<Body>, want: Transaction) {
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let html_response = extract_text(response).await;
+
+        assert!(html_response.contains(&want.amount().to_string()));
+        assert!(html_response.contains(&want.date().to_string()));
+        assert!(html_response.contains(want.description()));
+        assert!(html_response.contains(
+            &want
+                .category_id()
+                .expect("category id should not be None")
+                .to_string()
         ));
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        let response = server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData { email, password })
-            .await;
-
-        response.assert_status_see_other();
-        let auth_cookie = response.cookie(COOKIE_USER_ID);
-
-        (server, user.id(), auth_cookie)
     }
-
-    async fn create_app_with_user_and_category() -> (TestServer, UserID, Cookie<'static>, Category)
-    {
-        let (server, user_id, auth_cookie) = create_app_with_user().await;
-
-        let category = server
-            .post(&format_endpoint(
-                endpoints::USER_CATEGORIES,
-                user_id.as_i64(),
-            ))
-            .add_cookie(auth_cookie.clone())
-            .form(&CategoryData {
-                name: "foo".to_string(),
-            })
-            .await
-            .json::<Category>();
-
-        (server, user_id, auth_cookie, category)
-    }
-
-    /// Create a hash map to use as a form for creating a transaction.
-    ///
-    /// A map of strings is used to avoid errors from trying to serialize `Date` structs in
-    /// `TransactionForm`.
-    fn transaction_form_as_map(
-        amount: f64,
-        date: Date,
-        description: &str,
-        category_id: DatabaseID,
-    ) -> HashMap<String, String> {
-        let mut form = HashMap::new();
-
-        form.insert(String::from("amount"), amount.to_string());
-        form.insert(String::from("date"), date.to_string());
-        form.insert(String::from("description"), description.to_string());
-        form.insert(String::from("category_id"), category_id.to_string());
-
-        form
-    }
-
-    #[tokio::test]
-    async fn create_transaction() {
-        let (server, user_id, auth_cookie, category) = create_app_with_user_and_category().await;
-
-        let amount = -10.0;
-        let date = OffsetDateTime::now_utc().date();
-        let description = "A thingymajig";
-
-        let form = transaction_form_as_map(amount, date, description, category.id());
-
-        let response = server
-            .post(&format_endpoint(
-                endpoints::USER_TRANSACTIONS,
-                user_id.as_i64(),
-            ))
-            .add_cookie(auth_cookie)
-            .form(&form)
-            .await;
-
-        response.assert_status_ok();
-
-        dbg!(response.text());
-
-        let html_response = response.text();
-
-        assert!(html_response.contains(&amount.to_string()));
-        assert!(html_response.contains(&date.to_string()));
-        assert!(html_response.contains(description));
-        assert!(html_response.contains(&category.id().to_string()));
-    }
-
-    #[tokio::test]
-    async fn get_transaction() {
-        let (server, user_id, auth_cookie, category) = create_app_with_user_and_category().await;
-
-        let amount = -10.0;
-        let date = OffsetDateTime::now_utc().date();
-        let description = "A thingymajig";
-
-        let form = transaction_form_as_map(amount, date, description, category.id());
-
-        server
-            .post(&format_endpoint(
-                endpoints::USER_TRANSACTIONS,
-                user_id.as_i64(),
-            ))
-            .add_cookie(auth_cookie.clone())
-            .form(&form)
-            .await;
-
-        let response = server
-            .get(&format_endpoint(
-                endpoints::TRANSACTION,
-                // Just guess the transaction ID since parsing the HTML response is a PITA.
-                1,
-            ))
-            .add_cookie(auth_cookie)
-            .await;
-
-        response.assert_status_ok();
-
-        let selected_transaction = response.json::<Transaction>();
-
-        assert_eq!(amount, selected_transaction.amount());
-        assert_eq!(&date, selected_transaction.date());
-        assert_eq!(description, selected_transaction.description());
-        assert_eq!(Some(category.id()), selected_transaction.category_id());
-    }
-
-    #[tokio::test]
-    async fn get_transaction_fails_on_wrong_user() {
-        let (server, user_id, auth_cookie, category) = create_app_with_user_and_category().await;
-
-        let amount = -10.0;
-        let date = OffsetDateTime::now_utc().date();
-        let description = "A thingymajig";
-
-        let form = transaction_form_as_map(amount, date, description, category.id());
-
-        server
-            .post(&format_endpoint(
-                endpoints::USER_TRANSACTIONS,
-                user_id.as_i64(),
-            ))
-            .add_cookie(auth_cookie.clone())
-            .form(&form)
-            .await;
-
-        let email = "test2@test.com".to_string();
-        let password = "averystrongandsecurepassword".to_string();
-
-        let response = server
-            .post(endpoints::USERS)
-            .form(&RegisterForm {
-                email: email.clone(),
-                password: password.clone(),
-                confirm_password: password.clone(),
-            })
-            .await;
-
-        response.assert_status_see_other();
-
-        let auth_cookie = server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData { email, password })
-            .await
-            .cookie(COOKIE_USER_ID);
-
-        server
-            // Just guess the transaction ID since parsing the HTML response is a PITA.
-            .get(&format_endpoint(endpoints::TRANSACTION, 1))
-            .add_cookie(auth_cookie)
-            .await
-            .assert_status_not_found();
-    }
-
-    // TODO: Add tests for category and transaction that check for correct behaviour when foreign key constraints are violated. Need to also decide what 'correct behaviour' should be.
 }

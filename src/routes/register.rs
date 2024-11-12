@@ -279,12 +279,16 @@ mod user_tests {
     struct DummyTransactionStore;
 
     impl TransactionStore for DummyTransactionStore {
-        fn create(&self, _amount: f64, _user_id: UserID) -> Result<Transaction, TransactionError> {
+        fn create(
+            &mut self,
+            _amount: f64,
+            _user_id: UserID,
+        ) -> Result<Transaction, TransactionError> {
             todo!()
         }
 
         fn create_from_builder(
-            &self,
+            &mut self,
             _builder: TransactionBuilder,
         ) -> Result<Transaction, TransactionError> {
             todo!()

@@ -10,11 +10,11 @@ use crate::{
 /// Handles the creation and retrieval of transactions.
 pub trait TransactionStore {
     /// Create a new transaction in the store.
-    fn create(&self, amount: f64, user_id: UserID) -> Result<Transaction, TransactionError>;
+    fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, TransactionError>;
 
     /// Create a new transaction in the store.
     fn create_from_builder(
-        &self,
+        &mut self,
         builder: TransactionBuilder,
     ) -> Result<Transaction, TransactionError>;
 
@@ -49,7 +49,7 @@ impl TransactionStore for SQLiteTransactionStore {
     /// - [TransactionError::InvalidUser] if `user_id` does not refer to a valid user,
     /// - [TransactionError::SqlError] if there is some other SQL error,
     /// - or [TransactionError::Unspecified] if there was an unexpected error.
-    fn create(&self, amount: f64, user_id: UserID) -> Result<Transaction, TransactionError> {
+    fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, TransactionError> {
         let transaction = Transaction::build(amount, user_id);
 
         self.create_from_builder(transaction)
@@ -66,7 +66,7 @@ impl TransactionStore for SQLiteTransactionStore {
     /// - [TransactionError::SqlError] if there is some other SQL error,
     /// - or [TransactionError::Unspecified] if there was an unexpected error.
     fn create_from_builder(
-        &self,
+        &mut self,
         builder: TransactionBuilder,
     ) -> Result<Transaction, TransactionError> {
         let connection = self.connection.lock().unwrap();
@@ -200,7 +200,7 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn create_succeeds() {
-        let (state, user) = get_app_state_and_test_user();
+        let (mut state, user) = get_app_state_and_test_user();
         let amount = 12.3;
 
         let result = state.transaction_store().create(amount, user.id());
@@ -215,7 +215,7 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn create_fails_on_invalid_user_id() {
-        let (state, user) = get_app_state_and_test_user();
+        let (mut state, user) = get_app_state_and_test_user();
 
         let transaction = state
             .transaction_store()
@@ -271,7 +271,7 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transaction_by_id_succeeds() {
-        let (state, user) = get_app_state_and_test_user();
+        let (mut state, user) = get_app_state_and_test_user();
         let store = state.transaction_store();
         let transaction = store.create(PI, user.id()).unwrap();
 
@@ -282,7 +282,7 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transaction_fails_on_invalid_id() {
-        let (state, user) = get_app_state_and_test_user();
+        let (mut state, user) = get_app_state_and_test_user();
         let store = state.transaction_store();
         let transaction = store.create(123.0, user.id()).unwrap();
 
@@ -293,7 +293,7 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transactions_by_user_id_succeeds_with_no_transactions() {
-        let (state, user) = get_app_state_and_test_user();
+        let (mut state, user) = get_app_state_and_test_user();
         let store = state.transaction_store();
         let expected_transactions = vec![];
 
@@ -304,7 +304,7 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transactions_by_user_id_succeeds() {
-        let (state, user) = get_app_state_and_test_user();
+        let (mut state, user) = get_app_state_and_test_user();
         let store = state.transaction_store();
 
         let expected_transactions = vec![

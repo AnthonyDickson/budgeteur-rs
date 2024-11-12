@@ -102,7 +102,7 @@ mod log_out_tests {
 
     impl TransactionStore for DummyTransactionStore {
         fn create(
-            &self,
+            &mut self,
             _amount: f64,
             _user_id: crate::models::UserID,
         ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
@@ -110,7 +110,7 @@ mod log_out_tests {
         }
 
         fn create_from_builder(
-            &self,
+            &mut self,
             _builder: crate::models::TransactionBuilder,
         ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
             todo!()
