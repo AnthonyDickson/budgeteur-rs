@@ -47,3 +47,63 @@ pub fn get_nav_bar(active_endpoint: &str) -> NavbarTemplate {
 
     NavbarTemplate { links }
 }
+
+#[cfg(test)]
+mod nav_bar_tests {
+    use std::collections::HashMap;
+
+    use crate::routes::endpoints;
+
+    use super::get_nav_bar;
+
+    #[test]
+    fn set_active_endpoint() {
+        let mut cases = HashMap::new();
+        cases.insert(endpoints::DASHBOARD, true);
+        cases.insert(endpoints::TRANSACTIONS, true);
+
+        cases.insert(endpoints::LOG_OUT, false);
+        cases.insert(endpoints::ROOT, false);
+        cases.insert(endpoints::USERS, false);
+        cases.insert(endpoints::COFFEE, false);
+        cases.insert(endpoints::LOG_IN, false);
+        cases.insert(endpoints::CATEGORY, false);
+        cases.insert(endpoints::REGISTER, false);
+        cases.insert(endpoints::CATEGORIES, false);
+        cases.insert(endpoints::TRANSACTION, false);
+        cases.insert(endpoints::INTERNAL_ERROR, false);
+        cases.insert(endpoints::USER_CATEGORIES, false);
+        cases.insert(endpoints::USER_TRANSACTIONS, false);
+
+        let get_active_string = |is_active: bool| -> &str {
+            if is_active {
+                "active (true)"
+            } else {
+                "inactive (false)"
+            }
+        };
+
+        for (endpoint, should_be_active) in cases {
+            let navbar = get_nav_bar(endpoint);
+
+            for link in navbar.links {
+                if link.url == endpoint {
+                    assert_eq!(
+                        link.is_current,
+                        should_be_active,
+                        "Link for current page should be {} but got {}",
+                        get_active_string(should_be_active),
+                        get_active_string(link.is_current),
+                    )
+                } else {
+                    assert!(
+                        !link.is_current,
+                        "Link for inactive page should {} but got {}",
+                        get_active_string(false),
+                        get_active_string(link.is_current)
+                    )
+                }
+            }
+        }
+    }
+}
