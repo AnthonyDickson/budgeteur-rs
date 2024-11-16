@@ -71,121 +71,158 @@ where
 #[cfg(test)]
 mod dashboard_route_tests {
     use axum::{
-        middleware,
-        routing::{get, post},
-        Router,
+        body::Body,
+        extract::State,
+        http::{Response, StatusCode},
+        Extension,
     };
-    use axum_extra::extract::cookie::Cookie;
-    use axum_test::TestServer;
-    use rusqlite::Connection;
     use time::{Duration, OffsetDateTime};
 
+    use crate::models::PasswordHash;
     use crate::{
-        auth::LogInData,
-        models::ValidatedPassword,
-        routes::log_in::post_log_in,
-        stores::{sql_store::create_app_state, UserStore},
-    };
-    use crate::{
-        auth::{auth_guard, COOKIE_USER_ID},
-        models::PasswordHash,
-        routes::endpoints,
+        models::{
+            Category, CategoryError, DatabaseID, Transaction, TransactionBuilder, TransactionError,
+            UserID,
+        },
+        stores::{CategoryStore, TransactionStore, UserStore},
+        AppState,
     };
 
     use super::get_dashboard_page;
 
-    fn get_test_server() -> TestServer {
-        let db_connection =
-            Connection::open_in_memory().expect("Could not open database in memory.");
+    #[derive(Clone)]
+    struct DummyUserStore {}
 
-        let mut state = create_app_state(db_connection, "42").unwrap();
+    impl UserStore for DummyUserStore {
+        fn create(
+            &mut self,
+            _email: email_address::EmailAddress,
+            _password_hash: PasswordHash,
+        ) -> Result<crate::models::User, crate::stores::UserError> {
+            todo!()
+        }
 
-        state
-            .user_store()
-            .create(
-                "test@test.com".parse().unwrap(),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()), 4).unwrap(),
-            )
-            .unwrap();
+        fn get(&self, _id: UserID) -> Result<crate::models::User, crate::stores::UserError> {
+            todo!()
+        }
 
-        let app = Router::new()
-            .route(endpoints::DASHBOARD, get(get_dashboard_page))
-            .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::LOG_IN, post(post_log_in))
-            .with_state(state);
+        fn get_by_email(
+            &self,
+            _email: &email_address::EmailAddress,
+        ) -> Result<crate::models::User, crate::stores::UserError> {
+            todo!()
+        }
+    }
 
-        TestServer::new(app).expect("Could not create test server.")
+    #[derive(Clone)]
+    struct DummyCategoryStore {}
+
+    impl CategoryStore for DummyCategoryStore {
+        fn create(
+            &self,
+            _name: crate::models::CategoryName,
+            _user_id: UserID,
+        ) -> Result<Category, CategoryError> {
+            todo!()
+        }
+
+        fn select(&self, _category_id: DatabaseID) -> Result<Category, CategoryError> {
+            todo!()
+        }
+
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+            todo!()
+        }
+    }
+
+    #[derive(Clone)]
+    struct FakeTransactionStore {
+        transactions: Vec<Transaction>,
+    }
+
+    impl TransactionStore for FakeTransactionStore {
+        fn create(
+            &mut self,
+            amount: f64,
+            user_id: UserID,
+        ) -> Result<Transaction, TransactionError> {
+            self.create_from_builder(TransactionBuilder::new(amount, user_id))
+        }
+
+        fn create_from_builder(
+            &mut self,
+            builder: TransactionBuilder,
+        ) -> Result<Transaction, TransactionError> {
+            let next_id = match self.transactions.last() {
+                Some(transaction) => transaction.id() + 1,
+                None => 0,
+            };
+
+            let transaction = builder.finalise(next_id);
+
+            self.transactions.push(transaction.clone());
+
+            Ok(transaction)
+        }
+
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, TransactionError> {
+            todo!()
+        }
+
+        fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+            self.transactions
+                .iter()
+                .filter(|transaction| transaction.user_id() == user_id)
+                .map(|transaction| Ok(transaction.to_owned()))
+                .collect()
+        }
     }
 
     #[tokio::test]
-    async fn dashboard_redirects_to_log_in_without_auth_cookie() {
-        let server = get_test_server();
+    async fn dashboard_displays_correct_balance() {
+        let user_id = UserID::new(321);
+        let transactions = vec![
+            // Transactions before the current week should not be included in the balance.
+            Transaction::build(12.3, user_id)
+                .date(
+                    OffsetDateTime::now_utc()
+                        .date()
+                        .checked_sub(Duration::weeks(2))
+                        .unwrap(),
+                )
+                .unwrap()
+                .finalise(1),
+            // These transactions should be included.
+            Transaction::build(45.6, user_id).finalise(2),
+            Transaction::build(-45.6, user_id).finalise(3),
+            Transaction::build(123.0, user_id).finalise(4),
+            // Transactions from other users should not be included either.
+            Transaction::build(999.99, UserID::new(999)).finalise(5),
+        ];
+        let state = AppState::new(
+            "123",
+            DummyCategoryStore {},
+            FakeTransactionStore { transactions },
+            DummyUserStore {},
+        );
 
-        let response = server.get(endpoints::DASHBOARD).await;
+        let response = get_dashboard_page(State(state), Extension(user_id)).await;
 
-        response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::LOG_IN);
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_body_contains_amount(response, 123.0).await;
     }
 
-    #[tokio::test]
-    async fn dashboard_redirects_to_log_in_with_invalid_auth_cookie() {
-        let server = get_test_server();
+    async fn assert_body_contains_amount(response: Response<Body>, want: f64) {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
 
-        let fake_auth_cookie = Cookie::build((COOKIE_USER_ID, "1"))
-            .secure(true)
-            .http_only(true)
-            .same_site(axum_extra::extract::cookie::SameSite::Lax)
-            .build();
-        let response = server
-            .get(endpoints::DASHBOARD)
-            .add_cookie(fake_auth_cookie)
-            .await;
+        let text = String::from_utf8_lossy(&body).to_string();
 
-        response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::LOG_IN);
-    }
-
-    #[tokio::test]
-    async fn dashboard_redirects_to_log_in_with_expired_auth_cookie() {
-        let server = get_test_server();
-        let mut expired_auth_cookie = server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: "test@test.com".to_string(),
-                password: "test".to_string(),
-            })
-            .await
-            .cookie(COOKIE_USER_ID);
-
-        expired_auth_cookie.set_max_age(Duration::ZERO);
-        expired_auth_cookie.set_expires(OffsetDateTime::UNIX_EPOCH);
-
-        let response = server
-            .get(endpoints::DASHBOARD)
-            .add_cookie(expired_auth_cookie)
-            .await;
-
-        response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::LOG_IN);
-    }
-
-    #[tokio::test]
-    async fn dashboard_displays_with_auth_cookie() {
-        let server = get_test_server();
-
-        let auth_cookie = server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: "test@test.com".to_string(),
-                password: "test".to_string(),
-            })
-            .await
-            .cookie(COOKIE_USER_ID);
-
-        server
-            .get(endpoints::DASHBOARD)
-            .add_cookie(auth_cookie)
-            .await
-            .assert_status_ok();
+        assert!(
+            text.contains(&want.to_string()),
+            "response body should contain '{}' but got {}",
+            want,
+            text
+        );
     }
 }

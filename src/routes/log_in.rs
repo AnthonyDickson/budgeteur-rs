@@ -99,7 +99,7 @@ where
                 value: "",
                 min_length: 0,
                 error_message: match e {
-                    AuthError::InvalidCredentials => "Incorrect email or password.",
+                    AuthError::InvalidCredentials => INVALID_CREDENTIALS_ERROR_MSG,
                     AuthError::InternalError => {
                         "An internal error occurred. Please try again later."
                     }
@@ -110,16 +110,30 @@ where
         .into_response()
 }
 
+const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect email or password.";
+
 #[cfg(test)]
 mod log_in_tests {
-    use axum::{http::StatusCode, routing::post, Router};
+    use axum::{
+        body::Body,
+        extract::State,
+        http::{Response, StatusCode},
+        routing::post,
+        Form, Router,
+    };
+    use axum_extra::extract::{cookie::Cookie, PrivateCookieJar};
+    use axum_htmx::HX_REDIRECT;
     use axum_test::TestServer;
     use email_address::EmailAddress;
+    use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::LogInData,
+        auth::{LogInData, COOKIE_USER_ID},
         models::{PasswordHash, User, UserID, ValidatedPassword},
-        routes::{endpoints, log_in::post_log_in},
+        routes::{
+            endpoints,
+            log_in::{post_log_in, INVALID_CREDENTIALS_ERROR_MSG},
+        },
         stores::{CategoryStore, TransactionStore, UserError, UserStore},
         AppState,
     };
@@ -226,41 +240,12 @@ mod log_in_tests {
 
     type TestAppState = AppState<DummyCategoryStore, DummyTransactionStore, StubUserStore>;
 
-    fn get_test_app_config() -> TestAppState {
-        let mut state = AppState::new(
-            "42",
-            DummyCategoryStore {},
-            DummyTransactionStore {},
-            StubUserStore { users: vec![] },
-        );
-
-        state
-            .user_store()
-            .create(
-                EmailAddress::new_unchecked("test@test.com"),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()), 4).unwrap(),
-            )
-            .unwrap();
-
-        state
-    }
-
     #[tokio::test]
     async fn log_in_succeeds_with_valid_credentials() {
-        let app = Router::new()
-            .route(endpoints::LOG_IN, post(post_log_in))
-            .with_state(get_test_app_config());
+        let response = new_log_in_request("test@test.com", "test").await;
 
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: "test@test.com".to_string(),
-                password: "test".to_string(),
-            })
-            .await
-            .assert_status(StatusCode::SEE_OTHER);
+        assert_hx_redirect(&response, endpoints::DASHBOARD);
+        assert_set_cookie(&response);
     }
 
     #[tokio::test]
@@ -280,39 +265,82 @@ mod log_in_tests {
 
     #[tokio::test]
     async fn log_in_fails_with_incorrect_email() {
-        let app = Router::new()
-            .route(endpoints::LOG_IN, post(post_log_in))
-            .with_state(get_test_app_config());
+        let response = new_log_in_request("wrong@email.com", "test").await;
 
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: "wrong@email.com".to_string(),
-                password: "test".to_string(),
-            })
-            .await
-            .text()
-            .contains("invalid");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_body_contains_message(response, INVALID_CREDENTIALS_ERROR_MSG).await;
     }
 
     #[tokio::test]
     async fn log_in_fails_with_incorrect_password() {
-        let app = Router::new()
-            .route(endpoints::LOG_IN, post(post_log_in))
-            .with_state(get_test_app_config());
+        let response = new_log_in_request("test@test.com", "wrongpassword").await;
 
-        let server = TestServer::new(app).expect("Could not create test server.");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_body_contains_message(response, INVALID_CREDENTIALS_ERROR_MSG).await;
+    }
 
-        server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: "test@test.com".to_string(),
-                password: "wrongpassword".to_string(),
-            })
-            .await
-            .text()
-            .contains("invalid");
+    fn get_test_app_config() -> TestAppState {
+        let mut state = AppState::new(
+            "42",
+            DummyCategoryStore {},
+            DummyTransactionStore {},
+            StubUserStore { users: vec![] },
+        );
+
+        state
+            .user_store()
+            .create(
+                EmailAddress::new_unchecked("test@test.com"),
+                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()), 4).unwrap(),
+            )
+            .unwrap();
+
+        state
+    }
+
+    async fn new_log_in_request(email: &str, password: &str) -> Response<Body> {
+        let state = get_test_app_config();
+        let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
+        let form = LogInData {
+            email: email.to_string(),
+            password: password.to_string(),
+        };
+
+        post_log_in(State(state), jar, Form(form)).await
+    }
+
+    fn assert_hx_redirect(response: &Response<Body>, want_location: &str) {
+        let redirect_location = response.headers().get(HX_REDIRECT).unwrap();
+
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(redirect_location, want_location);
+    }
+
+    fn assert_set_cookie(response: &Response<Body>) {
+        let cookie_string = response
+            .headers()
+            .get("set-cookie")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let auth_cookie = Cookie::parse(cookie_string).unwrap();
+
+        assert_eq!(auth_cookie.name(), COOKIE_USER_ID);
+        assert!(auth_cookie.max_age() > Some(Duration::ZERO));
+        assert!(auth_cookie.expires().unwrap().datetime() > Some(OffsetDateTime::now_utc()));
+    }
+
+    async fn assert_body_contains_message(response: Response<Body>, message: &str) {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+
+        let text = String::from_utf8_lossy(&body).to_string();
+
+        assert!(
+            text.contains(message),
+            "response body should contain the text '{}' but got {}",
+            message,
+            text
+        );
     }
 }

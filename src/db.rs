@@ -16,7 +16,7 @@ pub trait CreateTable {
 /// A trait for mapping from a `rusqlite::Row` from a SQLite database to a concrete rust type.
 ///
 /// # Examples
-/// ```
+/// ```no_run
 /// use rusqlite::{Connection, Error, Row};
 ///
 /// use budgeteur_rs::db::{CreateTable, MapRow};

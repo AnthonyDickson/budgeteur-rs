@@ -86,7 +86,7 @@ async fn get_index_page() -> Redirect {
 /// Get a response that will redirect the client to the internal server error 500 page.
 ///
 /// **Note**: This redirect is intended to be served as a response to a POST request initiated by HTMX.
-/// Route handlers using GET should use `axum::response::Redirect`.
+/// Route handlers using GET should use `axum::response::Redirect` to redirect via a response.
 pub(crate) fn get_internal_server_error_redirect() -> Response {
     (
         HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR)),
@@ -113,54 +113,17 @@ async fn get_404_not_found() -> Response {
 
 #[cfg(test)]
 mod root_route_tests {
-    use axum::{middleware, routing::get, Router};
-    use axum_test::TestServer;
-    use email_address::EmailAddress;
-    use rusqlite::Connection;
+    use askama_axum::IntoResponse;
+    use axum::http::StatusCode;
 
-    use crate::{
-        auth::auth_guard,
-        models::{PasswordHash, ValidatedPassword},
-        routes::{endpoints, get_index_page},
-        stores::{
-            sql_store::{create_app_state, SQLAppState},
-            UserStore,
-        },
-    };
-
-    fn get_test_app_config() -> SQLAppState {
-        let db_connection =
-            Connection::open_in_memory().expect("Could not open database in memory.");
-
-        let mut state = create_app_state(db_connection, "42").unwrap();
-
-        state
-            .user_store()
-            .create(
-                EmailAddress::new_unchecked("test@test.com"),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()), 4).unwrap(),
-            )
-            .unwrap();
-
-        state
-    }
+    use crate::routes::{endpoints, get_index_page};
 
     #[tokio::test]
     async fn root_redirects_to_dashboard() {
-        let app_state = get_test_app_config();
-        let app = Router::new()
-            .route(endpoints::ROOT, get(get_index_page))
-            .layer(middleware::from_fn_with_state(
-                app_state.clone(),
-                auth_guard,
-            ))
-            .route(endpoints::LOG_IN, get(get_index_page))
-            .with_state(app_state);
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let response = get_index_page().await.into_response();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
 
-        let response = server.get(endpoints::ROOT).await;
-
-        response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::LOG_IN);
+        let location = response.headers().get("location").unwrap();
+        assert_eq!(location, endpoints::DASHBOARD);
     }
 }

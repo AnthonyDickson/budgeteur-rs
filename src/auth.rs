@@ -104,6 +104,8 @@ pub(crate) const COOKIE_USER_ID: &str = "user_id";
 const COOKIE_DURATION_MINUTES: i64 = 5;
 
 /// Add an auth cookie to the cookie jar, indicating that a user is logged in and authenticated.
+///
+/// Returns the cookie jar with the cookie added.
 pub(crate) fn set_auth_cookie(jar: PrivateCookieJar, user_id: UserID) -> PrivateCookieJar {
     jar.add(
         Cookie::build((COOKIE_USER_ID, user_id.as_i64().to_string()))

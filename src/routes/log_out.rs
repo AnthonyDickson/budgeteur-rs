@@ -17,163 +17,53 @@ pub async fn get_log_out(jar: PrivateCookieJar) -> Response {
 
 #[cfg(test)]
 mod log_out_tests {
-    use axum::{routing::post, Router};
-    use axum_extra::extract::cookie::Expiration;
-    use axum_test::TestServer;
-    use email_address::EmailAddress;
+    use axum::{
+        body::Body,
+        http::{Response, StatusCode},
+    };
+    use axum_extra::extract::{
+        cookie::{Cookie, Expiration, Key},
+        PrivateCookieJar,
+    };
+    use sha2::{Digest, Sha512};
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::{LogInData, COOKIE_USER_ID},
-        models::{PasswordHash, User, UserID, ValidatedPassword},
-        routes::{endpoints, log_in::post_log_in, log_out::get_log_out},
-        stores::{CategoryStore, TransactionStore, UserError, UserStore},
-        AppState,
+        auth::set_auth_cookie,
+        models::UserID,
+        routes::{endpoints, log_out::get_log_out},
     };
-
-    #[derive(Clone)]
-    struct StubUserStore {
-        users: Vec<User>,
-    }
-
-    impl UserStore for StubUserStore {
-        fn create(
-            &mut self,
-            email: email_address::EmailAddress,
-            password_hash: PasswordHash,
-        ) -> Result<User, UserError> {
-            let next_id = match self.users.last() {
-                Some(user) => UserID::new(user.id().as_i64() + 1),
-                _ => UserID::new(0),
-            };
-
-            let user = User::new(next_id, email, password_hash);
-            self.users.push(user.clone());
-
-            Ok(user)
-        }
-
-        fn get(&self, id: UserID) -> Result<User, UserError> {
-            self.users
-                .iter()
-                .find(|user| user.id() == id)
-                .ok_or(UserError::NotFound)
-                .map(|user| user.to_owned())
-        }
-
-        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, UserError> {
-            self.users
-                .iter()
-                .find(|user| user.email() == email)
-                .ok_or(UserError::NotFound)
-                .map(|user| user.to_owned())
-        }
-    }
-
-    #[derive(Clone)]
-    struct DummyCategoryStore {}
-
-    impl CategoryStore for DummyCategoryStore {
-        fn create(
-            &self,
-            _name: crate::models::CategoryName,
-            _user_id: crate::models::UserID,
-        ) -> Result<crate::models::Category, crate::models::CategoryError> {
-            todo!()
-        }
-
-        fn select(
-            &self,
-            _category_id: crate::models::DatabaseID,
-        ) -> Result<crate::models::Category, crate::models::CategoryError> {
-            todo!()
-        }
-
-        fn get_by_user(
-            &self,
-            _user_id: crate::models::UserID,
-        ) -> Result<Vec<crate::models::Category>, crate::models::CategoryError> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct DummyTransactionStore {}
-
-    impl TransactionStore for DummyTransactionStore {
-        fn create(
-            &mut self,
-            _amount: f64,
-            _user_id: crate::models::UserID,
-        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
-            todo!()
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: crate::models::TransactionBuilder,
-        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
-            todo!()
-        }
-
-        fn get(
-            &self,
-            _id: crate::models::DatabaseID,
-        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
-            todo!()
-        }
-
-        fn get_by_user_id(
-            &self,
-            _user_id: crate::models::UserID,
-        ) -> Result<Vec<crate::models::Transaction>, crate::models::TransactionError> {
-            todo!()
-        }
-    }
-
-    type TestAppState = AppState<DummyCategoryStore, DummyTransactionStore, StubUserStore>;
-
-    fn get_test_app_config() -> TestAppState {
-        let mut state = AppState::new(
-            "42",
-            DummyCategoryStore {},
-            DummyTransactionStore {},
-            StubUserStore { users: vec![] },
-        );
-
-        state
-            .user_store()
-            .create(
-                EmailAddress::new_unchecked("test@test.com"),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()), 4).unwrap(),
-            )
-            .unwrap();
-
-        state
-    }
 
     #[tokio::test]
     async fn log_out_invalidates_auth_cookie_and_redirects() {
-        let app = Router::new()
-            .route(endpoints::LOG_IN, post(post_log_in))
-            .route(endpoints::LOG_OUT, post(get_log_out))
-            .with_state(get_test_app_config());
+        let cookie_jar = set_auth_cookie(get_jar(), UserID::new(123));
 
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let response = get_log_out(cookie_jar).await;
 
-        server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: "test@test.com".to_string(),
-                password: "test".to_string(),
-            })
-            .await
-            .assert_status_see_other();
+        assert_redirect(&response, endpoints::LOG_IN);
+        assert_cookie_expired(&response);
+    }
 
-        let response = server.post(endpoints::LOG_OUT).await;
-        response.assert_status_see_other();
+    fn get_jar() -> PrivateCookieJar {
+        let key = Key::from(&Sha512::digest("42"));
+        PrivateCookieJar::new(key)
+    }
 
-        let auth_cookie = response.cookie(COOKIE_USER_ID);
+    fn assert_redirect(response: &Response<Body>, want_location: &str) {
+        let redirect_location = response.headers().get("location").unwrap();
+
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(redirect_location, want_location);
+    }
+
+    fn assert_cookie_expired(response: &Response<Body>) {
+        let cookie_string = response
+            .headers()
+            .get("set-cookie")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let auth_cookie = Cookie::parse(cookie_string).unwrap();
 
         assert_eq!(auth_cookie.max_age(), Some(Duration::ZERO));
         assert_eq!(

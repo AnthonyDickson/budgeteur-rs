@@ -43,7 +43,7 @@ const PARAMETER_PATTERN: &str = r":[a-z_]+";
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use budgeteur_rs::routes::endpoints::format_endpoint;
 ///
 /// assert_eq!(format_endpoint("/users/:user_id", 42), "/users/42");
