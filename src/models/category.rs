@@ -1,6 +1,8 @@
 //! This file defines the `Category` type and the types needed to create a category.
 //! A category acts like a tag for a transaction, however a transaction may only have one category.
 
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -60,6 +62,12 @@ impl AsRef<str> for CategoryName {
     }
 }
 
+impl Display for CategoryName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl From<rusqlite::Error> for CategoryError {
     fn from(value: rusqlite::Error) -> Self {
         match value {
@@ -74,7 +82,7 @@ impl From<rusqlite::Error> for CategoryError {
 }
 
 /// A category for expenses and income, e.g., 'Groceries', 'Eating Out', 'Wages'.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Category {
     id: DatabaseID,
     name: CategoryName,

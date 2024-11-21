@@ -160,7 +160,7 @@ mod transaction_tests {
             todo!()
         }
 
-        fn select(&self, _category_id: DatabaseID) -> Result<Category, CategoryError> {
+        fn get(&self, _category_id: DatabaseID) -> Result<Category, CategoryError> {
             todo!()
         }
 

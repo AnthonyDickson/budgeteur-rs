@@ -66,7 +66,7 @@ where
 {
     state
         .category_store()
-        .select(category_id)
+        .get(category_id)
         .map_err(AppError::CategoryError)
         .and_then(|category| {
             let user_id = get_user_id_from_auth_cookie(jar)?;
@@ -81,151 +81,262 @@ where
         .map(|category| (StatusCode::OK, Json(category)))
 }
 
+// TODO: Simplify tests by using mock stores
 #[cfg(test)]
 mod category_tests {
-    use axum_extra::extract::cookie::Cookie;
-    use axum_test::TestServer;
-    use rusqlite::Connection;
+    use std::sync::{Arc, Mutex};
 
-    use crate::auth::LogInData;
-    use crate::build_router;
-    use crate::routes::endpoints::format_endpoint;
-    use crate::routes::register::RegisterForm;
-    use crate::stores::sql_store::{create_app_state, SQLAppState};
+    use askama_axum::IntoResponse;
+    use axum::{
+        extract::{Path, State},
+        http::StatusCode,
+        Form,
+    };
+    use axum_extra::extract::{cookie::Key, PrivateCookieJar};
+
     use crate::{
-        auth::COOKIE_USER_ID,
-        models::{Category, CategoryName, UserID},
-        routes::endpoints,
+        auth::set_auth_cookie,
+        models::{Category, CategoryError, CategoryName, DatabaseID, UserID},
+        routes::category::{create_category, get_category},
+        stores::{CategoryStore, TransactionStore, UserStore},
+        AppState,
     };
 
     use super::CategoryData;
 
-    fn get_test_app_config() -> SQLAppState {
-        let db_connection =
-            Connection::open_in_memory().expect("Could not open database in memory.");
-
-        create_app_state(db_connection, "42").unwrap()
+    #[derive(Debug, Clone, PartialEq)]
+    struct CreateCategoryCall {
+        name: CategoryName,
+        user_id: UserID,
     }
 
-    async fn create_app_with_user() -> (TestServer, UserID, Cookie<'static>) {
-        let state = get_test_app_config();
-        let app = build_router(state.clone());
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        let email = "test@test.com";
-        let password = "averylongandsecurepassword";
-
-        let response = server
-            .post(endpoints::USERS)
-            .form(&RegisterForm {
-                email: email.to_string(),
-                password: password.to_string(),
-                confirm_password: password.to_string(),
-            })
-            .await;
-
-        response.assert_status_see_other();
-
-        let auth_cookie = response.cookie(COOKIE_USER_ID);
-
-        // TODO: Implement a way to get the user id from the auth cookie. For now, just guess the user id.
-        (server, UserID::new(1), auth_cookie)
+    #[derive(Debug, Clone, PartialEq)]
+    struct GetCategoryCall {
+        category_id: DatabaseID,
     }
 
-    async fn create_app_with_user_and_category() -> (TestServer, UserID, Cookie<'static>, Category)
-    {
-        let (server, user_id, auth_cookie) = create_app_with_user().await;
+    #[derive(Clone)]
+    struct SpyCategoryStore {
+        // Use Arc Mutex so that clones of the store share state and can be passed into async route
+        // handlers.
+        create_calls: Arc<Mutex<Vec<CreateCategoryCall>>>,
+        get_calls: Arc<Mutex<Vec<GetCategoryCall>>>,
+        categories: Arc<Mutex<Vec<Category>>>,
+    }
 
-        let category = server
-            .post(&format_endpoint(
-                endpoints::USER_CATEGORIES,
-                user_id.as_i64(),
-            ))
-            .add_cookie(auth_cookie.clone())
-            .content_type("application/json")
-            .form(&CategoryData {
-                name: "foo".to_string(),
-            })
+    impl CategoryStore for SpyCategoryStore {
+        fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, CategoryError> {
+            self.create_calls.lock().unwrap().push(CreateCategoryCall {
+                name: name.clone(),
+                user_id,
+            });
+
+            let category = Category::new(0, name, user_id);
+            self.categories.lock().unwrap().push(category.clone());
+
+            Ok(category)
+        }
+
+        fn get(&self, category_id: DatabaseID) -> Result<Category, CategoryError> {
+            self.get_calls
+                .lock()
+                .unwrap()
+                .push(GetCategoryCall { category_id });
+
+            self.categories
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|category| category.id() == category_id)
+                .ok_or(CategoryError::NotFound)
+                .map(|category| category.to_owned())
+        }
+
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+            todo!()
+        }
+    }
+
+    #[derive(Clone)]
+    struct DummyUserStore {}
+
+    impl UserStore for DummyUserStore {
+        fn create(
+            &mut self,
+            _email: email_address::EmailAddress,
+            _password_hash: crate::models::PasswordHash,
+        ) -> Result<crate::models::User, crate::stores::UserError> {
+            todo!()
+        }
+
+        fn get(&self, _id: UserID) -> Result<crate::models::User, crate::stores::UserError> {
+            todo!()
+        }
+
+        fn get_by_email(
+            &self,
+            _email: &email_address::EmailAddress,
+        ) -> Result<crate::models::User, crate::stores::UserError> {
+            todo!()
+        }
+    }
+
+    #[derive(Clone)]
+    struct DummyTransactionStore {}
+
+    impl TransactionStore for DummyTransactionStore {
+        fn create(
+            &mut self,
+            _amount: f64,
+            _user_id: UserID,
+        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
+            todo!()
+        }
+
+        fn create_from_builder(
+            &mut self,
+            _builder: crate::models::TransactionBuilder,
+        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
+            todo!()
+        }
+
+        fn get(
+            &self,
+            _id: DatabaseID,
+        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
+            todo!()
+        }
+
+        fn get_by_user_id(
+            &self,
+            _user_id: UserID,
+        ) -> Result<Vec<crate::models::Transaction>, crate::models::TransactionError> {
+            todo!()
+        }
+    }
+
+    fn get_test_app_config() -> (
+        AppState<SpyCategoryStore, DummyTransactionStore, DummyUserStore>,
+        SpyCategoryStore,
+    ) {
+        let store = SpyCategoryStore {
+            create_calls: Arc::new(Mutex::new(vec![])),
+            get_calls: Arc::new(Mutex::new(vec![])),
+            categories: Arc::new(Mutex::new(vec![])),
+        };
+
+        let state = AppState::new(
+            "42",
+            store.clone(),
+            DummyTransactionStore {},
+            DummyUserStore {},
+        );
+
+        (state, store)
+    }
+
+    #[tokio::test]
+    async fn can_create_category() {
+        let (state, store) = get_test_app_config();
+
+        let want = CreateCategoryCall {
+            user_id: UserID::new(123),
+            name: CategoryName::new_unchecked("Foo"),
+        };
+
+        let form = CategoryData {
+            name: want.name.to_string(),
+        };
+        let jar = get_cookie_jar(want.user_id, state.cookie_key().to_owned());
+
+        let response = create_category(State(state), Path(want.user_id), jar, Form(form))
             .await
-            .json::<Category>();
+            .into_response();
 
-        (server, user_id, auth_cookie, category)
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_create_calls(&store, &want);
     }
 
-    #[tokio::test]
-    async fn create_category() {
-        let (server, user_id, auth_cookie) = create_app_with_user().await;
-
-        let name = CategoryName::new("Foo").unwrap();
-
-        let response = server
-            .post(&format_endpoint(
-                endpoints::USER_CATEGORIES,
-                user_id.as_i64(),
-            ))
-            .add_cookie(auth_cookie)
-            .content_type("application/json")
-            .form(&CategoryData {
-                name: String::from("Foo"),
-            })
-            .await;
-
-        response.assert_status_ok();
-
-        let category = response.json::<Category>();
-
-        assert_eq!(category.name(), &name);
-        assert_eq!(category.user_id(), user_id);
-    }
+    // TODO: test that the create_category route returns an error when given an empty name.
 
     #[tokio::test]
-    async fn get_category() {
-        let (server, _, auth_cookie, category) = create_app_with_user_and_category().await;
+    async fn can_get_category() {
+        let (state, store) = get_test_app_config();
 
-        let response = server
-            .get(&format!("{}/{}", endpoints::CATEGORIES, category.id()))
-            .add_cookie(auth_cookie)
-            .await;
+        let category = store
+            .create(CategoryName::new_unchecked("Foo"), UserID::new(123))
+            .unwrap();
 
-        response.assert_status_ok();
+        let want = GetCategoryCall {
+            category_id: category.id(),
+        };
 
-        let selected_category = response.json::<Category>();
+        let jar = get_cookie_jar(category.user_id(), state.cookie_key().to_owned());
 
-        assert_eq!(selected_category, category);
+        let response = get_category(State(state), jar, Path(category.id()))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_get_calls(&store, &want);
     }
 
     #[tokio::test]
     async fn get_category_fails_on_wrong_user() {
-        let (server, _, _, category) = create_app_with_user_and_category().await;
+        let (state, store) = get_test_app_config();
 
-        let email = "test2@test.com".to_string();
-        let password = "averylongandsecurepassword".to_string();
+        let category = store
+            .create(CategoryName::new_unchecked("Foo"), UserID::new(123))
+            .unwrap();
+        let unauthorized_user_id = UserID::new(category.user_id().as_i64() + 999);
 
-        let response = server
-            .post(endpoints::USERS)
-            .form(&RegisterForm {
-                email: email.clone(),
-                password: password.clone(),
-                confirm_password: password.clone(),
-            })
-            .await;
+        let want = GetCategoryCall {
+            category_id: category.id(),
+        };
+        let jar = get_cookie_jar(unauthorized_user_id, state.cookie_key().to_owned());
 
-        response.assert_status_see_other();
-
-        let auth_cookie = server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: email.clone(),
-                password: password.clone(),
-            })
+        let response = get_category(State(state), jar, Path(category.id()))
             .await
-            .cookie(COOKIE_USER_ID);
+            .into_response();
 
-        server
-            .get(&format!("{}/{}", endpoints::CATEGORIES, category.id()))
-            .add_cookie(auth_cookie)
-            .await
-            .assert_status_not_found();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_get_calls(&store, &want);
+    }
+
+    fn get_cookie_jar(user_id: UserID, key: Key) -> PrivateCookieJar {
+        let jar = PrivateCookieJar::new(key);
+        set_auth_cookie(jar, user_id)
+    }
+
+    fn assert_create_calls(store: &SpyCategoryStore, want: &CreateCategoryCall) {
+        let create_calls = store.create_calls.lock().unwrap().clone();
+        assert!(
+            create_calls.len() == 1,
+            "got {} calls to route handler 'create_category', want 1",
+            create_calls.len()
+        );
+
+        let got = create_calls.first().unwrap();
+        assert_eq!(
+            got, want,
+            "got call to CategoryStore.create {:?}, want {:?}",
+            got, want
+        );
+    }
+
+    fn assert_get_calls(store: &SpyCategoryStore, want: &GetCategoryCall) {
+        let get_calls = store.get_calls.lock().unwrap().clone();
+        assert!(
+            get_calls.len() == 1,
+            "got {} calls to route handler 'get_category', want 1",
+            get_calls.len()
+        );
+
+        let got = get_calls.first().unwrap();
+        assert_eq!(
+            got, want,
+            "got call to CategoryStore.get {:?}, want {:?}",
+            got, want
+        );
     }
 }

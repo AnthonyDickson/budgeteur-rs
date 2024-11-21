@@ -9,7 +9,7 @@ use crate::{
 
 pub trait CategoryStore {
     fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, CategoryError>;
-    fn select(&self, category_id: DatabaseID) -> Result<Category, CategoryError>;
+    fn get(&self, category_id: DatabaseID) -> Result<Category, CategoryError>;
     fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, CategoryError>;
 }
 
@@ -41,7 +41,7 @@ impl CategoryStore for SQLiteCategoryStore {
     ///
     /// # Errors
     /// This function will return an error if there is an SQL error.
-    fn select(&self, category_id: DatabaseID) -> Result<Category, CategoryError> {
+    fn get(&self, category_id: DatabaseID) -> Result<Category, CategoryError> {
         self.connection
             .lock()
             .unwrap()
@@ -151,7 +151,7 @@ mod category_tests {
         let name = CategoryName::new_unchecked("Foo");
         let inserted_category = store.create(name, user.id()).unwrap();
 
-        let selected_category = store.select(inserted_category.id());
+        let selected_category = store.get(inserted_category.id());
 
         assert_eq!(Ok(inserted_category), selected_category);
     }
@@ -163,7 +163,7 @@ mod category_tests {
             .create(CategoryName::new_unchecked("Foo"), user.id())
             .unwrap();
 
-        let selected_category = store.select(inserted_category.id() + 123);
+        let selected_category = store.get(inserted_category.id() + 123);
 
         assert_eq!(selected_category, Err(CategoryError::NotFound));
     }

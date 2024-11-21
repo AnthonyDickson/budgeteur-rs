@@ -189,7 +189,7 @@ mod log_in_tests {
             todo!()
         }
 
-        fn select(
+        fn get(
             &self,
             _category_id: crate::models::DatabaseID,
         ) -> Result<crate::models::Category, crate::models::CategoryError> {
