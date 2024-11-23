@@ -81,7 +81,6 @@ where
         .map(|category| (StatusCode::OK, Json(category)))
 }
 
-// TODO: Simplify tests by using mock stores
 #[cfg(test)]
 mod category_tests {
     use std::sync::{Arc, Mutex};
@@ -96,7 +95,10 @@ mod category_tests {
 
     use crate::{
         auth::set_auth_cookie,
-        models::{Category, CategoryError, CategoryName, DatabaseID, UserID},
+        models::{
+            Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
+            TransactionBuilder, TransactionError, User, UserID,
+        },
         routes::category::{create_category, get_category},
         stores::{CategoryStore, TransactionStore, UserStore},
         AppState,
@@ -164,19 +166,19 @@ mod category_tests {
         fn create(
             &mut self,
             _email: email_address::EmailAddress,
-            _password_hash: crate::models::PasswordHash,
-        ) -> Result<crate::models::User, crate::stores::UserError> {
+            _password_hash: PasswordHash,
+        ) -> Result<User, crate::stores::UserError> {
             todo!()
         }
 
-        fn get(&self, _id: UserID) -> Result<crate::models::User, crate::stores::UserError> {
+        fn get(&self, _id: UserID) -> Result<User, crate::stores::UserError> {
             todo!()
         }
 
         fn get_by_email(
             &self,
             _email: &email_address::EmailAddress,
-        ) -> Result<crate::models::User, crate::stores::UserError> {
+        ) -> Result<User, crate::stores::UserError> {
             todo!()
         }
     }
@@ -189,28 +191,22 @@ mod category_tests {
             &mut self,
             _amount: f64,
             _user_id: UserID,
-        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
+        ) -> Result<Transaction, TransactionError> {
             todo!()
         }
 
         fn create_from_builder(
             &mut self,
-            _builder: crate::models::TransactionBuilder,
-        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
+            _builder: TransactionBuilder,
+        ) -> Result<Transaction, TransactionError> {
             todo!()
         }
 
-        fn get(
-            &self,
-            _id: DatabaseID,
-        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, TransactionError> {
             todo!()
         }
 
-        fn get_by_user_id(
-            &self,
-            _user_id: UserID,
-        ) -> Result<Vec<crate::models::Transaction>, crate::models::TransactionError> {
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
             todo!()
         }
     }
@@ -257,7 +253,23 @@ mod category_tests {
         assert_create_calls(&store, &want);
     }
 
-    // TODO: test that the create_category route returns an error when given an empty name.
+    #[tokio::test]
+    async fn create_category_fails_on_empty_name() {
+        let (state, _store) = get_test_app_config();
+
+        let user_id = UserID::new(123);
+
+        let form = CategoryData {
+            name: "".to_string(),
+        };
+        let jar = get_cookie_jar(user_id, state.cookie_key().to_owned());
+
+        let response = create_category(State(state), Path(user_id), jar, Form(form))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
 
     #[tokio::test]
     async fn can_get_category() {

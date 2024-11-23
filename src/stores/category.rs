@@ -7,12 +7,14 @@ use crate::{
     models::{Category, CategoryError, CategoryName, DatabaseID, UserID},
 };
 
+/// Creates and retrieves transaction categories for transactions.
 pub trait CategoryStore {
     fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, CategoryError>;
     fn get(&self, category_id: DatabaseID) -> Result<Category, CategoryError>;
     fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, CategoryError>;
 }
 
+/// Creates and retrieves transaction categories to/from a SQLite database.
 #[derive(Debug, Clone)]
 pub struct SQLiteCategoryStore {
     connection: Arc<Mutex<Connection>>,
@@ -25,6 +27,10 @@ impl SQLiteCategoryStore {
 }
 
 impl CategoryStore for SQLiteCategoryStore {
+    /// Create a category in the database for the user `user_id`.
+    ///
+    /// # Errors
+    /// This function will return an error if there is an SQL error.
     fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, CategoryError> {
         let connection = self.connection.lock().unwrap();
         connection.execute(
@@ -101,7 +107,6 @@ impl MapRow for SQLiteCategoryStore {
     }
 }
 
-/// TODO: Make similar tests for routes module
 #[cfg(test)]
 mod category_tests {
     use std::collections::HashSet;

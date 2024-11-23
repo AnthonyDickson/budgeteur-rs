@@ -109,10 +109,7 @@ impl From<TransactionError> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppError::CategoryError(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Internal server error: {e:?}"),
-            ),
+            AppError::CategoryError(e) => return e.into_response(),
             AppError::TransactionError(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal server error: {e:?}"),

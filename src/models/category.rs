@@ -3,6 +3,7 @@
 
 use std::fmt::Display;
 
+use axum::{http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -26,6 +27,22 @@ pub enum CategoryError {
     /// An unexpected and unhandled SQL error occurred.
     #[error("an unexpected error occurred: {0}")]
     SqlError(rusqlite::Error),
+}
+
+impl IntoResponse for CategoryError {
+    fn into_response(self) -> askama_axum::Response {
+        match self {
+            CategoryError::InvalidName => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "category name cannot be emtpy.".to_string(),
+            ),
+            err => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Internal server error: {err:?}"),
+            ),
+        }
+        .into_response()
+    }
 }
 
 /// The name of a category.
