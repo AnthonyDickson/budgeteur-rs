@@ -1,6 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    ops::Range,
+    sync::{Arc, Mutex},
+};
 
 use rusqlite::{Connection, Row};
+use time::Date;
 
 use crate::{
     db::{CreateTable, MapRow},
@@ -23,6 +27,28 @@ pub trait TransactionStore {
 
     /// Retrieve a user's transactions from the store.
     fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, TransactionError>;
+}
+
+struct TransactionFilter {
+    date_range: Option<Range<Date>>,
+    user_id: Option<UserID>,
+}
+
+impl TransactionFilter {
+    fn new() -> Self {
+        Self {
+            date_range: None,
+            user_id: None,
+        }
+    }
+
+    fn set_user_id(self, user_id: UserID) -> Self {
+        self
+    }
+
+    fn set_date_range(self, date_range: Range<Date>) -> Self {
+        self
+    }
 }
 
 /// Stores transactions in a SQLite database.
@@ -175,9 +201,11 @@ mod sqlite_transaction_store_tests {
     use std::f64::consts::PI;
 
     use rusqlite::Connection;
+    use time::{Duration, OffsetDateTime};
 
-    use crate::models::{PasswordHash, User, UserID};
+    use crate::models::{PasswordHash, TransactionBuilder, User, UserID};
     use crate::stores::sql_store::{create_app_state, SQLAppState};
+    use crate::stores::transaction::TransactionFilter;
     use crate::stores::UserStore;
 
     use super::TransactionError;
@@ -315,5 +343,54 @@ mod sqlite_transaction_store_tests {
         let transactions = store.get_by_user_id(user.id());
 
         assert_eq!(transactions, Ok(expected_transactions));
+    }
+
+    #[test]
+    fn get_transactions_by_date_range() {
+        // TODO: Test cases where: transactions are outside the date range; transactions belong to
+        // a different user; transactions are inside the date range, but belong to a different
+        // user.
+        let (mut state, user) = get_app_state_and_test_user();
+        let store = state.transaction_store();
+
+        let end_date = OffsetDateTime::now_utc()
+            .date()
+            .checked_sub(Duration::weeks(1))
+            .unwrap();
+        let start_date = end_date.checked_sub(Duration::weeks(1)).unwrap();
+
+        let want = vec![
+            store
+                .create_from_builder(
+                    TransactionBuilder::new(12.3, user.id())
+                        .date(start_date.checked_add(Duration::days(1)).unwrap())
+                        .unwrap(),
+                )
+                .unwrap(),
+            store
+                .create_from_builder(
+                    TransactionBuilder::new(23.4, user.id())
+                        .date(start_date.checked_add(Duration::days(3)).unwrap())
+                        .unwrap(),
+                )
+                .unwrap(),
+            store
+                .create_from_builder(
+                    TransactionBuilder::new(34.5, user.id())
+                        .date(end_date)
+                        .unwrap(),
+                )
+                .unwrap(),
+        ];
+
+        let got = store
+            .get_filtered(
+                TransactionFilter::new()
+                    .set_user_id(user.id())
+                    .set_date_range(start_date..end_date),
+            )
+            .unwrap();
+
+        assert_eq!(got, want, "got transactions {:?}, want {:?}", got, want);
     }
 }
