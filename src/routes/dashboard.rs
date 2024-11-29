@@ -83,7 +83,7 @@ mod dashboard_route_tests {
     };
     use time::{Duration, OffsetDateTime};
 
-    use crate::{models::PasswordHash, routes::transactions};
+    use crate::models::PasswordHash;
     use crate::{
         models::{
             Category, CategoryError, DatabaseID, Transaction, TransactionBuilder, TransactionError,
