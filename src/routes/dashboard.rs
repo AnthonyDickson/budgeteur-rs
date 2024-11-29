@@ -10,11 +10,11 @@ use axum::{
     response::{IntoResponse, Response},
     Extension,
 };
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 
 use crate::{
     models::UserID,
-    stores::{CategoryStore, TransactionStore, UserStore},
+    stores::{transaction::TransactionFilter, CategoryStore, TransactionStore, UserStore},
     AppError, AppState,
 };
 
@@ -40,25 +40,30 @@ where
 {
     let navbar = get_nav_bar(endpoints::DASHBOARD);
 
-    // TODO: Create function for getting transactions within a time span (time::Duration) in TransactionStore.
-    let transactions = state.transaction_store().get_by_user_id(user_id);
-    let transactions = match transactions {
-        Ok(transactions) => transactions,
-        Err(error) => return AppError::TransactionError(error).into_response(),
+    let today = OffsetDateTime::now_utc().date();
+    let one_week_ago = match today.checked_sub(Duration::weeks(1)) {
+        Some(date) => date,
+        None => {
+            tracing::warn!(
+                "Could not get date for one week before {today}. Using today's date ({today}) instead."
+            );
+
+            today
+        }
     };
 
-    let today = OffsetDateTime::now_utc().date();
-    let week = today.monday_based_week();
-    let balance = transactions
-        .iter()
-        .filter_map(|transaction| {
-            if transaction.date().monday_based_week() == week {
-                Some(transaction.amount())
-            } else {
-                None
-            }
-        })
-        .sum();
+    let transactions = state.transaction_store().get_filtered(TransactionFilter {
+        user_id: Some(user_id),
+        date_range: Some(one_week_ago..=today),
+    });
+
+    let balance = match transactions {
+        Ok(transactions) => transactions
+            .iter()
+            .map(|transaction| transaction.amount())
+            .sum(),
+        Err(error) => return AppError::TransactionError(error).into_response(),
+    };
 
     DashboardTemplate {
         navbar,
@@ -78,7 +83,7 @@ mod dashboard_route_tests {
     };
     use time::{Duration, OffsetDateTime};
 
-    use crate::models::PasswordHash;
+    use crate::{models::PasswordHash, routes::transactions};
     use crate::{
         models::{
             Category, CategoryError, DatabaseID, Transaction, TransactionBuilder, TransactionError,
@@ -169,10 +174,30 @@ mod dashboard_route_tests {
             todo!()
         }
 
-        fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+            todo!()
+        }
+
+        fn get_filtered(
+            &self,
+            filter: crate::stores::transaction::TransactionFilter,
+        ) -> Result<Vec<Transaction>, TransactionError> {
             self.transactions
                 .iter()
-                .filter(|transaction| transaction.user_id() == user_id)
+                .filter(|transaction| {
+                    let mut should_keep = true;
+
+                    if let Some(user_id) = filter.user_id {
+                        should_keep &= transaction.user_id() == user_id;
+                    }
+
+                    if let Some(ref date_range) = filter.date_range {
+                        should_keep &= date_range.start() <= transaction.date()
+                            && transaction.date() <= date_range.end();
+                    }
+
+                    should_keep
+                })
                 .map(|transaction| Ok(transaction.to_owned()))
                 .collect()
         }

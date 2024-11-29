@@ -44,7 +44,7 @@ where
 {
     let navbar = get_nav_bar(endpoints::TRANSACTIONS);
 
-    // TODO: Create function for getting transactions within a time span (time::Duration).
+    // TODO: Limit transactions to either a time period or count.
     let transactions = state.transaction_store().get_by_user_id(user_id);
     let transactions = match transactions {
         Ok(transactions) => transactions,

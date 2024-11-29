@@ -1,6 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    ops::RangeInclusive,
+    sync::{Arc, Mutex},
+};
 
-use rusqlite::{Connection, Row};
+use rusqlite::{params_from_iter, types::Value, Connection, Row};
+use time::Date;
 
 use crate::{
     db::{CreateTable, MapRow},
@@ -23,6 +27,16 @@ pub trait TransactionStore {
 
     /// Retrieve a user's transactions from the store.
     fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, TransactionError>;
+
+    /// Retrieve transactions from the store that are included by `filter`.
+    fn get_filtered(&self, filter: TransactionFilter)
+        -> Result<Vec<Transaction>, TransactionError>;
+}
+
+/// A collection of fields that transactions can be filtered by in [SQLiteTransactionStore].
+pub struct TransactionFilter {
+    pub user_id: Option<UserID>,
+    pub date_range: Option<RangeInclusive<Date>>,
 }
 
 /// Stores transactions in a SQLite database.
@@ -124,6 +138,45 @@ impl TransactionStore for SQLiteTransactionStore {
                 .map(|maybe_category| maybe_category.map_err(TransactionError::SqlError))
                 .collect()
     }
+
+    fn get_filtered(
+        &self,
+        filter: TransactionFilter,
+    ) -> Result<Vec<Transaction>, TransactionError> {
+        let mut query_string_parts =
+            vec!["SELECT id, amount, date, description, category_id, user_id FROM \"transaction\""];
+        let mut query_parameters = vec![];
+
+        match (filter.user_id, filter.date_range) {
+            (Some(user_id), Some(date_range)) => {
+                query_string_parts.push(" WHERE user_id = ?1 AND date BETWEEN ?2 AND ?3");
+                query_parameters.push(Value::Integer(user_id.as_i64()));
+                query_parameters.push(Value::Text(date_range.start().to_string()));
+                query_parameters.push(Value::Text(date_range.end().to_string()));
+            }
+            (Some(user_id), None) => {
+                query_string_parts.push(" WHERE user_id = ?1");
+                query_parameters.push(Value::Integer(user_id.as_i64()));
+            }
+            (None, Some(date_range)) => {
+                query_string_parts.push(" WHERE date BETWEEN ?1 AND ?2");
+                query_parameters.push(Value::Text(date_range.start().to_string()));
+                query_parameters.push(Value::Text(date_range.end().to_string()));
+            }
+            (None, None) => {}
+        }
+
+        let query_string = query_string_parts.into_iter().collect::<String>();
+        let params = params_from_iter(query_parameters.iter());
+
+        self.connection
+            .lock()
+            .unwrap()
+            .prepare(&query_string)?
+            .query_map(params, Self::map_row)?
+            .map(|maybe_category| maybe_category.map_err(TransactionError::SqlError))
+            .collect()
+    }
 }
 
 impl CreateTable for SQLiteTransactionStore {
@@ -175,9 +228,11 @@ mod sqlite_transaction_store_tests {
     use std::f64::consts::PI;
 
     use rusqlite::Connection;
+    use time::{Duration, OffsetDateTime};
 
-    use crate::models::{PasswordHash, User, UserID};
+    use crate::models::{PasswordHash, TransactionBuilder, User, UserID};
     use crate::stores::sql_store::{create_app_state, SQLAppState};
+    use crate::stores::transaction::TransactionFilter;
     use crate::stores::UserStore;
 
     use super::TransactionError;
@@ -315,5 +370,88 @@ mod sqlite_transaction_store_tests {
         let transactions = store.get_by_user_id(user.id());
 
         assert_eq!(transactions, Ok(expected_transactions));
+    }
+
+    #[test]
+    fn get_transactions_by_date_range() {
+        let (mut state, user) = get_app_state_and_test_user();
+
+        let other_user = state
+            .user_store()
+            .create(
+                "other@example.com".parse().unwrap(),
+                PasswordHash::from_raw_password("averysecretpassword".to_string(), 4).unwrap(),
+            )
+            .unwrap();
+
+        let store = state.transaction_store();
+
+        let end_date = OffsetDateTime::now_utc()
+            .date()
+            .checked_sub(Duration::weeks(1))
+            .unwrap();
+        let start_date = end_date.checked_sub(Duration::weeks(1)).unwrap();
+
+        let want = [
+            store
+                .create_from_builder(
+                    TransactionBuilder::new(12.3, user.id())
+                        .date(start_date)
+                        .unwrap(),
+                )
+                .unwrap(),
+            store
+                .create_from_builder(
+                    TransactionBuilder::new(23.4, user.id())
+                        .date(start_date.checked_add(Duration::days(3)).unwrap())
+                        .unwrap(),
+                )
+                .unwrap(),
+            store
+                .create_from_builder(
+                    TransactionBuilder::new(34.5, user.id())
+                        .date(end_date)
+                        .unwrap(),
+                )
+                .unwrap(),
+        ];
+
+        // The below transactions should NOT be returned by the query.
+        let cases = [
+            (
+                user.id(),
+                start_date.checked_sub(Duration::days(1)).unwrap(),
+            ),
+            (user.id(), end_date.checked_add(Duration::days(1)).unwrap()),
+            (
+                other_user.id(),
+                start_date.checked_sub(Duration::days(1)).unwrap(),
+            ),
+            (other_user.id(), start_date),
+            (
+                other_user.id(),
+                start_date.checked_add(Duration::days(3)).unwrap(),
+            ),
+            (other_user.id(), end_date),
+            (
+                other_user.id(),
+                end_date.checked_add(Duration::days(1)).unwrap(),
+            ),
+        ];
+
+        for (user_id, date) in cases {
+            store
+                .create_from_builder(TransactionBuilder::new(999.99, user_id).date(date).unwrap())
+                .unwrap();
+        }
+
+        let got = store
+            .get_filtered(TransactionFilter {
+                user_id: Some(user.id()),
+                date_range: Some(start_date..=end_date),
+            })
+            .unwrap();
+
+        assert_eq!(got, want, "got transactions {:?}, want {:?}", got, want);
     }
 }

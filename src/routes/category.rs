@@ -209,6 +209,13 @@ mod category_tests {
         fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
             todo!()
         }
+
+        fn get_filtered(
+            &self,
+            _filter: crate::stores::transaction::TransactionFilter,
+        ) -> Result<Vec<Transaction>, TransactionError> {
+            todo!()
+        }
     }
 
     fn get_test_app_config() -> (

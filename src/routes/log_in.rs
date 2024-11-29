@@ -236,6 +236,13 @@ mod log_in_tests {
         ) -> Result<Vec<crate::models::Transaction>, crate::models::TransactionError> {
             todo!()
         }
+
+        fn get_filtered(
+            &self,
+            _filter: crate::stores::transaction::TransactionFilter,
+        ) -> Result<Vec<crate::models::Transaction>, crate::models::TransactionError> {
+            todo!()
+        }
     }
 
     type TestAppState = AppState<DummyCategoryStore, DummyTransactionStore, StubUserStore>;

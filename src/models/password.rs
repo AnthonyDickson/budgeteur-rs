@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zxcvbn::{feedback::Feedback, zxcvbn, Score};
 
+// TODO: Use &str for function arguments instead of String.
+
 /// Errors that can occur when creating or hashing a password.
 #[derive(Debug, Error)]
 pub enum PasswordError {
@@ -100,8 +102,7 @@ impl PasswordHash {
 
     /// Try to create a password hash from a raw password string.
     ///
-    /// This is a convenience function that allows one to skip the intermediate `ValidatedPassword`
-    /// type.
+    /// This is a convenience function that skips the intermediate `ValidatedPassword` type.
     ///
     /// This function is used instead of `From<String>` or `FromStr` to make it a bit clearer that
     /// we are not parsing an existing password hash.
