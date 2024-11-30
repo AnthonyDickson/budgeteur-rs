@@ -28,15 +28,27 @@ pub trait TransactionStore {
     /// Retrieve a user's transactions from the store.
     fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, TransactionError>;
 
-    /// Retrieve transactions from the store that are included by `filter`.
-    fn get_filtered(&self, filter: TransactionFilter)
-        -> Result<Vec<Transaction>, TransactionError>;
+    /// Retrieve transactions from the store in the way defined by `query`.
+    fn get_query(&self, query: TransactionQuery) -> Result<Vec<Transaction>, TransactionError>;
 }
 
-/// A collection of fields that transactions can be filtered by in [SQLiteTransactionStore].
-pub struct TransactionFilter {
+/// Defines how transactions should be fetched from [TransactionStore::get_filtered].
+#[derive(Default)]
+pub struct TransactionQuery {
+    /// Matches transactions belonging to the user with the ID `user_id`.
     pub user_id: Option<UserID>,
+    /// Include transactions within `date_range` (inclusive).
     pub date_range: Option<RangeInclusive<Date>>,
+    /// Selects up to the first N (`limit`) transactions.
+    pub limit: Option<u64>,
+    /// Orders transactions by date in the order `sort_date`. None returns transactions in the
+    /// order they are stored.
+    pub sort_date: Option<SortOrder>,
+}
+
+pub enum SortOrder {
+    Ascending,
+    Descending,
 }
 
 /// Stores transactions in a SQLite database.
@@ -139,34 +151,46 @@ impl TransactionStore for SQLiteTransactionStore {
                 .collect()
     }
 
-    fn get_filtered(
-        &self,
-        filter: TransactionFilter,
-    ) -> Result<Vec<Transaction>, TransactionError> {
-        let mut query_string_parts =
-            vec!["SELECT id, amount, date, description, category_id, user_id FROM \"transaction\""];
+    fn get_query(&self, filter: TransactionQuery) -> Result<Vec<Transaction>, TransactionError> {
+        let mut query_string_parts = vec![
+            "SELECT id, amount, date, description, category_id, user_id FROM \"transaction\""
+                .to_string(),
+        ];
+        let mut where_clause_parts = vec![];
         let mut query_parameters = vec![];
 
-        match (filter.user_id, filter.date_range) {
-            (Some(user_id), Some(date_range)) => {
-                query_string_parts.push(" WHERE user_id = ?1 AND date BETWEEN ?2 AND ?3");
-                query_parameters.push(Value::Integer(user_id.as_i64()));
-                query_parameters.push(Value::Text(date_range.start().to_string()));
-                query_parameters.push(Value::Text(date_range.end().to_string()));
-            }
-            (Some(user_id), None) => {
-                query_string_parts.push(" WHERE user_id = ?1");
-                query_parameters.push(Value::Integer(user_id.as_i64()));
-            }
-            (None, Some(date_range)) => {
-                query_string_parts.push(" WHERE date BETWEEN ?1 AND ?2");
-                query_parameters.push(Value::Text(date_range.start().to_string()));
-                query_parameters.push(Value::Text(date_range.end().to_string()));
-            }
-            (None, None) => {}
+        if let Some(user_id) = filter.user_id {
+            where_clause_parts.push(format!("user_id = ?{}", query_parameters.len() + 1));
+            query_parameters.push(Value::Integer(user_id.as_i64()));
         }
 
-        let query_string = query_string_parts.into_iter().collect::<String>();
+        if let Some(date_range) = filter.date_range {
+            where_clause_parts.push(format!(
+                "date BETWEEN ?{} AND ?{}",
+                query_parameters.len() + 1,
+                query_parameters.len() + 2,
+            ));
+            query_parameters.push(Value::Text(date_range.start().to_string()));
+            query_parameters.push(Value::Text(date_range.end().to_string()));
+        }
+
+        if !where_clause_parts.is_empty() {
+            query_string_parts.push(String::from("WHERE ") + &where_clause_parts.join(" AND "));
+        }
+
+        match filter.sort_date {
+            Some(SortOrder::Ascending) => query_string_parts.push("ORDER BY date ASC".to_string()),
+            Some(SortOrder::Descending) => {
+                query_string_parts.push("ORDER BY date DESC".to_string())
+            }
+            None => {}
+        }
+
+        if let Some(limit) = filter.limit {
+            query_string_parts.push(format!("LIMIT {}", limit));
+        }
+
+        let query_string = query_string_parts.join(" ");
         let params = params_from_iter(query_parameters.iter());
 
         self.connection
@@ -232,7 +256,7 @@ mod sqlite_transaction_store_tests {
 
     use crate::models::{PasswordHash, TransactionBuilder, User, UserID};
     use crate::stores::sql_store::{create_app_state, SQLAppState};
-    use crate::stores::transaction::TransactionFilter;
+    use crate::stores::transaction::{SortOrder, TransactionQuery};
     use crate::stores::UserStore;
 
     use super::TransactionError;
@@ -246,7 +270,7 @@ mod sqlite_transaction_store_tests {
             .user_store()
             .create(
                 "test@test.com".parse().unwrap(),
-                PasswordHash::new_unchecked("hunter2".to_string()),
+                PasswordHash::new_unchecked("hunter2"),
             )
             .unwrap();
 
@@ -380,7 +404,7 @@ mod sqlite_transaction_store_tests {
             .user_store()
             .create(
                 "other@example.com".parse().unwrap(),
-                PasswordHash::from_raw_password("averysecretpassword".to_string(), 4).unwrap(),
+                PasswordHash::from_raw_password("averysecretpassword", 4).unwrap(),
             )
             .unwrap();
 
@@ -446,12 +470,82 @@ mod sqlite_transaction_store_tests {
         }
 
         let got = store
-            .get_filtered(TransactionFilter {
+            .get_query(TransactionQuery {
                 user_id: Some(user.id()),
                 date_range: Some(start_date..=end_date),
+                ..Default::default()
             })
             .unwrap();
 
         assert_eq!(got, want, "got transactions {:?}, want {:?}", got, want);
+    }
+
+    #[test]
+    fn get_transactions_with_limit() {
+        let (mut state, user) = get_app_state_and_test_user();
+
+        let today = OffsetDateTime::now_utc().date();
+
+        for i in 1..=10 {
+            let transaction_builder = TransactionBuilder::new(i as f64, user.id())
+                .date(today.checked_sub(Duration::days(i)).unwrap())
+                .unwrap()
+                .description(format!("transaction #{i}"));
+
+            state
+                .transaction_store()
+                .create_from_builder(transaction_builder)
+                .unwrap();
+        }
+
+        let got = state
+            .transaction_store()
+            .get_query(TransactionQuery {
+                limit: Some(5),
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert_eq!(got.len(), 5, "got {} transactions, want 5", got.len());
+    }
+
+    #[test]
+    fn get_transactions_descending_date() {
+        let (mut state, user) = get_app_state_and_test_user();
+
+        let mut want = vec![];
+        let start_date = OffsetDateTime::now_utc()
+            .date()
+            .checked_sub(Duration::weeks(2))
+            .unwrap();
+
+        for i in 1..=3 {
+            let transaction_builder = TransactionBuilder::new(i as f64, user.id())
+                .date(start_date.checked_add(Duration::days(i)).unwrap())
+                .unwrap()
+                .description(format!("transaction #{i}"));
+
+            let transaction = state
+                .transaction_store()
+                .create_from_builder(transaction_builder)
+                .unwrap();
+
+            want.push(transaction);
+        }
+
+        want.sort_by(|a, b| b.date().cmp(a.date()));
+
+        let got = state
+            .transaction_store()
+            .get_query(TransactionQuery {
+                sort_date: Some(SortOrder::Descending),
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert_eq!(
+            got, want,
+            "got transactions that were not sorted in descending order."
+        );
     }
 }

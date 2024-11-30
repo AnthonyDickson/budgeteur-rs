@@ -164,11 +164,11 @@ impl MapRow for SQLiteUserStore {
     fn map_row_with_offset(row: &Row, offset: usize) -> Result<Self::ReturnType, rusqlite::Error> {
         let raw_id = row.get(offset)?;
         let raw_email: String = row.get(offset + 1)?;
-        let raw_password_hash = row.get(offset + 2)?;
+        let raw_password_hash: String = row.get(offset + 2)?;
 
         let id = UserID::new(raw_id);
         let email = EmailAddress::new_unchecked(raw_email);
-        let password_hash = PasswordHash::new_unchecked(raw_password_hash);
+        let password_hash = PasswordHash::new_unchecked(&raw_password_hash);
 
         Ok(Self::ReturnType::new(id, email, password_hash))
     }
@@ -199,7 +199,7 @@ mod user_tests {
         let mut store = get_store();
 
         let email = EmailAddress::from_str("hello@world.com").unwrap();
-        let password_hash = PasswordHash::new_unchecked("hunter2".to_string());
+        let password_hash = PasswordHash::new_unchecked("hunter2");
 
         let inserted_user = store.create(email.clone(), password_hash.clone()).unwrap();
 
@@ -215,17 +215,11 @@ mod user_tests {
         let email = EmailAddress::from_str("hello@world.com").unwrap();
 
         assert!(store
-            .create(
-                email.clone(),
-                PasswordHash::new_unchecked("hunter2".to_string())
-            )
+            .create(email.clone(), PasswordHash::new_unchecked("hunter2"))
             .is_ok());
 
         assert_eq!(
-            store.create(
-                email.clone(),
-                PasswordHash::new_unchecked("hunter3".to_string())
-            ),
+            store.create(email.clone(), PasswordHash::new_unchecked("hunter3")),
             Err(UserError::DuplicateEmail)
         );
     }
@@ -235,7 +229,7 @@ mod user_tests {
         let mut store = get_store();
 
         let email = EmailAddress::from_str("hello@world.com").unwrap();
-        let password = PasswordHash::new_unchecked("hunter2".to_string());
+        let password = PasswordHash::new_unchecked("hunter2");
 
         assert!(store.create(email, password.clone()).is_ok());
 
@@ -264,7 +258,7 @@ mod user_tests {
         let test_user = store
             .create(
                 EmailAddress::from_str("foo@bar.baz").unwrap(),
-                PasswordHash::new_unchecked("hunter2".to_string()),
+                PasswordHash::new_unchecked("hunter2"),
             )
             .unwrap();
 
@@ -290,7 +284,7 @@ mod user_tests {
         let test_user = store
             .create(
                 EmailAddress::from_str("foo@bar.baz").unwrap(),
-                PasswordHash::new_unchecked("hunter2".to_string()),
+                PasswordHash::new_unchecked("hunter2"),
             )
             .unwrap();
 

@@ -100,7 +100,7 @@ mod category_tests {
             TransactionBuilder, TransactionError, User, UserID,
         },
         routes::category::{create_category, get_category},
-        stores::{CategoryStore, TransactionStore, UserStore},
+        stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
         AppState,
     };
 
@@ -210,9 +210,9 @@ mod category_tests {
             todo!()
         }
 
-        fn get_filtered(
+        fn get_query(
             &self,
-            _filter: crate::stores::transaction::TransactionFilter,
+            _filter: TransactionQuery,
         ) -> Result<Vec<Transaction>, TransactionError> {
             todo!()
         }

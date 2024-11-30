@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Creating test user...");
 
     let password_hash = PasswordHash::new(
-        ValidatedPassword::new_unchecked("test".to_owned()),
+        ValidatedPassword::new_unchecked("test"),
         PasswordHash::DEFAULT_COST,
     )?;
 

@@ -14,7 +14,7 @@ use time::{Duration, OffsetDateTime};
 
 use crate::{
     models::UserID,
-    stores::{transaction::TransactionFilter, CategoryStore, TransactionStore, UserStore},
+    stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
     AppError, AppState,
 };
 
@@ -52,9 +52,10 @@ where
         }
     };
 
-    let transactions = state.transaction_store().get_filtered(TransactionFilter {
+    let transactions = state.transaction_store().get_query(TransactionQuery {
         user_id: Some(user_id),
         date_range: Some(one_week_ago..=today),
+        ..Default::default()
     });
 
     let balance = match transactions {
@@ -83,13 +84,14 @@ mod dashboard_route_tests {
     };
     use time::{Duration, OffsetDateTime};
 
-    use crate::models::PasswordHash;
     use crate::{
         models::{
-            Category, CategoryError, DatabaseID, Transaction, TransactionBuilder, TransactionError,
-            UserID,
+            Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
+            TransactionBuilder, TransactionError, User, UserID,
         },
-        stores::{CategoryStore, TransactionStore, UserStore},
+        stores::{
+            transaction::TransactionQuery, CategoryStore, TransactionStore, UserError, UserStore,
+        },
         AppState,
     };
 
@@ -103,18 +105,15 @@ mod dashboard_route_tests {
             &mut self,
             _email: email_address::EmailAddress,
             _password_hash: PasswordHash,
-        ) -> Result<crate::models::User, crate::stores::UserError> {
+        ) -> Result<User, UserError> {
             todo!()
         }
 
-        fn get(&self, _id: UserID) -> Result<crate::models::User, crate::stores::UserError> {
+        fn get(&self, _id: UserID) -> Result<User, UserError> {
             todo!()
         }
 
-        fn get_by_email(
-            &self,
-            _email: &email_address::EmailAddress,
-        ) -> Result<crate::models::User, crate::stores::UserError> {
+        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, UserError> {
             todo!()
         }
     }
@@ -123,11 +122,7 @@ mod dashboard_route_tests {
     struct DummyCategoryStore {}
 
     impl CategoryStore for DummyCategoryStore {
-        fn create(
-            &self,
-            _name: crate::models::CategoryName,
-            _user_id: UserID,
-        ) -> Result<Category, CategoryError> {
+        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, CategoryError> {
             todo!()
         }
 
@@ -178,9 +173,9 @@ mod dashboard_route_tests {
             todo!()
         }
 
-        fn get_filtered(
+        fn get_query(
             &self,
-            filter: crate::stores::transaction::TransactionFilter,
+            filter: TransactionQuery,
         ) -> Result<Vec<Transaction>, TransactionError> {
             self.transactions
                 .iter()

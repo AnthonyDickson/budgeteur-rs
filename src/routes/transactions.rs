@@ -10,7 +10,10 @@ use time::{Date, OffsetDateTime};
 use crate::{
     models::UserID,
     routes::get_internal_server_error_redirect,
-    stores::{CategoryStore, TransactionStore, UserStore},
+    stores::{
+        transaction::{SortOrder, TransactionQuery},
+        CategoryStore, TransactionStore, UserStore,
+    },
     AppError, AppState,
 };
 
@@ -44,8 +47,12 @@ where
 {
     let navbar = get_nav_bar(endpoints::TRANSACTIONS);
 
-    // TODO: Limit transactions to either a time period or count.
-    let transactions = state.transaction_store().get_by_user_id(user_id);
+    let transactions = state.transaction_store().get_query(TransactionQuery {
+        user_id: Some(user_id),
+        limit: Some(20),
+        sort_date: Some(SortOrder::Descending),
+        ..Default::default()
+    });
     let transactions = match transactions {
         Ok(transactions) => transactions,
         Err(error) => return AppError::TransactionError(error).into_response(),
@@ -118,7 +125,7 @@ mod transactions_route_tests {
             .user_store()
             .create(
                 "test@test.com".parse().unwrap(),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()), 4).unwrap(),
+                PasswordHash::new(ValidatedPassword::new_unchecked("test"), 4).unwrap(),
             )
             .unwrap();
 

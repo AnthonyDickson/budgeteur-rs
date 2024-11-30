@@ -118,6 +118,7 @@ mod transaction_tests {
         CategoryError, DatabaseID, PasswordHash, TransactionBuilder, TransactionError,
     };
     use crate::routes::transaction::{create_transaction, get_transaction, TransactionForm};
+    use crate::stores::transaction::TransactionQuery;
     use crate::stores::{CategoryStore, TransactionStore, UserStore};
     use crate::{
         models::{Category, Transaction, UserID},
@@ -222,9 +223,9 @@ mod transaction_tests {
             todo!()
         }
 
-        fn get_filtered(
+        fn get_query(
             &self,
-            _filter: crate::stores::transaction::TransactionFilter,
+            _filter: TransactionQuery,
         ) -> Result<Vec<Transaction>, TransactionError> {
             todo!()
         }

@@ -129,12 +129,17 @@ mod log_in_tests {
 
     use crate::{
         auth::{LogInData, COOKIE_USER_ID},
-        models::{PasswordHash, User, UserID, ValidatedPassword},
+        models::{
+            Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
+            TransactionBuilder, TransactionError, User, UserID, ValidatedPassword,
+        },
         routes::{
             endpoints,
             log_in::{post_log_in, INVALID_CREDENTIALS_ERROR_MSG},
         },
-        stores::{CategoryStore, TransactionStore, UserError, UserStore},
+        stores::{
+            transaction::TransactionQuery, CategoryStore, TransactionStore, UserError, UserStore,
+        },
         AppState,
     };
 
@@ -181,25 +186,15 @@ mod log_in_tests {
     struct DummyCategoryStore {}
 
     impl CategoryStore for DummyCategoryStore {
-        fn create(
-            &self,
-            _name: crate::models::CategoryName,
-            _user_id: crate::models::UserID,
-        ) -> Result<crate::models::Category, crate::models::CategoryError> {
+        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, CategoryError> {
             todo!()
         }
 
-        fn get(
-            &self,
-            _category_id: crate::models::DatabaseID,
-        ) -> Result<crate::models::Category, crate::models::CategoryError> {
+        fn get(&self, _category_id: DatabaseID) -> Result<Category, CategoryError> {
             todo!()
         }
 
-        fn get_by_user(
-            &self,
-            _user_id: crate::models::UserID,
-        ) -> Result<Vec<crate::models::Category>, crate::models::CategoryError> {
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, CategoryError> {
             todo!()
         }
     }
@@ -211,36 +206,30 @@ mod log_in_tests {
         fn create(
             &mut self,
             _amount: f64,
-            _user_id: crate::models::UserID,
-        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
+            _user_id: UserID,
+        ) -> Result<Transaction, TransactionError> {
             todo!()
         }
 
         fn create_from_builder(
             &mut self,
-            _builder: crate::models::TransactionBuilder,
-        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
+            _builder: TransactionBuilder,
+        ) -> Result<Transaction, TransactionError> {
             todo!()
         }
 
-        fn get(
-            &self,
-            _id: crate::models::DatabaseID,
-        ) -> Result<crate::models::Transaction, crate::models::TransactionError> {
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, TransactionError> {
             todo!()
         }
 
-        fn get_by_user_id(
-            &self,
-            _user_id: crate::models::UserID,
-        ) -> Result<Vec<crate::models::Transaction>, crate::models::TransactionError> {
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
             todo!()
         }
 
-        fn get_filtered(
+        fn get_query(
             &self,
-            _filter: crate::stores::transaction::TransactionFilter,
-        ) -> Result<Vec<crate::models::Transaction>, crate::models::TransactionError> {
+            _filter: TransactionQuery,
+        ) -> Result<Vec<Transaction>, TransactionError> {
             todo!()
         }
     }
@@ -298,7 +287,7 @@ mod log_in_tests {
             .user_store()
             .create(
                 EmailAddress::new_unchecked("test@test.com"),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test".to_string()), 4).unwrap(),
+                PasswordHash::new(ValidatedPassword::new_unchecked("test"), 4).unwrap(),
             )
             .unwrap();
 

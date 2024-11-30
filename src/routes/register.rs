@@ -134,7 +134,7 @@ where
         }
     };
 
-    let validated_password = match ValidatedPassword::new(user_data.password.to_string()) {
+    let validated_password = match ValidatedPassword::new(&user_data.password) {
         Ok(password) => password,
         Err(e) => {
             return RegisterFormTemplate {
@@ -215,7 +215,9 @@ mod user_tests {
             endpoints,
             register::{create_user, RegisterForm},
         },
-        stores::{CategoryStore, TransactionStore, UserError, UserStore},
+        stores::{
+            transaction::TransactionQuery, CategoryStore, TransactionStore, UserError, UserStore,
+        },
         AppState,
     };
 
@@ -302,8 +304,10 @@ mod user_tests {
             todo!()
         }
 
-        fn get_filtered(&self, _filter: crate::stores::transaction::TransactionFilter)
-                -> Result<Vec<Transaction>, TransactionError> {
+        fn get_query(
+            &self,
+            _filter: TransactionQuery,
+        ) -> Result<Vec<Transaction>, TransactionError> {
             todo!()
         }
     }

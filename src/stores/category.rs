@@ -128,7 +128,7 @@ mod category_tests {
         let user = SQLiteUserStore::new(connection.clone())
             .create(
                 "foo@bar.baz".parse().unwrap(),
-                PasswordHash::from_raw_password("naetoafntseoafunts".to_string(), 4).unwrap(),
+                PasswordHash::from_raw_password("naetoafntseoafunts", 4).unwrap(),
             )
             .unwrap();
 
