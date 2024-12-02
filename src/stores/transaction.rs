@@ -11,6 +11,8 @@ use crate::{
     models::{DatabaseID, Transaction, TransactionBuilder, TransactionError, UserID},
 };
 
+use super::SQLiteCategoryStore;
+
 /// Handles the creation and retrieval of transactions.
 pub trait TransactionStore {
     /// Create a new transaction in the store.
@@ -105,6 +107,30 @@ impl TransactionStore for SQLiteTransactionStore {
         let next_id = next_id + 1;
 
         let transaction = builder.finalise(next_id);
+
+        if let Some(category_id) = transaction.category_id() {
+            let category = connection
+                .query_row(
+                    "SELECT id, name, user_id FROM category WHERE id = ?1",
+                    (category_id,),
+                    SQLiteCategoryStore::map_row,
+                )
+                .map_err(|error| match error {
+                    // We enforce the foreign key constraint (the ID refers to a valid, existing
+                    // record) here so that we know later that if a foreign key constraint is
+                    // violated, it is for the user ID. Otherwise, it would difficult to know
+                    // which foreign key constraint was violated since the SQL error does not
+                    // provide any useful information.
+                    rusqlite::Error::QueryReturnedNoRows => TransactionError::InvalidCategory,
+                    error => TransactionError::SqlError(error),
+                })?;
+
+            if category.user_id() != transaction.user_id() {
+                // Use same error as if the category doesn't exist so that unauthorized users can't
+                // poke around to find out what data exists.
+                return Err(TransactionError::InvalidCategory);
+            }
+        }
 
         connection
                 .execute(
@@ -254,10 +280,12 @@ mod sqlite_transaction_store_tests {
     use rusqlite::Connection;
     use time::{Duration, OffsetDateTime};
 
-    use crate::models::{PasswordHash, TransactionBuilder, User, UserID};
+    use crate::models::{
+        CategoryName, PasswordHash, Transaction, TransactionBuilder, User, UserID,
+    };
     use crate::stores::sql_store::{create_app_state, SQLAppState};
     use crate::stores::transaction::{SortOrder, TransactionQuery};
-    use crate::stores::UserStore;
+    use crate::stores::{CategoryStore, UserStore};
 
     use super::TransactionError;
     use super::TransactionStore;
@@ -303,50 +331,43 @@ mod sqlite_transaction_store_tests {
         assert_eq!(transaction, Err(TransactionError::InvalidUser));
     }
 
-    // TODO: Move the below tests to a new type that coordinates stores and upholds invariants such
-    // as foreign keys.
-    //
-    // #[test]
-    // fn create_fails_on_invalid_category_id() {
-    //     let (state, user) = get_app_state_and_test_user();
-    //     let category = state
-    //         .category_store()
-    //         .create(CategoryName::new_unchecked("state"), user.id())
-    //         .unwrap();
-    //
-    //     let transaction = state.transaction_store().create_from_builder(
-    //         Transaction::build(PI, user.id()).category(Some(category.id() + 198371)),
-    //     );
-    //
-    //     assert_eq!(transaction, Err(TransactionError::InvalidCategory));
-    // }
-    //
-    // #[test]
-    // fn create_fails_on_user_id_mismatch() {
-    //     // `user` is the owner of `someone_elses_category`.
-    //     let (state, user) = get_app_state_and_test_user();
-    //     let someone_elses_category = state
-    //         .category_store()
-    //         .create(CategoryName::new_unchecked("state"), user.id())
-    //         .unwrap();
-    //
-    //     let unauthorized_user = state
-    //         .user_store()
-    //         .create(
-    //             "bar@baz.qux".parse().unwrap(),
-    //             PasswordHash::new_unchecked("hunter3".to_string()),
-    //         )
-    //         .unwrap();
-    //
-    //     let maybe_transaction = state.transaction_store().create_from_builder(
-    //         Transaction::build(PI, unauthorized_user.id())
-    //             .category(Some(someone_elses_category.id())),
-    //     );
-    //
-    //     // The server should not give any information indicating to the client that the category exists or belongs to another user,
-    //     // so we give the same error as if the referenced category does not exist.
-    //     assert_eq!(maybe_transaction, Err(TransactionError::InvalidCategory));
-    // }
+    #[test]
+    fn create_fails_on_invalid_category_id() {
+        let (mut state, user) = get_app_state_and_test_user();
+
+        let transaction = state
+            .transaction_store()
+            .create_from_builder(Transaction::build(PI, user.id()).category(Some(999)));
+
+        assert_eq!(transaction, Err(TransactionError::InvalidCategory));
+    }
+
+    #[test]
+    fn create_fails_on_user_id_mismatch() {
+        // `user` is the owner of `someone_elses_category`.
+        let (mut state, user) = get_app_state_and_test_user();
+        let someone_elses_category = state
+            .category_store()
+            .create(CategoryName::new_unchecked("hands off"), user.id())
+            .unwrap();
+
+        let unauthorized_user = state
+            .user_store()
+            .create(
+                "bar@baz.qux".parse().unwrap(),
+                PasswordHash::new_unchecked("hunter3"),
+            )
+            .unwrap();
+
+        let maybe_transaction = state.transaction_store().create_from_builder(
+            Transaction::build(PI, unauthorized_user.id())
+                .category(Some(someone_elses_category.id())),
+        );
+
+        // The server should not give any information indicating to the client that the category exists or belongs to another user,
+        // so we give the same error as if the referenced category does not exist.
+        assert_eq!(maybe_transaction, Err(TransactionError::InvalidCategory));
+    }
 
     #[test]
     fn get_transaction_by_id_succeeds() {
