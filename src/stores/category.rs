@@ -1,3 +1,4 @@
+//! Defines the category store trait and an implementation for the SQLite backend.
 use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, Row};
@@ -9,8 +10,13 @@ use crate::{
 
 /// Creates and retrieves transaction categories for transactions.
 pub trait CategoryStore {
+    /// Create a new category and add it the store.
     fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, CategoryError>;
+
+    /// Get a category by its ID.
     fn get(&self, category_id: DatabaseID) -> Result<Category, CategoryError>;
+
+    /// Get all categories for a given user.
     fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, CategoryError>;
 }
 
@@ -21,6 +27,7 @@ pub struct SQLiteCategoryStore {
 }
 
 impl SQLiteCategoryStore {
+    /// Create a new category store with a SQLite database.
     pub fn new(connection: Arc<Mutex<Connection>>) -> Self {
         Self { connection }
     }

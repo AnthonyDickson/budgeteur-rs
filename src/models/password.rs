@@ -72,6 +72,7 @@ impl Display for ValidatedPassword {
 pub struct PasswordHash(String);
 
 impl PasswordHash {
+    /// An alias for the default encryption cost for hashing passwords.
     pub const DEFAULT_COST: u32 = bcrypt::DEFAULT_COST;
 
     /// Create a hashed password from a validated password with the specified `cost`.

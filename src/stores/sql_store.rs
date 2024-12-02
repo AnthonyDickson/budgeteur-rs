@@ -1,3 +1,6 @@
+//! Contains convenience type alias and function for [AppState] that uses
+//! the SQLite backend.
+
 use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, Error};
@@ -6,8 +9,13 @@ use crate::{db::initialize, AppState};
 
 use super::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore};
 
+/// An alias for an [AppState] that usXs SQLite for the backend.
 pub type SQLAppState = AppState<SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore>;
 
+/// Creates an [AppState] instance that uses SQLite for the backend.
+///
+/// This function will modify the database by adding the tables for the domain
+/// models to the database.
 pub fn create_app_state(
     db_connection: Connection,
     cookie_secret: &str,

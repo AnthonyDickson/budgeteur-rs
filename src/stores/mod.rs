@@ -1,3 +1,5 @@
+//! Contains traits and implementations for objects that store the domain [models](crate::models).
+
 pub mod category;
 pub mod sql_store;
 pub mod transaction;

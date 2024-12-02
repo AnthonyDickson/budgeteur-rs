@@ -36,6 +36,7 @@ where
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
 {
+    /// Create a new [AppState].
     pub fn new(
         cookie_secret: &str,
         category_store: C,
@@ -52,18 +53,22 @@ where
         }
     }
 
+    /// The key to be used for signing and encrypting private cookies.
     pub fn cookie_key(&self) -> &Key {
         &self.cookie_key
     }
 
+    /// The store for managing user [categories](crate::models::Category).
     pub fn category_store(&self) -> &C {
         &self.category_store
     }
 
+    /// The store for managing user [transactions](crate::models::Transaction).
     pub fn transaction_store(&mut self) -> &mut T {
         &mut self.transaction_store
     }
 
+    /// The store for managing [users](crate::models::User).
     pub fn user_store(&mut self) -> &mut U {
         &mut self.user_store
     }

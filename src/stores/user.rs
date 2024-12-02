@@ -1,3 +1,4 @@
+//! Defines the user store trait and an implentation for the SQLite backend.
 use std::sync::{Arc, Mutex};
 
 use email_address::EmailAddress;
@@ -42,6 +43,7 @@ pub enum UserError {
     #[error("no user found with the given details")]
     NotFound,
 
+    /// An unhandled/unexpected SQL error.
     #[error("an error occurred while creating the user: {0}")]
     SqlError(rusqlite::Error),
 }

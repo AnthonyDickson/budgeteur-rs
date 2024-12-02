@@ -87,6 +87,7 @@ pub trait CreateTable {
 /// }
 /// ```
 pub trait MapRow {
+    /// The type of the mapping output.
     type ReturnType;
 
     /// Convert a row into a concrete type.

@@ -38,9 +38,12 @@ pub struct LogInData {
     pub password: String,
 }
 
+/// Errors that can occur when authenticating a user.
 #[derive(Debug)]
 pub enum AuthError {
+    /// The user provided an invalid combination of email and password.
     InvalidCredentials,
+    /// An unexpected error occurred when hashing a password or parsing a password hash.
     InternalError,
 }
 

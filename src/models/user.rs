@@ -15,10 +15,12 @@ use crate::models::PasswordHash;
 pub struct UserID(i64);
 
 impl UserID {
+    /// Create a new user ID.
     pub fn new(id: i64) -> Self {
         Self(id)
     }
 
+    /// Cast the user ID to a 64 bit integer.
     pub fn as_i64(&self) -> i64 {
         self.0
     }

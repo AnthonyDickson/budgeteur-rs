@@ -13,11 +13,13 @@ The application consists of a single REST server that renders and serves HTML di
 
 This project was developed with cargo 1.8.0, other versions have not been tested.
 
-1.  (First time only) Run the below script to create the test database:
+1. (First time only) Run the below script to create the test database:
+
     ```shell
     cargo run --bin create_test_db -- --output-path test.db
     ```
-2.  To start the server run the following command:
+
+2. To start the server run the following command:
 
     ```shell
     SECRET=YOUR_SECRET_HERE cargo run -- --db-path test.db --cert-path path/to/cert_and_key_pem
@@ -34,7 +36,7 @@ This project was developed with cargo 1.8.0, other versions have not been tested
     `--cert-path` should contain the files `cert.pem` and `key.pem`.
     If you do not have the required SSL certificates, you can generate your own [using OpenSSL](https://stackoverflow.com/a/10176685) (make sure to add the flag `-nodes`).
 
-3.  Test that the server is running:
+3. Test that the server is running:
 
     ```shell
     curl -i -X GET https://localhost:3000/coffee
@@ -42,7 +44,7 @@ This project was developed with cargo 1.8.0, other versions have not been tested
 
     Example output:
 
-    ```
+    ```text
     HTTP/2 418
     content-length: 0
     date: Thu, 22 Aug 2024 03:00:58 GMT
@@ -64,3 +66,13 @@ Currently, user registration, log in and log out have been implemented on both t
 
 The next steps will be to work on CRUD functionality for transactions.
 This will allow for the fundamental budgeting functionality.
+
+## Docs
+
+For now, you can view the docs by building them locally:
+
+```shell
+cargo doc --open
+```
+
+The flag `--open` will open the docs in your default web browser.

@@ -8,6 +8,8 @@
 //!
 //! This library provides a REST API that directly serves HTML pages.
 
+#![warn(missing_docs)]
+
 use std::time::Duration;
 
 use axum::{

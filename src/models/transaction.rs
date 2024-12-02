@@ -114,7 +114,7 @@ pub struct TransactionBuilder {
 }
 
 impl TransactionBuilder {
-    /// Create a new transaction and insert it into the application database.
+    /// Create a new transaction.
     ///
     /// Finalize the builder with [TransactionBuilder::finalise].
     pub fn new(amount: f64, user_id: UserID) -> Self {
@@ -127,6 +127,7 @@ impl TransactionBuilder {
         }
     }
 
+    /// Build the final [Transaction] instance.
     pub fn finalise(self, id: DatabaseID) -> Transaction {
         Transaction {
             id,

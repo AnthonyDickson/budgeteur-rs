@@ -1,3 +1,5 @@
+//! Defines the transaction store trait and an implementation for the SQLite backend.
+
 use std::{
     ops::RangeInclusive,
     sync::{Arc, Mutex},
@@ -34,7 +36,7 @@ pub trait TransactionStore {
     fn get_query(&self, query: TransactionQuery) -> Result<Vec<Transaction>, TransactionError>;
 }
 
-/// Defines how transactions should be fetched from [TransactionStore::get_filtered].
+/// Defines how transactions should be fetched from [TransactionStore::get_query].
 #[derive(Default)]
 pub struct TransactionQuery {
     /// Matches transactions belonging to the user with the ID `user_id`.
@@ -48,12 +50,20 @@ pub struct TransactionQuery {
     pub sort_date: Option<SortOrder>,
 }
 
+/// The order to sort transactions in a [TransactionQuery].
 pub enum SortOrder {
+    /// Sort in order of increasing value.
     Ascending,
+    /// Sort in order of decreasing value.
     Descending,
 }
 
 /// Stores transactions in a SQLite database.
+///
+/// Note that because a transaction depends on the [User](crate::models::User) and
+/// [Category](crate::models::Category) models, these models must be set up in the database.
+///
+///
 #[derive(Debug, Clone)]
 pub struct SQLiteTransactionStore {
     connection: Arc<Mutex<Connection>>,
