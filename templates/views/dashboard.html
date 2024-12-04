@@ -3,13 +3,13 @@
 <div class="flex flex-col items-center px-6 py-8 mx-auto md:h-screen lg:py-0 text-gray-900 dark:text-white"/>
   <p>Hello, you are user #{{ user_id }}.</p>
   <div>
-    {# TODO: Get abs filter working with balance. 
-       It seems to be an issue with balance being converted into a reference, 
-       and the Signed trait is not defined for reference types. #}
     {% if balance >= 0.0 %}
       <p>You are ${{ balance }} under budget. </p>
     {% else %}
-      <p>You are ${{ balance }} over budget.</p>
+      {# HACK: The `abs` filter does not work and generates a compiler error 
+         "trait `Signed` is not implemented for `&f64`". Multiplying by 
+          negagive one achieves the same effect as `abs`. #}
+      <p>You are ${{ -1.0 * balance }} over budget.</p>
     {% endif %}  
   </div>
 </div>

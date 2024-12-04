@@ -229,17 +229,34 @@ mod dashboard_route_tests {
         let response = get_dashboard_page(State(state), Extension(user_id)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
-        assert_body_contains_amount(response, 123.0).await;
+        assert_body_contains_amount(response, "$123").await;
     }
 
-    async fn assert_body_contains_amount(response: Response<Body>, want: f64) {
+    #[tokio::test]
+    async fn dashboard_displays_negative_balance_without_sign() {
+        let user_id = UserID::new(321);
+        let transactions = vec![Transaction::build(-123.0, user_id).finalise(2)];
+        let state = AppState::new(
+            "123",
+            DummyCategoryStore {},
+            FakeTransactionStore { transactions },
+            DummyUserStore {},
+        );
+
+        let response = get_dashboard_page(State(state), Extension(user_id)).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_body_contains_amount(response, "$123").await;
+    }
+
+    async fn assert_body_contains_amount(response: Response<Body>, want: &str) {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
 
         let text = String::from_utf8_lossy(&body).to_string();
 
         assert!(
-            text.contains(&want.to_string()),
+            text.contains(want),
             "response body should contain '{}' but got {}",
             want,
             text
