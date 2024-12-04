@@ -63,6 +63,32 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    /// Create a new transaction without checking invariants such as a valid date.
+    ///
+    /// This function is intended to be used when loading data from a trusted source such as the
+    /// application databases/stores which validate data on insertion. You **should not** use this
+    /// function with unvaldated data.
+    ///
+    /// This function has `_unchecked` in the name but is not `unsafe`, because if an invalid date
+    /// is provided it may cause incorrect behaviour but will not affect memory safety.
+    pub fn new_unchecked(
+        id: DatabaseID,
+        amount: f64,
+        date: Date,
+        description: String,
+        category_id: Option<DatabaseID>,
+        user_id: UserID,
+    ) -> Self {
+        Self {
+            id,
+            amount,
+            date,
+            description,
+            category_id,
+            user_id,
+        }
+    }
+
     /// Create a new transaction.
     ///
     /// Shortcut for [TransactionBuilder::new] for discoverability.

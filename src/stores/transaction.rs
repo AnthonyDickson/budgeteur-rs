@@ -271,13 +271,8 @@ impl MapRow for SQLiteTransactionStore {
         let category_id = row.get(offset + 4)?;
         let user_id = UserID::new(row.get(offset + 5)?);
 
-        let transaction = Transaction::build(amount, user_id)
-            // TODO: Handle error if date is invalid.
-            .date(date)
-            .unwrap()
-            .description(description)
-            .category(category_id)
-            .finalise(id);
+        let transaction =
+            Transaction::new_unchecked(id, amount, date, description, category_id, user_id);
 
         Ok(transaction)
     }
