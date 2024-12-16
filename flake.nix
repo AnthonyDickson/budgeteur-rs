@@ -46,6 +46,9 @@
             rustToolchain
             rust-analyzer
           ]) ++ pkgs.lib.optionals pkgs.stdenv.isDarwin (with pkgs; [ libiconv ]);
+
+          # environment variable for running dev server.
+          SECRET="AVERYSECRETSECRET";
         };
       });
     };
