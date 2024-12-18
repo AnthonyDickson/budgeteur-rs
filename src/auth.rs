@@ -118,6 +118,8 @@ const COOKIE_DURATION_MINUTES: i64 = 5;
 
 /// Add an auth cookie to the cookie jar, indicating that a user is logged in and authenticated.
 ///
+/// Sets the initial expiry of the cookie to [COOKIE_DURATION_MINUTES] from the current time.
+///
 /// Returns the cookie jar with the cookie added.
 pub(crate) fn set_auth_cookie(jar: PrivateCookieJar, user_id: UserID) -> PrivateCookieJar {
     let expiry = OffsetDateTime::now_utc() + Duration::minutes(COOKIE_DURATION_MINUTES);
@@ -378,6 +380,20 @@ mod cookie_tests {
         assert_date_time_close(got, want);
     }
 
+    #[test]
+    fn cookie_duration_does_not_change() {
+        let user_id = UserID::new(1);
+        let jar = set_auth_cookie(get_jar(), user_id);
+        let stale_cookie = jar.get(COOKIE_USER_ID).unwrap();
+        let want = Some(stale_cookie.expires_datetime().unwrap());
+
+        // The initial cookie is set to expire in 5 minutes, so extending it by 5 seconds should not change the expiry.
+        let jar = extend_auth_cookie_duration_if_needed(jar, Duration::seconds(5)).unwrap();
+
+        let cookie = jar.get(COOKIE_USER_ID).unwrap();
+        assert_eq!(cookie.expires_datetime(), want);
+    }
+
     fn assert_date_time_close(got: OffsetDateTime, want: OffsetDateTime) {
         assert!(
             got - want < Duration::seconds(1),
@@ -413,19 +429,6 @@ mod cookie_tests {
             get_user_id_from_auth_cookie(jar),
             Err(AuthError::InvalidCredentials),
         );
-    }
-
-    #[test]
-    fn cookie_duration_does_not_change() {
-        let user_id = UserID::new(1);
-        let jar = set_auth_cookie(get_jar(), user_id);
-        let stale_cookie = jar.get(COOKIE_USER_ID).unwrap();
-        let want = Some(stale_cookie.expires_datetime().unwrap());
-
-        let jar = extend_auth_cookie_duration_if_needed(jar, Duration::seconds(5)).unwrap();
-
-        let cookie = jar.get(COOKIE_USER_ID).unwrap();
-        assert_eq!(cookie.expires_datetime(), want);
     }
 }
 
