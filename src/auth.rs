@@ -1,6 +1,6 @@
 /*! This module defines and implements the data structures, response handlers and functions for authenticating a user and handling cookie auth. */
 
-use std::{cmp::max, fmt::Debug};
+use std::{cmp::max, fmt::Debug, num::ParseIntError};
 
 use axum::{
     body::Body,
@@ -18,9 +18,7 @@ use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::{
-    format_description::{BorrowedFormatItem, FormatItem},
-    macros::format_description,
-    Duration, OffsetDateTime,
+    format_description::BorrowedFormatItem, macros::format_description, Duration, OffsetDateTime,
 };
 
 use crate::{
@@ -195,13 +193,11 @@ pub(crate) fn extend_auth_cookie_duration_if_needed(
     Ok(jar.add(auth_cookie).add(expiry_cookie))
 }
 
-pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<UserID, AuthError> {
+pub(crate) fn get_user_id_from_auth_cookie(jar: &PrivateCookieJar) -> Result<UserID, AuthError> {
     match jar.get(COOKIE_USER_ID) {
-        Some(user_id_cookie) => user_id_cookie
-            .value_trimmed()
-            .parse()
-            .map(UserID::new)
-            .map_err(|_| AuthError::InvalidCredentials),
+        Some(user_id_cookie) => {
+            extract_user_id(&user_id_cookie).map_err(|_| AuthError::InvalidCredentials)
+        }
         _ => Err(AuthError::InvalidCredentials),
     }
 }
@@ -213,6 +209,12 @@ const DATE_TIME_FORMAT: &[BorrowedFormatItem] = format_description!(
 
 pub(crate) fn extract_date_time(cookie: &Cookie) -> Result<OffsetDateTime, time::error::Parse> {
     OffsetDateTime::parse(cookie.value_trimmed(), DATE_TIME_FORMAT)
+}
+
+pub(crate) fn extract_user_id(cookie: &Cookie) -> Result<UserID, ParseIntError> {
+    let id: i64 = cookie.value_trimmed().parse()?;
+
+    Ok(UserID::new(id))
 }
 
 // TODO: There should be a 'remember me' button on the log in page that sets the initial cookie
@@ -241,7 +243,7 @@ where
         .await
         .expect("could not get cookie jar from request parts");
 
-    match get_user_id_from_auth_cookie(jar.clone()) {
+    match get_user_id_from_auth_cookie(&jar) {
         Ok(user_id) => {
             parts.extensions.insert(user_id);
             let request = Request::from_parts(parts, body);
@@ -312,19 +314,15 @@ where
 
 #[cfg(test)]
 mod cookie_tests {
-    use std::num::ParseIntError;
 
-    use axum_extra::extract::{
-        cookie::{Cookie, Key},
-        PrivateCookieJar,
-    };
+    use axum_extra::extract::{cookie::Key, PrivateCookieJar};
     use sha2::{Digest, Sha512};
     use time::{Duration, OffsetDateTime};
 
     use crate::{
         auth::{
-            extend_auth_cookie_duration_if_needed, extract_date_time, get_user_id_from_auth_cookie,
-            AuthError, COOKIE_EXPIRY, COOKIE_USER_ID,
+            extend_auth_cookie_duration_if_needed, extract_date_time, extract_user_id,
+            get_user_id_from_auth_cookie, AuthError, COOKIE_EXPIRY, COOKIE_USER_ID,
         },
         models::UserID,
     };
@@ -347,7 +345,7 @@ mod cookie_tests {
         let user_id_cookie = jar.get(COOKIE_USER_ID).unwrap();
         let expiry_cookie = jar.get(COOKIE_EXPIRY).unwrap();
 
-        let retrieved_user_id = extract_user_id(user_id_cookie).unwrap();
+        let retrieved_user_id = extract_user_id(&user_id_cookie).unwrap();
         let got_expiry = extract_date_time(&expiry_cookie).unwrap();
 
         assert_eq!(retrieved_user_id, user_id);
@@ -355,11 +353,16 @@ mod cookie_tests {
     }
 
     // TODO: add test for extract_date_time function
+    // TODO: add test for extract_user_id function
 
-    fn extract_user_id(cookie: Cookie) -> Result<UserID, ParseIntError> {
-        let id: i64 = cookie.value_trimmed().parse()?;
+    #[test]
+    fn get_user_id_from_cookie_succeeds() {
+        let user_id = UserID::new(1);
+        let jar = set_auth_cookie(get_jar(), user_id);
 
-        Ok(UserID::new(id))
+        let retrieved_user_id = get_user_id_from_auth_cookie(&jar).unwrap();
+
+        assert_eq!(retrieved_user_id, user_id);
     }
 
     #[test]
@@ -404,16 +407,6 @@ mod cookie_tests {
     }
 
     #[test]
-    fn get_user_id_from_cookie_succeeds() {
-        let user_id = UserID::new(1);
-        let jar = set_auth_cookie(get_jar(), user_id);
-
-        let retrieved_user_id = get_user_id_from_auth_cookie(jar).unwrap();
-
-        assert_eq!(retrieved_user_id, user_id);
-    }
-
-    #[test]
     fn invalidate_auth_cookie_succeeds() {
         let user_id = UserID::new(1);
         let jar = set_auth_cookie(get_jar(), user_id);
@@ -426,7 +419,7 @@ mod cookie_tests {
         assert_eq!(cookie.max_age(), Some(Duration::ZERO));
 
         assert_eq!(
-            get_user_id_from_auth_cookie(jar),
+            get_user_id_from_auth_cookie(&jar),
             Err(AuthError::InvalidCredentials),
         );
     }

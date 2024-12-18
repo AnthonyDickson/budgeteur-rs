@@ -91,7 +91,7 @@ where
         .get(transaction_id)
         .map_err(AppError::TransactionError)
         .and_then(|transaction| {
-            if get_user_id_from_auth_cookie(jar)? == transaction.user_id() {
+            if get_user_id_from_auth_cookie(&jar)? == transaction.user_id() {
                 Ok(transaction)
             } else {
                 // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.

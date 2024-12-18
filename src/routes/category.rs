@@ -69,7 +69,7 @@ where
         .get(category_id)
         .map_err(AppError::CategoryError)
         .and_then(|category| {
-            let user_id = get_user_id_from_auth_cookie(jar)?;
+            let user_id = get_user_id_from_auth_cookie(&jar)?;
 
             if user_id == category.user_id() {
                 Ok(category)
