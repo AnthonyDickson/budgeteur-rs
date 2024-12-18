@@ -20,7 +20,7 @@ use transaction::{create_transaction, get_transaction};
 use transactions::get_transactions_page;
 
 use crate::{
-    auth::{auth_guard, auth_guard_hx},
+    auth::middleware::{auth_guard, auth_guard_hx},
     stores::sql_store::SQLAppState,
 };
 

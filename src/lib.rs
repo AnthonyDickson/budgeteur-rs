@@ -12,6 +12,7 @@
 
 use std::time::Duration;
 
+use auth::AuthError;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -23,7 +24,6 @@ use serde_json::json;
 use thiserror::Error;
 use tokio::signal;
 
-use auth::AuthError;
 pub use routes::build_router;
 pub use state::AppState;
 

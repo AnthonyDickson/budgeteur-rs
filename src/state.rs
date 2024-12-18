@@ -9,9 +9,10 @@ use axum::{
 };
 use axum_extra::extract::cookie::Key;
 use sha2::{Digest, Sha512};
+use time::Duration;
 
 use crate::{
-    auth::AuthError,
+    auth::{cookie::COOKIE_DURATION, AuthError},
     stores::{CategoryStore, TransactionStore, UserStore},
 };
 
@@ -25,6 +26,8 @@ where
 {
     /// The secret used to encrypt auth cookies.
     cookie_key: Key,
+    /// The duration for which cookies used for authentication are valid.
+    pub cookie_duration: Duration,
     category_store: C,
     transaction_store: T,
     user_store: U,
@@ -47,6 +50,7 @@ where
 
         Self {
             cookie_key: Key::from(&hash),
+            cookie_duration: COOKIE_DURATION,
             category_store,
             transaction_store,
             user_store,

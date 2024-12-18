@@ -27,6 +27,7 @@ thiserror = "1.0.63"
 time = { version = "0.3.36", features = ["serde"] }
 tokio = { version = "1.39.2", features = ["full"] }
 tower-http = { version = "0.6.0", features = ["trace", "fs"] }
+tower-livereload = "0.9.5"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 zxcvbn = "3.1.0"

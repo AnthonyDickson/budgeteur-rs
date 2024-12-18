@@ -285,15 +285,16 @@ mod sqlite_transaction_store_tests {
     use rusqlite::Connection;
     use time::{Duration, OffsetDateTime};
 
-    use crate::models::{
-        CategoryName, PasswordHash, Transaction, TransactionBuilder, User, UserID,
+    use crate::{
+        models::{CategoryName, PasswordHash, Transaction, TransactionBuilder, User, UserID},
+        stores::{
+            sql_store::{create_app_state, SQLAppState},
+            transaction::{SortOrder, TransactionQuery},
+            CategoryStore, UserStore,
+        },
     };
-    use crate::stores::sql_store::{create_app_state, SQLAppState};
-    use crate::stores::transaction::{SortOrder, TransactionQuery};
-    use crate::stores::{CategoryStore, UserStore};
 
-    use super::TransactionError;
-    use super::TransactionStore;
+    use super::{TransactionError, TransactionStore};
 
     fn get_app_state_and_test_user() -> (SQLAppState, User) {
         let conn = Connection::open_in_memory().unwrap();

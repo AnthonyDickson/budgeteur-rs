@@ -14,7 +14,7 @@ use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::set_auth_cookie,
+    auth::cookie::set_auth_cookie,
     models::{PasswordHash, ValidatedPassword},
     routes::get_internal_server_error_redirect,
     stores::{CategoryStore, TransactionStore, UserError, UserStore},
@@ -163,7 +163,8 @@ where
         .user_store()
         .create(email, password_hash)
         .map(|user| {
-            let jar = set_auth_cookie(jar, user.id());
+            let jar = set_auth_cookie(jar, user.id(), state.cookie_duration)
+                .expect("Could not set the auth cookie due to invalid date format.");
 
             (
                 StatusCode::SEE_OTHER,

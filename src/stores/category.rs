@@ -121,9 +121,11 @@ mod category_tests {
 
     use rusqlite::Connection;
 
-    use crate::db::initialize;
-    use crate::models::{CategoryError, CategoryName, PasswordHash, User, UserID};
-    use crate::stores::{SQLiteUserStore, UserStore};
+    use crate::{
+        db::initialize,
+        models::{CategoryError, CategoryName, PasswordHash, User, UserID},
+        stores::{SQLiteUserStore, UserStore},
+    };
 
     use super::{CategoryStore, SQLiteCategoryStore};
 

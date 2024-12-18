@@ -197,11 +197,9 @@ mod transaction_builder_tests {
 
     use time::{Duration, OffsetDateTime};
 
-    use crate::models::TransactionBuilder;
-    use crate::models::UserID;
+    use crate::models::{TransactionBuilder, UserID};
 
-    use super::Transaction;
-    use super::TransactionError;
+    use super::{Transaction, TransactionError};
 
     #[test]
     fn new_fails_on_future_date() {

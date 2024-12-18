@@ -11,7 +11,7 @@ use axum_extra::extract::PrivateCookieJar;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::get_user_id_from_auth_cookie,
+    auth::cookie::get_user_id_from_auth_cookie,
     models::{CategoryName, DatabaseID, UserID},
     stores::{CategoryStore, TransactionStore, UserStore},
     AppError, AppState,
@@ -69,7 +69,7 @@ where
         .get(category_id)
         .map_err(AppError::CategoryError)
         .and_then(|category| {
-            let user_id = get_user_id_from_auth_cookie(jar)?;
+            let user_id = get_user_id_from_auth_cookie(&jar)?;
 
             if user_id == category.user_id() {
                 Ok(category)
@@ -94,7 +94,7 @@ mod category_tests {
     use axum_extra::extract::{cookie::Key, PrivateCookieJar};
 
     use crate::{
-        auth::set_auth_cookie,
+        auth::cookie::{set_auth_cookie, COOKIE_DURATION},
         models::{
             Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
             TransactionBuilder, TransactionError, User, UserID,
@@ -324,7 +324,7 @@ mod category_tests {
 
     fn get_cookie_jar(user_id: UserID, key: Key) -> PrivateCookieJar {
         let jar = PrivateCookieJar::new(key);
-        set_auth_cookie(jar, user_id)
+        set_auth_cookie(jar, user_id, COOKIE_DURATION).unwrap()
     }
 
     fn assert_create_calls(store: &SpyCategoryStore, want: &CreateCategoryCall) {

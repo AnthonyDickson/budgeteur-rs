@@ -11,7 +11,7 @@ use serde::Deserialize;
 use time::Date;
 
 use crate::{
-    auth::get_user_id_from_auth_cookie,
+    auth::cookie::get_user_id_from_auth_cookie,
     models::{DatabaseID, Transaction, UserID},
     stores::{CategoryStore, TransactionStore, UserStore},
     AppError, AppState,
@@ -91,7 +91,7 @@ where
         .get(transaction_id)
         .map_err(AppError::TransactionError)
         .and_then(|transaction| {
-            if get_user_id_from_auth_cookie(jar)? == transaction.user_id() {
+            if get_user_id_from_auth_cookie(&jar)? == transaction.user_id() {
                 Ok(transaction)
             } else {
                 // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
@@ -113,7 +113,7 @@ mod transaction_tests {
     use axum_extra::extract::PrivateCookieJar;
     use time::OffsetDateTime;
 
-    use crate::auth::set_auth_cookie;
+    use crate::auth::cookie::set_auth_cookie;
     use crate::models::{
         CategoryError, DatabaseID, PasswordHash, TransactionBuilder, TransactionError,
     };
@@ -287,7 +287,7 @@ mod transaction_tests {
             .unwrap();
 
         let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
-        let jar = set_auth_cookie(jar, user_id);
+        let jar = set_auth_cookie(jar, user_id, state.cookie_duration).unwrap();
 
         let response = get_transaction(State(state), jar, Path(transaction.id()))
             .await
@@ -322,7 +322,7 @@ mod transaction_tests {
             .unwrap();
 
         let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
-        let jar = set_auth_cookie(jar, unauthorized_user_id);
+        let jar = set_auth_cookie(jar, unauthorized_user_id, state.cookie_duration).unwrap();
 
         let response = get_transaction(State(state), jar, Path(transaction.id()))
             .await

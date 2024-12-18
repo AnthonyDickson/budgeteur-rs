@@ -14,6 +14,10 @@ use axum_server::{tls_rustls::RustlsConfig, Handle};
 use clap::Parser;
 use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
+
+#[cfg(debug_assertions)]
+use tower_livereload::LiveReloadLayer;
+
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 use budgeteur_rs::{
@@ -69,6 +73,9 @@ async fn main() {
     tokio::spawn(graceful_shutdown(handle.clone()));
 
     let router = add_tracing_layer(build_router(app_config));
+
+    #[cfg(debug_assertions)]
+    let router = router.layer(LiveReloadLayer::new());
 
     tracing::info!("HTTPS server listening on {}", addr);
     axum_server::bind_rustls(addr, tls_config)

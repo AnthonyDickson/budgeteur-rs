@@ -99,18 +99,13 @@ mod transactions_route_tests {
     use rusqlite::Connection;
 
     use crate::{
-        auth::LogInData,
-        models::{Transaction, User, ValidatedPassword},
-        routes::log_in::post_log_in,
+        auth::{log_in::LogInData, middleware::auth_guard},
+        models::{PasswordHash, Transaction, User, ValidatedPassword},
+        routes::{endpoints, log_in::post_log_in},
         stores::{
             sql_store::{create_app_state, SQLAppState},
             TransactionStore, UserStore,
         },
-    };
-    use crate::{
-        auth::{auth_guard, COOKIE_USER_ID},
-        models::PasswordHash,
-        routes::endpoints,
     };
 
     use super::get_transactions_page;
@@ -159,19 +154,17 @@ mod transactions_route_tests {
                 .unwrap(),
         ];
 
-        let auth_cookie = server
+        let jar = server
             .post(endpoints::LOG_IN)
             .form(&LogInData {
                 email: "test@test.com".to_string(),
                 password: "test".to_string(),
+                remember_me: None,
             })
             .await
-            .cookie(COOKIE_USER_ID);
+            .cookies();
 
-        let transactions_page = server
-            .get(endpoints::TRANSACTIONS)
-            .add_cookie(auth_cookie)
-            .await;
+        let transactions_page = server.get(endpoints::TRANSACTIONS).add_cookies(jar).await;
 
         transactions_page.assert_status_ok();
 

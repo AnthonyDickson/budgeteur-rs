@@ -178,14 +178,18 @@ impl MapRow for SQLiteUserStore {
 
 #[cfg(test)]
 mod user_tests {
-    use std::str::FromStr;
-    use std::sync::{Arc, Mutex};
+    use std::{
+        str::FromStr,
+        sync::{Arc, Mutex},
+    };
 
     use email_address::EmailAddress;
     use rusqlite::Connection;
 
-    use crate::models::UserID;
-    use crate::{db::CreateTable, models::PasswordHash};
+    use crate::{
+        db::CreateTable,
+        models::{PasswordHash, UserID},
+    };
 
     use super::{SQLiteUserStore, UserError, UserStore};
 
