@@ -5,7 +5,7 @@ use std::{cmp::max, fmt::Debug};
 use axum::{
     body::Body,
     extract::{FromRequestParts, Json, Request, State},
-    http::{header::SET_COOKIE, StatusCode, Uri},
+    http::{StatusCode, Uri},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
@@ -109,15 +109,25 @@ pub fn verify_credentials(
 }
 
 pub(crate) const COOKIE_USER_ID: &str = "user_id";
+pub(crate) const COOKIE_EXPIRY: &str = "expiry";
 const COOKIE_DURATION_MINUTES: i64 = 5;
 
 /// Add an auth cookie to the cookie jar, indicating that a user is logged in and authenticated.
 ///
 /// Returns the cookie jar with the cookie added.
 pub(crate) fn set_auth_cookie(jar: PrivateCookieJar, user_id: UserID) -> PrivateCookieJar {
+    let expiry = OffsetDateTime::now_utc() + Duration::minutes(COOKIE_DURATION_MINUTES);
+
     jar.add(
         Cookie::build((COOKIE_USER_ID, user_id.as_i64().to_string()))
-            .expires(OffsetDateTime::now_utc() + Duration::minutes(COOKIE_DURATION_MINUTES))
+            .expires(expiry)
+            .http_only(true)
+            .same_site(SameSite::Strict)
+            .secure(true),
+    )
+    .add(
+        Cookie::build((COOKIE_EXPIRY, expiry.to_string()))
+            .expires(expiry)
             .http_only(true)
             .same_site(SameSite::Strict)
             .secure(true),
@@ -273,13 +283,19 @@ where
 
 #[cfg(test)]
 mod cookie_tests {
-    use axum_extra::extract::{cookie::Key, PrivateCookieJar};
+    use std::num::ParseIntError;
+
+    use axum_extra::extract::{
+        cookie::{Cookie, Key},
+        PrivateCookieJar,
+    };
     use sha2::{Digest, Sha512};
-    use time::{Duration, OffsetDateTime};
+    use time::{error, macros::format_description, Duration, OffsetDateTime};
 
     use crate::{
         auth::{
-            extend_auth_cookie_duration, get_user_id_from_auth_cookie, AuthError, COOKIE_USER_ID,
+            extend_auth_cookie_duration, get_user_id_from_auth_cookie, AuthError, COOKIE_EXPIRY,
+            COOKIE_USER_ID,
         },
         models::UserID,
     };
@@ -294,16 +310,43 @@ mod cookie_tests {
     }
 
     #[test]
-    fn set_cookie_succeeds() {
+    fn can_set_cookie() {
         let jar = get_jar();
         let user_id = UserID::new(1);
 
-        let updated_jar = set_auth_cookie(jar, user_id);
-        let user_id_cookie = updated_jar.get(COOKIE_USER_ID).unwrap();
+        let jar = set_auth_cookie(jar, user_id);
+        let user_id_cookie = jar.get(COOKIE_USER_ID).unwrap();
+        let expiry_cookie = jar.get(COOKIE_EXPIRY).unwrap();
 
-        let retrieved_user_id = UserID::new(user_id_cookie.value_trimmed().parse().unwrap());
+        let retrieved_user_id = extract_user_id(user_id_cookie).unwrap();
+        let got_expiry = extract_date_time(expiry_cookie).unwrap();
 
         assert_eq!(retrieved_user_id, user_id);
+        assert_date_time_close(got_expiry, OffsetDateTime::now_utc() + Duration::minutes(5));
+    }
+
+    fn extract_user_id(cookie: Cookie) -> Result<UserID, ParseIntError> {
+        let id: i64 = cookie.value_trimmed().parse()?;
+
+        Ok(UserID::new(id))
+    }
+
+    fn extract_date_time(cookie: Cookie) -> Result<OffsetDateTime, error::Parse> {
+        let format = format_description!(
+            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour \
+         sign:mandatory]:[offset_minute]:[offset_second]"
+        );
+
+        OffsetDateTime::parse(cookie.value_trimmed(), format)
+    }
+
+    fn assert_date_time_close(got: OffsetDateTime, want: OffsetDateTime) {
+        assert!(
+            got - want < Duration::seconds(1),
+            "got date time {:?}, want {:?}",
+            got,
+            want
+        );
     }
 
     #[test]
