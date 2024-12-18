@@ -17,7 +17,7 @@ use axum_htmx::HxRedirect;
 use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use time::{Duration, OffsetDateTime};
+use time::{macros::format_description, Duration, OffsetDateTime};
 
 use crate::{
     models::{User, UserID},
@@ -153,7 +153,7 @@ pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar 
 /// Returns an error if:
 /// - The cookie is not in the cookie jar.
 /// - Extending the cookie by `duration` would overflow the duration.
-pub(crate) fn extend_auth_cookie_duration(
+pub(crate) fn extend_auth_cookie_duration_if_needed(
     jar: PrivateCookieJar,
     duration: Duration,
 ) -> Result<PrivateCookieJar, AuthError> {
@@ -162,17 +162,30 @@ pub(crate) fn extend_auth_cookie_duration(
         None => return Err(AuthError::CookieMissing),
     };
 
-    println!("{auth_cookie:?}");
-    let expires = auth_cookie.expires_datetime().ok_or(AuthError::DateError)?;
+    let mut expiry_cookie = match jar.get(COOKIE_EXPIRY) {
+        Some(cookie) => cookie,
+        None => return Err(AuthError::CookieMissing),
+    };
 
-    let new_expires = OffsetDateTime::now_utc()
+    println!("{auth_cookie:?}");
+    println!("{expiry_cookie:?}");
+
+    let current_expiry = extract_date_time(&expiry_cookie).map_err(|_| AuthError::DateError)?;
+
+    let new_expiry = OffsetDateTime::now_utc()
         .checked_add(duration)
         .ok_or(AuthError::DateError)?;
 
-    auth_cookie.set_expires(max(expires, new_expires));
+    let expiry = max(current_expiry, new_expiry);
 
-    let jar = jar.remove(auth_cookie.clone());
-    Ok(jar.add(auth_cookie))
+    let jar = jar
+        .remove(auth_cookie.clone())
+        .remove(expiry_cookie.clone());
+
+    auth_cookie.set_expires(expiry);
+    expiry_cookie.set_expires(expiry);
+
+    Ok(jar.add(auth_cookie).add(expiry_cookie))
 }
 
 pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<UserID, AuthError> {
@@ -184,6 +197,15 @@ pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<User
             .map_err(|_| AuthError::InvalidCredentials),
         _ => Err(AuthError::InvalidCredentials),
     }
+}
+
+pub(crate) fn extract_date_time(cookie: &Cookie) -> Result<OffsetDateTime, time::error::Parse> {
+    let format = format_description!(
+        "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour \
+         sign:mandatory]:[offset_minute]:[offset_second]"
+    );
+
+    OffsetDateTime::parse(cookie.value_trimmed(), format)
 }
 
 // TODO: There should be a 'remember me' button on the log in page that sets the initial cookie
@@ -221,7 +243,7 @@ where
             let (mut parts, body) = response.into_parts();
 
             // TODO: Handle error.
-            let jar = extend_auth_cookie_duration(jar, Duration::minutes(5)).unwrap();
+            let jar = extend_auth_cookie_duration_if_needed(jar, Duration::minutes(5)).unwrap();
             let (x, _) = jar.into_response().into_parts();
             for (key, val) in x.headers.iter() {
                 parts.headers.insert(key, val.to_owned());
@@ -290,12 +312,12 @@ mod cookie_tests {
         PrivateCookieJar,
     };
     use sha2::{Digest, Sha512};
-    use time::{error, macros::format_description, Duration, OffsetDateTime};
+    use time::{Duration, OffsetDateTime};
 
     use crate::{
         auth::{
-            extend_auth_cookie_duration, get_user_id_from_auth_cookie, AuthError, COOKIE_EXPIRY,
-            COOKIE_USER_ID,
+            extend_auth_cookie_duration_if_needed, extract_date_time, get_user_id_from_auth_cookie,
+            AuthError, COOKIE_EXPIRY, COOKIE_USER_ID,
         },
         models::UserID,
     };
@@ -319,11 +341,13 @@ mod cookie_tests {
         let expiry_cookie = jar.get(COOKIE_EXPIRY).unwrap();
 
         let retrieved_user_id = extract_user_id(user_id_cookie).unwrap();
-        let got_expiry = extract_date_time(expiry_cookie).unwrap();
+        let got_expiry = extract_date_time(&expiry_cookie).unwrap();
 
         assert_eq!(retrieved_user_id, user_id);
         assert_date_time_close(got_expiry, OffsetDateTime::now_utc() + Duration::minutes(5));
     }
+
+    // TODO: add test for extract_date_time function
 
     fn extract_user_id(cookie: Cookie) -> Result<UserID, ParseIntError> {
         let id: i64 = cookie.value_trimmed().parse()?;
@@ -331,13 +355,22 @@ mod cookie_tests {
         Ok(UserID::new(id))
     }
 
-    fn extract_date_time(cookie: Cookie) -> Result<OffsetDateTime, error::Parse> {
-        let format = format_description!(
-            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour \
-         sign:mandatory]:[offset_minute]:[offset_second]"
-        );
+    #[test]
+    fn can_extend_cookie_duration() {
+        let jar = get_jar();
+        let jar = set_auth_cookie(jar, UserID::new(1));
 
-        OffsetDateTime::parse(cookie.value_trimmed(), format)
+        let initial_cookie = jar.get(COOKIE_EXPIRY).unwrap();
+        let want = extract_date_time(&initial_cookie)
+            .unwrap()
+            .checked_add(Duration::minutes(5))
+            .unwrap();
+
+        let jar = extend_auth_cookie_duration_if_needed(jar, Duration::minutes(10)).unwrap();
+        let got_cookie = jar.get(COOKIE_EXPIRY).unwrap();
+        let got = extract_date_time(&got_cookie).unwrap();
+
+        assert_date_time_close(got, want);
     }
 
     fn assert_date_time_close(got: OffsetDateTime, want: OffsetDateTime) {
@@ -377,36 +410,13 @@ mod cookie_tests {
     }
 
     #[test]
-    fn can_extend_cookie_duration() {
-        let user_id = UserID::new(1);
-        let jar = set_auth_cookie(get_jar(), user_id);
-        let stale_cookie = jar.get(COOKIE_USER_ID).unwrap();
-        let want = stale_cookie
-            .expires_datetime()
-            .unwrap()
-            .checked_add(Duration::minutes(5))
-            .unwrap();
-
-        let jar = extend_auth_cookie_duration(jar, Duration::minutes(10)).unwrap();
-
-        let cookie = jar.get(COOKIE_USER_ID).unwrap();
-        let got = cookie.expires_datetime().unwrap();
-        assert!(
-            got - want < Duration::seconds(1),
-            "got cookie expiry {}, want {}",
-            got,
-            want
-        );
-    }
-
-    #[test]
     fn cookie_duration_does_not_change() {
         let user_id = UserID::new(1);
         let jar = set_auth_cookie(get_jar(), user_id);
         let stale_cookie = jar.get(COOKIE_USER_ID).unwrap();
         let want = Some(stale_cookie.expires_datetime().unwrap());
 
-        let jar = extend_auth_cookie_duration(jar, Duration::seconds(5)).unwrap();
+        let jar = extend_auth_cookie_duration_if_needed(jar, Duration::seconds(5)).unwrap();
 
         let cookie = jar.get(COOKIE_USER_ID).unwrap();
         assert_eq!(cookie.expires_datetime(), want);
