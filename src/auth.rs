@@ -5,7 +5,7 @@ use std::{cmp::max, fmt::Debug};
 use axum::{
     body::Body,
     extract::{FromRequestParts, Json, Request, State},
-    http::{StatusCode, Uri},
+    http::{header::SET_COOKIE, StatusCode, Uri},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
@@ -45,13 +45,18 @@ pub enum AuthError {
     InvalidCredentials,
     /// An unexpected error occurred when hashing a password or parsing a password hash.
     InternalError,
+    // TODO: Add doc string
+    CookieMissing,
+    // TODO: Add doc string
+    DateError,
 }
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response<Body> {
         let (status, error_message) = match self {
             AuthError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "Invalid credentials"),
-            AuthError::InternalError => {
+            // TODO: Handle cookie missing and date errors separately.
+            AuthError::DateError | AuthError::CookieMissing | AuthError::InternalError => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
             }
         };
@@ -142,20 +147,17 @@ pub(crate) fn extend_auth_cookie_duration(
     jar: PrivateCookieJar,
     duration: Duration,
 ) -> Result<PrivateCookieJar, AuthError> {
-    // TODO: Use specific error variant for when the auth cookie cannot be found.
     let mut auth_cookie = match jar.get(COOKIE_USER_ID) {
         Some(cookie) => cookie,
-        None => return Err(AuthError::InternalError),
+        None => return Err(AuthError::CookieMissing),
     };
 
-    // TODO: Use specific error variant for date related errors.
-    let expires = auth_cookie
-        .expires_datetime()
-        .ok_or(AuthError::InternalError)?;
+    println!("{auth_cookie:?}");
+    let expires = auth_cookie.expires_datetime().ok_or(AuthError::DateError)?;
 
     let new_expires = OffsetDateTime::now_utc()
         .checked_add(duration)
-        .ok_or(AuthError::InternalError)?;
+        .ok_or(AuthError::DateError)?;
 
     auth_cookie.set_expires(max(expires, new_expires));
 
@@ -200,12 +202,22 @@ where
         .await
         .expect("could not get cookie jar from request parts");
 
-    match get_user_id_from_auth_cookie(jar) {
+    match get_user_id_from_auth_cookie(jar.clone()) {
         Ok(user_id) => {
             parts.extensions.insert(user_id);
             let request = Request::from_parts(parts, body);
 
-            next.run(request).await
+            let response = next.run(request).await;
+            let (mut parts, body) = response.into_parts();
+
+            // TODO: Handle error.
+            let jar = extend_auth_cookie_duration(jar, Duration::minutes(5)).unwrap();
+            let (x, _) = jar.into_response().into_parts();
+            for (key, val) in x.headers.iter() {
+                parts.headers.insert(key, val.to_owned());
+            }
+
+            Response::from_parts(parts, body)
         }
         Err(_) => get_redirect(),
     }
@@ -425,7 +437,7 @@ mod auth_guard_tests {
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
-    use time::OffsetDateTime;
+    use time::{Duration, OffsetDateTime};
 
     use crate::auth::{set_auth_cookie, LogInData};
     use crate::stores::sql_store::{create_app_state, SQLAppState};
@@ -493,6 +505,45 @@ mod auth_guard_tests {
             .add_cookie(auth_cookie)
             .await
             .assert_status_ok();
+    }
+
+    #[tokio::test]
+    async fn auth_guard_extends_valid_cookie_duration() {
+        let mut state = get_test_app_state();
+
+        let password = "averysafeandsecurepassword".to_string();
+        let test_user = state
+            .user_store()
+            .create(
+                EmailAddress::from_str("foo@bar.baz").unwrap(),
+                PasswordHash::from_raw_password(&password, 4).unwrap(),
+            )
+            .unwrap();
+
+        let app = Router::new()
+            .route("/protected", get(test_handler))
+            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
+            .route(endpoints::LOG_IN, post(test_log_in_route))
+            .with_state(state.clone());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let response = server
+            .post(endpoints::LOG_IN)
+            .form(&LogInData {
+                email: test_user.email().to_string(),
+                password,
+            })
+            .await;
+
+        response.assert_status_ok();
+        let response_time = OffsetDateTime::now_utc();
+        let auth_cookie = response.cookie(COOKIE_USER_ID);
+
+        let response = server.get("/protected").add_cookie(auth_cookie).await;
+        let auth_cookie = response.cookie(COOKIE_USER_ID);
+
+        assert!(auth_cookie.expires_datetime().unwrap() - response_time < Duration::seconds(1));
     }
 
     #[tokio::test]

@@ -100,7 +100,8 @@ where
                 min_length: 0,
                 error_message: match e {
                     AuthError::InvalidCredentials => INVALID_CREDENTIALS_ERROR_MSG,
-                    AuthError::InternalError => {
+                    // TODO: handle cookie missing and date errors separately.
+                    AuthError::CookieMissing | AuthError::DateError | AuthError::InternalError => {
                         "An internal error occurred. Please try again later."
                     }
                 },
