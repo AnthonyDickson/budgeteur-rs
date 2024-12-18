@@ -17,7 +17,11 @@ use axum_htmx::HxRedirect;
 use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use time::{macros::format_description, Duration, OffsetDateTime};
+use time::{
+    format_description::{BorrowedFormatItem, FormatItem},
+    macros::format_description,
+    Duration, OffsetDateTime,
+};
 
 use crate::{
     models::{User, UserID},
@@ -199,13 +203,13 @@ pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<User
     }
 }
 
-pub(crate) fn extract_date_time(cookie: &Cookie) -> Result<OffsetDateTime, time::error::Parse> {
-    let format = format_description!(
-        "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour \
+const DATE_TIME_FORMAT: &[BorrowedFormatItem] = format_description!(
+    "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour \
          sign:mandatory]:[offset_minute]:[offset_second]"
-    );
+);
 
-    OffsetDateTime::parse(cookie.value_trimmed(), format)
+pub(crate) fn extract_date_time(cookie: &Cookie) -> Result<OffsetDateTime, time::error::Parse> {
+    OffsetDateTime::parse(cookie.value_trimmed(), DATE_TIME_FORMAT)
 }
 
 // TODO: There should be a 'remember me' button on the log in page that sets the initial cookie
