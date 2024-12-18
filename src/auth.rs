@@ -143,6 +143,7 @@ pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar 
     jar.add(
         Cookie::build((COOKIE_USER_ID, "deleted"))
             .expires(OffsetDateTime::UNIX_EPOCH)
+            .max_age(Duration::ZERO)
             .http_only(true)
             .same_site(SameSite::Strict)
             .secure(true),
@@ -406,6 +407,7 @@ mod cookie_tests {
 
         assert_eq!(cookie.value(), "deleted");
         assert_eq!(cookie.expires_datetime(), Some(OffsetDateTime::UNIX_EPOCH));
+        assert_eq!(cookie.max_age(), Some(Duration::ZERO));
 
         assert_eq!(
             get_user_id_from_auth_cookie(jar),
