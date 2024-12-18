@@ -125,7 +125,7 @@ mod log_in_tests {
     use axum_htmx::HX_REDIRECT;
     use axum_test::TestServer;
     use email_address::EmailAddress;
-    use time::{Duration, OffsetDateTime};
+    use time::OffsetDateTime;
 
     use crate::{
         auth::{LogInData, COOKIE_USER_ID},
@@ -322,8 +322,7 @@ mod log_in_tests {
         let auth_cookie = Cookie::parse(cookie_string).unwrap();
 
         assert_eq!(auth_cookie.name(), COOKIE_USER_ID);
-        assert!(auth_cookie.max_age() > Some(Duration::ZERO));
-        assert!(auth_cookie.expires().unwrap().datetime() > Some(OffsetDateTime::now_utc()));
+        assert!(auth_cookie.expires_datetime() > Some(OffsetDateTime::now_utc()));
     }
 
     async fn assert_body_contains_message(response: Response<Body>, message: &str) {

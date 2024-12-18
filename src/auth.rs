@@ -1,6 +1,6 @@
 /*! This module defines and implements the data structures, response handlers and functions for authenticating a user and handling cookie auth. */
 
-use std::fmt::Debug;
+use std::{cmp::max, fmt::Debug};
 
 use axum::{
     body::Body,
@@ -39,7 +39,7 @@ pub struct LogInData {
 }
 
 /// Errors that can occur when authenticating a user.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum AuthError {
     /// The user provided an invalid combination of email and password.
     InvalidCredentials,
@@ -112,7 +112,6 @@ const COOKIE_DURATION_MINUTES: i64 = 5;
 pub(crate) fn set_auth_cookie(jar: PrivateCookieJar, user_id: UserID) -> PrivateCookieJar {
     jar.add(
         Cookie::build((COOKIE_USER_ID, user_id.as_i64().to_string()))
-            .max_age(Duration::minutes(COOKIE_DURATION_MINUTES))
             .expires(OffsetDateTime::now_utc() + Duration::minutes(COOKIE_DURATION_MINUTES))
             .http_only(true)
             .same_site(SameSite::Strict)
@@ -124,12 +123,44 @@ pub(crate) fn set_auth_cookie(jar: PrivateCookieJar, user_id: UserID) -> Private
 pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar {
     jar.add(
         Cookie::build((COOKIE_USER_ID, "deleted"))
-            .max_age(Duration::ZERO)
             .expires(OffsetDateTime::UNIX_EPOCH)
             .http_only(true)
             .same_site(SameSite::Strict)
             .secure(true),
     )
+}
+
+/// Set the expiry of the auth cookie in `jar` to the latest of UTC now
+/// plus `duration` and the cookie's expiry.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The cookie is not in the cookie jar.
+/// - Extending the cookie by `duration` would overflow the duration.
+pub(crate) fn extend_auth_cookie_duration(
+    jar: PrivateCookieJar,
+    duration: Duration,
+) -> Result<PrivateCookieJar, AuthError> {
+    // TODO: Use specific error variant for when the auth cookie cannot be found.
+    let mut auth_cookie = match jar.get(COOKIE_USER_ID) {
+        Some(cookie) => cookie,
+        None => return Err(AuthError::InternalError),
+    };
+
+    // TODO: Use specific error variant for date related errors.
+    let expires = auth_cookie
+        .expires_datetime()
+        .ok_or(AuthError::InternalError)?;
+
+    let new_expires = OffsetDateTime::now_utc()
+        .checked_add(duration)
+        .ok_or(AuthError::InternalError)?;
+
+    auth_cookie.set_expires(max(expires, new_expires));
+
+    let jar = jar.remove(auth_cookie.clone());
+    Ok(jar.add(auth_cookie))
 }
 
 pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<UserID, AuthError> {
@@ -142,6 +173,9 @@ pub(crate) fn get_user_id_from_auth_cookie(jar: PrivateCookieJar) -> Result<User
         _ => Err(AuthError::InvalidCredentials),
     }
 }
+
+// TODO: There should be a 'remember me' button on the log in page that sets the initial cookie
+// duration to something like a week.
 
 /// Middleware function that checks for a valid authorization cookie.
 /// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the log-in page is returned using `get_redirect`.
@@ -227,15 +261,14 @@ where
 
 #[cfg(test)]
 mod cookie_tests {
-    use axum_extra::extract::{
-        cookie::{Expiration, Key},
-        PrivateCookieJar,
-    };
+    use axum_extra::extract::{cookie::Key, PrivateCookieJar};
     use sha2::{Digest, Sha512};
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::{get_user_id_from_auth_cookie, COOKIE_USER_ID},
+        auth::{
+            extend_auth_cookie_duration, get_user_id_from_auth_cookie, AuthError, COOKIE_USER_ID,
+        },
         models::UserID,
     };
 
@@ -280,11 +313,48 @@ mod cookie_tests {
         let cookie = jar.get(COOKIE_USER_ID).unwrap();
 
         assert_eq!(cookie.value(), "deleted");
-        assert_eq!(cookie.max_age(), Some(Duration::ZERO));
+        assert_eq!(cookie.expires_datetime(), Some(OffsetDateTime::UNIX_EPOCH));
+
         assert_eq!(
-            cookie.expires(),
-            Some(Expiration::DateTime(OffsetDateTime::UNIX_EPOCH))
+            get_user_id_from_auth_cookie(jar),
+            Err(AuthError::InvalidCredentials),
         );
+    }
+
+    #[test]
+    fn can_extend_cookie_duration() {
+        let user_id = UserID::new(1);
+        let jar = set_auth_cookie(get_jar(), user_id);
+        let stale_cookie = jar.get(COOKIE_USER_ID).unwrap();
+        let want = stale_cookie
+            .expires_datetime()
+            .unwrap()
+            .checked_add(Duration::minutes(5))
+            .unwrap();
+
+        let jar = extend_auth_cookie_duration(jar, Duration::minutes(10)).unwrap();
+
+        let cookie = jar.get(COOKIE_USER_ID).unwrap();
+        let got = cookie.expires_datetime().unwrap();
+        assert!(
+            got - want < Duration::seconds(1),
+            "got cookie expiry {}, want {}",
+            got,
+            want
+        );
+    }
+
+    #[test]
+    fn cookie_duration_does_not_change() {
+        let user_id = UserID::new(1);
+        let jar = set_auth_cookie(get_jar(), user_id);
+        let stale_cookie = jar.get(COOKIE_USER_ID).unwrap();
+        let want = Some(stale_cookie.expires_datetime().unwrap());
+
+        let jar = extend_auth_cookie_duration(jar, Duration::seconds(5)).unwrap();
+
+        let cookie = jar.get(COOKIE_USER_ID).unwrap();
+        assert_eq!(cookie.expires_datetime(), want);
     }
 }
 
@@ -355,7 +425,7 @@ mod auth_guard_tests {
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use rusqlite::Connection;
-    use time::{Duration, OffsetDateTime};
+    use time::OffsetDateTime;
 
     use crate::auth::{set_auth_cookie, LogInData};
     use crate::stores::sql_store::{create_app_state, SQLAppState};
@@ -387,7 +457,7 @@ mod auth_guard_tests {
     }
 
     #[tokio::test]
-    async fn get_protected_route_succeeds_with_valid_cookie() {
+    async fn get_protected_route_with_valid_cookie() {
         let mut state = get_test_app_state();
 
         let password = "averysafeandsecurepassword".to_string();
@@ -491,7 +561,6 @@ mod auth_guard_tests {
 
         response.assert_status_ok();
         let mut auth_cookie = response.cookie(COOKIE_USER_ID);
-        auth_cookie.set_max_age(Duration::ZERO);
         auth_cookie.set_expires(OffsetDateTime::UNIX_EPOCH);
 
         server

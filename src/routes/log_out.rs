@@ -22,11 +22,11 @@ mod log_out_tests {
         http::{Response, StatusCode},
     };
     use axum_extra::extract::{
-        cookie::{Cookie, Expiration, Key},
+        cookie::{Cookie, Key},
         PrivateCookieJar,
     };
     use sha2::{Digest, Sha512};
-    use time::{Duration, OffsetDateTime};
+    use time::OffsetDateTime;
 
     use crate::{
         auth::set_auth_cookie,
@@ -65,10 +65,9 @@ mod log_out_tests {
             .unwrap();
         let auth_cookie = Cookie::parse(cookie_string).unwrap();
 
-        assert_eq!(auth_cookie.max_age(), Some(Duration::ZERO));
         assert_eq!(
-            auth_cookie.expires(),
-            Some(Expiration::DateTime(OffsetDateTime::UNIX_EPOCH))
+            auth_cookie.expires_datetime(),
+            Some(OffsetDateTime::UNIX_EPOCH)
         );
     }
 }
