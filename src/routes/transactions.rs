@@ -159,19 +159,16 @@ mod transactions_route_tests {
                 .unwrap(),
         ];
 
-        let auth_cookie = server
+        let jar = server
             .post(endpoints::LOG_IN)
             .form(&LogInData {
                 email: "test@test.com".to_string(),
                 password: "test".to_string(),
             })
             .await
-            .cookie(COOKIE_USER_ID);
+            .cookies();
 
-        let transactions_page = server
-            .get(endpoints::TRANSACTIONS)
-            .add_cookie(auth_cookie)
-            .await;
+        let transactions_page = server.get(endpoints::TRANSACTIONS).add_cookies(jar).await;
 
         transactions_page.assert_status_ok();
 

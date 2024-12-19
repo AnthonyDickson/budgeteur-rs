@@ -19,17 +19,17 @@ pub async fn get_log_out(jar: PrivateCookieJar) -> Response {
 mod log_out_tests {
     use axum::{
         body::Body,
-        http::{Response, StatusCode},
+        http::{header::SET_COOKIE, Response, StatusCode},
     };
     use axum_extra::extract::{
         cookie::{Cookie, Key},
         PrivateCookieJar,
     };
     use sha2::{Digest, Sha512};
-    use time::OffsetDateTime;
+    use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::set_auth_cookie,
+        auth::{set_auth_cookie, COOKIE_USER_ID},
         models::UserID,
         routes::{endpoints, log_out::get_log_out},
     };
@@ -57,17 +57,29 @@ mod log_out_tests {
     }
 
     fn assert_cookie_expired(response: &Response<Body>) {
-        let cookie_string = response
-            .headers()
-            .get("set-cookie")
-            .unwrap()
-            .to_str()
-            .unwrap();
-        let auth_cookie = Cookie::parse(cookie_string).unwrap();
+        for cookie_header in response.headers().get_all(SET_COOKIE) {
+            let cookie_string = cookie_header.to_str().unwrap();
+            let cookie = Cookie::parse(cookie_string).unwrap();
 
-        assert_eq!(
-            auth_cookie.expires_datetime(),
-            Some(OffsetDateTime::UNIX_EPOCH)
-        );
+            if cookie.name() != COOKIE_USER_ID || cookie.name() != COOKIE_USER_ID {
+                continue;
+            }
+
+            assert_eq!(
+                cookie.expires_datetime(),
+                Some(OffsetDateTime::UNIX_EPOCH),
+                "got expires {:?}, want {:?}",
+                cookie.expires_datetime(),
+                Some(OffsetDateTime::UNIX_EPOCH),
+            );
+
+            assert_eq!(
+                cookie.max_age(),
+                Some(Duration::ZERO),
+                "got max age {:?}, want {:?}",
+                cookie.max_age(),
+                Some(Duration::ZERO),
+            );
+        }
     }
 }
