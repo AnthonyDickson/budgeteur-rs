@@ -151,9 +151,16 @@ pub(crate) fn set_auth_cookie(
 
 /// Set the auth cookie to an invalid value and set its max age to zero, which should delete the cookie on the client side.
 pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar {
-    // TODO: invalidate expiry cookie as well.
     jar.add(
         Cookie::build((COOKIE_USER_ID, "deleted"))
+            .expires(OffsetDateTime::UNIX_EPOCH)
+            .max_age(Duration::ZERO)
+            .http_only(true)
+            .same_site(SameSite::Strict)
+            .secure(true),
+    )
+    .add(
+        Cookie::build((COOKIE_EXPIRY, "deleted"))
             .expires(OffsetDateTime::UNIX_EPOCH)
             .max_age(Duration::ZERO)
             .http_only(true)
