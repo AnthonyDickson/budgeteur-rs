@@ -116,10 +116,12 @@ const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect email or password.";
 
 #[cfg(test)]
 mod log_in_tests {
+    use std::collections::HashSet;
+
     use axum::{
         body::Body,
         extract::State,
-        http::{Response, StatusCode},
+        http::{header::SET_COOKIE, Response, StatusCode},
         routing::post,
         Form, Router,
     };
@@ -130,7 +132,7 @@ mod log_in_tests {
     use time::OffsetDateTime;
 
     use crate::{
-        auth::{LogInData, COOKIE_USER_ID},
+        auth::{LogInData, COOKIE_EXPIRY, COOKIE_USER_ID},
         models::{
             Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
             TransactionBuilder, TransactionError, User, UserID, ValidatedPassword,
@@ -315,16 +317,34 @@ mod log_in_tests {
     }
 
     fn assert_set_cookie(response: &Response<Body>) {
-        let cookie_string = response
-            .headers()
-            .get("set-cookie")
-            .unwrap()
-            .to_str()
-            .unwrap();
-        let auth_cookie = Cookie::parse(cookie_string).unwrap();
+        let mut found_cookies = HashSet::new();
 
-        assert_eq!(auth_cookie.name(), COOKIE_USER_ID);
-        assert!(auth_cookie.expires_datetime() > Some(OffsetDateTime::now_utc()));
+        for cookie_headers in response.headers().get_all(SET_COOKIE) {
+            let cookie_string = cookie_headers.to_str().unwrap();
+            let cookie = Cookie::parse(cookie_string).unwrap();
+
+            match cookie.name() {
+                COOKIE_USER_ID | COOKIE_EXPIRY => {
+                    assert!(cookie.expires_datetime() > Some(OffsetDateTime::now_utc()));
+                    found_cookies.insert(cookie.name().to_string());
+                }
+                _ => panic!("Unexpected cookie found: {}", cookie.name()),
+            }
+        }
+
+        assert!(
+            found_cookies.contains(COOKIE_USER_ID),
+            "could not find cookie '{}' in {:?}",
+            COOKIE_USER_ID,
+            found_cookies
+        );
+
+        assert!(
+            found_cookies.contains(COOKIE_EXPIRY),
+            "could not find cookie '{}' in {:?}",
+            COOKIE_EXPIRY,
+            found_cookies
+        );
     }
 
     async fn assert_body_contains_message(response: Response<Body>, message: &str) {
