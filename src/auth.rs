@@ -5,7 +5,7 @@ use std::{cmp::max, fmt::Debug, num::ParseIntError};
 use axum::{
     body::Body,
     extract::{FromRequestParts, Json, Request, State},
-    http::{StatusCode, Uri},
+    http::{header::SET_COOKIE, StatusCode, Uri},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
@@ -266,8 +266,13 @@ where
             // TODO: Handle error.
             let jar = extend_auth_cookie_duration_if_needed(jar, Duration::minutes(5)).unwrap();
             let (x, _) = jar.into_response().into_parts();
+
             for (key, val) in x.headers.iter() {
-                parts.headers.insert(key, val.to_owned());
+                if key != SET_COOKIE {
+                    continue;
+                }
+
+                parts.headers.append(key, val.to_owned());
             }
 
             Response::from_parts(parts, body)
@@ -643,17 +648,21 @@ mod auth_guard_tests {
 
         response.assert_status_ok();
         let response_time = OffsetDateTime::now_utc();
-        let auth_cookie = response.cookie(COOKIE_USER_ID);
-        let expiry_cookie = response.cookie(COOKIE_EXPIRY);
+        let jar = response.cookies();
 
-        let response = server
-            .get("/protected")
-            .add_cookie(auth_cookie)
-            .add_cookie(expiry_cookie)
-            .await;
+        let response = server.get("/protected").add_cookies(jar).await;
         let auth_cookie = response.cookie(COOKIE_USER_ID);
 
-        assert!(auth_cookie.expires_datetime().unwrap() - response_time < Duration::seconds(1));
+        assert_date_time_close(auth_cookie.expires_datetime().unwrap(), response_time);
+    }
+
+    fn assert_date_time_close(got: OffsetDateTime, want: OffsetDateTime) {
+        assert!(
+            got - want < Duration::seconds(1),
+            "got date time {:?}, want {:?}",
+            got,
+            want
+        );
     }
 
     #[tokio::test]
