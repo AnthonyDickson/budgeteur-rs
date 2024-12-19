@@ -324,7 +324,7 @@ mod category_tests {
 
     fn get_cookie_jar(user_id: UserID, key: Key) -> PrivateCookieJar {
         let jar = PrivateCookieJar::new(key);
-        set_auth_cookie(jar, user_id)
+        set_auth_cookie(jar, user_id).unwrap()
     }
 
     fn assert_create_calls(store: &SpyCategoryStore, want: &CreateCategoryCall) {

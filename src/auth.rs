@@ -119,23 +119,34 @@ const COOKIE_DURATION_MINUTES: i64 = 5;
 /// Sets the initial expiry of the cookie to [COOKIE_DURATION_MINUTES] from the current time.
 ///
 /// Returns the cookie jar with the cookie added.
-pub(crate) fn set_auth_cookie(jar: PrivateCookieJar, user_id: UserID) -> PrivateCookieJar {
+///
+/// # Errors
+///
+/// Returns an error if the expiry time cannot be formatted.
+pub(crate) fn set_auth_cookie(
+    jar: PrivateCookieJar,
+    user_id: UserID,
+) -> Result<PrivateCookieJar, time::error::Format> {
     let expiry = OffsetDateTime::now_utc() + Duration::minutes(COOKIE_DURATION_MINUTES);
+    // Use format instead of to_string to avoid errors at midnight when the hour is printed as
+    // a single digit when [DATE_TIME_FORMAT] expects two digits.
+    let expiry_string = expiry.format(DATE_TIME_FORMAT)?;
 
-    jar.add(
-        Cookie::build((COOKIE_USER_ID, user_id.as_i64().to_string()))
-            .expires(expiry)
-            .http_only(true)
-            .same_site(SameSite::Strict)
-            .secure(true),
-    )
-    .add(
-        Cookie::build((COOKIE_EXPIRY, expiry.to_string()))
-            .expires(expiry)
-            .http_only(true)
-            .same_site(SameSite::Strict)
-            .secure(true),
-    )
+    Ok(jar
+        .add(
+            Cookie::build((COOKIE_USER_ID, user_id.as_i64().to_string()))
+                .expires(expiry)
+                .http_only(true)
+                .same_site(SameSite::Strict)
+                .secure(true),
+        )
+        .add(
+            Cookie::build((COOKIE_EXPIRY, expiry_string))
+                .expires(expiry)
+                .http_only(true)
+                .same_site(SameSite::Strict)
+                .secure(true),
+        ))
 }
 
 /// Set the auth cookie to an invalid value and set its max age to zero, which should delete the cookie on the client side.
@@ -315,19 +326,57 @@ where
 #[cfg(test)]
 mod cookie_tests {
 
-    use axum_extra::extract::{cookie::Key, PrivateCookieJar};
+    use axum_extra::extract::{
+        cookie::{Cookie, Key},
+        PrivateCookieJar,
+    };
     use sha2::{Digest, Sha512};
-    use time::{Duration, OffsetDateTime};
+    use time::{macros::datetime, Duration, OffsetDateTime, UtcOffset};
 
     use crate::{
         auth::{
             extend_auth_cookie_duration_if_needed, extract_date_time, extract_user_id,
             get_user_id_from_auth_cookie, AuthError, COOKIE_EXPIRY, COOKIE_USER_ID,
+            DATE_TIME_FORMAT,
         },
         models::UserID,
     };
 
     use super::{invalidate_auth_cookie, set_auth_cookie};
+
+    #[test]
+    fn can_extract_date_time() {
+        let want = OffsetDateTime::now_utc() + Duration::minutes(5);
+        let date_time_string = want.format(DATE_TIME_FORMAT).unwrap();
+        let cookie = Cookie::build((COOKIE_EXPIRY, date_time_string)).build();
+
+        let got = extract_date_time(&cookie).unwrap();
+
+        assert_eq!(got, want, "got date time {:?}, want {:?}", got, want);
+    }
+
+    #[test]
+    fn can_extract_date_time_at_midnight() {
+        let want = datetime!(2021-01-01 00:00:00).assume_offset(UtcOffset::UTC);
+        // Use format instead of to_string to avoid errors at midnight when the hour is printed as
+        // a single digit when [DATE_TIME_FORMAT] expects two digits.
+        let date_time_string = want.format(DATE_TIME_FORMAT).unwrap();
+        let cookie = Cookie::build((COOKIE_EXPIRY, date_time_string)).build();
+
+        let got = extract_date_time(&cookie).unwrap();
+
+        assert_eq!(got, want, "got date time {:?}, want {:?}", got, want);
+    }
+
+    #[test]
+    fn can_extract_user_id() {
+        let user_id = UserID::new(1);
+        let cookie = Cookie::build((COOKIE_USER_ID, user_id.as_i64().to_string())).build();
+
+        let got = extract_user_id(&cookie).unwrap();
+
+        assert_eq!(got, user_id);
+    }
 
     fn get_jar() -> PrivateCookieJar {
         let hash = Sha512::digest(b"foobar");
@@ -341,7 +390,7 @@ mod cookie_tests {
         let jar = get_jar();
         let user_id = UserID::new(1);
 
-        let jar = set_auth_cookie(jar, user_id);
+        let jar = set_auth_cookie(jar, user_id).unwrap();
         let user_id_cookie = jar.get(COOKIE_USER_ID).unwrap();
         let expiry_cookie = jar.get(COOKIE_EXPIRY).unwrap();
 
@@ -352,13 +401,10 @@ mod cookie_tests {
         assert_date_time_close(got_expiry, OffsetDateTime::now_utc() + Duration::minutes(5));
     }
 
-    // TODO: add test for extract_date_time function
-    // TODO: add test for extract_user_id function
-
     #[test]
     fn get_user_id_from_cookie_succeeds() {
         let user_id = UserID::new(1);
-        let jar = set_auth_cookie(get_jar(), user_id);
+        let jar = set_auth_cookie(get_jar(), user_id).unwrap();
 
         let retrieved_user_id = get_user_id_from_auth_cookie(&jar).unwrap();
 
@@ -368,7 +414,7 @@ mod cookie_tests {
     #[test]
     fn can_extend_cookie_duration() {
         let jar = get_jar();
-        let jar = set_auth_cookie(jar, UserID::new(1));
+        let jar = set_auth_cookie(jar, UserID::new(1)).unwrap();
 
         let initial_cookie = jar.get(COOKIE_EXPIRY).unwrap();
         let want = extract_date_time(&initial_cookie)
@@ -386,7 +432,7 @@ mod cookie_tests {
     #[test]
     fn cookie_duration_does_not_change() {
         let user_id = UserID::new(1);
-        let jar = set_auth_cookie(get_jar(), user_id);
+        let jar = set_auth_cookie(get_jar(), user_id).unwrap();
         let stale_cookie = jar.get(COOKIE_USER_ID).unwrap();
         let want = Some(stale_cookie.expires_datetime().unwrap());
 
@@ -409,7 +455,7 @@ mod cookie_tests {
     #[test]
     fn invalidate_auth_cookie_succeeds() {
         let user_id = UserID::new(1);
-        let jar = set_auth_cookie(get_jar(), user_id);
+        let jar = set_auth_cookie(get_jar(), user_id).unwrap();
 
         let jar = invalidate_auth_cookie(jar);
         let cookie = jar.get(COOKIE_USER_ID).unwrap();
@@ -494,7 +540,7 @@ mod auth_guard_tests {
     use rusqlite::Connection;
     use time::{Duration, OffsetDateTime};
 
-    use crate::auth::{set_auth_cookie, LogInData};
+    use crate::auth::{set_auth_cookie, LogInData, COOKIE_EXPIRY};
     use crate::stores::sql_store::{create_app_state, SQLAppState};
     use crate::stores::UserStore;
     use crate::{
@@ -519,8 +565,9 @@ mod auth_guard_tests {
         jar: PrivateCookieJar,
         Form(user_data): Form<LogInData>,
     ) -> Result<PrivateCookieJar, AuthError> {
-        verify_credentials(user_data, state.user_store())
-            .map(|user| Ok(set_auth_cookie(jar, user.id())))?
+        let user = verify_credentials(user_data, state.user_store())?;
+
+        set_auth_cookie(jar, user.id()).map_err(|_| AuthError::DateError)
     }
 
     #[tokio::test]
@@ -554,10 +601,12 @@ mod auth_guard_tests {
 
         response.assert_status_ok();
         let auth_cookie = response.cookie(COOKIE_USER_ID);
+        let expiry_cookie = response.cookie(COOKIE_EXPIRY);
 
         server
             .get("/protected")
             .add_cookie(auth_cookie)
+            .add_cookie(expiry_cookie)
             .await
             .assert_status_ok();
     }
@@ -594,8 +643,13 @@ mod auth_guard_tests {
         response.assert_status_ok();
         let response_time = OffsetDateTime::now_utc();
         let auth_cookie = response.cookie(COOKIE_USER_ID);
+        let expiry_cookie = response.cookie(COOKIE_EXPIRY);
 
-        let response = server.get("/protected").add_cookie(auth_cookie).await;
+        let response = server
+            .get("/protected")
+            .add_cookie(auth_cookie)
+            .add_cookie(expiry_cookie)
+            .await;
         let auth_cookie = response.cookie(COOKIE_USER_ID);
 
         assert!(auth_cookie.expires_datetime().unwrap() - response_time < Duration::seconds(1));

@@ -82,7 +82,8 @@ where
 {
     verify_credentials(user_data.clone(), state.user_store())
         .map(|user| {
-            let jar = set_auth_cookie(jar, user.id());
+            let jar = set_auth_cookie(jar, user.id())
+                .expect("Could not set auth cookie due to invalid date time format.");
 
             (
                 StatusCode::SEE_OTHER,

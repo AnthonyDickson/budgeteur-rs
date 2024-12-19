@@ -287,7 +287,7 @@ mod transaction_tests {
             .unwrap();
 
         let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
-        let jar = set_auth_cookie(jar, user_id);
+        let jar = set_auth_cookie(jar, user_id).unwrap();
 
         let response = get_transaction(State(state), jar, Path(transaction.id()))
             .await
@@ -322,7 +322,7 @@ mod transaction_tests {
             .unwrap();
 
         let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
-        let jar = set_auth_cookie(jar, unauthorized_user_id);
+        let jar = set_auth_cookie(jar, unauthorized_user_id).unwrap();
 
         let response = get_transaction(State(state), jar, Path(transaction.id()))
             .await

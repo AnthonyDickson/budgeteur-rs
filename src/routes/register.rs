@@ -163,7 +163,8 @@ where
         .user_store()
         .create(email, password_hash)
         .map(|user| {
-            let jar = set_auth_cookie(jar, user.id());
+            let jar = set_auth_cookie(jar, user.id())
+                .expect("Could not set the auth cookie due to invalid date format.");
 
             (
                 StatusCode::SEE_OTHER,

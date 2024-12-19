@@ -36,7 +36,7 @@ mod log_out_tests {
 
     #[tokio::test]
     async fn log_out_invalidates_auth_cookie_and_redirects() {
-        let cookie_jar = set_auth_cookie(get_jar(), UserID::new(123));
+        let cookie_jar = set_auth_cookie(get_jar(), UserID::new(123)).unwrap();
 
         let response = get_log_out(cookie_jar).await;
 
