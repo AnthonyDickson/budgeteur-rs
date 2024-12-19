@@ -16,9 +16,11 @@
     - User ID
     - Expiry
   - The values should be set as follows:
-    - User ID should be set to the user ID of the user who just logged in via the log in route.
+    - User ID should be set to the user ID of the user who just logged in via
+      the log in route.
     - Expiry should be initially set to:
       - 5 minutes OR
       - one week if the user selects "remember me" at the log in screen.
-    - Session expiry should be extended to 5 minutes past the current time if the session would expire within 5 minutes.
+    - Session expiry should be extended to 5 minutes past the current time if
+      the session would expire within 5 minutes.
     - Sessions should be destroyed when the user logs out.

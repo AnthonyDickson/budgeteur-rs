@@ -98,6 +98,7 @@ mod transactions_route_tests {
     use axum_test::TestServer;
     use rusqlite::Connection;
 
+    use crate::{auth::auth_guard, models::PasswordHash, routes::endpoints};
     use crate::{
         auth::LogInData,
         models::{Transaction, User, ValidatedPassword},
@@ -106,11 +107,6 @@ mod transactions_route_tests {
             sql_store::{create_app_state, SQLAppState},
             TransactionStore, UserStore,
         },
-    };
-    use crate::{
-        auth::{auth_guard, COOKIE_USER_ID},
-        models::PasswordHash,
-        routes::endpoints,
     };
 
     use super::get_transactions_page;
