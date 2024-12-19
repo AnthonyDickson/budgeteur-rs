@@ -618,6 +618,50 @@ mod auth_guard_tests {
     }
 
     #[tokio::test]
+    async fn auth_guard_sets_auth_and_expiry_cookies() {
+        let mut state = get_test_app_state();
+
+        let password = "averysafeandsecurepassword".to_string();
+        let test_user = state
+            .user_store()
+            .create(
+                EmailAddress::from_str("foo@bar.baz").unwrap(),
+                PasswordHash::from_raw_password(&password, 4).unwrap(),
+            )
+            .unwrap();
+
+        let app = Router::new()
+            .route("/protected", get(test_handler))
+            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
+            .route(endpoints::LOG_IN, post(test_log_in_route))
+            .with_state(state.clone());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let response = server
+            .post(endpoints::LOG_IN)
+            .form(&LogInData {
+                email: test_user.email().to_string(),
+                password,
+            })
+            .await;
+
+        response.assert_status_ok();
+        let jar = response.cookies();
+
+        let response = server.get("/protected").add_cookies(jar).await;
+        let jar = response.cookies();
+        assert!(
+            jar.get(COOKIE_USER_ID).is_some(),
+            "expected user ID cookie to be set by auth guard"
+        );
+        assert!(
+            jar.get(COOKIE_EXPIRY).is_some(),
+            "expected expiry cookie to be set by auth guard"
+        );
+    }
+
+    #[tokio::test]
     async fn auth_guard_extends_valid_cookie_duration() {
         let mut state = get_test_app_state();
 
@@ -651,8 +695,8 @@ mod auth_guard_tests {
         let jar = response.cookies();
 
         let response = server.get("/protected").add_cookies(jar).await;
-        let auth_cookie = response.cookie(COOKIE_USER_ID);
 
+        let auth_cookie = response.cookie(COOKIE_USER_ID);
         assert_date_time_close(auth_cookie.expires_datetime().unwrap(), response_time);
     }
 
