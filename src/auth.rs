@@ -151,6 +151,7 @@ pub(crate) fn set_auth_cookie(
 
 /// Set the auth cookie to an invalid value and set its max age to zero, which should delete the cookie on the client side.
 pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar {
+    // TODO: invalidate expiry cookie as well.
     jar.add(
         Cookie::build((COOKIE_USER_ID, "deleted"))
             .expires(OffsetDateTime::UNIX_EPOCH)
@@ -183,9 +184,6 @@ pub(crate) fn extend_auth_cookie_duration_if_needed(
         None => return Err(AuthError::CookieMissing),
     };
 
-    println!("{auth_cookie:?}");
-    println!("{expiry_cookie:?}");
-
     let current_expiry = extract_date_time(&expiry_cookie).map_err(|_| AuthError::DateError)?;
 
     let new_expiry = OffsetDateTime::now_utc()
@@ -193,10 +191,6 @@ pub(crate) fn extend_auth_cookie_duration_if_needed(
         .ok_or(AuthError::DateError)?;
 
     let expiry = max(current_expiry, new_expiry);
-
-    let jar = jar
-        .remove(auth_cookie.clone())
-        .remove(expiry_cookie.clone());
 
     auth_cookie.set_expires(expiry);
     expiry_cookie.set_expires(expiry);
