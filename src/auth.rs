@@ -531,6 +531,7 @@ mod auth_tests {
     }
 }
 
+// TODO: replace SQLAppState with mock stores
 #[cfg(test)]
 mod auth_guard_tests {
     use std::str::FromStr;
@@ -693,11 +694,15 @@ mod auth_guard_tests {
         response.assert_status_ok();
         let response_time = OffsetDateTime::now_utc();
         let jar = response.cookies();
+        // TODO: Set the cookie to expire within 5 seconds to test that the cookie is extended.
 
         let response = server.get("/protected").add_cookies(jar).await;
 
         let auth_cookie = response.cookie(COOKIE_USER_ID);
-        assert_date_time_close(auth_cookie.expires_datetime().unwrap(), response_time);
+        assert_date_time_close(
+            auth_cookie.expires_datetime().unwrap(),
+            response_time + Duration::minutes(5),
+        );
     }
 
     fn assert_date_time_close(got: OffsetDateTime, want: OffsetDateTime) {
