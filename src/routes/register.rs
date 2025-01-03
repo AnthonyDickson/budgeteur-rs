@@ -194,16 +194,6 @@ where
                 ..Default::default()
             }
             .into_response(),
-            UserError::DuplicatePassword => RegisterFormTemplate {
-                email_input,
-                password_input: PasswordInputTemplate {
-                    value: &user_data.password,
-                    min_length: PASSWORD_INPUT_MIN_LENGTH,
-                    error_message: "The password is already in use",
-                },
-                ..Default::default()
-            }
-            .into_response(),
             e => {
                 tracing::error!("An unhandled error occurred while inserting a new user: {e}");
 

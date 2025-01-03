@@ -36,10 +36,6 @@ pub enum UserError {
     #[error("the email is already in use")]
     DuplicateEmail,
 
-    /// The password hash already exists in the database. The client should hash the password again.
-    #[error("the password hash is not unique")]
-    DuplicatePassword,
-
     /// There was no user in the database that matched the given details. The client can try again
     /// with different details.
     #[error("no user found with the given details")]
@@ -58,11 +54,6 @@ impl From<rusqlite::Error> for UserError {
                 if sql_error.extended_code == 2067 && desc.contains("email") =>
             {
                 UserError::DuplicateEmail
-            }
-            rusqlite::Error::SqliteFailure(sql_error, Some(ref desc))
-                if sql_error.extended_code == 2067 && desc.contains("password") =>
-            {
-                UserError::DuplicatePassword
             }
             rusqlite::Error::QueryReturnedNoRows => UserError::NotFound,
             error => UserError::SqlError(error),
@@ -153,7 +144,7 @@ impl CreateTable for SQLiteUserStore {
             "CREATE TABLE user (
                     id INTEGER PRIMARY KEY,
                     email TEXT UNIQUE NOT NULL,
-                    password TEXT UNIQUE NOT NULL
+                    password TEXT NOT NULL
                     )",
             (),
         )?;
@@ -229,24 +220,6 @@ mod user_tests {
         assert_eq!(
             store.create(email.clone(), PasswordHash::new_unchecked("hunter3")),
             Err(UserError::DuplicateEmail)
-        );
-    }
-
-    #[test]
-    fn insert_user_fails_on_duplicate_password() {
-        let mut store = get_store();
-
-        let email = EmailAddress::from_str("hello@world.com").unwrap();
-        let password = PasswordHash::new_unchecked("hunter2");
-
-        assert!(store.create(email, password.clone()).is_ok());
-
-        assert_eq!(
-            store.create(
-                EmailAddress::from_str("bye@world.com").unwrap(),
-                password.clone()
-            ),
-            Err(UserError::DuplicatePassword)
         );
     }
 
