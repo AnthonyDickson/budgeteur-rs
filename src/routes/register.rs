@@ -175,14 +175,21 @@ where
         .user_store()
         .create(email, password_hash)
         .map(|user| {
-            let jar = set_auth_cookie(jar, user.id(), state.cookie_duration)
-                .expect("Could not set the auth cookie due to invalid date format.");
+            let jar = set_auth_cookie(jar, user.id(), state.cookie_duration);
 
-            (
-                StatusCode::SEE_OTHER,
-                HxRedirect(Uri::from_static(endpoints::LOG_IN)),
-                jar,
-            )
+            match jar {
+                Ok(jar) => (
+                    StatusCode::SEE_OTHER,
+                    HxRedirect(Uri::from_static(endpoints::LOG_IN)),
+                    jar,
+                )
+                    .into_response(),
+                Err(e) => {
+                    tracing::error!("An error occurred while setting the auth cookie: {e}");
+
+                    get_internal_server_error_redirect()
+                }
+            }
         })
         .map_err(|e| match e {
             UserError::DuplicateEmail => RegisterFormTemplate {
