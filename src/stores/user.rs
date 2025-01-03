@@ -23,6 +23,8 @@ pub trait UserStore {
     fn get(&self, id: UserID) -> Result<User, UserError>;
 
     /// Get a user by their email.
+    ///
+    /// Returns [UserError::NotFound] if no user with the given email exists.
     fn get_by_email(&self, email: &EmailAddress) -> Result<User, UserError>;
 }
 

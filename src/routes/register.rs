@@ -1,4 +1,4 @@
-/*! The registration page. */
+//! The registration page for creating a new user account.
 use std::str::FromStr;
 
 use askama::Template;
@@ -106,18 +106,6 @@ where
         ..Default::default()
     };
 
-    if user_data.password != user_data.confirm_password {
-        return RegisterFormTemplate {
-            email_input,
-            password_input,
-            confirm_password_input: ConfirmPasswordInputTemplate {
-                error_message: "Passwords do not match",
-            },
-            ..Default::default()
-        }
-        .into_response();
-    }
-
     let email = match EmailAddress::from_str(&user_data.email) {
         Ok(email) => email,
         // Due to the client-side validation, the below error will not happen very often, but it still pays to check.
@@ -134,6 +122,18 @@ where
         }
     };
 
+    if state.user_store().get_by_email(&email).is_ok() {
+        return RegisterFormTemplate {
+            email_input: EmailInputTemplate {
+                value: &user_data.email,
+                error_message: "The email address is already in use",
+            },
+            password_input,
+            ..Default::default()
+        }
+        .into_response();
+    }
+
     let validated_password = match ValidatedPassword::new(&user_data.password) {
         Ok(password) => password,
         Err(e) => {
@@ -149,6 +149,18 @@ where
             .into_response();
         }
     };
+
+    if user_data.password != user_data.confirm_password {
+        return RegisterFormTemplate {
+            email_input,
+            password_input,
+            confirm_password_input: ConfirmPasswordInputTemplate {
+                error_message: "Passwords do not match",
+            },
+            ..Default::default()
+        }
+        .into_response();
+    }
 
     let password_hash = match PasswordHash::new(validated_password, PasswordHash::DEFAULT_COST) {
         Ok(hash) => hash,
@@ -202,7 +214,7 @@ where
 }
 
 #[cfg(test)]
-mod user_tests {
+mod tests {
     use axum::{routing::post, Router};
     use axum_test::TestServer;
     use serde::{Deserialize, Serialize};
@@ -356,7 +368,7 @@ mod user_tests {
         let response = server
             .post(endpoints::USERS)
             .form(&RegisterForm {
-                email: "foo@".to_string(),
+                email: "foo@bar.baz".to_string(),
                 password: "iamtestingwhethericancreateanewuser".to_string(),
                 confirm_password: "thisisadifferentpassword".to_string(),
             })
