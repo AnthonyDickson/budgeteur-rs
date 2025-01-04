@@ -9,7 +9,7 @@ use crate::{db::initialize, AppState};
 
 use super::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore};
 
-/// An alias for an [AppState] that usXs SQLite for the backend.
+/// An alias for an [AppState] that uses SQLite for the backend.
 pub type SQLAppState = AppState<SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore>;
 
 /// Creates an [AppState] instance that uses SQLite for the backend.

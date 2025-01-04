@@ -66,7 +66,7 @@ pub const REMEMBER_ME_COOKIE_DURATION: Duration = Duration::days(7);
 /// Handler for log-in requests via the POST method.
 ///
 /// On a successful log-in request, the auth cookie set and the client is redirected to the dashboard page.
-/// Otherwise, the form is return with an error message explaining the problem.
+/// Otherwise, the form is returned with an error message explaining the problem.
 ///
 /// # Errors
 ///

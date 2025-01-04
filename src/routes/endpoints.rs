@@ -2,8 +2,6 @@
 //!
 //! For endpoints that take a parameter, e.g., '/users/:user_id', use [format_endpoint].
 
-use regex::Regex;
-
 /// The route to request a cup of coffee (experimental).
 pub const COFFEE: &str = "/coffee";
 /// The landing page for logged in users.
@@ -33,13 +31,17 @@ pub const TRANSACTION: &str = "/transactions/:transaction_id";
 /// The page to display when an internal server error occurs.
 pub const INTERNAL_ERROR: &str = "/error";
 
-/// The regex pattern for path parameters.
-const PARAMETER_PATTERN: &str = r":[a-z_]+";
-
 /// Replace the parameter in `endpoint_path` with `id`.
 ///
-/// This function assumes that an endpoint path will only have a single parameter, and will only
-/// replace the first one.
+/// A parameter is a string that starts with a colon and is followed by
+/// lowercase letters or underscores. For example, in the endpoint path
+/// '/users/:user_id', ':user_id' is the parameter.
+///
+/// This function assumes that an endpoint path only contains ASCII characters
+/// and a single parameter.
+///
+/// If no parameter is found in `endpoint_path`, the function returns the
+/// the original `endpoint_path`.
 ///
 /// # Examples
 ///
@@ -50,28 +52,44 @@ const PARAMETER_PATTERN: &str = r":[a-z_]+";
 /// ```
 ///
 pub fn format_endpoint(endpoint_path: &str, id: i64) -> String {
-    let re = Regex::new(PARAMETER_PATTERN).unwrap();
+    let mut param_start = None;
+    let mut param_end = None;
 
-    re.replace(endpoint_path, &id.to_string()).to_string()
+    for (i, c) in endpoint_path.chars().enumerate() {
+        if c == ':' {
+            param_start = Some(i);
+        } else if param_start.is_some() && !c.is_ascii_lowercase() && c != '_' {
+            param_end = Some(i);
+            break;
+        }
+    }
+
+    let param_start = match param_start {
+        Some(start) => start,
+        None => return endpoint_path.to_string(),
+    };
+
+    let param_end = param_end.unwrap_or(endpoint_path.len());
+
+    format!(
+        "{}{}{}",
+        &endpoint_path[..param_start],
+        id,
+        &endpoint_path[param_end..]
+    )
 }
 
 // These tests are here so that we know when we call `Uri::from_shared` it will not panic.
 #[cfg(test)]
 mod endpoints_tests {
     use axum::http::Uri;
-    use regex::Regex;
 
     use crate::routes::endpoints;
 
-    use super::{format_endpoint, PARAMETER_PATTERN};
+    use super::format_endpoint;
 
     fn assert_endpoint_is_valid_uri(uri: &str) {
         assert!(uri.parse::<Uri>().is_ok());
-    }
-
-    #[test]
-    fn parameter_pattern_is_valid_regex() {
-        Regex::new(PARAMETER_PATTERN).unwrap();
     }
 
     #[test]
@@ -91,7 +109,7 @@ mod endpoints_tests {
     }
 
     #[test]
-    fn format_endpoint_produces_valid_uri() {
+    fn produces_valid_uri() {
         let formatted_path = format_endpoint("/hello/:world_id", 1);
 
         assert_eq!(formatted_path, "/hello/1");
@@ -101,6 +119,22 @@ mod endpoints_tests {
         let formatted_path = format_endpoint("/hello/:world", 1);
 
         assert_eq!(formatted_path, "/hello/1");
+        assert!(formatted_path.parse::<Uri>().is_ok());
+    }
+
+    #[test]
+    fn returns_original_path_with_no_parameter() {
+        let formatted_path = format_endpoint("/hello/world", 1);
+
+        assert_eq!(formatted_path, "/hello/world");
+        assert!(formatted_path.parse::<Uri>().is_ok());
+    }
+
+    #[test]
+    fn parameter_in_middle() {
+        let formatted_path = format_endpoint("/hello/:world/bye", 1);
+
+        assert_eq!(formatted_path, "/hello/1/bye");
         assert!(formatted_path.parse::<Uri>().is_ok());
     }
 }
