@@ -94,7 +94,7 @@ mod category_tests {
     use axum_extra::extract::{cookie::Key, PrivateCookieJar};
 
     use crate::{
-        auth::cookie::{set_auth_cookie, COOKIE_DURATION},
+        auth::cookie::{set_auth_cookie, DEFAULT_COOKIE_DURATION},
         models::{
             Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
             TransactionBuilder, TransactionError, User, UserID,
@@ -324,7 +324,7 @@ mod category_tests {
 
     fn get_cookie_jar(user_id: UserID, key: Key) -> PrivateCookieJar {
         let jar = PrivateCookieJar::new(key);
-        set_auth_cookie(jar, user_id, COOKIE_DURATION).unwrap()
+        set_auth_cookie(jar, user_id, DEFAULT_COOKIE_DURATION).unwrap()
     }
 
     fn assert_create_calls(store: &SpyCategoryStore, want: &CreateCategoryCall) {

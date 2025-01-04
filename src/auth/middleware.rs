@@ -122,26 +122,26 @@ where
 
 #[cfg(test)]
 mod auth_guard_tests {
-    use std::str::FromStr;
-
     use axum::{
         extract::State,
         middleware,
         routing::{get, post},
-        Form, Router,
+        Router,
     };
     use axum_extra::{
-        extract::{cookie::Cookie, PrivateCookieJar},
+        extract::{
+            cookie::{Cookie, Key},
+            PrivateCookieJar,
+        },
         response::Html,
     };
     use axum_test::TestServer;
-    use email_address::EmailAddress;
+    use sha2::Digest;
     use time::{Duration, OffsetDateTime};
 
     use crate::{
         auth::{
-            cookie::{set_auth_cookie, COOKIE_EXPIRY, COOKIE_USER_ID},
-            log_in::{verify_credentials, LogInData},
+            cookie::{set_auth_cookie, COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION},
             middleware::auth_guard,
             AuthError,
         },
@@ -149,7 +149,7 @@ mod auth_guard_tests {
             Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
             TransactionBuilder, TransactionError, User, UserID,
         },
-        routes::endpoints,
+        routes::endpoints::{self, format_endpoint},
         stores::{
             transaction::TransactionQuery, CategoryStore, TransactionStore, UserError, UserStore,
         },
@@ -209,11 +209,9 @@ mod auth_guard_tests {
     }
 
     #[derive(Clone)]
-    struct StubUserStore {
-        users: Vec<User>,
-    }
+    struct DummyUserStore;
 
-    impl UserStore for StubUserStore {
+    impl UserStore for DummyUserStore {
         fn create(
             &mut self,
             _email: email_address::EmailAddress,
@@ -226,72 +224,52 @@ mod auth_guard_tests {
             todo!()
         }
 
-        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, UserError> {
-            self.users
-                .iter()
-                .find(|user| user.email() == email)
-                .ok_or(UserError::NotFound)
-                .map(|user| user.to_owned())
+        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, UserError> {
+            todo!()
         }
     }
 
-    /// The email address for the test user.
-    const EMAIL: &str = "foo@bar.baz";
-    /// The password for the test user.
-    const PASSWORD: &str = "averysafeandsecurepassword";
-
-    type TestAppState = AppState<DummyCategoryStore, DummyTransactionStore, StubUserStore>;
-
-    fn get_test_app_state() -> TestAppState {
-        let user_store = StubUserStore {
-            users: vec![User::new(
-                UserID::new(0),
-                EmailAddress::from_str(EMAIL).unwrap(),
-                PasswordHash::from_raw_password(PASSWORD, 4).unwrap(),
-            )],
-        };
-
-        AppState::new(
-            "nafstenoas",
-            DummyCategoryStore {},
-            DummyTransactionStore {},
-            user_store,
-        )
-    }
+    type TestAppState = AppState<DummyCategoryStore, DummyTransactionStore, DummyUserStore>;
 
     async fn test_handler() -> Html<&'static str> {
         Html("<h1>Hello, World!</h1>")
     }
 
-    async fn test_log_in_route(
+    async fn stub_log_in_route(
         State(state): State<TestAppState>,
         jar: PrivateCookieJar,
-        Form(user_data): Form<LogInData>,
     ) -> Result<PrivateCookieJar, AuthError> {
-        let user = verify_credentials(user_data, &state.user_store)?;
+        set_auth_cookie(jar, UserID::new(1), state.cookie_duration)
+            .map_err(|_| AuthError::DateError)
+    }
 
-        set_auth_cookie(jar, user.id(), state.cookie_duration).map_err(|_| AuthError::DateError)
+    const TEST_LOG_IN_ROUTE_PATH: &str = "/log_in/:user_id";
+    const TEST_PROTECTED_ROUTE: &str = "/protected";
+
+    fn get_test_server(cookie_duration: Duration) -> TestServer {
+        let hash = sha2::Sha512::digest("nafstenoas");
+        let state = AppState {
+            cookie_key: Key::from(&hash),
+            cookie_duration,
+            category_store: DummyCategoryStore {},
+            transaction_store: DummyTransactionStore {},
+            user_store: DummyUserStore {},
+        };
+
+        let app = Router::new()
+            .route(TEST_PROTECTED_ROUTE, get(test_handler))
+            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
+            .route(TEST_LOG_IN_ROUTE_PATH, post(stub_log_in_route))
+            .with_state(state.clone());
+
+        TestServer::new(app).expect("Could not create test server.")
     }
 
     #[tokio::test]
     async fn get_protected_route_with_valid_cookie() {
-        let state = get_test_app_state();
-
-        let app = Router::new()
-            .route("/protected", get(test_handler))
-            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::LOG_IN, post(test_log_in_route))
-            .with_state(state.clone());
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
+        let server = get_test_server(DEFAULT_COOKIE_DURATION);
         let response = server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: EMAIL.to_string(),
-                password: PASSWORD.to_string(),
-                remember_me: None,
-            })
+            .post(&format_endpoint(TEST_LOG_IN_ROUTE_PATH, 1))
             .await;
 
         response.assert_status_ok();
@@ -299,7 +277,7 @@ mod auth_guard_tests {
         let expiry_cookie = response.cookie(COOKIE_EXPIRY);
 
         server
-            .get("/protected")
+            .get(TEST_PROTECTED_ROUTE)
             .add_cookie(auth_cookie)
             .add_cookie(expiry_cookie)
             .await
@@ -308,29 +286,15 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn auth_guard_sets_auth_and_expiry_cookies() {
-        let state = get_test_app_state();
-
-        let app = Router::new()
-            .route("/protected", get(test_handler))
-            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::LOG_IN, post(test_log_in_route))
-            .with_state(state.clone());
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
+        let server = get_test_server(DEFAULT_COOKIE_DURATION);
         let response = server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: EMAIL.to_string(),
-                password: PASSWORD.to_string(),
-                remember_me: None,
-            })
+            .post(&format_endpoint(TEST_LOG_IN_ROUTE_PATH, 1))
             .await;
 
         response.assert_status_ok();
         let jar = response.cookies();
 
-        let response = server.get("/protected").add_cookies(jar).await;
+        let response = server.get(TEST_PROTECTED_ROUTE).add_cookies(jar).await;
         let jar = response.cookies();
         assert!(
             jar.get(COOKIE_USER_ID).is_some(),
@@ -359,24 +323,9 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn auth_guard_extends_valid_cookie_duration() {
-        let mut state = get_test_app_state();
-        state.cookie_duration = Duration::seconds(5);
-
-        let app = Router::new()
-            .route("/protected", get(test_handler))
-            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::LOG_IN, post(test_log_in_route))
-            .with_state(state.clone());
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
+        let server = get_test_server(Duration::seconds(5));
         let response = server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: EMAIL.to_string(),
-                password: PASSWORD.to_string(),
-                remember_me: None,
-            })
+            .post(&format_endpoint(TEST_LOG_IN_ROUTE_PATH, 1))
             .await;
 
         response.assert_status_ok();
@@ -387,7 +336,7 @@ mod auth_guard_tests {
             response_time + Duration::seconds(5),
         );
 
-        let response = server.get("/protected").add_cookies(jar).await;
+        let response = server.get(TEST_PROTECTED_ROUTE).add_cookies(jar).await;
 
         let auth_cookie = response.cookie(COOKIE_USER_ID);
         assert_date_time_close!(
@@ -398,15 +347,8 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn get_protected_route_with_no_auth_cookie_redirects_to_log_in() {
-        let state = get_test_app_state();
-        let app = Router::new()
-            .route("/protected", get(test_handler))
-            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .with_state(state);
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        let response = server.get("/protected").await;
+        let server = get_test_server(DEFAULT_COOKIE_DURATION);
+        let response = server.get(TEST_PROTECTED_ROUTE).await;
 
         response.assert_status_see_other();
         assert_eq!(response.header("location"), endpoints::LOG_IN);
@@ -414,16 +356,9 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn get_protected_route_with_invalid_auth_cookie_redirects_to_log_in() {
-        let state = get_test_app_state();
-        let app = Router::new()
-            .route("/protected", get(test_handler))
-            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .with_state(state);
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
+        let server = get_test_server(DEFAULT_COOKIE_DURATION);
         let response = server
-            .get("/protected")
+            .get(TEST_PROTECTED_ROUTE)
             .add_cookie(Cookie::build((COOKIE_USER_ID, "1")).build())
             .await;
 
@@ -433,23 +368,9 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn get_protected_route_with_expired_auth_cookie_redirects_to_log_in() {
-        let state = get_test_app_state();
-
-        let app = Router::new()
-            .route("/protected", get(test_handler))
-            .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::LOG_IN, post(test_log_in_route))
-            .with_state(state.clone());
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
+        let server = get_test_server(DEFAULT_COOKIE_DURATION);
         let response = server
-            .post(endpoints::LOG_IN)
-            .form(&LogInData {
-                email: EMAIL.to_string(),
-                password: PASSWORD.to_string(),
-                remember_me: None,
-            })
+            .post(&format_endpoint(TEST_LOG_IN_ROUTE_PATH, 1))
             .await;
 
         response.assert_status_ok();
@@ -457,7 +378,7 @@ mod auth_guard_tests {
         auth_cookie.set_expires(OffsetDateTime::UNIX_EPOCH);
 
         server
-            .get("/protected")
+            .get(TEST_PROTECTED_ROUTE)
             .add_cookie(auth_cookie)
             .await
             .assert_status_see_other();

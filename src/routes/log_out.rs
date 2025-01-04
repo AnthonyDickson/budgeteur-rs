@@ -29,14 +29,15 @@ mod log_out_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::cookie::{set_auth_cookie, COOKIE_DURATION, COOKIE_USER_ID},
+        auth::cookie::{set_auth_cookie, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION},
         models::UserID,
         routes::{endpoints, log_out::get_log_out},
     };
 
     #[tokio::test]
     async fn log_out_invalidates_auth_cookie_and_redirects() {
-        let cookie_jar = set_auth_cookie(get_jar(), UserID::new(123), COOKIE_DURATION).unwrap();
+        let cookie_jar =
+            set_auth_cookie(get_jar(), UserID::new(123), DEFAULT_COOKIE_DURATION).unwrap();
 
         let response = get_log_out(cookie_jar).await;
 

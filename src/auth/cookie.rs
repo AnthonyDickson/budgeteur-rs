@@ -17,7 +17,7 @@ use super::AuthError;
 pub(crate) const COOKIE_USER_ID: &str = "user_id";
 pub(crate) const COOKIE_EXPIRY: &str = "expiry";
 /// The default duration for which auth cookies are valid.
-pub(crate) const COOKIE_DURATION: Duration = Duration::minutes(5);
+pub(crate) const DEFAULT_COOKIE_DURATION: Duration = Duration::minutes(5);
 
 /// Add an auth cookie to the cookie jar, indicating that a user is logged in and authenticated.
 ///
@@ -169,8 +169,8 @@ mod cookie_tests {
     use crate::{
         auth::{
             cookie::{
-                extract_date_time, extract_user_id, get_user_id_from_auth_cookie, COOKIE_DURATION,
-                COOKIE_EXPIRY, COOKIE_USER_ID, DATE_TIME_FORMAT,
+                extract_date_time, extract_user_id, get_user_id_from_auth_cookie, COOKIE_EXPIRY,
+                COOKIE_USER_ID, DATE_TIME_FORMAT, DEFAULT_COOKIE_DURATION,
             },
             AuthError,
         },
@@ -243,7 +243,7 @@ mod cookie_tests {
         let jar = get_jar();
         let user_id = UserID::new(1);
 
-        let jar = set_auth_cookie(jar, user_id, COOKIE_DURATION).unwrap();
+        let jar = set_auth_cookie(jar, user_id, DEFAULT_COOKIE_DURATION).unwrap();
         let user_id_cookie = jar.get(COOKIE_USER_ID).unwrap();
         let expiry_cookie = jar.get(COOKIE_EXPIRY).unwrap();
 
@@ -257,7 +257,7 @@ mod cookie_tests {
     #[test]
     fn get_user_id_from_cookie_succeeds() {
         let user_id = UserID::new(1);
-        let jar = set_auth_cookie(get_jar(), user_id, COOKIE_DURATION).unwrap();
+        let jar = set_auth_cookie(get_jar(), user_id, DEFAULT_COOKIE_DURATION).unwrap();
 
         let retrieved_user_id = get_user_id_from_auth_cookie(&jar).unwrap();
 
@@ -267,7 +267,7 @@ mod cookie_tests {
     #[test]
     fn can_set_cookie_expires() {
         let jar = get_jar();
-        let jar = set_auth_cookie(jar, UserID::new(1), COOKIE_DURATION).unwrap();
+        let jar = set_auth_cookie(jar, UserID::new(1), DEFAULT_COOKIE_DURATION).unwrap();
 
         let want = OffsetDateTime::now_utc() + Duration::days(10);
         let updated_jar = set_auth_cookie_expiry(jar, want).unwrap();
@@ -283,7 +283,7 @@ mod cookie_tests {
     #[test]
     fn can_extend_cookie_duration() {
         let jar = get_jar();
-        let jar = set_auth_cookie(jar, UserID::new(1), COOKIE_DURATION).unwrap();
+        let jar = set_auth_cookie(jar, UserID::new(1), DEFAULT_COOKIE_DURATION).unwrap();
 
         let initial_cookie = jar.get(COOKIE_EXPIRY).unwrap();
         let want = extract_date_time(&initial_cookie)
@@ -304,7 +304,7 @@ mod cookie_tests {
     #[test]
     fn cookie_duration_does_not_change() {
         let user_id = UserID::new(1);
-        let jar = set_auth_cookie(get_jar(), user_id, COOKIE_DURATION).unwrap();
+        let jar = set_auth_cookie(get_jar(), user_id, DEFAULT_COOKIE_DURATION).unwrap();
         let stale_cookie = jar.get(COOKIE_USER_ID).unwrap();
         let want = Some(stale_cookie.expires_datetime().unwrap());
 
@@ -318,7 +318,7 @@ mod cookie_tests {
     #[test]
     fn invalidate_auth_cookie_succeeds() {
         let user_id = UserID::new(1);
-        let jar = set_auth_cookie(get_jar(), user_id, COOKIE_DURATION).unwrap();
+        let jar = set_auth_cookie(get_jar(), user_id, DEFAULT_COOKIE_DURATION).unwrap();
 
         let jar = invalidate_auth_cookie(jar);
         let cookie = jar.get(COOKIE_USER_ID).unwrap();

@@ -8,7 +8,7 @@ use sha2::{Digest, Sha512};
 use time::Duration;
 
 use crate::{
-    auth::cookie::COOKIE_DURATION,
+    auth::cookie::DEFAULT_COOKIE_DURATION,
     stores::{CategoryStore, TransactionStore, UserStore},
 };
 
@@ -49,7 +49,7 @@ where
 
         Self {
             cookie_key: Key::from(&hash),
-            cookie_duration: COOKIE_DURATION,
+            cookie_duration: DEFAULT_COOKIE_DURATION,
             category_store,
             transaction_store,
             user_store,
