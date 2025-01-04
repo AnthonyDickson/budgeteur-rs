@@ -2,17 +2,13 @@
 
 use std::marker::{Send, Sync};
 
-use axum::{
-    async_trait,
-    extract::{FromRef, FromRequestParts},
-    http::request::Parts,
-};
+use axum::extract::FromRef;
 use axum_extra::extract::cookie::Key;
 use sha2::{Digest, Sha512};
 use time::Duration;
 
 use crate::{
-    auth::{cookie::COOKIE_DURATION, AuthError},
+    auth::cookie::COOKIE_DURATION,
     stores::{CategoryStore, TransactionStore, UserStore},
 };
 
@@ -70,21 +66,5 @@ where
 {
     fn from_ref(state: &AppState<C, T, U>) -> Self {
         state.cookie_key.clone()
-    }
-}
-
-#[async_trait]
-impl<S, C, T, U> FromRequestParts<S> for AppState<C, T, U>
-where
-    Self: FromRef<S>,
-    S: Send + Sync,
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
-{
-    type Rejection = AuthError;
-
-    async fn from_request_parts(_: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        Ok(Self::from_ref(state))
     }
 }
