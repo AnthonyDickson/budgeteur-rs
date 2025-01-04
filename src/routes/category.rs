@@ -41,7 +41,7 @@ where
     let name = CategoryName::new(&new_category.name)?;
 
     state
-        .category_store()
+        .category_store
         .create(name, user_id)
         .map(|category| (StatusCode::OK, Json(category)))
         .map_err(AppError::CategoryError)
@@ -65,7 +65,7 @@ where
     U: UserStore + Send + Sync,
 {
     state
-        .category_store()
+        .category_store
         .get(category_id)
         .map_err(AppError::CategoryError)
         .and_then(|category| {
@@ -250,7 +250,7 @@ mod category_tests {
         let form = CategoryData {
             name: want.name.to_string(),
         };
-        let jar = get_cookie_jar(want.user_id, state.cookie_key().to_owned());
+        let jar = get_cookie_jar(want.user_id, state.cookie_key.clone());
 
         let response = create_category(State(state), Path(want.user_id), jar, Form(form))
             .await
@@ -269,7 +269,7 @@ mod category_tests {
         let form = CategoryData {
             name: "".to_string(),
         };
-        let jar = get_cookie_jar(user_id, state.cookie_key().to_owned());
+        let jar = get_cookie_jar(user_id, state.cookie_key.clone());
 
         let response = create_category(State(state), Path(user_id), jar, Form(form))
             .await
@@ -290,7 +290,7 @@ mod category_tests {
             category_id: category.id(),
         };
 
-        let jar = get_cookie_jar(category.user_id(), state.cookie_key().to_owned());
+        let jar = get_cookie_jar(category.user_id(), state.cookie_key.clone());
 
         let response = get_category(State(state), jar, Path(category.id()))
             .await
@@ -312,7 +312,7 @@ mod category_tests {
         let want = GetCategoryCall {
             category_id: category.id(),
         };
-        let jar = get_cookie_jar(unauthorized_user_id, state.cookie_key().to_owned());
+        let jar = get_cookie_jar(unauthorized_user_id, state.cookie_key.clone());
 
         let response = get_category(State(state), jar, Path(category.id()))
             .await

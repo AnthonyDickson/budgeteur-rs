@@ -24,13 +24,16 @@ where
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
 {
-    /// The secret used to encrypt auth cookies.
-    cookie_key: Key,
+    /// The key to be used for signing and encrypting private cookies.
+    pub cookie_key: Key,
     /// The duration for which cookies used for authentication are valid.
     pub cookie_duration: Duration,
-    category_store: C,
-    transaction_store: T,
-    user_store: U,
+    /// The store for managing user [categories](crate::models::Category).
+    pub category_store: C,
+    /// The store for managing user [transactions](crate::models::Transaction).
+    pub transaction_store: T,
+    /// The store for managing [users](crate::models::User).
+    pub user_store: U,
 }
 
 impl<C, T, U> AppState<C, T, U>
@@ -55,26 +58,6 @@ where
             transaction_store,
             user_store,
         }
-    }
-
-    /// The key to be used for signing and encrypting private cookies.
-    pub fn cookie_key(&self) -> &Key {
-        &self.cookie_key
-    }
-
-    /// The store for managing user [categories](crate::models::Category).
-    pub fn category_store(&self) -> &C {
-        &self.category_store
-    }
-
-    /// The store for managing user [transactions](crate::models::Transaction).
-    pub fn transaction_store(&mut self) -> &mut T {
-        &mut self.transaction_store
-    }
-
-    /// The store for managing [users](crate::models::User).
-    pub fn user_store(&mut self) -> &mut U {
-        &mut self.user_store
     }
 }
 

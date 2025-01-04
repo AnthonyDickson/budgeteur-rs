@@ -301,7 +301,7 @@ mod sqlite_transaction_store_tests {
         let mut state = create_app_state(conn, "stneaoetse").unwrap();
 
         let test_user = state
-            .user_store()
+            .user_store
             .create(
                 "test@test.com".parse().unwrap(),
                 PasswordHash::new_unchecked("hunter2"),
@@ -316,7 +316,7 @@ mod sqlite_transaction_store_tests {
         let (mut state, user) = get_app_state_and_test_user();
         let amount = 12.3;
 
-        let result = state.transaction_store().create(amount, user.id());
+        let result = state.transaction_store.create(amount, user.id());
 
         assert!(result.is_ok());
 
@@ -331,7 +331,7 @@ mod sqlite_transaction_store_tests {
         let (mut state, user) = get_app_state_and_test_user();
 
         let transaction = state
-            .transaction_store()
+            .transaction_store
             .create(PI, UserID::new(user.id().as_i64() + 42));
 
         assert_eq!(transaction, Err(TransactionError::InvalidUser));
@@ -342,7 +342,7 @@ mod sqlite_transaction_store_tests {
         let (mut state, user) = get_app_state_and_test_user();
 
         let transaction = state
-            .transaction_store()
+            .transaction_store
             .create_from_builder(Transaction::build(PI, user.id()).category(Some(999)));
 
         assert_eq!(transaction, Err(TransactionError::InvalidCategory));
@@ -353,19 +353,19 @@ mod sqlite_transaction_store_tests {
         // `user` is the owner of `someone_elses_category`.
         let (mut state, user) = get_app_state_and_test_user();
         let someone_elses_category = state
-            .category_store()
+            .category_store
             .create(CategoryName::new_unchecked("hands off"), user.id())
             .unwrap();
 
         let unauthorized_user = state
-            .user_store()
+            .user_store
             .create(
                 "bar@baz.qux".parse().unwrap(),
                 PasswordHash::new_unchecked("hunter3"),
             )
             .unwrap();
 
-        let maybe_transaction = state.transaction_store().create_from_builder(
+        let maybe_transaction = state.transaction_store.create_from_builder(
             Transaction::build(PI, unauthorized_user.id())
                 .category(Some(someone_elses_category.id())),
         );
@@ -377,8 +377,8 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transaction_by_id_succeeds() {
-        let (mut state, user) = get_app_state_and_test_user();
-        let store = state.transaction_store();
+        let (state, user) = get_app_state_and_test_user();
+        let mut store = state.transaction_store;
         let transaction = store.create(PI, user.id()).unwrap();
 
         let selected_transaction = store.get(transaction.id());
@@ -388,8 +388,8 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transaction_fails_on_invalid_id() {
-        let (mut state, user) = get_app_state_and_test_user();
-        let store = state.transaction_store();
+        let (state, user) = get_app_state_and_test_user();
+        let mut store = state.transaction_store;
         let transaction = store.create(123.0, user.id()).unwrap();
 
         let maybe_transaction = store.get(transaction.id() + 654);
@@ -399,8 +399,8 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transactions_by_user_id_succeeds_with_no_transactions() {
-        let (mut state, user) = get_app_state_and_test_user();
-        let store = state.transaction_store();
+        let (state, user) = get_app_state_and_test_user();
+        let store = state.transaction_store;
         let expected_transactions = vec![];
 
         let transactions = store.get_by_user_id(user.id());
@@ -410,8 +410,8 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transactions_by_user_id_succeeds() {
-        let (mut state, user) = get_app_state_and_test_user();
-        let store = state.transaction_store();
+        let (state, user) = get_app_state_and_test_user();
+        let mut store = state.transaction_store;
 
         let expected_transactions = vec![
             store.create(PI, user.id()).unwrap(),
@@ -428,14 +428,14 @@ mod sqlite_transaction_store_tests {
         let (mut state, user) = get_app_state_and_test_user();
 
         let other_user = state
-            .user_store()
+            .user_store
             .create(
                 "other@example.com".parse().unwrap(),
                 PasswordHash::from_raw_password("averysecretpassword", 4).unwrap(),
             )
             .unwrap();
 
-        let store = state.transaction_store();
+        let mut store = state.transaction_store;
 
         let end_date = OffsetDateTime::now_utc()
             .date()
@@ -520,13 +520,13 @@ mod sqlite_transaction_store_tests {
                 .description(format!("transaction #{i}"));
 
             state
-                .transaction_store()
+                .transaction_store
                 .create_from_builder(transaction_builder)
                 .unwrap();
         }
 
         let got = state
-            .transaction_store()
+            .transaction_store
             .get_query(TransactionQuery {
                 limit: Some(5),
                 ..Default::default()
@@ -553,7 +553,7 @@ mod sqlite_transaction_store_tests {
                 .description(format!("transaction #{i}"));
 
             let transaction = state
-                .transaction_store()
+                .transaction_store
                 .create_from_builder(transaction_builder)
                 .unwrap();
 
@@ -563,7 +563,7 @@ mod sqlite_transaction_store_tests {
         want.sort_by(|a, b| b.date().cmp(a.date()));
 
         let got = state
-            .transaction_store()
+            .transaction_store
             .get_query(TransactionQuery {
                 sort_date: Some(SortOrder::Descending),
                 ..Default::default()

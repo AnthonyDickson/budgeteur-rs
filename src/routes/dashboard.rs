@@ -30,7 +30,7 @@ struct DashboardTemplate<'a> {
 
 /// Display a page with an overview of the user's data.
 pub async fn get_dashboard_page<C, T, U>(
-    State(mut state): State<AppState<C, T, U>>,
+    State(state): State<AppState<C, T, U>>,
     Extension(user_id): Extension<UserID>,
 ) -> Response
 where
@@ -52,7 +52,7 @@ where
         }
     };
 
-    let transactions = state.transaction_store().get_query(TransactionQuery {
+    let transactions = state.transaction_store.get_query(TransactionQuery {
         user_id: Some(user_id),
         date_range: Some(one_week_ago..=today),
         ..Default::default()

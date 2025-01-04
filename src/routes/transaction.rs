@@ -63,7 +63,7 @@ where
         .date(data.date)?;
 
     state
-        .transaction_store()
+        .transaction_store
         .create_from_builder(transaction)
         .map(|transaction| (StatusCode::OK, TransactionRow { transaction }))
         .map_err(AppError::TransactionError)
@@ -77,7 +77,7 @@ where
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_transaction<C, T, U>(
-    State(mut state): State<AppState<C, T, U>>,
+    State(state): State<AppState<C, T, U>>,
     jar: PrivateCookieJar,
     Path(transaction_id): Path<DatabaseID>,
 ) -> impl IntoResponse
@@ -87,7 +87,7 @@ where
     U: UserStore + Send + Sync,
 {
     state
-        .transaction_store()
+        .transaction_store
         .get(transaction_id)
         .map_err(AppError::TransactionError)
         .and_then(|transaction| {
@@ -240,7 +240,7 @@ mod transaction_tests {
             DummyUserStore {},
         );
 
-        let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
+        let jar = PrivateCookieJar::new(state.cookie_key.clone());
 
         let user_id = UserID::new(123);
 
@@ -278,7 +278,7 @@ mod transaction_tests {
         );
 
         let transaction = state
-            .transaction_store()
+            .transaction_store
             .create_from_builder(
                 TransactionBuilder::new(13.34, user_id)
                     .category(Some(24))
@@ -286,7 +286,7 @@ mod transaction_tests {
             )
             .unwrap();
 
-        let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
+        let jar = PrivateCookieJar::new(state.cookie_key.clone());
         let jar = set_auth_cookie(jar, user_id, state.cookie_duration).unwrap();
 
         let response = get_transaction(State(state), jar, Path(transaction.id()))
@@ -313,7 +313,7 @@ mod transaction_tests {
         );
 
         let transaction = state
-            .transaction_store()
+            .transaction_store
             .create_from_builder(
                 TransactionBuilder::new(12.34, user_id)
                     .category(Some(24))
@@ -321,7 +321,7 @@ mod transaction_tests {
             )
             .unwrap();
 
-        let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
+        let jar = PrivateCookieJar::new(state.cookie_key.clone());
         let jar = set_auth_cookie(jar, unauthorized_user_id, state.cookie_duration).unwrap();
 
         let response = get_transaction(State(state), jar, Path(transaction.id()))
@@ -346,15 +346,10 @@ mod transaction_tests {
     }
 
     fn assert_create_calls(
-        mut state: AppState<DummyCategoryStore, FakeTransactionStore, DummyUserStore>,
+        state: AppState<DummyCategoryStore, FakeTransactionStore, DummyUserStore>,
         want: Transaction,
     ) {
-        let create_calls = state
-            .transaction_store()
-            .create_calls
-            .lock()
-            .unwrap()
-            .clone();
+        let create_calls = state.transaction_store.create_calls.lock().unwrap().clone();
 
         assert_eq!(
             create_calls.len(),

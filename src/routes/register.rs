@@ -122,7 +122,7 @@ where
         }
     };
 
-    if state.user_store().get_by_email(&email).is_ok() {
+    if state.user_store.get_by_email(&email).is_ok() {
         return RegisterFormTemplate {
             email_input: EmailInputTemplate {
                 value: &user_data.email,
@@ -172,7 +172,7 @@ where
     };
 
     state
-        .user_store()
+        .user_store
         .create(email, password_hash)
         .map(|user| {
             let jar = set_auth_cookie(jar, user.id(), state.cookie_duration);

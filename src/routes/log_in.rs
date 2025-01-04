@@ -79,7 +79,7 @@ pub const REMEMBER_ME_COOKIE_DURATION: Duration = Duration::days(7);
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn post_log_in<C, T, U>(
-    State(mut state): State<AppState<C, T, U>>,
+    State(state): State<AppState<C, T, U>>,
     jar: PrivateCookieJar,
     Form(user_data): Form<LogInData>,
 ) -> Response
@@ -88,7 +88,7 @@ where
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
 {
-    verify_credentials(user_data.clone(), state.user_store())
+    verify_credentials(user_data.clone(), &state.user_store)
         .map(|user| {
             let cookie_duration = if user_data.remember_me.is_some() {
                 REMEMBER_ME_COOKIE_DURATION
@@ -395,7 +395,7 @@ mod log_in_tests {
         );
 
         state
-            .user_store()
+            .user_store
             .create(
                 EmailAddress::new_unchecked("test@test.com"),
                 PasswordHash::new(ValidatedPassword::new_unchecked("test"), 4).unwrap(),
@@ -407,7 +407,7 @@ mod log_in_tests {
 
     async fn new_log_in_request(log_in_form: LogInData) -> Response<Body> {
         let state = get_test_app_config();
-        let jar = PrivateCookieJar::new(state.cookie_key().to_owned());
+        let jar = PrivateCookieJar::new(state.cookie_key.clone());
 
         post_log_in(State(state), jar, Form(log_in_form)).await
     }

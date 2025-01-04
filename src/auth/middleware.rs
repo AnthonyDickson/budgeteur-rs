@@ -264,11 +264,11 @@ mod auth_guard_tests {
     }
 
     async fn test_log_in_route(
-        State(mut state): State<TestAppState>,
+        State(state): State<TestAppState>,
         jar: PrivateCookieJar,
         Form(user_data): Form<LogInData>,
     ) -> Result<PrivateCookieJar, AuthError> {
-        let user = verify_credentials(user_data, state.user_store())?;
+        let user = verify_credentials(user_data, &state.user_store)?;
 
         set_auth_cookie(jar, user.id(), state.cookie_duration).map_err(|_| AuthError::DateError)
     }

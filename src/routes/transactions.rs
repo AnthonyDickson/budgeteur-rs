@@ -37,7 +37,7 @@ struct TransactionsTemplate<'a> {
 }
 
 pub async fn get_transactions_page<C, T, U>(
-    State(mut state): State<AppState<C, T, U>>,
+    State(state): State<AppState<C, T, U>>,
     Extension(user_id): Extension<UserID>,
 ) -> Response
 where
@@ -47,7 +47,7 @@ where
 {
     let navbar = get_nav_bar(endpoints::TRANSACTIONS);
 
-    let transactions = state.transaction_store().get_query(TransactionQuery {
+    let transactions = state.transaction_store.get_query(TransactionQuery {
         user_id: Some(user_id),
         limit: Some(20),
         sort_date: Some(SortOrder::Descending),
@@ -117,7 +117,7 @@ mod transactions_route_tests {
         let mut state = create_app_state(db_connection, "42").unwrap();
 
         let user = state
-            .user_store()
+            .user_store
             .create(
                 "test@test.com".parse().unwrap(),
                 PasswordHash::new(ValidatedPassword::new_unchecked("test"), 4).unwrap(),
@@ -141,13 +141,13 @@ mod transactions_route_tests {
 
         let transactions = vec![
             state
-                .transaction_store()
+                .transaction_store
                 .create_from_builder(
                     Transaction::build(1.0, user.id()).description("foo".to_string()),
                 )
                 .unwrap(),
             state
-                .transaction_store()
+                .transaction_store
                 .create_from_builder(
                     Transaction::build(2.0, user.id()).description("bar".to_string()),
                 )
