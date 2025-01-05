@@ -3,62 +3,25 @@ use std::sync::{Arc, Mutex};
 
 use email_address::EmailAddress;
 use rusqlite::{Connection, Row};
-use thiserror::Error;
 
 use crate::{
     db::{CreateTable, MapRow},
     models::{PasswordHash, User, UserID},
+    Error,
 };
 
 /// Handles the creation and retrieval of User objects.
 pub trait UserStore {
     /// Create a new user.
-    fn create(
-        &mut self,
-        email: EmailAddress,
-        password_hash: PasswordHash,
-    ) -> Result<User, UserError>;
+    fn create(&mut self, email: EmailAddress, password_hash: PasswordHash) -> Result<User, Error>;
 
     /// Get a user by their ID.
-    fn get(&self, id: UserID) -> Result<User, UserError>;
+    fn get(&self, id: UserID) -> Result<User, Error>;
 
     /// Get a user by their email.
     ///
-    /// Returns [UserError::NotFound] if no user with the given email exists.
-    fn get_by_email(&self, email: &EmailAddress) -> Result<User, UserError>;
-}
-
-/// Errors that can occur during the creation or retrieval of a user.
-#[derive(Debug, Error, PartialEq)]
-pub enum UserError {
-    /// The email used to create the user is already in use. The client should try again with a
-    /// different email address.
-    #[error("the email is already in use")]
-    DuplicateEmail,
-
-    /// There was no user in the database that matched the given details. The client can try again
-    /// with different details.
-    #[error("no user found with the given details")]
-    NotFound,
-
-    /// An unhandled/unexpected SQL error.
-    #[error("an error occurred while creating the user: {0}")]
-    SqlError(rusqlite::Error),
-}
-
-impl From<rusqlite::Error> for UserError {
-    fn from(value: rusqlite::Error) -> Self {
-        match value {
-            // Code 2067 occurs when a UNIQUE constraint failed.
-            rusqlite::Error::SqliteFailure(sql_error, Some(ref desc))
-                if sql_error.extended_code == 2067 && desc.contains("email") =>
-            {
-                UserError::DuplicateEmail
-            }
-            rusqlite::Error::QueryReturnedNoRows => UserError::NotFound,
-            error => UserError::SqlError(error),
-        }
-    }
+    /// Returns [Error::NotFound] if no user with the given email exists.
+    fn get_by_email(&self, email: &EmailAddress) -> Result<User, Error>;
 }
 
 /// Handles the creation and retrieval of User objects.
@@ -83,12 +46,8 @@ impl UserStore for SQLiteUserStore {
     ///
     /// # Errors
     ///
-    /// Returns a [UserError::SqlError] if an SQL related error occurred.
-    fn create(
-        &mut self,
-        email: EmailAddress,
-        password_hash: PasswordHash,
-    ) -> Result<User, UserError> {
+    /// Returns a [Error::SqlError] if an SQL related error occurred.
+    fn create(&mut self, email: EmailAddress, password_hash: PasswordHash) -> Result<User, Error> {
         let connection = self.connection.lock().unwrap();
 
         connection.execute(
@@ -101,7 +60,7 @@ impl UserStore for SQLiteUserStore {
         Ok(User::new(id, email, password_hash))
     }
 
-    /// Get the user from the database that has the specified `id`, or return [UserError::NotFound] if such user does not exist.
+    /// Get the user from the database that has the specified `id`, or return [Error::NotFound] if such user does not exist.
     ///
     /// # Panics
     ///
@@ -109,8 +68,8 @@ impl UserStore for SQLiteUserStore {
     ///
     /// # Errors
     ///
-    /// Returns a [UserError::NotFound] error if there is no user with the specified email or [UserError::SqlError] if there are SQL related errors.
-    fn get(&self, id: UserID) -> Result<User, UserError> {
+    /// Returns a [Error::NotFound] error if there is no user with the specified email or [Error::SqlError] if there are SQL related errors.
+    fn get(&self, id: UserID) -> Result<User, Error> {
         self.connection
             .lock()
             .unwrap()
@@ -119,7 +78,7 @@ impl UserStore for SQLiteUserStore {
             .map_err(|e| e.into())
     }
 
-    /// Get the user from the database that has the specified `email` address, or return [UserError::NotFound] if such user does not exist.
+    /// Get the user from the database that has the specified `email` address, or return [Error::NotFound] if such user does not exist.
     ///
     /// # Panics
     ///
@@ -127,8 +86,8 @@ impl UserStore for SQLiteUserStore {
     ///
     /// # Errors
     ///
-    /// Returns a [UserError::NotFound] error if there is no user with the specified email or [UserError::SqlError] there are SQL related errors.
-    fn get_by_email(&self, email: &EmailAddress) -> Result<User, UserError> {
+    /// Returns a [Error::NotFound] error if there is no user with the specified email or [Error::SqlError] there are SQL related errors.
+    fn get_by_email(&self, email: &EmailAddress) -> Result<User, Error> {
         self.connection
             .lock()
             .unwrap()
@@ -184,7 +143,7 @@ mod user_tests {
         models::{PasswordHash, UserID},
     };
 
-    use super::{SQLiteUserStore, UserError, UserStore};
+    use super::{Error, SQLiteUserStore, UserStore};
 
     fn get_store() -> SQLiteUserStore {
         let conn = Connection::open_in_memory().unwrap();
@@ -219,7 +178,7 @@ mod user_tests {
 
         assert_eq!(
             store.create(email.clone(), PasswordHash::new_unchecked("hunter3")),
-            Err(UserError::DuplicateEmail)
+            Err(Error::DuplicateEmail)
         );
     }
 
@@ -229,7 +188,7 @@ mod user_tests {
 
         let id = UserID::new(42);
 
-        assert_eq!(store.get(id), Err(UserError::NotFound));
+        assert_eq!(store.get(id), Err(Error::NotFound));
     }
 
     #[test]
@@ -255,7 +214,7 @@ mod user_tests {
         // This email is not in the database.
         let email = EmailAddress::from_str("notavalidemail@foo.bar").unwrap();
 
-        assert_eq!(store.get_by_email(&email), Err(UserError::NotFound));
+        assert_eq!(store.get_by_email(&email), Err(Error::NotFound));
     }
 
     #[test]

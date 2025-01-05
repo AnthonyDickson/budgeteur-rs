@@ -10,7 +10,8 @@ use time::Date;
 
 use crate::{
     db::{CreateTable, MapRow},
-    models::{DatabaseID, Transaction, TransactionBuilder, TransactionError, UserID},
+    models::{DatabaseID, Transaction, TransactionBuilder, UserID},
+    Error,
 };
 
 use super::SQLiteCategoryStore;
@@ -18,22 +19,19 @@ use super::SQLiteCategoryStore;
 /// Handles the creation and retrieval of transactions.
 pub trait TransactionStore {
     /// Create a new transaction in the store.
-    fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, TransactionError>;
+    fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, Error>;
 
     /// Create a new transaction in the store.
-    fn create_from_builder(
-        &mut self,
-        builder: TransactionBuilder,
-    ) -> Result<Transaction, TransactionError>;
+    fn create_from_builder(&mut self, builder: TransactionBuilder) -> Result<Transaction, Error>;
 
     /// Retrieve a transaction from the store.
-    fn get(&self, id: DatabaseID) -> Result<Transaction, TransactionError>;
+    fn get(&self, id: DatabaseID) -> Result<Transaction, Error>;
 
     /// Retrieve a user's transactions from the store.
-    fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, TransactionError>;
+    fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, Error>;
 
     /// Retrieve transactions from the store in the way defined by `query`.
-    fn get_query(&self, query: TransactionQuery) -> Result<Vec<Transaction>, TransactionError>;
+    fn get_query(&self, query: TransactionQuery) -> Result<Vec<Transaction>, Error>;
 }
 
 /// Defines how transactions should be fetched from [TransactionStore::get_query].
@@ -83,11 +81,11 @@ impl TransactionStore for SQLiteTransactionStore {
     ///
     /// # Errors
     /// This function will return a:
-    /// - [TransactionError::InvalidCategory] if `category_id` does not refer to a valid category,
-    /// - [TransactionError::InvalidUser] if `user_id` does not refer to a valid user,
-    /// - [TransactionError::SqlError] if there is some other SQL error,
-    /// - or [TransactionError::Unspecified] if there was an unexpected error.
-    fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, TransactionError> {
+    /// - [Error::InvalidCategory] if `category_id` does not refer to a valid category,
+    /// - [Error::InvalidUser] if `user_id` does not refer to a valid user,
+    /// - [Error::SqlError] if there is some other SQL error,
+    /// - or [Error::Unspecified] if there was an unexpected error.
+    fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, Error> {
         let transaction = Transaction::build(amount, user_id);
 
         self.create_from_builder(transaction)
@@ -99,14 +97,11 @@ impl TransactionStore for SQLiteTransactionStore {
     ///
     /// # Errors
     /// This function will return a:
-    /// - [TransactionError::InvalidCategory] if `category_id` does not refer to a valid category,
-    /// - [TransactionError::InvalidUser] if `user_id` does not refer to a valid user,
-    /// - [TransactionError::SqlError] if there is some other SQL error,
-    /// - or [TransactionError::Unspecified] if there was an unexpected error.
-    fn create_from_builder(
-        &mut self,
-        builder: TransactionBuilder,
-    ) -> Result<Transaction, TransactionError> {
+    /// - [Error::InvalidCategory] if `category_id` does not refer to a valid category,
+    /// - [Error::InvalidUser] if `user_id` does not refer to a valid user,
+    /// - [Error::SqlError] if there is some other SQL error,
+    /// - or [Error::Unspecified] if there was an unexpected error.
+    fn create_from_builder(&mut self, builder: TransactionBuilder) -> Result<Transaction, Error> {
         let connection = self.connection.lock().unwrap();
 
         let next_id: i64 = connection.query_row(
@@ -131,14 +126,14 @@ impl TransactionStore for SQLiteTransactionStore {
                     // violated, it is for the user ID. Otherwise, it would difficult to know
                     // which foreign key constraint was violated since the SQL error does not
                     // provide any useful information.
-                    rusqlite::Error::QueryReturnedNoRows => TransactionError::InvalidCategory,
-                    error => TransactionError::SqlError(error),
+                    rusqlite::Error::QueryReturnedNoRows => Error::InvalidCategory,
+                    error => Error::SqlError(error),
                 })?;
 
             if category.user_id() != transaction.user_id() {
                 // Use same error as if the category doesn't exist so that unauthorized users can't
                 // poke around to find out what data exists.
-                return Err(TransactionError::InvalidCategory);
+                return Err(Error::InvalidCategory);
             }
         }
 
@@ -151,9 +146,9 @@ impl TransactionStore for SQLiteTransactionStore {
                     // Code 787 occurs when a FOREIGN KEY constraint failed.
                     // The client tried to add a transaction for a nonexistent user.
                     rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
-                        TransactionError::InvalidUser
+                        Error::InvalidUser
                     }
-                    error => TransactionError::SqlError(error)
+                    error => Error::SqlError(error)
                 })?;
 
         Ok(transaction)
@@ -163,9 +158,9 @@ impl TransactionStore for SQLiteTransactionStore {
     ///
     /// # Errors
     /// This function will return a:
-    /// - [TransactionError::NotFound] if `id` does not refer to a valid transaction,
-    /// - or [TransactionError::SqlError] there is some other SQL error.
-    fn get(&self, id: DatabaseID) -> Result<Transaction, TransactionError> {
+    /// - [Error::NotFound] if `id` does not refer to a valid transaction,
+    /// - or [Error::SqlError] there is some other SQL error.
+    fn get(&self, id: DatabaseID) -> Result<Transaction, Error> {
         let transaction = self.connection.lock().unwrap()
                 .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE id = :id")?
                 .query_row(&[(":id", &id)], Self::map_row)?;
@@ -178,16 +173,16 @@ impl TransactionStore for SQLiteTransactionStore {
     /// An empty vector is returned if the specified user has no transactions.
     ///
     /// # Errors
-    /// This function will return a [TransactionError::SqlError] if there is an SQL error.
-    fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+    /// This function will return a [Error::SqlError] if there is an SQL error.
+    fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, Error> {
         self.connection.lock().unwrap()
                 .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE user_id = :user_id")?
                 .query_map(&[(":user_id", &user_id.as_i64())], Self::map_row)?
-                .map(|maybe_category| maybe_category.map_err(TransactionError::SqlError))
+                .map(|maybe_category| maybe_category.map_err(Error::SqlError))
                 .collect()
     }
 
-    fn get_query(&self, filter: TransactionQuery) -> Result<Vec<Transaction>, TransactionError> {
+    fn get_query(&self, filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
         let mut query_string_parts = vec![
             "SELECT id, amount, date, description, category_id, user_id FROM \"transaction\""
                 .to_string(),
@@ -234,7 +229,7 @@ impl TransactionStore for SQLiteTransactionStore {
             .unwrap()
             .prepare(&query_string)?
             .query_map(params, Self::map_row)?
-            .map(|maybe_category| maybe_category.map_err(TransactionError::SqlError))
+            .map(|maybe_category| maybe_category.map_err(Error::SqlError))
             .collect()
     }
 }
@@ -294,7 +289,7 @@ mod sqlite_transaction_store_tests {
         },
     };
 
-    use super::{TransactionError, TransactionStore};
+    use super::{Error, TransactionStore};
 
     fn get_app_state_and_test_user() -> (SQLAppState, User) {
         let conn = Connection::open_in_memory().unwrap();
@@ -334,7 +329,7 @@ mod sqlite_transaction_store_tests {
             .transaction_store
             .create(PI, UserID::new(user.id().as_i64() + 42));
 
-        assert_eq!(transaction, Err(TransactionError::InvalidUser));
+        assert_eq!(transaction, Err(Error::InvalidUser));
     }
 
     #[test]
@@ -345,7 +340,7 @@ mod sqlite_transaction_store_tests {
             .transaction_store
             .create_from_builder(Transaction::build(PI, user.id()).category(Some(999)));
 
-        assert_eq!(transaction, Err(TransactionError::InvalidCategory));
+        assert_eq!(transaction, Err(Error::InvalidCategory));
     }
 
     #[test]
@@ -372,7 +367,7 @@ mod sqlite_transaction_store_tests {
 
         // The server should not give any information indicating to the client that the category exists or belongs to another user,
         // so we give the same error as if the referenced category does not exist.
-        assert_eq!(maybe_transaction, Err(TransactionError::InvalidCategory));
+        assert_eq!(maybe_transaction, Err(Error::InvalidCategory));
     }
 
     #[test]
@@ -394,7 +389,7 @@ mod sqlite_transaction_store_tests {
 
         let maybe_transaction = store.get(transaction.id() + 654);
 
-        assert_eq!(maybe_transaction, Err(TransactionError::NotFound));
+        assert_eq!(maybe_transaction, Err(Error::NotFound));
     }
 
     #[test]

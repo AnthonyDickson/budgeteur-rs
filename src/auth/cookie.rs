@@ -10,9 +10,7 @@ use time::{
     format_description::BorrowedFormatItem, macros::format_description, Duration, OffsetDateTime,
 };
 
-use crate::models::UserID;
-
-use super::AuthError;
+use crate::{models::UserID, Error};
 
 pub(crate) const COOKIE_USER_ID: &str = "user_id";
 pub(crate) const COOKIE_EXPIRY: &str = "expiry";
@@ -33,11 +31,13 @@ pub(crate) fn set_auth_cookie(
     jar: PrivateCookieJar,
     user_id: UserID,
     duration: Duration,
-) -> Result<PrivateCookieJar, time::error::Format> {
+) -> Result<PrivateCookieJar, Error> {
     let expiry = OffsetDateTime::now_utc() + duration;
     // Use format instead of to_string to avoid errors at midnight when the hour is printed as
     // a single digit when [DATE_TIME_FORMAT] expects two digits.
-    let expiry_string = expiry.format(DATE_TIME_FORMAT)?;
+    let expiry_string = expiry
+        .format(DATE_TIME_FORMAT)
+        .map_err(|error| Error::InvalidDateFormat(error.to_string(), expiry.to_string()))?;
 
     Ok(jar
         .add(
@@ -84,20 +84,20 @@ pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar 
 /// The cookie jar is not modified if an error is returned.
 ///
 /// Returns:
-/// - [AuthError::DateError] if the auth cookie or expiry cookie are not in the cookie jar.
-/// - [AuthError::DateError] if extending the cookie by `duration` would overflow the date time.
-/// - [AuthError::DateError] if the new expiry date time cannot be formatted.
+/// - [Error::CookieMissing] if the auth cookie or expiry cookie are not in the cookie jar.
+/// - [Error::InvalidDateFormat] if the new expiry date time cannot be formatted.
+///
+/// # Panics
+///
+/// Panics if adding `duration` to the current time overflows.
+/// See [time::Date::MAX] for more information.
 pub(crate) fn extend_auth_cookie_duration_if_needed(
     jar: PrivateCookieJar,
     duration: Duration,
-) -> Result<PrivateCookieJar, AuthError> {
-    let expiry_cookie = jar.get(COOKIE_EXPIRY).ok_or(AuthError::CookieMissing)?;
-    let current_expiry = extract_date_time(&expiry_cookie).map_err(|_| AuthError::DateError)?;
-
-    let new_expiry = OffsetDateTime::now_utc()
-        .checked_add(duration)
-        .ok_or(AuthError::DateError)?;
-
+) -> Result<PrivateCookieJar, Error> {
+    let expiry_cookie = jar.get(COOKIE_EXPIRY).ok_or(Error::CookieMissing)?;
+    let current_expiry = extract_date_time(&expiry_cookie)?;
+    let new_expiry = OffsetDateTime::now_utc() + duration;
     let expiry = max(current_expiry, new_expiry);
 
     set_auth_cookie_expiry(jar, expiry)
@@ -111,18 +111,18 @@ pub(crate) fn extend_auth_cookie_duration_if_needed(
 /// If an error is returned, the cookie jar is not modified.
 ///
 /// Returns a:
-/// - [AuthError::CookieMissing] if the auth cookie or expiry cookie are not in the cookie jar.
-/// - [AuthError::DateError] if the new expiry date time cannot be formatted.
+/// - [Error::CookieMissing] if the auth cookie or expiry cookie are not in the cookie jar.
+/// - [Error::InvalidDateFormat] if the new expiry date time cannot be formatted.
 pub(crate) fn set_auth_cookie_expiry(
     jar: PrivateCookieJar,
     expiry: OffsetDateTime,
-) -> Result<PrivateCookieJar, AuthError> {
+) -> Result<PrivateCookieJar, Error> {
     let expiry_string = expiry
         .format(DATE_TIME_FORMAT)
-        .map_err(|_| AuthError::DateError)?;
+        .map_err(|error| Error::InvalidDateFormat(error.to_string(), expiry.to_string()))?;
 
-    let mut auth_cookie = jar.get(COOKIE_USER_ID).ok_or(AuthError::CookieMissing)?;
-    let mut expiry_cookie = jar.get(COOKIE_EXPIRY).ok_or(AuthError::CookieMissing)?;
+    let mut auth_cookie = jar.get(COOKIE_USER_ID).ok_or(Error::CookieMissing)?;
+    let mut expiry_cookie = jar.get(COOKIE_EXPIRY).ok_or(Error::CookieMissing)?;
 
     auth_cookie.set_expires(expiry);
     expiry_cookie.set_expires(expiry);
@@ -142,12 +142,12 @@ pub(crate) fn set_auth_cookie_expiry(
     Ok(jar.add(auth_cookie).add(expiry_cookie))
 }
 
-pub(crate) fn get_user_id_from_auth_cookie(jar: &PrivateCookieJar) -> Result<UserID, AuthError> {
+pub(crate) fn get_user_id_from_auth_cookie(jar: &PrivateCookieJar) -> Result<UserID, Error> {
     match jar.get(COOKIE_USER_ID) {
         Some(user_id_cookie) => {
-            extract_user_id(&user_id_cookie).map_err(|_| AuthError::InvalidCredentials)
+            extract_user_id(&user_id_cookie).map_err(|_| Error::InvalidCredentials)
         }
-        _ => Err(AuthError::InvalidCredentials),
+        _ => Err(Error::InvalidCredentials),
     }
 }
 
@@ -157,8 +157,10 @@ const DATE_TIME_FORMAT: &[BorrowedFormatItem] = format_description!(
          sign:mandatory]:[offset_minute]:[offset_second]"
 );
 
-pub(crate) fn extract_date_time(cookie: &Cookie) -> Result<OffsetDateTime, time::error::Parse> {
-    OffsetDateTime::parse(cookie.value_trimmed(), DATE_TIME_FORMAT)
+pub(crate) fn extract_date_time(cookie: &Cookie) -> Result<OffsetDateTime, Error> {
+    OffsetDateTime::parse(cookie.value_trimmed(), DATE_TIME_FORMAT).map_err(|error| {
+        Error::InvalidDateFormat(error.to_string(), cookie.value_trimmed().to_owned())
+    })
 }
 
 pub(crate) fn extract_user_id(cookie: &Cookie) -> Result<UserID, ParseIntError> {
@@ -178,14 +180,12 @@ mod cookie_tests {
     use time::{macros::datetime, Duration, OffsetDateTime, UtcOffset};
 
     use crate::{
-        auth::{
-            cookie::{
-                extract_date_time, extract_user_id, get_user_id_from_auth_cookie, COOKIE_EXPIRY,
-                COOKIE_USER_ID, DATE_TIME_FORMAT, DEFAULT_COOKIE_DURATION,
-            },
-            AuthError,
+        auth::cookie::{
+            extract_date_time, extract_user_id, get_user_id_from_auth_cookie, COOKIE_EXPIRY,
+            COOKIE_USER_ID, DATE_TIME_FORMAT, DEFAULT_COOKIE_DURATION,
         },
         models::UserID,
+        Error,
     };
 
     use super::{
@@ -370,7 +370,7 @@ mod cookie_tests {
 
         assert_eq!(
             get_user_id_from_auth_cookie(&jar),
-            Err(AuthError::InvalidCredentials),
+            Err(Error::InvalidCredentials),
         );
     }
 }

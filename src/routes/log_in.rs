@@ -16,10 +16,9 @@ use crate::{
     auth::{
         cookie::{invalidate_auth_cookie, set_auth_cookie},
         log_in::{verify_credentials, LogInData},
-        AuthError,
     },
     stores::{CategoryStore, TransactionStore, UserStore},
-    AppState,
+    AppState, Error,
 };
 
 use super::{
@@ -122,8 +121,9 @@ where
                 value: "",
                 min_length: 0,
                 error_message: match e {
-                    AuthError::InvalidCredentials => INVALID_CREDENTIALS_ERROR_MSG,
-                    AuthError::CookieMissing | AuthError::DateError | AuthError::InternalError => {
+                    Error::InvalidCredentials => INVALID_CREDENTIALS_ERROR_MSG,
+                    error => {
+                        tracing::error!("Unhandled error while verifying credentials: {error}");
                         "An internal error occurred. Please try again later."
                     }
                 },
@@ -158,17 +158,15 @@ mod log_in_tests {
             log_in::LogInData,
         },
         models::{
-            Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
-            TransactionBuilder, TransactionError, User, UserID, ValidatedPassword,
+            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
+            User, UserID, ValidatedPassword,
         },
         routes::{
             endpoints,
             log_in::{post_log_in, INVALID_CREDENTIALS_ERROR_MSG, REMEMBER_ME_COOKIE_DURATION},
         },
-        stores::{
-            transaction::TransactionQuery, CategoryStore, TransactionStore, UserError, UserStore,
-        },
-        AppState,
+        stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
+        AppState, Error,
     };
 
     #[derive(Clone)]
@@ -181,7 +179,7 @@ mod log_in_tests {
             &mut self,
             email: email_address::EmailAddress,
             password_hash: PasswordHash,
-        ) -> Result<User, UserError> {
+        ) -> Result<User, Error> {
             let next_id = match self.users.last() {
                 Some(user) => UserID::new(user.id().as_i64() + 1),
                 _ => UserID::new(0),
@@ -193,19 +191,19 @@ mod log_in_tests {
             Ok(user)
         }
 
-        fn get(&self, id: UserID) -> Result<User, UserError> {
+        fn get(&self, id: UserID) -> Result<User, Error> {
             self.users
                 .iter()
                 .find(|user| user.id() == id)
-                .ok_or(UserError::NotFound)
+                .ok_or(Error::NotFound)
                 .map(|user| user.to_owned())
         }
 
-        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, UserError> {
+        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, Error> {
             self.users
                 .iter()
                 .find(|user| user.email() == email)
-                .ok_or(UserError::NotFound)
+                .ok_or(Error::NotFound)
                 .map(|user| user.to_owned())
         }
     }
@@ -214,15 +212,15 @@ mod log_in_tests {
     struct DummyCategoryStore {}
 
     impl CategoryStore for DummyCategoryStore {
-        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, CategoryError> {
+        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, Error> {
             todo!()
         }
 
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, CategoryError> {
+        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
             todo!()
         }
 
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
             todo!()
         }
     }
@@ -231,33 +229,26 @@ mod log_in_tests {
     struct DummyTransactionStore {}
 
     impl TransactionStore for DummyTransactionStore {
-        fn create(
-            &mut self,
-            _amount: f64,
-            _user_id: UserID,
-        ) -> Result<Transaction, TransactionError> {
+        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
             todo!()
         }
 
         fn create_from_builder(
             &mut self,
             _builder: TransactionBuilder,
-        ) -> Result<Transaction, TransactionError> {
+        ) -> Result<Transaction, Error> {
             todo!()
         }
 
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, TransactionError> {
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
             todo!()
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
 
-        fn get_query(
-            &self,
-            _filter: TransactionQuery,
-        ) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
     }

@@ -12,16 +12,11 @@
 
 use std::time::Duration;
 
-use auth::AuthError;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use axum_server::Handle;
-use models::{CategoryError, TransactionError};
-use serde_json::json;
-use thiserror::Error;
 use tokio::signal;
 
 pub use routes::build_router;
@@ -69,65 +64,117 @@ pub async fn graceful_shutdown(handle: Handle) {
 }
 
 /// The errors that may occur in the application.
-#[derive(Debug, Error)]
-enum AppError {
-    /// The requested resource was not found. The client should check that the parameters (e.g., ID) are correct and that the resource has been created.
+#[derive(Debug, thiserror::Error, PartialEq)]
+pub enum Error {
+    /// The email used to create the user is already in use.
+    ///
+    /// The client should try again with a different email address.
+    #[error("the email is already in use")]
+    DuplicateEmail,
+
+    /// The user provided an invalid combination of email and password.
+    #[error("invalid email or password")]
+    InvalidCredentials,
+
+    /// Either the user ID or expiry cookie is missing from the cookie jar in
+    /// the request.
+    #[error("no cookies in the cookie jar :(")]
+    CookieMissing,
+
+    /// There was an error parsing the date in the cookie or creating the new
+    /// expiry date time.
+    ///
+    /// Callers should pass in the original error as a string and the date
+    /// string that caused the error.
+    #[error("could not format expiry cookie date-time string \"{1}\": {0}")]
+    InvalidDateFormat(String, String),
+
+    /// The user provided a password that is too easy to guess.
+    #[error("password is too weak: {0}")]
+    TooWeak(String),
+
+    /// An unexpected error occurred with the underlying hashing library.
+    ///
+    /// The error string should only be logged for debugging on the server.
+    /// When communicating with the application client this error should be
+    /// replaced with a general error type indicating an internal server error.
+    #[error("hashing failed: {0}")]
+    HashingError(String),
+
+    /// The user ID used to create a category does not refer to a valid user.
+    #[error("the user ID does not refer to a valid user.")]
+    InvalidUser,
+
+    /// The category ID used to create a transaction did not match a valid category.
+    #[error("the category ID does not refer to a valid category")]
+    InvalidCategory,
+
+    /// An empty string was used to create a category name.
+    #[error("an empty string is not a valid category name")]
+    EmptyCategoryName,
+
+    /// A date in the future was used to create a transaction.
+    ///
+    /// Transactions record events that have already happened, therefore future
+    /// dates are not allowed.
+    #[error("transaction dates must not be later than the current date")]
+    FutureDate,
+
+    /// The requested resource was not found.
+    ///
+    /// For HTTP request handlers, the client should check that the parameters
+    /// (e.g., ID) are correct and that the resource has been created.
+    ///
+    /// Internally, this error may occur when a query returns no rows.
     #[error("the requested resource could not be found")]
     NotFound,
 
-    /// An error occurred while operating on a category.
-    #[error("category error")]
-    CategoryError(CategoryError),
+    /// An unexpected error occurred when hashing a password or parsing a password hash.
+    #[error("an unexpected error occurred: {0}")]
+    InternalError(String),
 
-    /// An error occurred while operating on a transaction.
-    #[error("transaction error")]
-    TransactionError(TransactionError),
-
-    /// The user is not authenticated/authorized to access the given resource.
-    #[error("auth error")]
-    AuthError(AuthError),
+    /// An unhandled/unexpected SQL error.
+    #[error("an error occurred while creating the user: {0}")]
+    SqlError(rusqlite::Error),
 }
 
-impl From<AuthError> for AppError {
-    fn from(value: AuthError) -> Self {
-        AppError::AuthError(value)
+impl From<rusqlite::Error> for Error {
+    fn from(value: rusqlite::Error) -> Self {
+        match value {
+            // Code 2067 occurs when a UNIQUE constraint failed.
+            rusqlite::Error::SqliteFailure(sql_error, Some(ref desc))
+                if sql_error.extended_code == 2067 && desc.contains("email") =>
+            {
+                Error::DuplicateEmail
+            }
+
+            rusqlite::Error::QueryReturnedNoRows => Error::NotFound,
+            error => {
+                tracing::error!("an unhandled SQL error occurred: {}", error);
+                Error::SqlError(error)
+            }
+        }
     }
 }
 
-impl From<CategoryError> for AppError {
-    fn from(e: CategoryError) -> Self {
-        tracing::error!("{e:?}");
-
-        AppError::CategoryError(e)
-    }
-}
-
-impl From<TransactionError> for AppError {
-    fn from(value: TransactionError) -> Self {
-        AppError::TransactionError(value)
-    }
-}
-
-impl IntoResponse for AppError {
+impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
-            AppError::CategoryError(e) => return e.into_response(),
-            AppError::TransactionError(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Internal server error: {e:?}"),
+        match self {
+            Error::EmptyCategoryName => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "category name cannot be emtpy.",
             ),
-
-            AppError::AuthError(e) => (StatusCode::UNAUTHORIZED, format!("Auth error: {e:?}")),
-            AppError::NotFound => (
-                StatusCode::NOT_FOUND,
-                "The requested resource could not be found.".to_string(),
-            ),
-        };
-
-        let body = Json(json!({
-            "error": error_message,
-        }));
-
-        (status, body).into_response()
+            Error::NotFound => (StatusCode::NOT_FOUND, "Resource not found"),
+            Error::InternalError(err) => {
+                tracing::error!("An unexpected error occurred: {}", err);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
+            // Any errors that are not handled above are not intended to be shown to the client.
+            error => {
+                println!("An unexpected error occurred: {}", error);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
+        }
+        .into_response()
     }
 }

@@ -14,7 +14,7 @@ use crate::{
     auth::cookie::get_user_id_from_auth_cookie,
     models::{DatabaseID, Transaction, UserID},
     stores::{CategoryStore, TransactionStore, UserStore},
-    AppError, AppState,
+    AppState, Error,
 };
 
 use super::templates::TransactionRow;
@@ -66,7 +66,6 @@ where
         .transaction_store
         .create_from_builder(transaction)
         .map(|transaction| (StatusCode::OK, TransactionRow { transaction }))
-        .map_err(AppError::TransactionError)
 }
 
 /// A route handler for getting a transaction by its database ID.
@@ -89,13 +88,12 @@ where
     state
         .transaction_store
         .get(transaction_id)
-        .map_err(AppError::TransactionError)
         .and_then(|transaction| {
             if get_user_id_from_auth_cookie(&jar)? == transaction.user_id() {
                 Ok(transaction)
             } else {
                 // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
-                Err(AppError::NotFound)
+                Err(Error::NotFound)
             }
         })
         .map(|transaction| (StatusCode::OK, Json(transaction)))
@@ -106,23 +104,25 @@ mod transaction_tests {
     use std::sync::{Arc, Mutex};
 
     use askama_axum::IntoResponse;
-    use axum::body::Body;
-    use axum::extract::{Path, State};
-    use axum::http::{Response, StatusCode};
-    use axum::Form;
+    use axum::{
+        body::Body,
+        extract::{Path, State},
+        http::{Response, StatusCode},
+        Form,
+    };
     use axum_extra::extract::PrivateCookieJar;
     use time::OffsetDateTime;
 
-    use crate::auth::cookie::set_auth_cookie;
-    use crate::models::{
-        CategoryError, DatabaseID, PasswordHash, TransactionBuilder, TransactionError,
-    };
-    use crate::routes::transaction::{create_transaction, get_transaction, TransactionForm};
-    use crate::stores::transaction::TransactionQuery;
-    use crate::stores::{CategoryStore, TransactionStore, UserStore};
     use crate::{
-        models::{Category, Transaction, UserID},
+        auth::cookie::set_auth_cookie,
+        models::{Category, DatabaseID, PasswordHash, Transaction, TransactionBuilder, UserID},
+        routes::transaction::{create_transaction, get_transaction, TransactionForm},
+        stores::transaction::TransactionQuery,
         AppState,
+    };
+    use crate::{
+        stores::{CategoryStore, TransactionStore, UserStore},
+        Error,
     };
 
     #[derive(Clone)]
@@ -133,18 +133,18 @@ mod transaction_tests {
             &mut self,
             _email: email_address::EmailAddress,
             _password_hash: PasswordHash,
-        ) -> Result<crate::models::User, crate::stores::UserError> {
+        ) -> Result<crate::models::User, Error> {
             todo!()
         }
 
-        fn get(&self, _id: UserID) -> Result<crate::models::User, crate::stores::UserError> {
+        fn get(&self, _id: UserID) -> Result<crate::models::User, Error> {
             todo!()
         }
 
         fn get_by_email(
             &self,
             _email: &email_address::EmailAddress,
-        ) -> Result<crate::models::User, crate::stores::UserError> {
+        ) -> Result<crate::models::User, Error> {
             todo!()
         }
     }
@@ -157,15 +157,15 @@ mod transaction_tests {
             &self,
             _name: crate::models::CategoryName,
             _user_id: UserID,
-        ) -> Result<Category, CategoryError> {
+        ) -> Result<Category, Error> {
             todo!()
         }
 
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, CategoryError> {
+        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
             todo!()
         }
 
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
             todo!()
         }
     }
@@ -186,18 +186,14 @@ mod transaction_tests {
     }
 
     impl TransactionStore for FakeTransactionStore {
-        fn create(
-            &mut self,
-            amount: f64,
-            user_id: UserID,
-        ) -> Result<Transaction, TransactionError> {
+        fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, Error> {
             self.create_from_builder(TransactionBuilder::new(amount, user_id))
         }
 
         fn create_from_builder(
             &mut self,
             builder: TransactionBuilder,
-        ) -> Result<Transaction, TransactionError> {
+        ) -> Result<Transaction, Error> {
             let next_id = match self.transactions.last() {
                 Some(transaction) => transaction.id() + 1,
                 None => 0,
@@ -211,22 +207,19 @@ mod transaction_tests {
             Ok(transaction)
         }
 
-        fn get(&self, id: DatabaseID) -> Result<Transaction, TransactionError> {
+        fn get(&self, id: DatabaseID) -> Result<Transaction, Error> {
             self.transactions
                 .iter()
                 .find(|transaction| transaction.id() == id)
-                .ok_or(TransactionError::NotFound)
+                .ok_or(Error::NotFound)
                 .map(|transaction| transaction.to_owned())
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
 
-        fn get_query(
-            &self,
-            _filter: TransactionQuery,
-        ) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
     }

@@ -15,7 +15,7 @@ use time::{Duration, OffsetDateTime};
 use crate::{
     models::UserID,
     stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
-    AppError, AppState,
+    AppState,
 };
 
 /// Renders the dashboard page.
@@ -63,7 +63,7 @@ where
             .iter()
             .map(|transaction| transaction.amount())
             .sum(),
-        Err(error) => return AppError::TransactionError(error).into_response(),
+        Err(error) => return error.into_response(),
     };
 
     DashboardTemplate {
@@ -86,13 +86,11 @@ mod dashboard_route_tests {
 
     use crate::{
         models::{
-            Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
-            TransactionBuilder, TransactionError, User, UserID,
+            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
+            User, UserID,
         },
-        stores::{
-            transaction::TransactionQuery, CategoryStore, TransactionStore, UserError, UserStore,
-        },
-        AppState,
+        stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
+        AppState, Error,
     };
 
     use super::get_dashboard_page;
@@ -105,15 +103,15 @@ mod dashboard_route_tests {
             &mut self,
             _email: email_address::EmailAddress,
             _password_hash: PasswordHash,
-        ) -> Result<User, UserError> {
+        ) -> Result<User, Error> {
             todo!()
         }
 
-        fn get(&self, _id: UserID) -> Result<User, UserError> {
+        fn get(&self, _id: UserID) -> Result<User, Error> {
             todo!()
         }
 
-        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, UserError> {
+        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, Error> {
             todo!()
         }
     }
@@ -122,15 +120,15 @@ mod dashboard_route_tests {
     struct DummyCategoryStore {}
 
     impl CategoryStore for DummyCategoryStore {
-        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, CategoryError> {
+        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, Error> {
             todo!()
         }
 
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, CategoryError> {
+        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
             todo!()
         }
 
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
             todo!()
         }
     }
@@ -141,18 +139,14 @@ mod dashboard_route_tests {
     }
 
     impl TransactionStore for FakeTransactionStore {
-        fn create(
-            &mut self,
-            amount: f64,
-            user_id: UserID,
-        ) -> Result<Transaction, TransactionError> {
+        fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, Error> {
             self.create_from_builder(TransactionBuilder::new(amount, user_id))
         }
 
         fn create_from_builder(
             &mut self,
             builder: TransactionBuilder,
-        ) -> Result<Transaction, TransactionError> {
+        ) -> Result<Transaction, Error> {
             let next_id = match self.transactions.last() {
                 Some(transaction) => transaction.id() + 1,
                 None => 0,
@@ -165,18 +159,15 @@ mod dashboard_route_tests {
             Ok(transaction)
         }
 
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, TransactionError> {
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
             todo!()
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
 
-        fn get_query(
-            &self,
-            filter: TransactionQuery,
-        ) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_query(&self, filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             self.transactions
                 .iter()
                 .filter(|transaction| {

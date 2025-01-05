@@ -14,7 +14,7 @@ use crate::{
     auth::cookie::get_user_id_from_auth_cookie,
     models::{CategoryName, DatabaseID, UserID},
     stores::{CategoryStore, TransactionStore, UserStore},
-    AppError, AppState,
+    AppState, Error,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -44,7 +44,6 @@ where
         .category_store
         .create(name, user_id)
         .map(|category| (StatusCode::OK, Json(category)))
-        .map_err(AppError::CategoryError)
 }
 
 /// A route handler for getting a category by its database ID.
@@ -67,7 +66,6 @@ where
     state
         .category_store
         .get(category_id)
-        .map_err(AppError::CategoryError)
         .and_then(|category| {
             let user_id = get_user_id_from_auth_cookie(&jar)?;
 
@@ -75,7 +73,7 @@ where
                 Ok(category)
             } else {
                 // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
-                Err(AppError::NotFound)
+                Err(Error::NotFound)
             }
         })
         .map(|category| (StatusCode::OK, Json(category)))
@@ -96,12 +94,12 @@ mod category_tests {
     use crate::{
         auth::cookie::{set_auth_cookie, DEFAULT_COOKIE_DURATION},
         models::{
-            Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
-            TransactionBuilder, TransactionError, User, UserID,
+            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
+            User, UserID,
         },
         routes::category::{create_category, get_category},
         stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
-        AppState,
+        AppState, Error,
     };
 
     use super::CategoryData;
@@ -127,7 +125,7 @@ mod category_tests {
     }
 
     impl CategoryStore for SpyCategoryStore {
-        fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, CategoryError> {
+        fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, Error> {
             self.create_calls.lock().unwrap().push(CreateCategoryCall {
                 name: name.clone(),
                 user_id,
@@ -139,7 +137,7 @@ mod category_tests {
             Ok(category)
         }
 
-        fn get(&self, category_id: DatabaseID) -> Result<Category, CategoryError> {
+        fn get(&self, category_id: DatabaseID) -> Result<Category, Error> {
             self.get_calls
                 .lock()
                 .unwrap()
@@ -150,11 +148,11 @@ mod category_tests {
                 .unwrap()
                 .iter()
                 .find(|category| category.id() == category_id)
-                .ok_or(CategoryError::NotFound)
+                .ok_or(Error::NotFound)
                 .map(|category| category.to_owned())
         }
 
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
             todo!()
         }
     }
@@ -167,18 +165,15 @@ mod category_tests {
             &mut self,
             _email: email_address::EmailAddress,
             _password_hash: PasswordHash,
-        ) -> Result<User, crate::stores::UserError> {
+        ) -> Result<User, Error> {
             todo!()
         }
 
-        fn get(&self, _id: UserID) -> Result<User, crate::stores::UserError> {
+        fn get(&self, _id: UserID) -> Result<User, Error> {
             todo!()
         }
 
-        fn get_by_email(
-            &self,
-            _email: &email_address::EmailAddress,
-        ) -> Result<User, crate::stores::UserError> {
+        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, Error> {
             todo!()
         }
     }
@@ -187,33 +182,26 @@ mod category_tests {
     struct DummyTransactionStore {}
 
     impl TransactionStore for DummyTransactionStore {
-        fn create(
-            &mut self,
-            _amount: f64,
-            _user_id: UserID,
-        ) -> Result<Transaction, TransactionError> {
+        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
             todo!()
         }
 
         fn create_from_builder(
             &mut self,
             _builder: TransactionBuilder,
-        ) -> Result<Transaction, TransactionError> {
+        ) -> Result<Transaction, Error> {
             todo!()
         }
 
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, TransactionError> {
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
             todo!()
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
 
-        fn get_query(
-            &self,
-            _filter: TransactionQuery,
-        ) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
     }

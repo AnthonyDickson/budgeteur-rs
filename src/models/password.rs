@@ -6,23 +6,9 @@ use std::fmt::Display;
 
 use bcrypt::{hash, verify, BcryptError};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use zxcvbn::{feedback::Feedback, zxcvbn, Score};
 
-/// Errors that can occur when creating or hashing a password.
-#[derive(Debug, Error)]
-pub enum PasswordError {
-    /// The provided password is too easy to guess.
-    #[error("password is too weak: {0}")]
-    TooWeak(String),
-
-    /// An unexpected error occurred with the underlying hashing library.
-    ///
-    /// The error string should only be logged for debugging on the server.
-    /// When communicating with the application client this error should be replaced with a general error type indicating an internal server error.
-    #[error("hashing failed: {0}")]
-    HashingError(String),
-}
+use crate::Error;
 
 /// A password that has been validated, but not yet hashed.
 ///
@@ -37,12 +23,12 @@ impl ValidatedPassword {
     ///
     /// This function will return an error if the password is considered too weak.
     /// The error message will explain why the password is considered too weak and suggest how to make it stronger.
-    pub fn new(raw_password_string: &str) -> Result<Self, PasswordError> {
+    pub fn new(raw_password_string: &str) -> Result<Self, Error> {
         let password_analysis = zxcvbn(raw_password_string, &[]);
 
         match password_analysis.score() {
             Score::Three | Score::Four => Ok(Self(raw_password_string.to_string())),
-            _ => Err(PasswordError::TooWeak(
+            _ => Err(Error::TooWeak(
                 password_analysis
                     .feedback()
                     .unwrap_or(&Feedback::default())
@@ -83,10 +69,10 @@ impl PasswordHash {
     /// # Errors
     ///
     /// This function will return an error if the password could not be hashed.
-    pub fn new(password: ValidatedPassword, cost: u32) -> Result<Self, PasswordError> {
+    pub fn new(password: ValidatedPassword, cost: u32) -> Result<Self, Error> {
         match hash(&password.0, cost) {
             Ok(password_hash) => Ok(Self(password_hash)),
-            Err(e) => Err(PasswordError::HashingError(e.to_string())),
+            Err(e) => Err(Error::HashingError(e.to_string())),
         }
     }
 
@@ -105,7 +91,7 @@ impl PasswordHash {
     ///
     /// This function is used instead of `From<String>` or `FromStr` to make it a bit clearer that
     /// we are not parsing an existing password hash.
-    pub fn from_raw_password(raw_password: &str, cost: u32) -> Result<Self, PasswordError> {
+    pub fn from_raw_password(raw_password: &str, cost: u32) -> Result<Self, Error> {
         let validated_password = ValidatedPassword::new(raw_password)?;
         PasswordHash::new(validated_password, cost)
     }
@@ -124,20 +110,20 @@ impl Display for PasswordHash {
 
 #[cfg(test)]
 mod validated_password_tests {
-    use crate::models::{PasswordError, ValidatedPassword};
+    use crate::{models::ValidatedPassword, Error};
 
     #[test]
     fn new_fails_on_empty() {
         let result = ValidatedPassword::new("");
 
-        assert!(matches!(result, Err(PasswordError::TooWeak(_))));
+        assert!(matches!(result, Err(Error::TooWeak(_))));
     }
 
     #[test]
     fn new_fails_on_short_password() {
         let result = ValidatedPassword::new("imtooshort");
 
-        assert!(matches!(result, Err(PasswordError::TooWeak(_))));
+        assert!(matches!(result, Err(Error::TooWeak(_))));
     }
 
     #[test]

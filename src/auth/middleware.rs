@@ -143,32 +143,29 @@ mod auth_guard_tests {
         auth::{
             cookie::{set_auth_cookie, COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION},
             middleware::auth_guard,
-            AuthError,
         },
         models::{
-            Category, CategoryError, CategoryName, DatabaseID, PasswordHash, Transaction,
-            TransactionBuilder, TransactionError, User, UserID,
+            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
+            User, UserID,
         },
         routes::endpoints::{self, format_endpoint},
-        stores::{
-            transaction::TransactionQuery, CategoryStore, TransactionStore, UserError, UserStore,
-        },
-        AppState,
+        stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
+        AppState, Error,
     };
 
     #[derive(Clone)]
     struct DummyCategoryStore {}
 
     impl CategoryStore for DummyCategoryStore {
-        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, CategoryError> {
+        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, Error> {
             todo!()
         }
 
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, CategoryError> {
+        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
             todo!()
         }
 
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
             todo!()
         }
     }
@@ -177,33 +174,26 @@ mod auth_guard_tests {
     struct DummyTransactionStore {}
 
     impl TransactionStore for DummyTransactionStore {
-        fn create(
-            &mut self,
-            _amount: f64,
-            _user_id: UserID,
-        ) -> Result<Transaction, TransactionError> {
+        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
             todo!()
         }
 
         fn create_from_builder(
             &mut self,
             _builder: TransactionBuilder,
-        ) -> Result<Transaction, TransactionError> {
+        ) -> Result<Transaction, Error> {
             todo!()
         }
 
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, TransactionError> {
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
             todo!()
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
 
-        fn get_query(
-            &self,
-            _filter: TransactionQuery,
-        ) -> Result<Vec<Transaction>, TransactionError> {
+        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
     }
@@ -216,15 +206,15 @@ mod auth_guard_tests {
             &mut self,
             _email: email_address::EmailAddress,
             _password_hash: PasswordHash,
-        ) -> Result<User, UserError> {
+        ) -> Result<User, Error> {
             todo!()
         }
 
-        fn get(&self, _id: UserID) -> Result<User, UserError> {
+        fn get(&self, _id: UserID) -> Result<User, Error> {
             todo!()
         }
 
-        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, UserError> {
+        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, Error> {
             todo!()
         }
     }
@@ -238,9 +228,8 @@ mod auth_guard_tests {
     async fn stub_log_in_route(
         State(state): State<TestAppState>,
         jar: PrivateCookieJar,
-    ) -> Result<PrivateCookieJar, AuthError> {
+    ) -> Result<PrivateCookieJar, Error> {
         set_auth_cookie(jar, UserID::new(1), state.cookie_duration)
-            .map_err(|_| AuthError::DateError)
     }
 
     const TEST_LOG_IN_ROUTE_PATH: &str = "/log_in/:user_id";

@@ -3,12 +3,7 @@
 use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    models::User,
-    stores::{UserError, UserStore},
-};
-
-use super::AuthError;
+use crate::{models::User, stores::UserStore, Error};
 
 /// The raw data entered by the user in the log-in form.
 ///
@@ -37,34 +32,25 @@ pub struct LogInData {
 /// - The email does not belong to a registered user.
 /// - The password is not correct.
 /// - An internal error occurred when verifying the password.
-pub fn verify_credentials(
-    credentials: LogInData,
-    store: &impl UserStore,
-) -> Result<User, AuthError> {
+pub fn verify_credentials(credentials: LogInData, store: &impl UserStore) -> Result<User, Error> {
     let email: EmailAddress = credentials
         .email
         .parse()
-        .map_err(|_| AuthError::InvalidCredentials)?;
+        .map_err(|_| Error::InvalidCredentials)?;
 
     let user = store.get_by_email(&email).map_err(|e| match e {
-        UserError::NotFound => AuthError::InvalidCredentials,
-        _ => {
-            tracing::error!("Error matching user: {e}");
-            AuthError::InternalError
-        }
+        Error::NotFound => Error::InvalidCredentials,
+        error => error,
     })?;
 
     let is_password_correct = user
         .password_hash()
         .verify(&credentials.password)
-        .map_err(|e| {
-            tracing::error!("Error verifying password: {e}");
-            AuthError::InternalError
-        })?;
+        .map_err(|e| Error::InternalError(e.to_string()))?;
 
     match is_password_correct {
         true => Ok(user),
-        false => Err(AuthError::InvalidCredentials),
+        false => Err(Error::InvalidCredentials),
     }
 }
 
@@ -73,12 +59,10 @@ mod log_in_tests {
     use email_address::EmailAddress;
 
     use crate::{
-        auth::{
-            log_in::{verify_credentials, LogInData},
-            AuthError,
-        },
+        auth::log_in::{verify_credentials, LogInData},
         models::{PasswordHash, User, UserID},
-        stores::{UserError, UserStore},
+        stores::UserStore,
+        Error,
     };
 
     #[derive(Clone)]
@@ -91,19 +75,19 @@ mod log_in_tests {
             &mut self,
             _email: email_address::EmailAddress,
             _password_hash: PasswordHash,
-        ) -> Result<User, UserError> {
+        ) -> Result<User, Error> {
             todo!()
         }
 
-        fn get(&self, _id: UserID) -> Result<User, UserError> {
+        fn get(&self, _id: UserID) -> Result<User, Error> {
             todo!()
         }
 
-        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, UserError> {
+        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, Error> {
             self.users
                 .iter()
                 .find(|user| user.email() == email)
-                .ok_or(UserError::NotFound)
+                .ok_or(Error::NotFound)
                 .map(|user| user.to_owned())
         }
     }
@@ -139,6 +123,6 @@ mod log_in_tests {
 
         let result = verify_credentials(user_data, &store);
 
-        assert!(matches!(result, Err(AuthError::InvalidCredentials)));
+        assert!(matches!(result, Err(Error::InvalidCredentials)));
     }
 }

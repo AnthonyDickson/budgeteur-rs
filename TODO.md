@@ -1,6 +1,5 @@
 # To Do
 
-- Merge error types into single app-wide error type
 - Use semantic status codes.
   - Currently status code 200 is returned no matter what.
     This makes unit tests harder to understand.
@@ -9,3 +8,5 @@
 - Prefix API endpoints with '/api' to distinguish between pages and fragments.
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
+- Add logging middleware that logs incoming requests and outgoing responses.
+  Passwords should be redacted.

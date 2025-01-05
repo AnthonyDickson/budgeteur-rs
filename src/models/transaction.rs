@@ -2,52 +2,12 @@
 //! application.
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use time::{Date, OffsetDateTime};
 
-use crate::models::{DatabaseID, UserID};
-
-/// Errors that can occur during the creation or retrieval of a transaction.
-#[derive(Debug, Error, PartialEq)]
-pub enum TransactionError {
-    /// A date in the future was used to create a transaction.
-    ///
-    /// Transactions record events that have already happened, therefore future dates are disallowed.
-    #[error("transaction dates must not be later than the current date")]
-    FutureDate,
-
-    /// The category ID used to create a transaction did not match a valid category.
-    #[error("the category ID does not refer to a valid category")]
-    InvalidCategory,
-
-    /// The user ID used to create a transaction did not match a valid user.
-    #[error("the user ID does not refer to a valid user")]
-    InvalidUser,
-
-    /// There was no transaction in the database that matched the given details.
-    #[error("a transaction with the given details could not be found")]
-    NotFound,
-
-    /// There was an unexpected and unhandled SQL error.
-    #[error("an unexpected error occurred: {0}")]
-    SqlError(rusqlite::Error),
-
-    /// There was an unexpected and unhandled error.
-    #[error("an unexpected error occurred: {0}")]
-    Unspecified(String),
-}
-
-impl From<rusqlite::Error> for TransactionError {
-    fn from(value: rusqlite::Error) -> Self {
-        match value {
-            rusqlite::Error::QueryReturnedNoRows => TransactionError::NotFound,
-            value => {
-                tracing::error!("an unhandled SQL error occurred: {}", value);
-                TransactionError::SqlError(value)
-            }
-        }
-    }
-}
+use crate::{
+    models::{DatabaseID, UserID},
+    Error,
+};
 
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
@@ -169,9 +129,9 @@ impl TransactionBuilder {
     ///
     /// # Errors
     /// This function will return an error if `date` is a date in the future.
-    pub fn date(mut self, date: Date) -> Result<Self, TransactionError> {
+    pub fn date(mut self, date: Date) -> Result<Self, Error> {
         if date > OffsetDateTime::now_utc().date() {
-            return Err(TransactionError::FutureDate);
+            return Err(Error::FutureDate);
         }
 
         self.date = date;
@@ -199,7 +159,7 @@ mod transaction_builder_tests {
 
     use crate::models::{TransactionBuilder, UserID};
 
-    use super::{Transaction, TransactionError};
+    use super::{Error, Transaction};
 
     #[test]
     fn new_fails_on_future_date() {
@@ -211,7 +171,7 @@ mod transaction_builder_tests {
 
         let result = TransactionBuilder::new(123.45, user_id).date(tomorrow);
 
-        assert_eq!(result, Err(TransactionError::FutureDate));
+        assert_eq!(result, Err(Error::FutureDate));
     }
 
     #[test]

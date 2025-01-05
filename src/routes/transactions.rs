@@ -14,7 +14,7 @@ use crate::{
         transaction::{SortOrder, TransactionQuery},
         CategoryStore, TransactionStore, UserStore,
     },
-    AppError, AppState,
+    AppState,
 };
 
 use super::{
@@ -55,7 +55,7 @@ where
     });
     let transactions = match transactions {
         Ok(transactions) => transactions,
-        Err(error) => return AppError::TransactionError(error).into_response(),
+        Err(error) => return error.into_response(),
     };
 
     let today = OffsetDateTime::now_utc().date();

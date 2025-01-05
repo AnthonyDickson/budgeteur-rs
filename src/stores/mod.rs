@@ -7,4 +7,4 @@ pub mod user;
 
 pub use category::{CategoryStore, SQLiteCategoryStore};
 pub use transaction::{SQLiteTransactionStore, TransactionStore};
-pub use user::{SQLiteUserStore, UserError, UserStore};
+pub use user::{SQLiteUserStore, UserStore};

@@ -5,19 +5,20 @@ use rusqlite::{Connection, Row};
 
 use crate::{
     db::{CreateTable, MapRow},
-    models::{Category, CategoryError, CategoryName, DatabaseID, UserID},
+    models::{Category, CategoryName, DatabaseID, UserID},
+    Error,
 };
 
 /// Creates and retrieves transaction categories for transactions.
 pub trait CategoryStore {
     /// Create a new category and add it the store.
-    fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, CategoryError>;
+    fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, Error>;
 
     /// Get a category by its ID.
-    fn get(&self, category_id: DatabaseID) -> Result<Category, CategoryError>;
+    fn get(&self, category_id: DatabaseID) -> Result<Category, Error>;
 
     /// Get all categories for a given user.
-    fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, CategoryError>;
+    fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, Error>;
 }
 
 /// Creates and retrieves transaction categories to/from a SQLite database.
@@ -38,7 +39,7 @@ impl CategoryStore for SQLiteCategoryStore {
     ///
     /// # Errors
     /// This function will return an error if there is an SQL error.
-    fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, CategoryError> {
+    fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, Error> {
         let connection = self.connection.lock().unwrap();
         connection.execute(
             "INSERT INTO category (name, user_id) VALUES (?1, ?2)",
@@ -50,11 +51,11 @@ impl CategoryStore for SQLiteCategoryStore {
         Ok(Category::new(id, name, user_id))
     }
 
-    /// Retrieve categories in the database for the user `user_id`.
+    /// Retrieve categories in the database for the category with `category_id`.
     ///
     /// # Errors
     /// This function will return an error if there is an SQL error.
-    fn get(&self, category_id: DatabaseID) -> Result<Category, CategoryError> {
+    fn get(&self, category_id: DatabaseID) -> Result<Category, Error> {
         self.connection
             .lock()
             .unwrap()
@@ -67,7 +68,7 @@ impl CategoryStore for SQLiteCategoryStore {
     ///
     /// # Errors
     /// This function will return an error if there is an SQL error.
-    fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, CategoryError> {
+    fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, Error> {
         self.connection
             .lock()
             .unwrap()
@@ -76,7 +77,17 @@ impl CategoryStore for SQLiteCategoryStore {
                 &[(":user_id", &user_id.as_i64())],
                 SQLiteCategoryStore::map_row,
             )?
-            .map(|maybe_category| maybe_category.map_err(CategoryError::SqlError))
+            .map(|maybe_category| {
+                maybe_category.map_err(|error| match error {
+                    // Code 787 occurs when a FOREIGN KEY constraint failed.
+                    rusqlite::Error::SqliteFailure(error, Some(_))
+                        if error.extended_code == 787 =>
+                    {
+                        Error::InvalidUser
+                    }
+                    error => error.into(),
+                })
+            })
             .collect()
     }
 }
@@ -123,8 +134,9 @@ mod category_tests {
 
     use crate::{
         db::initialize,
-        models::{CategoryError, CategoryName, PasswordHash, User, UserID},
+        models::{CategoryName, PasswordHash, User, UserID},
         stores::{SQLiteUserStore, UserStore},
+        Error,
     };
 
     use super::{CategoryStore, SQLiteCategoryStore};
@@ -179,7 +191,7 @@ mod category_tests {
 
         let selected_category = store.get(inserted_category.id() + 123);
 
-        assert_eq!(selected_category, Err(CategoryError::NotFound));
+        assert_eq!(selected_category, Err(Error::NotFound));
     }
 
     #[test]
