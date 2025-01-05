@@ -130,7 +130,7 @@ mod auth_guard_tests {
     };
     use axum_extra::{
         extract::{
-            cookie::{Cookie, Key},
+            cookie::{Cookie, Key, SameSite},
             PrivateCookieJar,
         },
         response::Html,
@@ -343,6 +343,9 @@ mod auth_guard_tests {
             auth_cookie.expires_datetime().unwrap(),
             response_time + Duration::minutes(5),
         );
+        assert_eq!(auth_cookie.secure(), Some(true));
+        assert_eq!(auth_cookie.http_only(), Some(true));
+        assert_eq!(auth_cookie.same_site(), Some(SameSite::Strict));
     }
 
     #[tokio::test]

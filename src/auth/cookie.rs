@@ -128,6 +128,17 @@ pub(crate) fn set_auth_cookie_expiry(
     expiry_cookie.set_expires(expiry);
     expiry_cookie.set_value(expiry_string);
 
+    // Need to set the secure, http_only, and same_site flags again since they
+    // are not set in requests from clients (clients only send the
+    // key-value pair).
+    auth_cookie.set_http_only(true);
+    auth_cookie.set_same_site(SameSite::Strict);
+    auth_cookie.set_secure(true);
+
+    expiry_cookie.set_http_only(true);
+    expiry_cookie.set_same_site(SameSite::Strict);
+    expiry_cookie.set_secure(true);
+
     Ok(jar.add(auth_cookie).add(expiry_cookie))
 }
 
@@ -160,7 +171,7 @@ pub(crate) fn extract_user_id(cookie: &Cookie) -> Result<UserID, ParseIntError> 
 mod cookie_tests {
 
     use axum_extra::extract::{
-        cookie::{Cookie, Key},
+        cookie::{Cookie, Key, SameSite},
         PrivateCookieJar,
     };
     use sha2::{Digest, Sha512};
@@ -238,20 +249,38 @@ mod cookie_tests {
         };
     }
 
+    macro_rules! assert_cookie_attributes {
+        ($cookie:expr, $expiry:expr) => {
+            assert_date_time_close!($cookie.expires_datetime().unwrap(), $expiry);
+            assert_eq!($cookie.http_only(), Some(true));
+            assert_eq!($cookie.same_site(), Some(SameSite::Strict));
+            assert_eq!($cookie.secure(), Some(true));
+        };
+    }
+
+    macro_rules! assert_auth_cookies {
+        ($jar:expr, $expiry:expr, $user_id:expr) => {
+            let user_id_cookie = $jar.get(COOKIE_USER_ID).unwrap();
+            let expiry_cookie = $jar.get(COOKIE_EXPIRY).unwrap();
+
+            let retrieved_user_id = extract_user_id(&user_id_cookie).unwrap();
+            let got_expiry = extract_date_time(&expiry_cookie).unwrap();
+
+            assert_eq!(retrieved_user_id, $user_id);
+            assert_date_time_close!(got_expiry, $expiry);
+            assert_cookie_attributes!(user_id_cookie, $expiry);
+            assert_cookie_attributes!(expiry_cookie, $expiry);
+        };
+    }
+
     #[test]
     fn can_set_cookie() {
-        let jar = get_jar();
         let user_id = UserID::new(1);
+        let want_expiry = OffsetDateTime::now_utc() + DEFAULT_COOKIE_DURATION;
+        let jar = get_jar();
 
         let jar = set_auth_cookie(jar, user_id, DEFAULT_COOKIE_DURATION).unwrap();
-        let user_id_cookie = jar.get(COOKIE_USER_ID).unwrap();
-        let expiry_cookie = jar.get(COOKIE_EXPIRY).unwrap();
-
-        let retrieved_user_id = extract_user_id(&user_id_cookie).unwrap();
-        let got_expiry = extract_date_time(&expiry_cookie).unwrap();
-
-        assert_eq!(retrieved_user_id, user_id);
-        assert_date_time_close!(got_expiry, OffsetDateTime::now_utc() + Duration::minutes(5));
+        assert_auth_cookies!(jar, want_expiry, user_id);
     }
 
     #[test]
@@ -266,39 +295,51 @@ mod cookie_tests {
 
     #[test]
     fn can_set_cookie_expires() {
+        let user_id = UserID::new(1);
         let jar = get_jar();
-        let jar = set_auth_cookie(jar, UserID::new(1), DEFAULT_COOKIE_DURATION).unwrap();
+        let jar = set_auth_cookie(jar, user_id, DEFAULT_COOKIE_DURATION).unwrap();
+        let want_expiry = OffsetDateTime::now_utc() + Duration::days(10);
 
-        let want = OffsetDateTime::now_utc() + Duration::days(10);
-        let updated_jar = set_auth_cookie_expiry(jar, want).unwrap();
-        let id_cookie = updated_jar.get(COOKIE_USER_ID).unwrap();
-        let expiry_cookie = updated_jar.get(COOKIE_EXPIRY).unwrap();
+        let updated_jar = set_auth_cookie_expiry(jar, want_expiry).unwrap();
 
-        assert_eq!(id_cookie.expires_datetime().unwrap(), want);
-        assert_eq!(expiry_cookie.expires_datetime().unwrap(), want);
-        assert_eq!(extract_user_id(&id_cookie).unwrap(), UserID::new(1));
-        assert_eq!(extract_date_time(&expiry_cookie).unwrap(), want);
+        assert_auth_cookies!(updated_jar, want_expiry, user_id);
     }
 
     #[test]
     fn can_extend_cookie_duration() {
+        let user_id = UserID::new(1);
         let jar = get_jar();
-        let jar = set_auth_cookie(jar, UserID::new(1), DEFAULT_COOKIE_DURATION).unwrap();
-
+        let jar = set_auth_cookie(jar, user_id, DEFAULT_COOKIE_DURATION).unwrap();
         let initial_cookie = jar.get(COOKIE_EXPIRY).unwrap();
         let want = extract_date_time(&initial_cookie)
             .unwrap()
-            .checked_add(Duration::minutes(5))
+            .checked_add(DEFAULT_COOKIE_DURATION)
             .unwrap();
 
         let jar = extend_auth_cookie_duration_if_needed(jar, Duration::minutes(10)).unwrap();
-        let got_id_cookie = jar.get(COOKIE_USER_ID).unwrap();
-        let got_expiry_cookie = jar.get(COOKIE_EXPIRY).unwrap();
-        let expiry_cookie_value = extract_date_time(&got_expiry_cookie).unwrap();
 
-        assert_date_time_close!(expiry_cookie_value, want);
-        assert_date_time_close!(got_id_cookie.expires_datetime().unwrap(), want);
-        assert_date_time_close!(got_expiry_cookie.expires_datetime().unwrap(), want);
+        assert_auth_cookies!(jar, want, user_id);
+    }
+
+    #[test]
+    fn sets_secure_httponly_samesite_flags_if_missing() {
+        let user_id = UserID::new(1);
+        let jar = get_jar();
+        let jar = set_auth_cookie(jar, user_id, DEFAULT_COOKIE_DURATION).unwrap();
+        let initial_cookie = jar.get(COOKIE_EXPIRY).unwrap();
+        let want = extract_date_time(&initial_cookie)
+            .unwrap()
+            .checked_add(DEFAULT_COOKIE_DURATION)
+            .unwrap();
+        for mut cookie in jar.iter() {
+            cookie.set_secure(false);
+            cookie.set_http_only(false);
+            cookie.set_same_site(SameSite::None);
+        }
+
+        let jar = extend_auth_cookie_duration_if_needed(jar, Duration::minutes(10)).unwrap();
+
+        assert_auth_cookies!(jar, want, user_id);
     }
 
     #[test]
