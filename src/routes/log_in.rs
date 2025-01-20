@@ -137,12 +137,15 @@ const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect email or password.";
 
 #[cfg(test)]
 mod log_in_tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     use axum::{
         body::Body,
         extract::State,
-        http::{header::SET_COOKIE, Response, StatusCode},
+        http::{
+            header::{CONTENT_TYPE, SET_COOKIE},
+            Response, StatusCode,
+        },
         routing::post,
         Form, Router,
     };
@@ -168,6 +171,8 @@ mod log_in_tests {
         stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
         AppState, Error,
     };
+
+    use super::get_log_in_page;
 
     #[derive(Clone)]
     struct StubUserStore {
@@ -254,6 +259,70 @@ mod log_in_tests {
     }
 
     type TestAppState = AppState<DummyCategoryStore, DummyTransactionStore, StubUserStore>;
+
+    #[tokio::test]
+    async fn log_in_page_displays_form() {
+        let response = get_log_in_page().await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response
+            .headers()
+            .get(CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("text/html"));
+
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+        let document = scraper::Html::parse_document(&text);
+
+        let form_selector = scraper::Selector::parse("form").unwrap();
+        let forms = document.select(&form_selector).collect::<Vec<_>>();
+        assert_eq!(forms.len(), 1, "want 1 form, got {}", forms.len());
+        let form = forms.first().unwrap();
+        let hx_post = form.value().attr("hx-post");
+        assert_eq!(
+            hx_post,
+            Some(endpoints::LOG_IN),
+            "want form with attribute hx-post=\"{}\", got {:?}",
+            endpoints::LOG_IN,
+            hx_post
+        );
+
+        let mut expected_form_elements: HashMap<&str, Vec<&str>> = HashMap::new();
+        expected_form_elements.insert("input", vec!["email", "password"]);
+        expected_form_elements.insert("button", vec!["submit"]);
+
+        for (tag, element_types) in expected_form_elements {
+            for element_type in element_types {
+                let selector_string = format!("{tag}[type={element_type}]");
+                let input_selector = scraper::Selector::parse(&selector_string).unwrap();
+                let inputs = form.select(&input_selector).collect::<Vec<_>>();
+                assert_eq!(
+                    inputs.len(),
+                    1,
+                    "want 1 {element_type} {tag}, got {}",
+                    inputs.len()
+                );
+            }
+        }
+
+        let register_link_selector = scraper::Selector::parse("a[href]").unwrap();
+        let links = form.select(&register_link_selector).collect::<Vec<_>>();
+        assert_eq!(links.len(), 1, "want 1 link, got {}", links.len());
+        let link = links.first().unwrap();
+        assert_eq!(
+            link.value().attr("href"),
+            Some(endpoints::REGISTER),
+            "want link to {}, got {:?}",
+            endpoints::REGISTER,
+            link.value().attr("href")
+        );
+    }
+
+    // TODO: Test display of error message when log-in fails.
 
     #[tokio::test]
     async fn log_in_succeeds_with_valid_credentials() {
