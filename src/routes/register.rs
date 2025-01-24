@@ -212,7 +212,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use axum::{routing::post, Router};
+    use askama_axum::IntoResponse;
+    use axum::{
+        body::Body,
+        http::{header::CONTENT_TYPE, Response, StatusCode},
+        routing::post,
+        Router,
+    };
     use axum_test::TestServer;
     use serde::{Deserialize, Serialize};
 
@@ -223,7 +229,7 @@ mod tests {
         },
         routes::{
             endpoints,
-            register::{create_user, RegisterForm},
+            register::{create_user, get_register_page, RegisterForm},
         },
         stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
         AppState, Error,
@@ -327,6 +333,96 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn render_register_page() {
+        let response = get_register_page().await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        assert!(response
+            .headers()
+            .get(CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("text/html"));
+
+        let document = parse_html(response, ParseMode::Document).await;
+
+        let h1_selector = scraper::Selector::parse("h1").unwrap();
+        let titles = document.select(&h1_selector).collect::<Vec<_>>();
+        assert_eq!(titles.len(), 1, "want 1 h1, got {}", titles.len());
+        let title = titles.first().unwrap();
+        let title_text = title.text().collect::<String>().to_lowercase();
+        let title_text = title_text.trim();
+        let want_title = "create account";
+        assert_eq!(
+            title_text, want_title,
+            "want {}, got {:?}",
+            want_title, title_text
+        );
+
+        let form_selector = scraper::Selector::parse("form").unwrap();
+        let forms = document.select(&form_selector).collect::<Vec<_>>();
+        assert_eq!(forms.len(), 1, "want 1 form, got {}", forms.len());
+        let form = forms.first().unwrap();
+        let hx_post = form.value().attr("hx-post");
+        assert_eq!(
+            hx_post,
+            Some(endpoints::USERS),
+            "want form with attribute hx-post=\"{}\", got {:?}",
+            endpoints::USERS,
+            hx_post
+        );
+
+        struct FormInput {
+            tag: &'static str,
+            type_: &'static str,
+            id: &'static str,
+        }
+
+        let want_form_inputs: Vec<FormInput> = vec![
+            FormInput {
+                tag: "input",
+                type_: "email",
+                id: "email",
+            },
+            FormInput {
+                tag: "input",
+                type_: "password",
+                id: "password",
+            },
+            FormInput {
+                tag: "input",
+                type_: "password",
+                id: "confirm-password",
+            },
+        ];
+
+        for FormInput { tag, type_, id } in want_form_inputs {
+            let selector_string = format!("{tag}[type={type_}]#{id}");
+            let input_selector = scraper::Selector::parse(&selector_string).unwrap();
+            let inputs = form.select(&input_selector).collect::<Vec<_>>();
+            assert_eq!(
+                inputs.len(),
+                1,
+                "want 1 {type_} {tag}, got {}",
+                inputs.len()
+            );
+        }
+
+        let log_in_link_selector = scraper::Selector::parse("a[href]").unwrap();
+        let links = form.select(&log_in_link_selector).collect::<Vec<_>>();
+        assert_eq!(links.len(), 1, "want 1 link, got {}", links.len());
+        let link = links.first().unwrap();
+        assert_eq!(
+            link.value().attr("href"),
+            Some(endpoints::LOG_IN),
+            "want link to {}, got {:?}",
+            endpoints::LOG_IN,
+            link.value().attr("href")
+        );
+    }
+
+    #[tokio::test]
     async fn create_user_succeeds() {
         let app = Router::new()
             .route(endpoints::USERS, post(create_user))
@@ -343,6 +439,140 @@ mod tests {
             })
             .await
             .assert_status_see_other();
+    }
+
+    #[tokio::test]
+    async fn create_user_fails_with_invalid_email() {
+        let app = Router::new()
+            .route(endpoints::USERS, post(create_user))
+            .with_state(get_test_app_config());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let response = server
+            .post(endpoints::USERS)
+            .form(&RegisterForm {
+                email: "foo.bar.baz".to_string(),
+                password: "averystrongandsecurepassword".to_string(),
+                confirm_password: "averystrongandsecurepassword".to_string(),
+            })
+            .await
+            .text();
+
+        let fragment = parse_html(response.into_response(), ParseMode::Fragment).await;
+
+        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
+        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
+        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
+        let paragraph = paragraphs.first().unwrap();
+        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
+        assert!(
+            paragraph_text.contains("invalid email address"),
+            "'{paragraph_text}' does not contain the text 'invalid email address'"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_user_fails_with_duplicate_email() {
+        let mut state = get_test_app_config();
+
+        state
+            .user_store
+            .create(
+                "foo@bar.baz".parse().unwrap(),
+                PasswordHash::from_raw_password("averystrongandsecurepassword", 4).unwrap(),
+            )
+            .unwrap();
+
+        let app = Router::new()
+            .route(endpoints::USERS, post(create_user))
+            .with_state(state);
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let response = server
+            .post(endpoints::USERS)
+            .form(&RegisterForm {
+                email: "foo@bar.baz".to_string(),
+                password: "averystrongandsecurepassword".to_string(),
+                confirm_password: "averystrongandsecurepassword".to_string(),
+            })
+            .await
+            .text();
+
+        let fragment = parse_html(response.into_response(), ParseMode::Fragment).await;
+
+        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
+        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
+        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
+        let paragraph = paragraphs.first().unwrap();
+        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
+        assert!(
+            paragraph_text.contains("email address is already in use"),
+            "'{paragraph_text}' does not contain the text 'email address is already in use'"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_user_fails_when_password_is_empty() {
+        let app = Router::new()
+            .route(endpoints::USERS, post(create_user))
+            .with_state(get_test_app_config());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let response = server
+            .post(endpoints::USERS)
+            .form(&RegisterForm {
+                email: "foo@bar.baz".to_string(),
+                password: "".to_string(),
+                confirm_password: "".to_string(),
+            })
+            .await
+            .text();
+
+        let fragment = parse_html(response.into_response(), ParseMode::Fragment).await;
+
+        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
+        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
+        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
+        let paragraph = paragraphs.first().unwrap();
+        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
+        assert!(
+            paragraph_text.contains("password is too weak"),
+            "'{paragraph_text}' does not contain the text 'password is too weak'"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_user_fails_when_password_is_weak() {
+        let app = Router::new()
+            .route(endpoints::USERS, post(create_user))
+            .with_state(get_test_app_config());
+
+        let server = TestServer::new(app).expect("Could not create test server.");
+
+        let response = server
+            .post(endpoints::USERS)
+            .form(&RegisterForm {
+                email: "foo@bar.baz".to_string(),
+                password: "foo".to_string(),
+                confirm_password: "foo".to_string(),
+            })
+            .await
+            .text();
+
+        let fragment = parse_html(response.into_response(), ParseMode::Fragment).await;
+
+        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
+        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
+        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
+        let paragraph = paragraphs.first().unwrap();
+        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
+        assert!(
+            paragraph_text.contains("password is too weak"),
+            "'{paragraph_text}' does not contain the text 'password is too weak'"
+        );
     }
 
     #[tokio::test]
@@ -363,6 +593,32 @@ mod tests {
             .await
             .text();
 
-        assert!(response.to_lowercase().contains("passwords do not match"))
+        let fragment = parse_html(response.into_response(), ParseMode::Fragment).await;
+
+        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
+        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
+        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
+        let paragraph = paragraphs.first().unwrap();
+        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
+        assert!(
+            paragraph_text.contains("passwords do not match"),
+            "'{paragraph_text}' does not contain the text 'passwords do not match'"
+        );
+    }
+
+    enum ParseMode {
+        Document,
+        Fragment,
+    }
+
+    async fn parse_html(response: Response<Body>, mode: ParseMode) -> scraper::Html {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+
+        match mode {
+            ParseMode::Document => scraper::Html::parse_document(&text),
+            ParseMode::Fragment => scraper::Html::parse_fragment(&text),
+        }
     }
 }
