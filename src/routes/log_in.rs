@@ -112,23 +112,30 @@ where
                     )
                 })
         })
-        .map_err(|e| LogInFormTemplate {
-            email_input: EmailInputTemplate {
-                value: &user_data.email,
-                error_message: "",
-            },
-            password_input: PasswordInputTemplate {
-                value: "",
-                min_length: 0,
-                error_message: match e {
-                    Error::InvalidCredentials => INVALID_CREDENTIALS_ERROR_MSG,
-                    error => {
-                        tracing::error!("Unhandled error while verifying credentials: {error}");
-                        "An internal error occurred. Please try again later."
-                    }
+        .map_err(|e| {
+            (
+                StatusCode::UNAUTHORIZED,
+                LogInFormTemplate {
+                    email_input: EmailInputTemplate {
+                        value: &user_data.email,
+                        error_message: "",
+                    },
+                    password_input: PasswordInputTemplate {
+                        value: "",
+                        min_length: 0,
+                        error_message: match e {
+                            Error::InvalidCredentials => INVALID_CREDENTIALS_ERROR_MSG,
+                            error => {
+                                tracing::error!(
+                                    "Unhandled error while verifying credentials: {error}"
+                                );
+                                "An internal error occurred. Please try again later."
+                            }
+                        },
+                    },
+                    ..Default::default()
                 },
-            },
-            ..Default::default()
+            )
         })
         .into_response()
 }
@@ -322,7 +329,56 @@ mod log_in_tests {
         );
     }
 
-    // TODO: Test display of error message when log-in fails.
+    #[tokio::test]
+    async fn log_in_page_displays_error_message() {
+        let state = get_test_app_config();
+        let jar = PrivateCookieJar::new(state.cookie_key.clone());
+        let form = LogInData {
+            email: "foo@bar.baz".to_string(),
+            password: "wrongpassword".to_string(),
+            remember_me: None,
+        };
+        let response = post_log_in(State(state), jar, Form(form)).await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(response
+            .headers()
+            .get(CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("text/html"));
+
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+        let document = scraper::Html::parse_document(&text);
+
+        let form_selector = scraper::Selector::parse("form").unwrap();
+        let forms = document.select(&form_selector).collect::<Vec<_>>();
+        assert_eq!(forms.len(), 1, "want 1 form, got {}", forms.len());
+        let form = forms.first().unwrap();
+
+        let p_selector = scraper::Selector::parse("p").unwrap();
+        let p = form.select(&p_selector).collect::<Vec<_>>();
+        let p = p.first();
+
+        assert!(
+            p.is_some(),
+            "could not find p tag for error messsage in form"
+        );
+
+        let p = p.unwrap();
+
+        let p_text = p.text().collect::<String>();
+        assert!(
+            p_text
+                .to_lowercase()
+                .contains("incorrect email or password"),
+            "error message should contain string \"incorrect email or password\" but got {}",
+            p_text
+        );
+    }
 
     #[tokio::test]
     async fn log_in_succeeds_with_valid_credentials() {
@@ -429,7 +485,7 @@ mod log_in_tests {
         })
         .await;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_body_contains_message(response, INVALID_CREDENTIALS_ERROR_MSG).await;
     }
 
@@ -442,7 +498,7 @@ mod log_in_tests {
         })
         .await;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_body_contains_message(response, INVALID_CREDENTIALS_ERROR_MSG).await;
     }
 

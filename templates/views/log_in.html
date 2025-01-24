@@ -1,3 +1,25 @@
-{% extends "views/log_in_register_base.html" %} {% block title %}Log In{%
-endblock %} {% block form_title %}Log in to your account{% endblock %} {% block
-form_title %}{{ log_in_form|safe }}{% endblock %}
+{% extends "views/log_in_register_base.html" %}
+{% block scripts %}
+  <script type="text/javascript">
+  window.onload = function() {
+    document.body.addEventListener('htmx:beforeSwap', function(evt) {
+      // HTTP 401 UNAUTHORIZED is returned when the user tries to log in with
+      // incorrect credentials.
+      if (evt.detail.xhr.status == 401) {
+        // HTMX does not swap the HTML on status codes other than 200.
+        // We tell HTMX to swap so that the form with the error message can be
+        // displayed.
+        evt.detail.shouldSwap = true;
+        // Setting isError to false tells HTMX to not log the 401 response in
+        // the console.
+        evt.detail.isError = false;
+      }
+    });
+  };
+  </script>
+{% endblock %}
+{% block title %}Log In{% endblock %}
+{% block form_title %}Log in to your account{% endblock %}
+{% block form %}
+{{ log_in_form|safe }}
+{% endblock %}
