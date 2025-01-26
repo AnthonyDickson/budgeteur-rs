@@ -112,30 +112,23 @@ where
                     )
                 })
         })
-        .map_err(|e| {
-            (
-                StatusCode::UNAUTHORIZED,
-                LogInFormTemplate {
-                    email_input: EmailInputTemplate {
-                        value: &user_data.email,
-                        error_message: "",
-                    },
-                    password_input: PasswordInputTemplate {
-                        value: "",
-                        min_length: 0,
-                        error_message: match e {
-                            Error::InvalidCredentials => INVALID_CREDENTIALS_ERROR_MSG,
-                            error => {
-                                tracing::error!(
-                                    "Unhandled error while verifying credentials: {error}"
-                                );
-                                "An internal error occurred. Please try again later."
-                            }
-                        },
-                    },
-                    ..Default::default()
+        .map_err(|e| LogInFormTemplate {
+            email_input: EmailInputTemplate {
+                value: &user_data.email,
+                error_message: "",
+            },
+            password_input: PasswordInputTemplate {
+                value: "",
+                min_length: 0,
+                error_message: match e {
+                    Error::InvalidCredentials => INVALID_CREDENTIALS_ERROR_MSG,
+                    error => {
+                        tracing::error!("Unhandled error while verifying credentials: {error}");
+                        "An internal error occurred. Please try again later."
+                    }
                 },
-            )
+            },
+            ..Default::default()
         })
         .into_response()
 }
@@ -340,7 +333,7 @@ mod log_in_tests {
         };
         let response = post_log_in(State(state), jar, Form(form)).await;
 
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.status(), StatusCode::OK);
         assert!(response
             .headers()
             .get(CONTENT_TYPE)
@@ -485,7 +478,7 @@ mod log_in_tests {
         })
         .await;
 
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.status(), StatusCode::OK);
         assert_body_contains_message(response, INVALID_CREDENTIALS_ERROR_MSG).await;
     }
 
@@ -498,7 +491,7 @@ mod log_in_tests {
         })
         .await;
 
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.status(), StatusCode::OK);
         assert_body_contains_message(response, INVALID_CREDENTIALS_ERROR_MSG).await;
     }
 

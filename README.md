@@ -82,3 +82,30 @@ cargo doc --open
 ```
 
 The flag `--open` will open the docs in your default web browser.
+
+## API Design
+
+### HTTP Status Codes
+
+HTTP status codes are generally used in line with the standards that define
+them.
+
+2xx status codes indicate that the server understood and processed the
+request without errors, and the client does not need to perform any special
+handling of the response. Note that this means that things like invalid log-in
+credentials or invalid emails in registrations forms will return with a HTTP
+200 status code because these response will contain the error messages that
+should be displayed directly to the user and there is no action the client can
+or should take on the user's behalf to rectify these issues.
+
+3xx status codes are used for full page redirects. In cases where the response
+to a HTMX request requires a redirect, the corresponding HTMX redirect header
+is used instead.
+
+4xx status codes are used when the request could not be fulfilled due to
+issues with the request. Common causes are requests for non-existent resources
+or malformed forms (e.g., missing form fields). 4xx codes are not used to
+indicate expected application errors (invalid log-in credentials).
+
+5xx status codes are used when the request could not be fulfilled due to an
+unexpected and unhandled error on the server.

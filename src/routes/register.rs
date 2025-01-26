@@ -215,10 +215,12 @@ mod tests {
     use askama_axum::IntoResponse;
     use axum::{
         body::Body,
+        extract::State,
         http::{header::CONTENT_TYPE, Response, StatusCode},
         routing::post,
-        Router,
+        Form, Router,
     };
+    use axum_extra::extract::PrivateCookieJar;
     use axum_test::TestServer;
     use serde::{Deserialize, Serialize};
 
@@ -443,23 +445,21 @@ mod tests {
 
     #[tokio::test]
     async fn create_user_fails_with_invalid_email() {
-        let app = Router::new()
-            .route(endpoints::USERS, post(create_user))
-            .with_state(get_test_app_config());
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        let response = server
-            .post(endpoints::USERS)
-            .form(&RegisterForm {
+        let state = get_test_app_config();
+        let response = create_user(
+            State(state.clone()),
+            PrivateCookieJar::new(state.cookie_key),
+            Form(RegisterForm {
                 email: "foo.bar.baz".to_string(),
                 password: "averystrongandsecurepassword".to_string(),
                 confirm_password: "averystrongandsecurepassword".to_string(),
-            })
-            .await
-            .text();
+            }),
+        )
+        .await;
 
-        let fragment = parse_html(response.into_response(), ParseMode::Fragment).await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let fragment = parse_html(response, ParseMode::Fragment).await;
 
         let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
         let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
