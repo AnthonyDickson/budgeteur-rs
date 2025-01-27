@@ -12,7 +12,7 @@ use super::endpoints;
 pub async fn get_log_out(jar: PrivateCookieJar) -> Response {
     let jar = invalidate_auth_cookie(jar);
 
-    (jar, Redirect::to(endpoints::LOG_IN_PAGE)).into_response()
+    (jar, Redirect::to(endpoints::LOG_IN_VIEW)).into_response()
 }
 
 #[cfg(test)]
@@ -41,7 +41,7 @@ mod log_out_tests {
 
         let response = get_log_out(cookie_jar).await;
 
-        assert_redirect(&response, endpoints::LOG_IN_PAGE);
+        assert_redirect(&response, endpoints::LOG_IN_VIEW);
         assert_cookie_expired(&response);
     }
 

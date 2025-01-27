@@ -48,7 +48,7 @@ struct RegisterFormTemplate<'a> {
 impl Default for RegisterFormTemplate<'_> {
     fn default() -> Self {
         Self {
-            log_in_route: endpoints::LOG_IN_PAGE,
+            log_in_route: endpoints::LOG_IN_VIEW,
             create_user_route: endpoints::USERS,
             email_input: EmailInputTemplate::default(),
             password_input: PasswordInputTemplate::default(),
@@ -180,7 +180,7 @@ where
             match jar {
                 Ok(jar) => (
                     StatusCode::SEE_OTHER,
-                    HxRedirect(Uri::from_static(endpoints::LOG_IN_PAGE)),
+                    HxRedirect(Uri::from_static(endpoints::LOG_IN_VIEW)),
                     jar,
                 )
                     .into_response(),
@@ -417,9 +417,9 @@ mod tests {
         let link = links.first().unwrap();
         assert_eq!(
             link.value().attr("href"),
-            Some(endpoints::LOG_IN_PAGE),
+            Some(endpoints::LOG_IN_VIEW),
             "want link to {}, got {:?}",
-            endpoints::LOG_IN_PAGE,
+            endpoints::LOG_IN_VIEW,
             link.value().attr("href")
         );
     }

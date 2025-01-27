@@ -39,22 +39,23 @@ mod transactions;
 pub fn build_router(state: SQLAppState) -> Router {
     let unprotected_routes = Router::new()
         .route(endpoints::COFFEE, get(get_coffee))
-        .route(endpoints::LOG_IN_PAGE, get(get_log_in_page))
+        .route(endpoints::LOG_IN_VIEW, get(get_log_in_page))
         .route(endpoints::LOG_IN_API, post(post_log_in))
         .route(endpoints::LOG_OUT, get(get_log_out))
-        .route(endpoints::REGISTER, get(get_register_page))
+        .route(endpoints::REGISTER_VIEW, get(get_register_page))
         .route(endpoints::USERS, post(create_user))
         .route(
-            endpoints::INTERNAL_ERROR,
+            endpoints::INTERNAL_ERROR_VIEW,
             get(get_internal_server_error_page),
         );
 
     let protected_routes = Router::new()
         .route(endpoints::ROOT, get(get_index_page))
-        .route(endpoints::DASHBOARD, get(get_dashboard_page))
+        .route(endpoints::DASHBOARD_VIEW, get(get_dashboard_page))
         .route(endpoints::CATEGORY, get(get_category))
         .route(endpoints::TRANSACTION, get(get_transaction))
-        .route(endpoints::TRANSACTIONS, get(get_transactions_page))
+        .route(endpoints::TRANSACTIONS_API, get(get_transactions_page))
+        .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
 
     // These POST routes need to use the HX-REDIRECT header for auth redirects to work properly for
@@ -80,7 +81,7 @@ async fn get_coffee() -> Response {
 
 /// The root path '/' redirects to the dashboard page.
 async fn get_index_page() -> Redirect {
-    Redirect::to(endpoints::DASHBOARD)
+    Redirect::to(endpoints::DASHBOARD_VIEW)
 }
 
 /// Get a response that will redirect the client to the internal server error 500 page.
@@ -89,7 +90,7 @@ async fn get_index_page() -> Redirect {
 /// Route handlers using GET should use `axum::response::Redirect` to redirect via a response.
 pub(crate) fn get_internal_server_error_redirect() -> Response {
     (
-        HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR)),
+        HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR_VIEW)),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
         .into_response()
@@ -124,6 +125,6 @@ mod root_route_tests {
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
 
         let location = response.headers().get("location").unwrap();
-        assert_eq!(location, endpoints::DASHBOARD);
+        assert_eq!(location, endpoints::DASHBOARD_VIEW);
     }
 }

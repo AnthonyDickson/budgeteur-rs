@@ -45,7 +45,7 @@ where
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
 {
-    let navbar = get_nav_bar(endpoints::TRANSACTIONS);
+    let navbar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
 
     let transactions = state.transaction_store.get_query(TransactionQuery {
         user_id: Some(user_id),
@@ -125,7 +125,7 @@ mod transactions_route_tests {
             .unwrap();
 
         let app = Router::new()
-            .route(endpoints::TRANSACTIONS, get(get_transactions_page))
+            .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
             .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(state.clone());
@@ -164,7 +164,10 @@ mod transactions_route_tests {
             .await
             .cookies();
 
-        let transactions_page = server.get(endpoints::TRANSACTIONS).add_cookies(jar).await;
+        let transactions_page = server
+            .get(endpoints::TRANSACTIONS_VIEW)
+            .add_cookies(jar)
+            .await;
 
         transactions_page.assert_status_ok();
 

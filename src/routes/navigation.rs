@@ -29,14 +29,14 @@ pub struct NavbarTemplate<'a> {
 pub fn get_nav_bar(active_endpoint: &str) -> NavbarTemplate {
     let links = vec![
         Link {
-            url: endpoints::DASHBOARD,
+            url: endpoints::DASHBOARD_VIEW,
             title: "Dashboard",
-            is_current: active_endpoint == endpoints::DASHBOARD,
+            is_current: active_endpoint == endpoints::DASHBOARD_VIEW,
         },
         Link {
-            url: endpoints::TRANSACTIONS,
+            url: endpoints::TRANSACTIONS_VIEW,
             title: "Transactions",
-            is_current: active_endpoint == endpoints::TRANSACTIONS,
+            is_current: active_endpoint == endpoints::TRANSACTIONS_VIEW,
         },
         Link {
             url: endpoints::LOG_OUT,
@@ -59,22 +59,23 @@ mod nav_bar_tests {
     #[test]
     fn set_active_endpoint() {
         let mut cases = HashMap::new();
-        cases.insert(endpoints::DASHBOARD, true);
-        cases.insert(endpoints::TRANSACTIONS, true);
+        cases.insert(endpoints::DASHBOARD_VIEW, true);
+        cases.insert(endpoints::TRANSACTIONS_VIEW, true);
 
-        cases.insert(endpoints::LOG_OUT, false);
         cases.insert(endpoints::ROOT, false);
-        cases.insert(endpoints::USERS, false);
         cases.insert(endpoints::COFFEE, false);
-        cases.insert(endpoints::LOG_IN_API, false);
-        cases.insert(endpoints::LOG_IN_PAGE, false);
         cases.insert(endpoints::CATEGORY, false);
-        cases.insert(endpoints::REGISTER, false);
         cases.insert(endpoints::CATEGORIES, false);
+        cases.insert(endpoints::INTERNAL_ERROR_VIEW, false);
+        cases.insert(endpoints::LOG_IN_API, false);
+        cases.insert(endpoints::LOG_IN_VIEW, false);
+        cases.insert(endpoints::LOG_OUT, false);
+        cases.insert(endpoints::REGISTER_VIEW, false);
         cases.insert(endpoints::TRANSACTION, false);
-        cases.insert(endpoints::INTERNAL_ERROR, false);
+        cases.insert(endpoints::TRANSACTIONS_API, false);
         cases.insert(endpoints::USER_CATEGORIES, false);
         cases.insert(endpoints::USER_TRANSACTIONS, false);
+        cases.insert(endpoints::USERS, false);
 
         let get_active_string = |is_active: bool| -> &str {
             if is_active {

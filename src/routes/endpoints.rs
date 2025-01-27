@@ -2,36 +2,39 @@
 //!
 //! For endpoints that take a parameter, e.g., '/users/:user_id', use [format_endpoint].
 
-/// The route to request a cup of coffee (experimental).
-pub const COFFEE: &str = "/coffee";
-/// The landing page for logged in users.
-pub const DASHBOARD: &str = "/dashboard";
 /// The root route which redirects to the dashboard or log in page.
 pub const ROOT: &str = "/";
+/// The landing page for logged in users.
+pub const DASHBOARD_VIEW: &str = "/dashboard";
+/// The page for displaying a user's transactions.
+pub const TRANSACTIONS_VIEW: &str = "/transactions";
+/// The route for getting the registration page.
+pub const REGISTER_VIEW: &str = "/register";
 /// The route for getting the log in page.
-pub const LOG_IN_PAGE: &str = "/log_in";
+pub const LOG_IN_VIEW: &str = "/log_in";
+/// The page to display when an internal server error occurs.
+pub const INTERNAL_ERROR_VIEW: &str = "/error";
+
+/// The route to request a cup of coffee (experimental).
+pub const COFFEE: &str = "/api/coffee";
 /// The route for logging in a user.
 pub const LOG_IN_API: &str = "/api/log_in";
 /// The route for the client to log out the current user.
-pub const LOG_OUT: &str = "/log_out";
-/// The route for getting the registration page and registering new users.
-pub const REGISTER: &str = "/register";
+pub const LOG_OUT: &str = "/api/log_out";
 /// The route to access users.
-pub const USERS: &str = "/users";
+pub const USERS: &str = "/api/users";
 /// The route to access the categories for a given user.
-pub const USER_CATEGORIES: &str = "/users/:user_id/categories";
+pub const USER_CATEGORIES: &str = "/api/users/:user_id/categories";
 /// The route to access the transactions for a given user.
-pub const USER_TRANSACTIONS: &str = "/users/:user_id/transactions";
+pub const USER_TRANSACTIONS: &str = "/api/users/:user_id/transactions";
 /// The route to access categories.
-pub const CATEGORIES: &str = "/categories";
+pub const CATEGORIES: &str = "/api/categories";
 /// The route to access a single category.
-pub const CATEGORY: &str = "/categories/:category_id";
+pub const CATEGORY: &str = "/api/categories/:category_id";
 /// The route to access transactions.
-pub const TRANSACTIONS: &str = "/transactions";
+pub const TRANSACTIONS_API: &str = "/api/transactions";
 /// The route to access a single transaction.
-pub const TRANSACTION: &str = "/transactions/:transaction_id";
-/// The page to display when an internal server error occurs.
-pub const INTERNAL_ERROR: &str = "/error";
+pub const TRANSACTION: &str = "/api/transactions/:transaction_id";
 
 /// Replace the parameter in `endpoint_path` with `id`.
 ///
@@ -96,19 +99,22 @@ mod endpoints_tests {
 
     #[test]
     fn endpoints_are_valid_uris() {
+        assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::DASHBOARD_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
+
+        assert_endpoint_is_valid_uri(endpoints::COFFEE);
         assert_endpoint_is_valid_uri(endpoints::CATEGORIES);
         assert_endpoint_is_valid_uri(endpoints::CATEGORY);
-        assert_endpoint_is_valid_uri(endpoints::COFFEE);
-        assert_endpoint_is_valid_uri(endpoints::DASHBOARD);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_API);
-        assert_endpoint_is_valid_uri(endpoints::LOG_IN_PAGE);
         assert_endpoint_is_valid_uri(endpoints::LOG_OUT);
-        assert_endpoint_is_valid_uri(endpoints::REGISTER);
         assert_endpoint_is_valid_uri(endpoints::ROOT);
+        assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
         assert_endpoint_is_valid_uri(endpoints::USERS);
         assert_endpoint_is_valid_uri(endpoints::USER_CATEGORIES);
         assert_endpoint_is_valid_uri(endpoints::USER_TRANSACTIONS);
-        assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR);
     }
 
     #[test]

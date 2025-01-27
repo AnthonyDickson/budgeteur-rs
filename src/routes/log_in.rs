@@ -42,7 +42,7 @@ impl Default for LogInFormTemplate<'_> {
             email_input: Default::default(),
             password_input: Default::default(),
             log_in_route: endpoints::LOG_IN_API,
-            register_route: endpoints::REGISTER,
+            register_route: endpoints::REGISTER_VIEW,
         }
     }
 }
@@ -99,7 +99,7 @@ where
                 .map(|updated_jar| {
                     (
                         StatusCode::SEE_OTHER,
-                        HxRedirect(Uri::from_static(endpoints::DASHBOARD)),
+                        HxRedirect(Uri::from_static(endpoints::DASHBOARD_VIEW)),
                         updated_jar,
                     )
                 })
@@ -107,7 +107,7 @@ where
                     tracing::error!("Error setting auth cookie: {err}");
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR)),
+                        HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR_VIEW)),
                         invalidate_auth_cookie(jar),
                     )
                 })
@@ -315,9 +315,9 @@ mod log_in_tests {
         let link = links.first().unwrap();
         assert_eq!(
             link.value().attr("href"),
-            Some(endpoints::REGISTER),
+            Some(endpoints::REGISTER_VIEW),
             "want link to {}, got {:?}",
-            endpoints::REGISTER,
+            endpoints::REGISTER_VIEW,
             link.value().attr("href")
         );
     }
@@ -382,7 +382,7 @@ mod log_in_tests {
         })
         .await;
 
-        assert_hx_redirect(&response, endpoints::DASHBOARD);
+        assert_hx_redirect(&response, endpoints::DASHBOARD_VIEW);
         assert_set_cookie(&response);
     }
 
