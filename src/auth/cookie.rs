@@ -45,14 +45,20 @@ pub(crate) fn set_auth_cookie(
                 .expires(expiry)
                 .http_only(true)
                 .same_site(SameSite::Strict)
-                .secure(true),
+                .secure(true)
+                // Explicitly set path to root to avoid issues with subpaths. For example, if the
+                // cookie is set from a subpath such as 'http://example.com/path1/path2', the
+                // browser will not send the cookie in requests for parent paths such as
+                // 'http://example.com/path1'.
+                .path("/"),
         )
         .add(
             Cookie::build((COOKIE_EXPIRY, expiry_string))
                 .expires(expiry)
                 .http_only(true)
                 .same_site(SameSite::Strict)
-                .secure(true),
+                .secure(true)
+                .path("/"),
         ))
 }
 
@@ -134,10 +140,12 @@ pub(crate) fn set_auth_cookie_expiry(
     auth_cookie.set_http_only(true);
     auth_cookie.set_same_site(SameSite::Strict);
     auth_cookie.set_secure(true);
+    auth_cookie.set_path("/");
 
     expiry_cookie.set_http_only(true);
     expiry_cookie.set_same_site(SameSite::Strict);
     expiry_cookie.set_secure(true);
+    expiry_cookie.set_path("/");
 
     Ok(jar.add(auth_cookie).add(expiry_cookie))
 }
@@ -255,6 +263,7 @@ mod cookie_tests {
             assert_eq!($cookie.http_only(), Some(true));
             assert_eq!($cookie.same_site(), Some(SameSite::Strict));
             assert_eq!($cookie.secure(), Some(true));
+            assert_eq!($cookie.path(), Some("/"));
         };
     }
 

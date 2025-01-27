@@ -39,8 +39,8 @@ mod transactions;
 pub fn build_router(state: SQLAppState) -> Router {
     let unprotected_routes = Router::new()
         .route(endpoints::COFFEE, get(get_coffee))
-        .route(endpoints::LOG_IN, get(get_log_in_page))
-        .route(endpoints::LOG_IN, post(post_log_in))
+        .route(endpoints::LOG_IN_PAGE, get(get_log_in_page))
+        .route(endpoints::LOG_IN_API, post(post_log_in))
         .route(endpoints::LOG_OUT, get(get_log_out))
         .route(endpoints::REGISTER, get(get_register_page))
         .route(endpoints::USERS, post(create_user))

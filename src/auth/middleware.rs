@@ -89,7 +89,7 @@ where
     U: UserStore + Send + Sync,
 {
     auth_guard_internal(state, request, next, || {
-        Redirect::to(endpoints::LOG_IN).into_response()
+        Redirect::to(endpoints::LOG_IN_PAGE).into_response()
     })
     .await
 }
@@ -112,7 +112,7 @@ where
 {
     auth_guard_internal(state, request, next, || {
         (
-            HxRedirect(Uri::from_static(endpoints::LOG_IN)),
+            HxRedirect(Uri::from_static(endpoints::LOG_IN_PAGE)),
             StatusCode::OK,
         )
             .into_response()
@@ -343,7 +343,7 @@ mod auth_guard_tests {
         let response = server.get(TEST_PROTECTED_ROUTE).await;
 
         response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::LOG_IN);
+        assert_eq!(response.header("location"), endpoints::LOG_IN_PAGE);
     }
 
     #[tokio::test]
@@ -355,7 +355,7 @@ mod auth_guard_tests {
             .await;
 
         response.assert_status_see_other();
-        assert_eq!(response.header("location"), endpoints::LOG_IN);
+        assert_eq!(response.header("location"), endpoints::LOG_IN_PAGE);
     }
 
     #[tokio::test]

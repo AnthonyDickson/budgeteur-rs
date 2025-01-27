@@ -41,7 +41,7 @@ impl Default for LogInFormTemplate<'_> {
         Self {
             email_input: Default::default(),
             password_input: Default::default(),
-            log_in_route: endpoints::LOG_IN,
+            log_in_route: endpoints::LOG_IN_API,
             register_route: endpoints::REGISTER,
         }
     }
@@ -285,9 +285,9 @@ mod log_in_tests {
         let hx_post = form.value().attr("hx-post");
         assert_eq!(
             hx_post,
-            Some(endpoints::LOG_IN),
+            Some(endpoints::LOG_IN_API),
             "want form with attribute hx-post=\"{}\", got {:?}",
-            endpoints::LOG_IN,
+            endpoints::LOG_IN_API,
             hx_post
         );
 
@@ -404,13 +404,13 @@ mod log_in_tests {
     #[tokio::test]
     async fn log_in_fails_with_missing_credentials() {
         let app = Router::new()
-            .route(endpoints::LOG_IN, post(post_log_in))
+            .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
         server
-            .post(endpoints::LOG_IN)
+            .post(endpoints::LOG_IN_API)
             .content_type("application/x-www-form-urlencoded")
             .await
             .assert_status(StatusCode::UNPROCESSABLE_ENTITY);
@@ -419,7 +419,7 @@ mod log_in_tests {
     #[tokio::test]
     async fn form_deserialises() {
         let app = Router::new()
-            .route(endpoints::LOG_IN, post(post_log_in))
+            .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
         let form = [
@@ -428,7 +428,7 @@ mod log_in_tests {
             ("remember_me", "on"),
         ];
 
-        let response = server.post(endpoints::LOG_IN).form(&form).await;
+        let response = server.post(endpoints::LOG_IN_API).form(&form).await;
 
         assert_ne!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -436,7 +436,7 @@ mod log_in_tests {
     #[tokio::test]
     async fn remember_me_extends_auth_cookie_through_form() {
         let app = Router::new()
-            .route(endpoints::LOG_IN, post(post_log_in))
+            .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
         let form = [
@@ -445,7 +445,7 @@ mod log_in_tests {
             ("remember_me", "on"),
         ];
 
-        let response = server.post(endpoints::LOG_IN).form(&form).await;
+        let response = server.post(endpoints::LOG_IN_API).form(&form).await;
 
         assert_eq!(response.status_code(), StatusCode::SEE_OTHER);
 
@@ -459,12 +459,12 @@ mod log_in_tests {
     #[tokio::test]
     async fn form_deserialises_without_remember_me() {
         let app = Router::new()
-            .route(endpoints::LOG_IN, post(post_log_in))
+            .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(get_test_app_config());
         let server = TestServer::new(app).expect("Could not create test server.");
         let form = [("email", "test@test.com"), ("password", "test")];
 
-        let response = server.post(endpoints::LOG_IN).form(&form).await;
+        let response = server.post(endpoints::LOG_IN_API).form(&form).await;
 
         assert_ne!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     }

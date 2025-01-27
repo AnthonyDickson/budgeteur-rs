@@ -127,7 +127,7 @@ mod transactions_route_tests {
         let app = Router::new()
             .route(endpoints::TRANSACTIONS, get(get_transactions_page))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::LOG_IN, post(post_log_in))
+            .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(state.clone());
 
         let server = TestServer::new(app).expect("Could not create test server.");
@@ -155,7 +155,7 @@ mod transactions_route_tests {
         ];
 
         let jar = server
-            .post(endpoints::LOG_IN)
+            .post(endpoints::LOG_IN_API)
             .form(&LogInData {
                 email: "test@test.com".to_string(),
                 password: "test".to_string(),

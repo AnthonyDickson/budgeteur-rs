@@ -8,8 +8,10 @@ pub const COFFEE: &str = "/coffee";
 pub const DASHBOARD: &str = "/dashboard";
 /// The root route which redirects to the dashboard or log in page.
 pub const ROOT: &str = "/";
-/// The route for getting log in page and logging in a user.
-pub const LOG_IN: &str = "/log_in";
+/// The route for getting the log in page.
+pub const LOG_IN_PAGE: &str = "/log_in";
+/// The route for logging in a user.
+pub const LOG_IN_API: &str = "/api/log_in";
 /// The route for the client to log out the current user.
 pub const LOG_OUT: &str = "/log_out";
 /// The route for getting the registration page and registering new users.
@@ -98,7 +100,8 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::CATEGORY);
         assert_endpoint_is_valid_uri(endpoints::COFFEE);
         assert_endpoint_is_valid_uri(endpoints::DASHBOARD);
-        assert_endpoint_is_valid_uri(endpoints::LOG_IN);
+        assert_endpoint_is_valid_uri(endpoints::LOG_IN_API);
+        assert_endpoint_is_valid_uri(endpoints::LOG_IN_PAGE);
         assert_endpoint_is_valid_uri(endpoints::LOG_OUT);
         assert_endpoint_is_valid_uri(endpoints::REGISTER);
         assert_endpoint_is_valid_uri(endpoints::ROOT);
