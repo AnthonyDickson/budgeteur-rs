@@ -36,8 +36,14 @@ This project was developed with cargo 1.8.0, other versions have not been tested
 
     `--cert-path` should contain the files `cert.pem` and `key.pem`.
     If you do not have the required SSL certificates, you can generate your
-    own [using OpenSSL](https://stackoverflow.com/a/10176685) (make sure to
-    add the flag `-nodes`).
+    own [using OpenSSL](https://stackoverflow.com/a/10176685):
+
+    ```shell
+    openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem \
+    -sha256 -days 365 -nodes \
+    -addext authorityKeyIdentifier=keyid,issuer \
+    -addext basicConstraints=CA:FALSE
+    ```
 
 3. Test that the server is running:
 
