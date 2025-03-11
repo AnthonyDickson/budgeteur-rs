@@ -7,10 +7,10 @@ use std::{
 };
 
 use axum::{
-    extract::{MatchedPath, Request},
     Router,
+    extract::{MatchedPath, Request},
 };
-use axum_server::{tls_rustls::RustlsConfig, Handle};
+use axum_server::{Handle, tls_rustls::RustlsConfig};
 use clap::Parser;
 use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
@@ -18,12 +18,11 @@ use tower_http::trace::TraceLayer;
 #[cfg(debug_assertions)]
 use tower_livereload::LiveReloadLayer;
 
-use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use budgeteur_rs::{
-    build_router, graceful_shutdown,
+    AppState, build_router, graceful_shutdown, logging_middleware,
     stores::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore},
-    AppState,
 };
 
 /// The REST API server for budgeteur_rs.
@@ -125,5 +124,7 @@ fn add_tracing_layer(router: Router) -> Router {
         // logging of errors so disable that
         .on_failure(());
 
-    router.layer(tracing_layer)
+    router
+        .layer(axum::middleware::from_fn(logging_middleware))
+        .layer(tracing_layer)
 }
