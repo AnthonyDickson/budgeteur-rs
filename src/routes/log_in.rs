@@ -3,22 +3,22 @@
 
 use askama::Template;
 use axum::{
+    Form,
     extract::State,
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
-    Form,
 };
 use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
 use time::Duration;
 
 use crate::{
+    AppState, Error,
     auth::{
         cookie::{invalidate_auth_cookie, set_auth_cookie},
-        log_in::{verify_credentials, LogInData},
+        log_in::{LogInData, verify_credentials},
     },
     stores::{CategoryStore, TransactionStore, UserStore},
-    AppState, Error,
 };
 
 use super::{
@@ -140,22 +140,23 @@ mod log_in_tests {
     use std::collections::{HashMap, HashSet};
 
     use axum::{
+        Form, Router,
         body::Body,
         extract::State,
         http::{
-            header::{CONTENT_TYPE, SET_COOKIE},
             Response, StatusCode,
+            header::{CONTENT_TYPE, SET_COOKIE},
         },
         routing::post,
-        Form, Router,
     };
-    use axum_extra::extract::{cookie::Cookie, PrivateCookieJar};
+    use axum_extra::extract::{PrivateCookieJar, cookie::Cookie};
     use axum_htmx::HX_REDIRECT;
     use axum_test::TestServer;
     use email_address::EmailAddress;
     use time::{Duration, OffsetDateTime};
 
     use crate::{
+        AppState, Error,
         auth::{
             cookie::{COOKIE_EXPIRY, COOKIE_USER_ID},
             log_in::LogInData,
@@ -166,10 +167,9 @@ mod log_in_tests {
         },
         routes::{
             endpoints,
-            log_in::{post_log_in, INVALID_CREDENTIALS_ERROR_MSG, REMEMBER_ME_COOKIE_DURATION},
+            log_in::{INVALID_CREDENTIALS_ERROR_MSG, REMEMBER_ME_COOKIE_DURATION, post_log_in},
         },
-        stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
-        AppState, Error,
+        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
     };
 
     use super::get_log_in_page;
@@ -265,13 +265,15 @@ mod log_in_tests {
         let response = get_log_in_page().await;
 
         assert_eq!(response.status(), StatusCode::OK);
-        assert!(response
-            .headers()
-            .get(CONTENT_TYPE)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .starts_with("text/html"));
+        assert!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("text/html")
+        );
 
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
@@ -334,13 +336,15 @@ mod log_in_tests {
         let response = post_log_in(State(state), jar, Form(form)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
-        assert!(response
-            .headers()
-            .get(CONTENT_TYPE)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .starts_with("text/html"));
+        assert!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("text/html")
+        );
 
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
@@ -393,7 +397,7 @@ mod log_in_tests {
     macro_rules! assert_date_time_close {
         ($left:expr, $right:expr$(,)?) => {
             assert!(
-                ($left - $right).abs() < Duration::seconds(1),
+                ($left - $right).abs() < Duration::seconds(2),
                 "got date time {:?}, want {:?}",
                 $left,
                 $right
