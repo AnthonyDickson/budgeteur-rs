@@ -13,23 +13,23 @@
 use std::time::Duration;
 
 use axum::{
-    extract::Request,
     http::StatusCode,
-    middleware::Next,
     response::{IntoResponse, Response},
 };
 use axum_server::Handle;
 use tokio::signal;
 
-pub use routes::build_router;
-pub use state::AppState;
-
 pub mod auth;
 pub mod db;
+pub mod logging;
 pub mod models;
 pub mod routes;
 pub mod state;
 pub mod stores;
+
+pub use logging::logging_middleware;
+pub use routes::build_router;
+pub use state::AppState;
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
 /// then signals the server to shut down gracefully.
@@ -178,68 +178,5 @@ impl IntoResponse for Error {
             }
         }
         .into_response()
-    }
-}
-
-/// Log the request and response for each request.
-///
-/// Both the request and response are logged at the `info` level.
-/// If the response body is longer than [LOG_BODY_LENGTH_LIMIT] bytes, it is
-/// truncated and logged at the `debug` level.
-pub async fn logging_middleware(request: Request, next: Next) -> Response {
-    // TODO: redact passwords from logs
-    let (headers, body_text) = extract_header_and_body_text_from_request(request).await;
-    log_request(&headers, &body_text);
-
-    let request = Request::from_parts(headers, body_text.into());
-    let response = next.run(request).await;
-
-    let (headers, body_text) = extract_header_and_body_text_from_response(response).await;
-    log_response(&headers, &body_text);
-
-    Response::from_parts(headers, body_text.into())
-}
-
-async fn extract_header_and_body_text_from_request(
-    request: Request,
-) -> (axum::http::request::Parts, String) {
-    let (headers, body) = request.into_parts();
-    let body_bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-
-    (headers, String::from_utf8_lossy(&body_bytes).to_string())
-}
-
-async fn extract_header_and_body_text_from_response(
-    response: Response,
-) -> (axum::http::response::Parts, String) {
-    let (headers, body) = response.into_parts();
-    let body_bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-
-    (headers, String::from_utf8_lossy(&body_bytes).to_string())
-}
-
-const LOG_BODY_LENGTH_LIMIT: usize = 64;
-
-fn log_request(headers: &axum::http::request::Parts, body: &str) {
-    if body.len() > LOG_BODY_LENGTH_LIMIT {
-        tracing::info!(
-            "Sending request: {headers:#?}\nbody: {:}...",
-            &body[..LOG_BODY_LENGTH_LIMIT]
-        );
-        tracing::debug!("Sending request: {headers:#?}\nbody: {body:?}");
-    } else {
-        tracing::info!("Sending request: {headers:#?}\nbody: {body:?}");
-    }
-}
-
-fn log_response(headers: &axum::http::response::Parts, body: &str) {
-    if body.len() > LOG_BODY_LENGTH_LIMIT {
-        tracing::info!(
-            "Sending response: {headers:#?}\nbody: {:}...",
-            &body[..LOG_BODY_LENGTH_LIMIT]
-        );
-        tracing::debug!("Sending response: {headers:#?}\nbody: {body:?}");
-    } else {
-        tracing::info!("Sending response: {headers:#?}\nbody: {body:?}");
     }
 }
