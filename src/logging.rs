@@ -71,23 +71,23 @@ const LOG_BODY_LENGTH_LIMIT: usize = 64;
 fn log_request(headers: &axum::http::request::Parts, body: &str) {
     if body.len() > LOG_BODY_LENGTH_LIMIT {
         tracing::info!(
-            "Received request: {headers:#?}\nbody: {:}...",
+            "Received request: {headers:#?}\nbody: {}...",
             &body[..LOG_BODY_LENGTH_LIMIT]
         );
-        tracing::debug!("Full request body: {body:?}");
+        tracing::debug!("Full request body: {body}");
     } else {
-        tracing::info!("Received request: {headers:#?}\nbody: {body:?}");
+        tracing::info!("Received request: {headers:#?}\nbody: {body}");
     }
 }
 
 fn log_response(headers: &axum::http::response::Parts, body: &str) {
     if body.len() > LOG_BODY_LENGTH_LIMIT {
         tracing::info!(
-            "Sending response: {headers:#?}\nbody: {:}...",
+            "Sending response: {headers:#?}\nbody: {}...",
             &body[..LOG_BODY_LENGTH_LIMIT]
         );
-        tracing::debug!("Full response body: {body:?}");
+        tracing::debug!("Full response body: {body}");
     } else {
-        tracing::info!("Sending response: {headers:#?}\nbody: {body:?}");
+        tracing::info!("Sending response: {headers:#?}\nbody: {body}");
     }
 }
