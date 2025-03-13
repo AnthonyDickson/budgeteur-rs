@@ -2,27 +2,13 @@
 
 use askama_axum::Template;
 use axum::{
+    Router,
     http::{StatusCode, Uri},
     middleware,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
-    Router,
 };
 use axum_htmx::HxRedirect;
-
-use category::{create_category, get_category};
-use dashboard::get_dashboard_page;
-use log_in::{get_log_in_page, post_log_in};
-use log_out::get_log_out;
-use register::{create_user, get_register_page};
-use tower_http::services::ServeDir;
-use transaction::{create_transaction, get_transaction};
-use transactions::get_transactions_page;
-
-use crate::{
-    auth::middleware::{auth_guard, auth_guard_hx},
-    stores::sql_store::SQLAppState,
-};
 
 mod category;
 mod dashboard;
@@ -34,6 +20,22 @@ mod register;
 mod templates;
 mod transaction;
 mod transactions;
+mod views;
+
+use category::{create_category, get_category};
+use dashboard::get_dashboard_page;
+use log_in::{get_log_in_page, post_log_in};
+use log_out::get_log_out;
+use register::{create_user, get_register_page};
+use tower_http::services::ServeDir;
+use transaction::{create_transaction, get_transaction};
+use transactions::get_transactions_page;
+use views::new_transaction::get_new_transaction_page;
+
+use crate::{
+    auth::middleware::{auth_guard, auth_guard_hx},
+    stores::sql_store::SQLAppState,
+};
 
 /// Return a router with all the app's routes.
 pub fn build_router(state: SQLAppState) -> Router {
@@ -56,6 +58,10 @@ pub fn build_router(state: SQLAppState) -> Router {
         .route(endpoints::TRANSACTION, get(get_transaction))
         .route(endpoints::TRANSACTIONS_API, get(get_transactions_page))
         .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
+        .route(
+            endpoints::NEW_TRANSACTION_VIEW,
+            get(get_new_transaction_page),
+        )
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
 
     // These POST routes need to use the HX-REDIRECT header for auth redirects to work properly for

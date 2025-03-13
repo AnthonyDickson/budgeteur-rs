@@ -8,6 +8,8 @@ pub const ROOT: &str = "/";
 pub const DASHBOARD_VIEW: &str = "/dashboard";
 /// The page for displaying a user's transactions.
 pub const TRANSACTIONS_VIEW: &str = "/transactions";
+/// The page for creating a new transaction.
+pub const NEW_TRANSACTION_VIEW: &str = "/transactions/new";
 /// The route for getting the registration page.
 pub const REGISTER_VIEW: &str = "/register";
 /// The route for getting the log in page.
@@ -104,6 +106,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::DASHBOARD_VIEW);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_VIEW);
         assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::NEW_TRANSACTION_VIEW);
 
         assert_endpoint_is_valid_uri(endpoints::COFFEE);
         assert_endpoint_is_valid_uri(endpoints::CATEGORIES);
