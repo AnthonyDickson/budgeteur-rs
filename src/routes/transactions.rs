@@ -27,7 +27,7 @@ use super::{
 #[derive(Template)]
 #[template(path = "views/transactions.html")]
 struct TransactionsTemplate<'a> {
-    navbar: NavbarTemplate<'a>,
+    nav_bar: NavbarTemplate<'a>,
     /// The user's transactions for this week, as Askama templates.
     transactions: Vec<TransactionRow>,
     /// Today's date, i.e. the date the template was rendered.
@@ -45,7 +45,7 @@ where
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
 {
-    let navbar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
+    let nav_bar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
 
     let transactions = state.transaction_store.get_query(TransactionQuery {
         user_id: Some(user_id),
@@ -80,7 +80,7 @@ where
         .collect();
 
     TransactionsTemplate {
-        navbar,
+        nav_bar,
         transactions,
         today,
         create_transaction_route,

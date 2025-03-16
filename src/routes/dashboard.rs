@@ -22,7 +22,7 @@ use crate::{
 #[derive(Template)]
 #[template(path = "views/dashboard.html")]
 struct DashboardTemplate<'a> {
-    navbar: NavbarTemplate<'a>,
+    nav_bar: NavbarTemplate<'a>,
     user_id: UserID,
     /// How much over or under budget the user is for this week.
     balance: f64,
@@ -38,7 +38,7 @@ where
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
 {
-    let navbar = get_nav_bar(endpoints::DASHBOARD_VIEW);
+    let nav_bar = get_nav_bar(endpoints::DASHBOARD_VIEW);
 
     let today = OffsetDateTime::now_utc().date();
     let one_week_ago = match today.checked_sub(Duration::weeks(1)) {
@@ -67,7 +67,7 @@ where
     };
 
     DashboardTemplate {
-        navbar,
+        nav_bar,
         user_id,
         balance,
     }

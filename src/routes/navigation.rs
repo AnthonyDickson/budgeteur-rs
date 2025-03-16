@@ -17,7 +17,7 @@ struct Link<'a> {
 
 /// Template for the navigation bar which includes links to pages and a log out button.
 #[derive(Template)]
-#[template(path = "partials/navbar.html")]
+#[template(path = "partials/nav_bar.html")]
 pub struct NavbarTemplate<'a> {
     links: Vec<Link<'a>>,
 }
@@ -86,9 +86,9 @@ mod nav_bar_tests {
         };
 
         for (endpoint, should_be_active) in cases {
-            let navbar = get_nav_bar(endpoint);
+            let nav_bar = get_nav_bar(endpoint);
 
-            for link in navbar.links {
+            for link in nav_bar.links {
                 if link.url == endpoint {
                     assert_eq!(
                         link.is_current,
