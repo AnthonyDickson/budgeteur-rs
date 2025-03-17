@@ -37,7 +37,7 @@ mod new_transaction_route_tests {
     use super::get_new_transaction_page;
 
     #[tokio::test]
-    async fn returns_html() {
+    async fn returns_form() {
         let result = get_new_transaction_page().await;
 
         assert_eq!(result.status(), StatusCode::OK);
@@ -66,7 +66,53 @@ mod new_transaction_route_tests {
             hx_post
         );
 
-        // TODO: check that form has all the fields for a transaction.
+        let expected_input_types = vec![
+            ("amount", "number"),
+            ("date", "date"),
+            ("description", "text"),
+        ];
+
+        for (name, element_type) in expected_input_types {
+            let selector_string = format!("input[type={element_type}]");
+            let input_selector = scraper::Selector::parse(&selector_string).unwrap();
+            let inputs = form.select(&input_selector).collect::<Vec<_>>();
+            assert_eq!(
+                inputs.len(),
+                1,
+                "want 1 {element_type} input, got {}",
+                inputs.len()
+            );
+
+            let input_name = inputs.first().unwrap().value().attr("name");
+            assert_eq!(
+                input_name,
+                Some(name),
+                "want {element_type} with name=\"{name}\", got {input_name:?}"
+            );
+        }
+
+        let select_selector = scraper::Selector::parse("select").unwrap();
+        let selects = form.select(&select_selector).collect::<Vec<_>>();
+        assert_eq!(selects.len(), 1, "want 1 select tag, got {}", selects.len());
+        let select_name = selects.first().unwrap().value().attr("name");
+        assert_eq!(
+            select_name,
+            Some("category"),
+            "want select with name=\"category\", got {select_name:?}"
+        );
+
+        // TODO: define and check the options for the select tag
+        // TODO: Check that field names match what the post transaction route expects
+
+        let button_selector = scraper::Selector::parse("button").unwrap();
+        let buttons = form.select(&button_selector).collect::<Vec<_>>();
+        assert_eq!(buttons.len(), 1, "want 1 button, got {}", buttons.len());
+        let button_type = buttons.first().unwrap().value().attr("type");
+        assert_eq!(
+            button_type,
+            Some("submit"),
+            "want button with type=\"submit\", got {button_type:?}"
+        );
     }
 
     async fn parse_html(response: Response<Body>) -> scraper::Html {
