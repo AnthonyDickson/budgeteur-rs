@@ -6,11 +6,13 @@
 <div class="relative overflow-x-auto">
   <form hx-post="{{ create_transaction_route }}" class="space-y-4 md:space-y-6">
     <div>
+      {# TODO: Limit to non-negative values with a step of 0.01 #}
       <label for="amount" class="{% include "styles/forms/label.html" %}">Amount</label>
       <input name="amount" id="amount" type="number" placeholder="$0.00" class="{% include "styles/forms/input.html" %}"/>
     </div>
 
-    <div>
+    <div
+      {# TODO: Limit to current date #}
       <label for="date" class="{% include "styles/forms/label.html" %}">Date</label>
       <input name="date" id="date" type="date" class="{% include "styles/forms/input.html" %}" />
     </div>
@@ -23,11 +25,9 @@
     <div>
       <label for="category" class="{% include "styles/forms/label.html" %}">Category</label>
       <select name="category" id="category" class="{% include "styles/forms/input.html" %}">
-        {#
         {% for category in categories %}
-        <option value="{{ category.id }}">{{ category.name }}</option>
+          <option value="{{ category.id }}">{{ category.name }}</option>
         {% endfor %}
-        #}
       </select>
     </div>
 
