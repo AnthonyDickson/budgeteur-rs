@@ -5,13 +5,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use rusqlite::{params_from_iter, types::Value, Connection, Row};
+use rusqlite::{Connection, Row, params_from_iter, types::Value};
 use time::Date;
 
 use crate::{
+    Error,
     db::{CreateTable, MapRow},
     models::{DatabaseID, Transaction, TransactionBuilder, UserID},
-    Error,
 };
 
 use super::SQLiteCategoryStore;
@@ -130,7 +130,7 @@ impl TransactionStore for SQLiteTransactionStore {
                     error => Error::SqlError(error),
                 })?;
 
-            if category.user_id() != transaction.user_id() {
+            if category.user_id != transaction.user_id() {
                 // Use same error as if the category doesn't exist so that unauthorized users can't
                 // poke around to find out what data exists.
                 return Err(Error::InvalidCategory);
@@ -283,9 +283,9 @@ mod sqlite_transaction_store_tests {
     use crate::{
         models::{CategoryName, PasswordHash, Transaction, TransactionBuilder, User, UserID},
         stores::{
-            sql_store::{create_app_state, SQLAppState},
-            transaction::{SortOrder, TransactionQuery},
             CategoryStore, UserStore,
+            sql_store::{SQLAppState, create_app_state},
+            transaction::{SortOrder, TransactionQuery},
         },
     };
 
@@ -362,7 +362,7 @@ mod sqlite_transaction_store_tests {
 
         let maybe_transaction = state.transaction_store.create_from_builder(
             Transaction::build(PI, unauthorized_user.id())
-                .category(Some(someone_elses_category.id())),
+                .category(Some(someone_elses_category.id)),
         );
 
         // The server should not give any information indicating to the client that the category exists or belongs to another user,

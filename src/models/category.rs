@@ -6,8 +6,8 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    models::{DatabaseID, UserID},
     Error,
+    models::{DatabaseID, UserID},
 };
 
 /// The name of a category.
@@ -53,31 +53,14 @@ impl Display for CategoryName {
 /// A category for expenses and income, e.g., 'Groceries', 'Eating Out', 'Wages'.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Category {
-    id: DatabaseID,
-    name: CategoryName,
-    user_id: UserID,
-}
-
-impl Category {
-    /// Create a new category.
-    pub fn new(id: DatabaseID, name: CategoryName, user_id: UserID) -> Self {
-        Self { id, name, user_id }
-    }
-
     /// The id of the category.
-    pub fn id(&self) -> DatabaseID {
-        self.id
-    }
+    pub id: DatabaseID,
 
     /// The name of the category.
-    pub fn name(&self) -> &CategoryName {
-        &self.name
-    }
+    pub name: CategoryName,
 
     /// The id of the user that created the category.
-    pub fn user_id(&self) -> UserID {
-        self.user_id
-    }
+    pub user_id: UserID,
 }
 
 #[cfg(test)]

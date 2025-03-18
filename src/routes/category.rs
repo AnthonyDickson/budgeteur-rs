@@ -1,20 +1,20 @@
 //! This files defines the API routes for the category type.
 
 use axum::{
+    Form, Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Form, Json,
 };
 use axum_extra::extract::PrivateCookieJar;
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    AppState, Error,
     auth::cookie::get_user_id_from_auth_cookie,
     models::{CategoryName, DatabaseID, UserID},
     stores::{CategoryStore, TransactionStore, UserStore},
-    AppState, Error,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,7 +69,7 @@ where
         .and_then(|category| {
             let user_id = get_user_id_from_auth_cookie(&jar)?;
 
-            if user_id == category.user_id() {
+            if user_id == category.user_id {
                 Ok(category)
             } else {
                 // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
@@ -85,21 +85,21 @@ mod category_tests {
 
     use askama_axum::IntoResponse;
     use axum::{
+        Form,
         extract::{Path, State},
         http::StatusCode,
-        Form,
     };
-    use axum_extra::extract::{cookie::Key, PrivateCookieJar};
+    use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 
     use crate::{
-        auth::cookie::{set_auth_cookie, DEFAULT_COOKIE_DURATION},
+        AppState, Error,
+        auth::cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
         models::{
             Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
             User, UserID,
         },
         routes::category::{create_category, get_category},
-        stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
-        AppState, Error,
+        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
     };
 
     use super::CategoryData;
@@ -131,7 +131,11 @@ mod category_tests {
                 user_id,
             });
 
-            let category = Category::new(0, name, user_id);
+            let category = Category {
+                id: 0,
+                name,
+                user_id,
+            };
             self.categories.lock().unwrap().push(category.clone());
 
             Ok(category)
@@ -147,7 +151,7 @@ mod category_tests {
                 .lock()
                 .unwrap()
                 .iter()
-                .find(|category| category.id() == category_id)
+                .find(|category| category.id == category_id)
                 .ok_or(Error::NotFound)
                 .map(|category| category.to_owned())
         }
@@ -275,12 +279,12 @@ mod category_tests {
             .unwrap();
 
         let want = GetCategoryCall {
-            category_id: category.id(),
+            category_id: category.id,
         };
 
-        let jar = get_cookie_jar(category.user_id(), state.cookie_key.clone());
+        let jar = get_cookie_jar(category.user_id, state.cookie_key.clone());
 
-        let response = get_category(State(state), jar, Path(category.id()))
+        let response = get_category(State(state), jar, Path(category.id))
             .await
             .into_response();
 
@@ -295,14 +299,14 @@ mod category_tests {
         let category = store
             .create(CategoryName::new_unchecked("Foo"), UserID::new(123))
             .unwrap();
-        let unauthorized_user_id = UserID::new(category.user_id().as_i64() + 999);
+        let unauthorized_user_id = UserID::new(category.user_id.as_i64() + 999);
 
         let want = GetCategoryCall {
-            category_id: category.id(),
+            category_id: category.id,
         };
         let jar = get_cookie_jar(unauthorized_user_id, state.cookie_key.clone());
 
-        let response = get_category(State(state), jar, Path(category.id()))
+        let response = get_category(State(state), jar, Path(category.id))
             .await
             .into_response();
 

@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex};
 use rusqlite::{Connection, Row};
 
 use crate::{
+    Error,
     db::{CreateTable, MapRow},
     models::{Category, CategoryName, DatabaseID, UserID},
-    Error,
 };
 
 /// Creates and retrieves transaction categories for transactions.
@@ -48,7 +48,7 @@ impl CategoryStore for SQLiteCategoryStore {
 
         let id = connection.last_insert_rowid();
 
-        Ok(Category::new(id, name, user_id))
+        Ok(Category { id, name, user_id })
     }
 
     /// Retrieve categories in the database for the category with `category_id`.
@@ -121,7 +121,7 @@ impl MapRow for SQLiteCategoryStore {
         let raw_user_id = row.get(offset + 2)?;
         let user_id = UserID::new(raw_user_id);
 
-        Ok(Self::ReturnType::new(id, name, user_id))
+        Ok(Self::ReturnType { id, name, user_id })
     }
 }
 
@@ -133,10 +133,10 @@ mod category_tests {
     use rusqlite::Connection;
 
     use crate::{
+        Error,
         db::initialize,
         models::{CategoryName, PasswordHash, User, UserID},
         stores::{SQLiteUserStore, UserStore},
-        Error,
     };
 
     use super::{CategoryStore, SQLiteCategoryStore};
@@ -165,9 +165,9 @@ mod category_tests {
 
         let category = store.create(name.clone(), user.id()).unwrap();
 
-        assert!(category.id() > 0);
-        assert_eq!(category.name(), &name);
-        assert_eq!(category.user_id(), user.id());
+        assert!(category.id > 0);
+        assert_eq!(category.name, name);
+        assert_eq!(category.user_id, user.id());
     }
 
     #[test]
@@ -177,7 +177,7 @@ mod category_tests {
         let name = CategoryName::new_unchecked("Foo");
         let inserted_category = store.create(name, user.id()).unwrap();
 
-        let selected_category = store.get(inserted_category.id());
+        let selected_category = store.get(inserted_category.id);
 
         assert_eq!(Ok(inserted_category), selected_category);
     }
@@ -189,7 +189,7 @@ mod category_tests {
             .create(CategoryName::new_unchecked("Foo"), user.id())
             .unwrap();
 
-        let selected_category = store.get(inserted_category.id() + 123);
+        let selected_category = store.get(inserted_category.id + 123);
 
         assert_eq!(selected_category, Err(Error::NotFound));
     }
