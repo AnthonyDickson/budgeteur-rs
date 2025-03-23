@@ -4,6 +4,7 @@ use axum::{
     extract::State,
     response::{IntoResponse, Response},
 };
+use time::Date;
 
 use crate::{
     AppState,
@@ -22,6 +23,7 @@ struct NewTransactionTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     create_transaction_route: &'a str,
     categories: Vec<Category>,
+    max_date: Date,
 }
 
 /// Renders the page for creating a transaction.
@@ -42,6 +44,7 @@ where
         nav_bar,
         create_transaction_route: endpoints::TRANSACTIONS_API,
         categories,
+        max_date: time::OffsetDateTime::now_utc().date(),
     }
     .into_response()
 }
@@ -56,6 +59,8 @@ mod new_transaction_route_tests {
         extract::State,
         http::{StatusCode, response::Response},
     };
+    use scraper::{ElementRef, Html};
+    use time::OffsetDateTime;
 
     use crate::{
         AppState, Error,
@@ -170,11 +175,24 @@ mod new_transaction_route_tests {
             DummyUserStore {},
         );
 
-        let result = get_new_transaction_page(State(app_state), Extension(user_id)).await;
+        let response = get_new_transaction_page(State(app_state), Extension(user_id)).await;
 
-        assert_eq!(result.status(), StatusCode::OK);
+        assert_status_ok(&response);
+        assert_html_content_type(&response);
+
+        let document = parse_html(response).await;
+        assert_correct_form(&document, categories);
+    }
+
+    #[track_caller]
+    fn assert_status_ok(response: &Response<Body>) {
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[track_caller]
+    fn assert_html_content_type(response: &Response<Body>) {
         assert_eq!(
-            result
+            response
                 .headers()
                 .get("content-type")
                 .unwrap()
@@ -182,9 +200,10 @@ mod new_transaction_route_tests {
                 .unwrap(),
             "text/html; charset=utf-8"
         );
+    }
 
-        // TODO: clean up test code
-        let document = parse_html(result).await;
+    #[track_caller]
+    fn assert_correct_form(document: &Html, categories: Vec<Category>) {
         let form_selector = scraper::Selector::parse("form").unwrap();
         let forms = document.select(&form_selector).collect::<Vec<_>>();
         assert_eq!(forms.len(), 1, "want 1 form, got {}", forms.len());
@@ -199,6 +218,13 @@ mod new_transaction_route_tests {
             hx_post
         );
 
+        assert_correct_inputs(form);
+        assert_correct_select_and_options(form, categories);
+        assert_has_submit_button(form);
+    }
+
+    #[track_caller]
+    fn assert_correct_inputs(form: &ElementRef) {
         let expected_input_types = vec![
             ("amount", "number"),
             ("date", "date"),
@@ -216,14 +242,66 @@ mod new_transaction_route_tests {
                 inputs.len()
             );
 
-            let input_name = inputs.first().unwrap().value().attr("name");
+            let input = inputs.first().unwrap();
+
+            let input_name = input.value().attr("name");
             assert_eq!(
                 input_name,
                 Some(name),
                 "want {element_type} with name=\"{name}\", got {input_name:?}"
             );
-        }
 
+            if input_name == Some("date") {
+                assert_max_date(input);
+            }
+
+            if input_name == Some("amount") {
+                assert_amount_min_and_step(input);
+            }
+        }
+    }
+
+    #[track_caller]
+    fn assert_max_date(input: &ElementRef) {
+        let today = OffsetDateTime::now_utc().date();
+        let max_date = input.value().attr("max");
+
+        assert_eq!(
+            Some(today.to_string().as_str()),
+            max_date,
+            "the date for a new transaction should be limited to the current date {today}, but got {max_date:?}"
+        );
+    }
+
+    #[track_caller]
+    fn assert_amount_min_and_step(input: &ElementRef) {
+        let min_value = input
+            .value()
+            .attr("min")
+            .expect("amount input should have the attribute 'min'");
+        let min_value: i64 = min_value
+            .parse()
+            .expect("the attribute 'min' for the amount input should be an integer");
+        assert_eq!(
+            0, min_value,
+            "the amount for a new transaction should be limited to a minimum of 0, but got {min_value}"
+        );
+
+        let step = input
+            .value()
+            .attr("step")
+            .expect("amount input should have the attribute 'step'");
+        let step: f64 = step
+            .parse()
+            .expect("the attribute 'step' for the amount input should be a float");
+        assert_eq!(
+            0.01, step,
+            "the amount for a new transaction should increment in steps of 0.01, but got {step}"
+        );
+    }
+
+    #[track_caller]
+    fn assert_correct_select_and_options(form: &ElementRef, categories: Vec<Category>) {
         let select_selector = scraper::Selector::parse("select").unwrap();
         let selects = form.select(&select_selector).collect::<Vec<_>>();
         assert_eq!(selects.len(), 1, "want 1 select tag, got {}", selects.len());
@@ -269,7 +347,10 @@ mod new_transaction_route_tests {
                 "want option with value=\"{category_id}\" to have text \"{category_name}\", got {option_text:?}"
             );
         }
+    }
 
+    #[track_caller]
+    fn assert_has_submit_button(form: &ElementRef) {
         let button_selector = scraper::Selector::parse("button").unwrap();
         let buttons = form.select(&button_selector).collect::<Vec<_>>();
         assert_eq!(buttons.len(), 1, "want 1 button, got {}", buttons.len());

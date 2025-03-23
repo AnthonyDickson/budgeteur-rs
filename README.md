@@ -67,18 +67,6 @@ This creates a new shell environment with the packages declared in `flake.nix`.
 Similar to a Docker image, this shell environment is isolated from your system
 and enables easy, replicable development environments.
 
-## Status and Next Steps
-
-Currently, user registration, log in and log out have been implemented on both
-the backend and frontend.
-
-![Preview of the registration page.](readme/register.png)
-![Preview of the log in page.](readme/log_in.png)
-![Preview of the dashboard page with a log out button.](readme/dashboard.png)
-
-The next steps will be to work on CRUD functionality for transactions.
-This will allow for the fundamental budgeting functionality.
-
 ## Docs
 
 For now, you can view the docs by building them locally:
