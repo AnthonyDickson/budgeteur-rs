@@ -251,14 +251,39 @@ mod new_transaction_route_tests {
                 "want {element_type} with name=\"{name}\", got {input_name:?}"
             );
 
-            if input_name == Some("date") {
-                assert_max_date(input);
-            }
-
-            if input_name == Some("amount") {
-                assert_amount_min_and_step(input);
+            match input_name {
+                Some("amount") => {
+                    assert_required(input);
+                    assert_amount_min_and_step(input);
+                }
+                Some("date") => {
+                    assert_required(input);
+                    assert_max_date(input);
+                    assert_value(input, &OffsetDateTime::now_utc().date().to_string());
+                }
+                _ => {}
             }
         }
+    }
+
+    #[track_caller]
+    fn assert_value(input: &ElementRef, expected_value: &str) {
+        let value = input.value().attr("value");
+        assert_eq!(
+            value,
+            Some(expected_value),
+            "want input with value=\"{expected_value}\", got {value:?}"
+        );
+    }
+
+    #[track_caller]
+    fn assert_required(input: &ElementRef) {
+        let required = input.value().attr("required");
+        let input_name = input.value().attr("name").unwrap();
+        assert!(
+            required.is_some(),
+            "want {input_name} input to be required, got {required:?}"
+        );
     }
 
     #[track_caller]

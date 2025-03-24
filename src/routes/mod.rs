@@ -57,8 +57,10 @@ pub fn build_router(state: SQLAppState) -> Router {
         .route(endpoints::CATEGORY, get(get_category))
         .route(endpoints::TRANSACTION, get(get_transaction))
         .route(endpoints::TRANSACTIONS_API, get(get_transactions_page))
+        // TODO: should TRANSACTIONS_VIEW url include the user ID?
         .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
         .route(
+            // TODO: should NEW_TRANSACTION_VIEW url include the user ID?
             endpoints::NEW_TRANSACTION_VIEW,
             get(get_new_transaction_page),
         )
