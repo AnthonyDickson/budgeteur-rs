@@ -1,25 +1,23 @@
 use askama_axum::Template;
 use axum::{
+    Extension,
     extract::State,
     http::Uri,
     response::{IntoResponse, Response},
-    Extension,
 };
-use time::{Date, OffsetDateTime};
 
 use crate::{
-    models::UserID,
-    routes::get_internal_server_error_redirect,
-    stores::{
-        transaction::{SortOrder, TransactionQuery},
-        CategoryStore, TransactionStore, UserStore,
-    },
     AppState,
+    models::UserID,
+    stores::{
+        CategoryStore, TransactionStore, UserStore,
+        transaction::{SortOrder, TransactionQuery},
+    },
 };
 
 use super::{
-    endpoints::{self, format_endpoint},
-    navigation::{get_nav_bar, NavbarTemplate},
+    endpoints::{self},
+    navigation::{NavbarTemplate, get_nav_bar},
     templates::TransactionRow,
 };
 
@@ -30,8 +28,6 @@ struct TransactionsTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     /// The user's transactions for this week, as Askama templates.
     transactions: Vec<TransactionRow>,
-    /// Today's date, i.e. the date the template was rendered.
-    today: Date,
     /// The route for creating a new transaction for the current user.
     create_transaction_route: Uri,
 }
@@ -58,22 +54,6 @@ where
         Err(error) => return error.into_response(),
     };
 
-    let today = OffsetDateTime::now_utc().date();
-
-    let create_transaction_route =
-        format_endpoint(endpoints::USER_TRANSACTIONS, user_id.as_i64()).parse();
-
-    let create_transaction_route = match create_transaction_route {
-        Ok(uri) => uri,
-        Err(error) => {
-            tracing::error!(
-                "An error ocurred while creating route URI using the endpoint {}: {error}",
-                endpoints::USER_TRANSACTIONS
-            );
-            return get_internal_server_error_redirect();
-        }
-    };
-
     let transactions = transactions
         .into_iter()
         .map(|transaction| TransactionRow { transaction })
@@ -82,8 +62,7 @@ where
     TransactionsTemplate {
         nav_bar,
         transactions,
-        today,
-        create_transaction_route,
+        create_transaction_route: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
     }
     .into_response()
 }
@@ -91,9 +70,8 @@ where
 #[cfg(test)]
 mod transactions_route_tests {
     use axum::{
-        middleware,
+        Router, middleware,
         routing::{get, post},
-        Router,
     };
     use axum_test::TestServer;
     use rusqlite::Connection;
@@ -103,8 +81,8 @@ mod transactions_route_tests {
         models::{PasswordHash, Transaction, User, ValidatedPassword},
         routes::{endpoints, log_in::post_log_in},
         stores::{
-            sql_store::{create_app_state, SQLAppState},
             TransactionStore, UserStore,
+            sql_store::{SQLAppState, create_app_state},
         },
     };
 

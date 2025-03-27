@@ -1,23 +1,24 @@
 //! This files defines the routes for the transaction type.
 
 use axum::{
+    Form, Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Form, Json,
 };
 use axum_extra::extract::PrivateCookieJar;
 use serde::Deserialize;
 use time::Date;
 
 use crate::{
+    AppState, Error,
     auth::cookie::get_user_id_from_auth_cookie,
     models::{DatabaseID, Transaction, UserID},
     stores::{CategoryStore, TransactionStore, UserStore},
-    AppState, Error,
 };
 
 use super::templates::TransactionRow;
+// TODO: Move this code to new_transaction.rs
 
 /// The form data for creating a transaction.
 #[derive(Debug, Deserialize)]
@@ -105,24 +106,24 @@ mod transaction_tests {
 
     use askama_axum::IntoResponse;
     use axum::{
+        Form,
         body::Body,
         extract::{Path, State},
         http::{Response, StatusCode},
-        Form,
     };
     use axum_extra::extract::PrivateCookieJar;
     use time::OffsetDateTime;
 
     use crate::{
+        AppState,
         auth::cookie::set_auth_cookie,
         models::{Category, DatabaseID, PasswordHash, Transaction, TransactionBuilder, UserID},
-        routes::transaction::{create_transaction, get_transaction, TransactionForm},
+        routes::transaction::{TransactionForm, create_transaction, get_transaction},
         stores::transaction::TransactionQuery,
-        AppState,
     };
     use crate::{
-        stores::{CategoryStore, TransactionStore, UserStore},
         Error,
+        stores::{CategoryStore, TransactionStore, UserStore},
     };
 
     #[derive(Clone)]
@@ -363,11 +364,13 @@ mod transaction_tests {
         assert!(html_response.contains(&want.amount().to_string()));
         assert!(html_response.contains(&want.date().to_string()));
         assert!(html_response.contains(want.description()));
-        assert!(html_response.contains(
-            &want
-                .category_id()
-                .expect("category id should not be None")
-                .to_string()
-        ));
+        assert!(
+            html_response.contains(
+                &want
+                    .category_id()
+                    .expect("category id should not be None")
+                    .to_string()
+            )
+        );
     }
 }
