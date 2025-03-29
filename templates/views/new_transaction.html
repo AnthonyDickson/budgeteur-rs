@@ -1,5 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Create Transaction{% endblock %}
+{% block scripts %}
+<style>
+  .input-wrapper {
+      position: relative;
+      display: inline-block;
+  }
+  .input-wrapper input[type="number"] {
+      padding-left: 1.4rem;
+  }
+  .input-wrapper::before {
+      content: '$';
+      position: absolute;
+      left: 0.6rem;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+  }
+</style>
+{% endblock %}
 {% block content %}
 {{ nav_bar|safe }}
 <div class="flex flex-col items-center px-6 py-8 mx-auto md:h-screen lg:py-0 text-gray-900 dark:text-white" />
@@ -7,7 +26,9 @@
   <form hx-post="{{ create_transaction_route }}" class="space-y-4 md:space-y-6">
     <div>
       <label for="amount" class="{% include "styles/forms/label.html" %}">Amount</label>
-      <input name="amount" id="amount" type="number" min="0" step="0.01" placeholder="$0.00" required class="{% include "styles/forms/input.html" %}"/>
+      <div class="input-wrapper">
+        <input name="amount" id="amount" type="number" min="0" step="0.01" placeholder="0.00" required class="{% include "styles/forms/input.html" %}" />
+      </div>
     </div>
 
     <div
@@ -26,7 +47,14 @@
         {% for category in categories %}
           <option value="{{ category.id }}">{{ category.name }}</option>
         {% endfor %}
+
+        <option value="0">None</option>
       </select>
+      <a href="#"
+        class="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+      >
+        Create Category
+      </a>
     </div>
 
     <button type="submit" id="submit-button" tabindex="0" class="{% include "styles/forms/button.html" %}" >
