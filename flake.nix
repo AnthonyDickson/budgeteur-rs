@@ -22,6 +22,10 @@
             rust-analyzer
           ];
 
+          packages = with pkgs; [
+            tailwindcss
+          ];
+
           # environment variable for running dev server.
           SECRET="AVERYSECRETSECRET";
         };

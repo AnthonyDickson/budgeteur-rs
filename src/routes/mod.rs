@@ -74,7 +74,7 @@ pub fn build_router(state: SQLAppState) -> Router {
 
     protected_routes
         .merge(unprotected_routes)
-        .nest_service("/assets", ServeDir::new("assets/"))
+        .nest_service("/static", ServeDir::new("static/"))
         .fallback(get_404_not_found)
         .with_state(state)
 }
@@ -114,7 +114,7 @@ async fn get_internal_server_error_page() -> Response {
 struct NotFoundTemplate;
 
 async fn get_404_not_found() -> Response {
-    (StatusCode::NOT_FOUND, NotFoundTemplate).into_response()
+    (StatusCode::NOT_FOUND, NotFoundTemplate {}).into_response()
 }
 
 #[cfg(test)]

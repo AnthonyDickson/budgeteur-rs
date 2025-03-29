@@ -67,6 +67,38 @@ This creates a new shell environment with the packages declared in `flake.nix`.
 Similar to a Docker image, this shell environment is isolated from your system
 and enables easy, replicable development environments.
 
+## Development
+
+1. Run `tailwindcss` to automatically compile the CSS:
+
+    ```shell
+    tailwindcss -i templates/source.css -o static/main.css --minify --watch
+    ```
+
+    This will watch for changes in the `templates/source.css` file and compile
+    it to `static/main.css`.
+
+2. Run the server or tests:
+
+    - Run the server:
+
+      ```shell
+      cargo watch -E SECRET=YOUR_SECRET -x 'run -- --db-path test.db --cert-path your/certs'
+
+      ```
+
+      This will automatically recompile and restart the server when changes are made.
+      The server will also automatically trigger a reload if you have the web app
+      open in your browser.
+
+    - Run the tests:
+
+      ```shell
+      cargo watch test
+      ```
+
+      This will run all the tests in the project when a file is modified.
+
 ## Docs
 
 For now, you can view the docs by building them locally:
