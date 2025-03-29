@@ -13,7 +13,7 @@ axum-extra = { version = "0.9.6", features = [
   "typed-header",
 ] }
 axum-htmx = "0.6.0"
-axum-server = { version = "0.7.2", features = ["tls-rustls"] }
+axum-server = { version = "0.7.2" }
 axum-test = "16.4.1"
 bcrypt = "0.17.0"
 clap = { version = "4.5.34", features = ["derive"] }
