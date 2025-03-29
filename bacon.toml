@@ -101,8 +101,6 @@ command = [
   "--",
   "--db-path",
   "test.db",
-  "--cert-path",
-  "self_signed_certs/",
 ]
 need_stdout = true
 allow_warnings = true

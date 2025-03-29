@@ -2,7 +2,6 @@ use std::{
     env::{self},
     fs::OpenOptions,
     net::SocketAddr,
-    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
@@ -10,7 +9,7 @@ use axum::{
     Router,
     extract::{MatchedPath, Request},
 };
-use axum_server::{Handle, tls_rustls::RustlsConfig};
+use axum_server::Handle;
 use clap::Parser;
 use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
@@ -33,10 +32,6 @@ struct Args {
     #[arg(long)]
     db_path: String,
 
-    /// File path to an SSL certificate `cert.pem` and key `key.pem`.
-    #[arg(long)]
-    cert_path: String,
-
     /// The port to serve the API from.
     #[arg(short, long, default_value_t = 3000)]
     port: u16,
@@ -47,20 +42,10 @@ async fn main() {
     setup_logging();
 
     let args = Args::parse();
-
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
-
-    let tls_config = RustlsConfig::from_pem_file(
-        PathBuf::from(&args.cert_path).join("cert.pem"),
-        PathBuf::from(&args.cert_path).join("key.pem"),
-    )
-    .await
-    .expect("Could not open TLS certificates.");
-
-    let secret = env::var("SECRET").expect("The environment variable 'SECRET' must be set");
-
     let conn = Connection::open(&args.db_path).unwrap();
     let conn = Arc::new(Mutex::new(conn));
+    let secret = env::var("SECRET").expect("The environment variable 'SECRET' must be set");
     let app_config = AppState::new(
         &secret,
         SQLiteCategoryStore::new(conn.clone()),
@@ -76,8 +61,8 @@ async fn main() {
     #[cfg(debug_assertions)]
     let router = router.layer(LiveReloadLayer::new());
 
-    tracing::info!("HTTPS server listening on {}", addr);
-    axum_server::bind_rustls(addr, tls_config)
+    tracing::info!("HTTP server listening on {}", addr);
+    axum_server::bind(addr)
         .handle(handle)
         .serve(router.into_make_service())
         .await

@@ -34,6 +34,9 @@ and dummy environment variables, e.g. `SECRET`, for local testing.
 This project was developed with cargo 1.8.5, other versions have not been tested.
 [bacon](https://dystroy.org/bacon/) is used for running scripts.
 
+**Note**: you cannot test this web app in Safari because it does not support
+secure cookies on localhost.
+
 ### First Time Setup
 
 (First time only) Run the below script to create the test database:
@@ -57,21 +60,10 @@ See [bacon.toml](./bacon.toml) for the list of commands.
 By default, this will serve on port 3000.
 `bacon` will watch for changes and automatically recompile and restart the server.
 
-`--cert-path` should contain the files `cert.pem` and `key.pem`.
-If you do not have the required SSL certificates, you can generate your
-own [using OpenSSL](https://stackoverflow.com/a/10176685):
-
-```shell
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem \
--sha256 -days 365 -nodes \
--addext authorityKeyIdentifier=keyid,issuer \
--addext basicConstraints=CA:FALSE
-```
-
 Test that the server is running in another terminal:
 
 ```shell
-curl -i -X GET https://localhost:3000/coffee
+curl -i -X GET http://localhost:3000/api/coffee
 ```
 
 Example output:
@@ -91,6 +83,11 @@ This will watch for changes and run all the tests in the project.
 
 Build the documentation in `bacon` by pressing `d`.
 This will build the documentation and open it in your default browser.
+
+## Deployment
+
+The server serves over HTTP which is not secure. It is recommended to use a
+reverse proxy like Nginx to serve the application over HTTPS.
 
 ## API Design
 

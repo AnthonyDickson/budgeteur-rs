@@ -14,7 +14,6 @@ Cargo.lock
 *.pdb
 
 # Project files & artifacts that should not be added to version control.
-self_signed_certs/
 test.db
 debug.log
 
