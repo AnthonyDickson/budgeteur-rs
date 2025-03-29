@@ -28,7 +28,7 @@ use log_in::{get_log_in_page, post_log_in};
 use log_out::get_log_out;
 use register::{create_user, get_register_page};
 use tower_http::services::ServeDir;
-use transaction::get_transaction;
+use transaction::{create_transaction, get_transaction};
 use transactions::get_transactions_page;
 use views::new_transaction::get_new_transaction_page;
 
@@ -56,7 +56,6 @@ pub fn build_router(state: SQLAppState) -> Router {
         .route(endpoints::DASHBOARD_VIEW, get(get_dashboard_page))
         .route(endpoints::CATEGORY, get(get_category))
         .route(endpoints::TRANSACTION, get(get_transaction))
-        .route(endpoints::TRANSACTIONS_API, get(get_transactions_page))
         .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
         .route(
             endpoints::NEW_TRANSACTION_VIEW,
@@ -68,6 +67,7 @@ pub fn build_router(state: SQLAppState) -> Router {
     // HTMX requests.
     let protected_routes = protected_routes.merge(
         Router::new()
+            .route(endpoints::TRANSACTIONS_API, post(create_transaction))
             .route(endpoints::USER_CATEGORIES, post(create_category))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),
     );

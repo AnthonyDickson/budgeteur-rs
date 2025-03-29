@@ -1,21 +1,21 @@
 //! This file defines the dashboard route and its handlers.
 
-use super::{
-    endpoints::{self},
-    navigation::{get_nav_bar, NavbarTemplate},
-};
 use askama_axum::Template;
 use axum::{
+    Extension,
     extract::State,
     response::{IntoResponse, Response},
-    Extension,
 };
 use time::{Duration, OffsetDateTime};
 
+use super::{
+    endpoints::{self},
+    navigation::{NavbarTemplate, get_nav_bar},
+};
 use crate::{
-    models::UserID,
-    stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
     AppState,
+    models::UserID,
+    stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
 };
 
 /// Renders the dashboard page.
@@ -77,20 +77,20 @@ where
 #[cfg(test)]
 mod dashboard_route_tests {
     use axum::{
+        Extension,
         body::Body,
         extract::State,
         http::{Response, StatusCode},
-        Extension,
     };
     use time::{Duration, OffsetDateTime};
 
     use crate::{
+        AppState, Error,
         models::{
             Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
             User, UserID,
         },
-        stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
-        AppState, Error,
+        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
     };
 
     use super::get_dashboard_page;

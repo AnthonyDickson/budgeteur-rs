@@ -42,8 +42,8 @@
     </div>
 
     <div>
-      <label for="category" class="{% include "styles/forms/label.html" %}">Category</label>
-      <select name="category" id="category" class="{% include "styles/forms/input.html" %}">
+      <label for="category_id" class="{% include "styles/forms/label.html" %}">Category</label>
+      <select name="category_id" id="category_id" class="{% include "styles/forms/input.html" %}">
         {% for category in categories %}
           <option value="{{ category.id }}">{{ category.name }}</option>
         {% endfor %}

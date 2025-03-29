@@ -1,12 +1,13 @@
 //! This files defines the routes for the transaction type.
 
 use axum::{
-    Form, Json,
+    Extension, Form, Json,
     extract::{Path, State},
-    http::StatusCode,
+    http::{StatusCode, Uri},
     response::IntoResponse,
 };
 use axum_extra::extract::PrivateCookieJar;
+use axum_htmx::HxRedirect;
 use serde::Deserialize;
 use time::Date;
 
@@ -17,8 +18,7 @@ use crate::{
     stores::{CategoryStore, TransactionStore, UserStore},
 };
 
-use super::templates::TransactionRow;
-// TODO: Move this code to new_transaction.rs
+use super::endpoints;
 
 /// The form data for creating a transaction.
 #[derive(Debug, Deserialize)]
@@ -43,7 +43,7 @@ pub struct TransactionForm {
 pub async fn create_transaction<C, T, U>(
     State(mut state): State<AppState<C, T, U>>,
     _jar: PrivateCookieJar,
-    Path(user_id): Path<UserID>,
+    Extension(user_id): Extension<UserID>,
     Form(data): Form<TransactionForm>,
 ) -> impl IntoResponse
 where
@@ -61,12 +61,23 @@ where
     let transaction = Transaction::build(data.amount, user_id)
         .description(data.description)
         .category(category)
-        .date(data.date)?;
+        .date(data.date);
 
-    state
-        .transaction_store
-        .create_from_builder(transaction)
-        .map(|transaction| (StatusCode::OK, TransactionRow { transaction }))
+    let transaction = match transaction {
+        Ok(transaction) => transaction,
+        Err(e) => return e.into_response(),
+    };
+
+    match state.transaction_store.create_from_builder(transaction) {
+        Ok(_) => {}
+        Err(e) => return e.into_response(),
+    }
+
+    (
+        HxRedirect(Uri::from_static(endpoints::TRANSACTIONS_VIEW)),
+        StatusCode::SEE_OTHER,
+    )
+        .into_response()
 }
 
 /// A route handler for getting a transaction by its database ID.
@@ -106,12 +117,13 @@ mod transaction_tests {
 
     use askama_axum::IntoResponse;
     use axum::{
-        Form,
+        Extension, Form,
         body::Body,
         extract::{Path, State},
         http::{Response, StatusCode},
     };
     use axum_extra::extract::PrivateCookieJar;
+    use axum_htmx::HX_REDIRECT;
     use time::OffsetDateTime;
 
     use crate::{
@@ -252,12 +264,13 @@ mod transaction_tests {
             category_id: want.category_id().unwrap(),
         };
 
-        let response = create_transaction(State(state.clone()), jar, Path(user_id), Form(form))
-            .await
-            .into_response();
+        let response =
+            create_transaction(State(state.clone()), jar, Extension(user_id), Form(form))
+                .await
+                .into_response();
 
         assert_create_calls(state, want.clone());
-        assert_response_contains_transaction(response, want).await;
+        assert_redirects_to_transactions_view(response);
     }
 
     #[tokio::test]
@@ -325,13 +338,6 @@ mod transaction_tests {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
-    async fn extract_text(response: Response<Body>) -> String {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-
-        String::from_utf8_lossy(&body).to_string()
-    }
-
     async fn extract_from_json(response: Response<Body>) -> Transaction {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
@@ -339,6 +345,7 @@ mod transaction_tests {
         serde_json::from_slice(&body).unwrap()
     }
 
+    #[track_caller]
     fn assert_create_calls(
         state: AppState<DummyCategoryStore, FakeTransactionStore, DummyUserStore>,
         want: Transaction,
@@ -356,21 +363,15 @@ mod transaction_tests {
         assert_eq!(got, &want, "got transaction {:#?} want {:#?}", got, want);
     }
 
-    async fn assert_response_contains_transaction(response: Response<Body>, want: Transaction) {
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let html_response = extract_text(response).await;
-
-        assert!(html_response.contains(&want.amount().to_string()));
-        assert!(html_response.contains(&want.date().to_string()));
-        assert!(html_response.contains(want.description()));
-        assert!(
-            html_response.contains(
-                &want
-                    .category_id()
-                    .expect("category id should not be None")
-                    .to_string()
-            )
+    #[track_caller]
+    fn assert_redirects_to_transactions_view(response: Response<Body>) {
+        let location = response
+            .headers()
+            .get(HX_REDIRECT)
+            .expect("expected response to have the header hx-redirect");
+        assert_eq!(
+            location, "/transactions",
+            "got redirect to {location:?}, want redirect to /transactions"
         );
     }
 }

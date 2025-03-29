@@ -44,6 +44,7 @@ need_stdout = false
 [jobs.test]
 command = ["cargo", "test"]
 need_stdout = true
+watch = ["templates/"]
 
 [jobs.nextest]
 command = [

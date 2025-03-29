@@ -342,8 +342,8 @@ mod new_transaction_route_tests {
         let select_name = select_tag.value().attr("name");
         assert_eq!(
             select_name,
-            Some("category"),
-            "want select with name=\"category\", got {select_name:?}"
+            Some("category_id"),
+            "want select with name=\"category_id\", got {select_name:?}"
         );
 
         let select_option_selector = scraper::Selector::parse("option").unwrap();
