@@ -24,6 +24,7 @@
 
           packages = with pkgs; [
             tailwindcss
+            bacon
           ];
 
           # environment variable for running dev server.
