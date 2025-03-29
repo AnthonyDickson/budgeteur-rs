@@ -9,16 +9,15 @@ use axum::{
 use crate::{
     AppState,
     models::UserID,
+    routes::{
+        endpoints,
+        navigation::{NavbarTemplate, get_nav_bar},
+        templates::TransactionRow,
+    },
     stores::{
         CategoryStore, TransactionStore, UserStore,
         transaction::{SortOrder, TransactionQuery},
     },
-};
-
-use super::{
-    endpoints::{self},
-    navigation::{NavbarTemplate, get_nav_bar},
-    templates::TransactionRow,
 };
 
 /// Renders the dashboard page.

@@ -2,6 +2,8 @@
 
 use axum::{extract::Request, http::header::CONTENT_TYPE, middleware::Next, response::Response};
 
+// TODO: Skip logging of static files
+
 /// Log the request and response for each request.
 ///
 /// Both the request and response are logged at the `info` level.

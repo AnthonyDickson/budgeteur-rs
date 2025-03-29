@@ -9,28 +9,28 @@ use axum::{
     routing::{get, post},
 };
 use axum_htmx::HxRedirect;
+use tower_http::services::ServeDir;
 
 mod category;
-mod dashboard;
 pub mod endpoints;
 mod log_in;
 mod log_out;
 mod navigation;
-mod register;
 mod templates;
 mod transaction;
-mod transactions;
+mod user;
 mod views;
 
 use category::{create_category, get_category};
-use dashboard::get_dashboard_page;
-use log_in::{get_log_in_page, post_log_in};
+use log_in::post_log_in;
 use log_out::get_log_out;
-use register::{create_user, get_register_page};
-use tower_http::services::ServeDir;
 use transaction::{create_transaction, get_transaction};
-use transactions::get_transactions_page;
-use views::new_transaction::get_new_transaction_page;
+use user::create_user;
+use views::{
+    dashboard::get_dashboard_page, log_in::get_log_in_page,
+    new_transaction::get_new_transaction_page, register::get_register_page,
+    transactions::get_transactions_page,
+};
 
 use crate::{
     auth::middleware::{auth_guard, auth_guard_hx},

@@ -119,5 +119,7 @@ r = "job:run"
 # vim bindings :)
 k = "scroll-lines(-1)"
 j = "scroll-lines(1)"
+ctrl-u = "scroll-pages(-1)"
+ctrl-d = "scroll-pages(1)"
 g = "scroll-to-top"
 shift-g = "scroll-to-bottom"

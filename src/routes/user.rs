@@ -1,12 +1,11 @@
 //! The registration page for creating a new user account.
 use std::str::FromStr;
 
-use askama::Template;
 use axum::{
+    Form,
     extract::State,
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
-    Form,
 };
 use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
@@ -14,68 +13,23 @@ use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    AppState, Error,
     auth::cookie::set_auth_cookie,
     models::{PasswordHash, ValidatedPassword},
     routes::get_internal_server_error_redirect,
     stores::{CategoryStore, TransactionStore, UserStore},
-    AppState, Error,
 };
 
 use super::{
     endpoints,
-    templates::{EmailInputTemplate, PasswordInputTemplate},
+    templates::{
+        ConfirmPasswordInputTemplate, EmailInputTemplate, PasswordInputTemplate,
+        RegisterFormTemplate,
+    },
 };
 
 /// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).
 const PASSWORD_INPUT_MIN_LENGTH: usize = 8;
-
-#[derive(Template)]
-#[template(path = "views/register.html")]
-struct RegisterPageTemplate<'a> {
-    register_form: RegisterFormTemplate<'a>,
-}
-
-#[derive(Template)]
-#[template(path = "partials/register/form.html")]
-struct RegisterFormTemplate<'a> {
-    log_in_route: &'a str,
-    create_user_route: &'a str,
-    email_input: EmailInputTemplate<'a>,
-    password_input: PasswordInputTemplate<'a>,
-    confirm_password_input: ConfirmPasswordInputTemplate<'a>,
-}
-
-impl Default for RegisterFormTemplate<'_> {
-    fn default() -> Self {
-        Self {
-            log_in_route: endpoints::LOG_IN_VIEW,
-            create_user_route: endpoints::USERS,
-            email_input: EmailInputTemplate::default(),
-            password_input: PasswordInputTemplate::default(),
-            confirm_password_input: ConfirmPasswordInputTemplate::default(),
-        }
-    }
-}
-
-#[derive(Template, Default)]
-#[template(path = "partials/register/inputs/confirm_password.html")]
-struct ConfirmPasswordInputTemplate<'a> {
-    error_message: &'a str,
-}
-
-/// Display the registration page.
-pub async fn get_register_page() -> Response {
-    RegisterPageTemplate {
-        register_form: RegisterFormTemplate {
-            password_input: PasswordInputTemplate {
-                min_length: PASSWORD_INPUT_MIN_LENGTH,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-    }
-    .into_response()
-}
 
 #[derive(Serialize, Deserialize)]
 pub struct RegisterForm {
@@ -214,27 +168,27 @@ where
 mod tests {
     use askama_axum::IntoResponse;
     use axum::{
+        Form, Router,
         body::Body,
         extract::State,
-        http::{header::CONTENT_TYPE, Response, StatusCode},
+        http::{Response, StatusCode},
         routing::post,
-        Form, Router,
     };
     use axum_extra::extract::PrivateCookieJar;
     use axum_test::TestServer;
     use serde::{Deserialize, Serialize};
 
     use crate::{
+        AppState, Error,
         models::{
             Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
             User, UserID,
         },
         routes::{
             endpoints,
-            register::{create_user, get_register_page, RegisterForm},
+            user::{RegisterForm, create_user},
         },
-        stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
-        AppState, Error,
+        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
     };
 
     #[derive(Clone)]
@@ -335,96 +289,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn render_register_page() {
-        let response = get_register_page().await;
-        assert_eq!(response.status(), StatusCode::OK);
-
-        assert!(response
-            .headers()
-            .get(CONTENT_TYPE)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .starts_with("text/html"));
-
-        let document = parse_html(response, ParseMode::Document).await;
-
-        let h1_selector = scraper::Selector::parse("h1").unwrap();
-        let titles = document.select(&h1_selector).collect::<Vec<_>>();
-        assert_eq!(titles.len(), 1, "want 1 h1, got {}", titles.len());
-        let title = titles.first().unwrap();
-        let title_text = title.text().collect::<String>().to_lowercase();
-        let title_text = title_text.trim();
-        let want_title = "create account";
-        assert_eq!(
-            title_text, want_title,
-            "want {}, got {:?}",
-            want_title, title_text
-        );
-
-        let form_selector = scraper::Selector::parse("form").unwrap();
-        let forms = document.select(&form_selector).collect::<Vec<_>>();
-        assert_eq!(forms.len(), 1, "want 1 form, got {}", forms.len());
-        let form = forms.first().unwrap();
-        let hx_post = form.value().attr("hx-post");
-        assert_eq!(
-            hx_post,
-            Some(endpoints::USERS),
-            "want form with attribute hx-post=\"{}\", got {:?}",
-            endpoints::USERS,
-            hx_post
-        );
-
-        struct FormInput {
-            tag: &'static str,
-            type_: &'static str,
-            id: &'static str,
-        }
-
-        let want_form_inputs: Vec<FormInput> = vec![
-            FormInput {
-                tag: "input",
-                type_: "email",
-                id: "email",
-            },
-            FormInput {
-                tag: "input",
-                type_: "password",
-                id: "password",
-            },
-            FormInput {
-                tag: "input",
-                type_: "password",
-                id: "confirm-password",
-            },
-        ];
-
-        for FormInput { tag, type_, id } in want_form_inputs {
-            let selector_string = format!("{tag}[type={type_}]#{id}");
-            let input_selector = scraper::Selector::parse(&selector_string).unwrap();
-            let inputs = form.select(&input_selector).collect::<Vec<_>>();
-            assert_eq!(
-                inputs.len(),
-                1,
-                "want 1 {type_} {tag}, got {}",
-                inputs.len()
-            );
-        }
-
-        let log_in_link_selector = scraper::Selector::parse("a[href]").unwrap();
-        let links = form.select(&log_in_link_selector).collect::<Vec<_>>();
-        assert_eq!(links.len(), 1, "want 1 link, got {}", links.len());
-        let link = links.first().unwrap();
-        assert_eq!(
-            link.value().attr("href"),
-            Some(endpoints::LOG_IN_VIEW),
-            "want link to {}, got {:?}",
-            endpoints::LOG_IN_VIEW,
-            link.value().attr("href")
-        );
-    }
-
-    #[tokio::test]
     async fn create_user_succeeds() {
         let app = Router::new()
             .route(endpoints::USERS, post(create_user))
@@ -459,7 +323,7 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
 
-        let fragment = parse_html(response, ParseMode::Fragment).await;
+        let fragment = parse_html(response).await;
 
         let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
         let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
@@ -500,7 +364,7 @@ mod tests {
             .await
             .text();
 
-        let fragment = parse_html(response.into_response(), ParseMode::Fragment).await;
+        let fragment = parse_html(response.into_response()).await;
 
         let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
         let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
@@ -531,7 +395,7 @@ mod tests {
             .await
             .text();
 
-        let fragment = parse_html(response.into_response(), ParseMode::Fragment).await;
+        let fragment = parse_html(response.into_response()).await;
 
         let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
         let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
@@ -562,7 +426,7 @@ mod tests {
             .await
             .text();
 
-        let fragment = parse_html(response.into_response(), ParseMode::Fragment).await;
+        let fragment = parse_html(response.into_response()).await;
 
         let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
         let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
@@ -593,7 +457,7 @@ mod tests {
             .await
             .text();
 
-        let fragment = parse_html(response.into_response(), ParseMode::Fragment).await;
+        let fragment = parse_html(response.into_response()).await;
 
         let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
         let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
@@ -606,19 +470,11 @@ mod tests {
         );
     }
 
-    enum ParseMode {
-        Document,
-        Fragment,
-    }
-
-    async fn parse_html(response: Response<Body>, mode: ParseMode) -> scraper::Html {
+    async fn parse_html(response: Response<Body>) -> scraper::Html {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
         let text = String::from_utf8_lossy(&body).to_string();
 
-        match mode {
-            ParseMode::Document => scraper::Html::parse_document(&text),
-            ParseMode::Fragment => scraper::Html::parse_fragment(&text),
-        }
+        scraper::Html::parse_fragment(&text)
     }
 }

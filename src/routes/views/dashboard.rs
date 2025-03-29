@@ -8,13 +8,13 @@ use axum::{
 };
 use time::{Duration, OffsetDateTime};
 
-use super::{
-    endpoints::{self},
-    navigation::{NavbarTemplate, get_nav_bar},
-};
 use crate::{
     AppState,
     models::UserID,
+    routes::{
+        endpoints,
+        navigation::{NavbarTemplate, get_nav_bar},
+    },
     stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
 };
 
