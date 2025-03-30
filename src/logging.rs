@@ -2,7 +2,7 @@
 
 use axum::{extract::Request, http::header::CONTENT_TYPE, middleware::Next, response::Response};
 
-// TODO: Skip logging of static files
+use crate::routes::endpoints;
 
 /// Log the request and response for each request.
 ///
@@ -24,10 +24,16 @@ pub async fn logging_middleware(request: Request, next: Next) -> Response {
     }
 
     let request = Request::from_parts(headers, body_text.into());
+    let uri = request.uri().clone();
     let response = next.run(request).await;
 
     let (headers, body_text) = extract_header_and_body_text_from_response(response).await;
-    log_response(&headers, &body_text);
+
+    if uri.path().starts_with(endpoints::STATIC) {
+        log_response(&headers, &format!("see {uri} for static file contents."));
+    } else {
+        log_response(&headers, &body_text);
+    }
 
     Response::from_parts(headers, body_text.into())
 }

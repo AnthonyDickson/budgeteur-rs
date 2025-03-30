@@ -74,7 +74,7 @@ pub fn build_router(state: SQLAppState) -> Router {
 
     protected_routes
         .merge(unprotected_routes)
-        .nest_service("/static", ServeDir::new("static/"))
+        .nest_service(endpoints::STATIC, ServeDir::new("static/"))
         .fallback(get_404_not_found)
         .with_state(state)
 }

@@ -16,6 +16,8 @@ pub const REGISTER_VIEW: &str = "/register";
 pub const LOG_IN_VIEW: &str = "/log_in";
 /// The page to display when an internal server error occurs.
 pub const INTERNAL_ERROR_VIEW: &str = "/error";
+/// The route for static files.
+pub const STATIC: &str = "/static";
 
 /// The route to request a cup of coffee (experimental).
 pub const COFFEE: &str = "/api/coffee";
@@ -99,22 +101,23 @@ mod endpoints_tests {
 
     #[test]
     fn endpoints_are_valid_uris() {
+        assert_endpoint_is_valid_uri(endpoints::ROOT);
+        assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::NEW_TRANSACTION_VIEW);
         assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
-        assert_endpoint_is_valid_uri(endpoints::DASHBOARD_VIEW);
-        assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_VIEW);
         assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
-        assert_endpoint_is_valid_uri(endpoints::NEW_TRANSACTION_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::STATIC);
 
         assert_endpoint_is_valid_uri(endpoints::COFFEE);
-        assert_endpoint_is_valid_uri(endpoints::CATEGORIES);
-        assert_endpoint_is_valid_uri(endpoints::CATEGORY);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_API);
         assert_endpoint_is_valid_uri(endpoints::LOG_OUT);
-        assert_endpoint_is_valid_uri(endpoints::ROOT);
-        assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
         assert_endpoint_is_valid_uri(endpoints::USERS);
         assert_endpoint_is_valid_uri(endpoints::USER_CATEGORIES);
+        assert_endpoint_is_valid_uri(endpoints::CATEGORIES);
+        assert_endpoint_is_valid_uri(endpoints::CATEGORY);
+        assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
+        assert_endpoint_is_valid_uri(endpoints::TRANSACTION);
     }
 
     #[test]
