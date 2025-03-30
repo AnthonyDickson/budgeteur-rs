@@ -22,6 +22,7 @@ use crate::{
 struct NewTransactionTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     create_transaction_route: &'a str,
+    new_category_route: &'a str,
     categories: Vec<Category>,
     max_date: Date,
 }
@@ -43,6 +44,7 @@ where
     NewTransactionTemplate {
         nav_bar,
         create_transaction_route: endpoints::TRANSACTIONS_API,
+        new_category_route: endpoints::NEW_CATEGORY_VIEW,
         categories,
         max_date: time::OffsetDateTime::now_utc().date(),
     }
