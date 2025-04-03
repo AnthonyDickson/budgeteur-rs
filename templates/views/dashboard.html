@@ -1,6 +1,6 @@
 {% extends "base.html" %} {% block title %}Dashboard{% endblock %} {% block content
 %} {{ nav_bar|safe }}
-<div class="flex flex-col items-center px-6 py-8 mx-auto md:h-screen lg:py-0 text-gray-900 dark:text-white"/>
+<div class="flex flex-col items-center px-6 py-8 mx-auto md:h-screen lg:py-0 text-gray-900 dark:text-white">
   <p>Hello, you are user #{{ user_id }}.</p>
   <div>
     {% if balance >= 0.0 %}

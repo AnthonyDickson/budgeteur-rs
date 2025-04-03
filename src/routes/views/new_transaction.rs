@@ -16,7 +16,7 @@ use crate::{
     stores::{CategoryStore, TransactionStore, UserStore},
 };
 
-/// Renders the dashboard page.
+/// Renders the new transaction page.
 #[derive(Template)]
 #[template(path = "views/new_transaction.html")]
 struct NewTransactionTemplate<'a> {
@@ -191,6 +191,7 @@ mod new_transaction_route_tests {
         assert_html_content_type(&response);
 
         let document = parse_html(response).await;
+        assert_valid_html(&document);
         assert_correct_form(&document, categories);
     }
 
@@ -209,6 +210,15 @@ mod new_transaction_route_tests {
                 .to_str()
                 .unwrap(),
             "text/html; charset=utf-8"
+        );
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors: {:?}",
+            html.errors
         );
     }
 

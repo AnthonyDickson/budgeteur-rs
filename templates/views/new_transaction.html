@@ -21,49 +21,49 @@
 {% endblock %}
 {% block content %}
 {{ nav_bar|safe }}
-<div class="flex flex-col items-center px-6 py-8 mx-auto md:h-screen lg:py-0 text-gray-900 dark:text-white" />
-<div class="relative overflow-x-auto">
-  <form hx-post="{{ create_transaction_route }}" class="space-y-4 md:space-y-6">
-    <div>
-      <label for="amount" class="{% include "styles/forms/label.html" %}">Amount</label>
-      <div class="input-wrapper">
-        <input name="amount" id="amount" type="number" min="0" step="0.01" placeholder="0.00" required class="{% include "styles/forms/input.html" %}" />
+<div class="flex flex-col items-center px-6 py-8 mx-auto md:h-screen lg:py-0 text-gray-900 dark:text-white">
+  <div class="relative overflow-x-auto">
+    <form hx-post="{{ create_transaction_route }}" class="space-y-4 md:space-y-6">
+      <div>
+        <label for="amount" class="{% include "styles/forms/label.html" %}">Amount</label>
+        <div class="input-wrapper">
+          <input name="amount" id="amount" type="number" min="0" step="0.01" placeholder="0.00" required class="{% include "styles/forms/input.html" %}" />
+        </div>
       </div>
-    </div>
 
-    <div
-      <label for="date" class="{% include "styles/forms/label.html" %}">Date</label>
-      <input name="date" id="date" type="date" max="{{ max_date }}" required value="{{ max_date }}" class="{% include "styles/forms/input.html" %}" />
-    </div>
+      <div>
+        <label for="date" class="{% include "styles/forms/label.html" %}">Date</label>
+        <input name="date" id="date" type="date" max="{{ max_date }}" required value="{{ max_date }}" class="{% include "styles/forms/input.html" %}" />
+      </div>
 
-    <div>
-      <label for="description" class="{% include "styles/forms/label.html" %}">Description</label>
-      <input name="description" id="description" type="text" placeholder="Description" class="{% include "styles/forms/input.html" %}" />
-    </div>
+      <div>
+        <label for="description" class="{% include "styles/forms/label.html" %}">Description</label>
+        <input name="description" id="description" type="text" placeholder="Description" class="{% include "styles/forms/input.html" %}" />
+      </div>
 
-    <div>
-      <label for="category_id" class="{% include "styles/forms/label.html" %}">Category</label>
-      <select name="category_id" id="category_id" class="{% include "styles/forms/input.html" %}">
-        {% for category in categories %}
-          <option value="{{ category.id }}">{{ category.name }}</option>
-        {% endfor %}
+      <div>
+        <label for="category_id" class="{% include "styles/forms/label.html" %}">Category</label>
+        <select name="category_id" id="category_id" class="{% include "styles/forms/input.html" %}">
+          {% for category in categories %}
+            <option value="{{ category.id }}">{{ category.name }}</option>
+          {% endfor %}
 
-        <option value="0">None</option>
-      </select>
-      <a href="{{ new_category_route }}"
-        class="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
-      >
-        Create Category
-      </a>
-    </div>
+          <option value="0">None</option>
+        </select>
+        <a href="{{ new_category_route }}"
+          class="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+        >
+          Create Category
+        </a>
+      </div>
 
-    <button type="submit" id="submit-button" tabindex="0" class="{% include "styles/forms/button.html" %}" >
-      <span id="indicator" class="inline htmx-indicator">
-        {% include "components/spinner.html" %}
-      </span>
-      Create Transaction
-    </button>
-  </form>
-</div>
+      <button type="submit" id="submit-button" tabindex="0" class="{% include "styles/forms/button.html" %}" >
+        <span id="indicator" class="inline htmx-indicator">
+          {% include "components/spinner.html" %}
+        </span>
+        Create Transaction
+      </button>
+    </form>
+  </div>
 </div>
 {% endblock %}

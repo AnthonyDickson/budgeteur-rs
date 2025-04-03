@@ -74,6 +74,7 @@ mod transactions_route_tests {
     };
     use axum_test::TestServer;
     use rusqlite::Connection;
+    use scraper::Html;
 
     use crate::{
         auth::{log_in::LogInData, middleware::auth_guard},
@@ -148,11 +149,22 @@ mod transactions_route_tests {
 
         transactions_page.assert_status_ok();
 
-        let transactions_page = transactions_page.text();
+        let transactions_page_text = transactions_page.text();
+        let html = Html::parse_document(&transactions_page_text);
+        assert_valid_html(&html);
 
         for transaction in transactions {
-            assert!(transactions_page.contains(&transaction.date().to_string()));
-            assert!(transactions_page.contains(transaction.description()));
+            assert!(transactions_page_text.contains(&transaction.date().to_string()));
+            assert!(transactions_page_text.contains(transaction.description()));
         }
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors: {:?}",
+            html.errors
+        );
     }
 }

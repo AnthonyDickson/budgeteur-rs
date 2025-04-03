@@ -53,6 +53,7 @@ mod log_in_tests {
     };
     use axum_extra::extract::PrivateCookieJar;
     use email_address::EmailAddress;
+    use scraper::Html;
 
     use crate::{
         AppState, Error,
@@ -175,6 +176,7 @@ mod log_in_tests {
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
         let text = String::from_utf8_lossy(&body).to_string();
         let document = scraper::Html::parse_document(&text);
+        assert_valid_html(&document);
 
         let form_selector = scraper::Selector::parse("form").unwrap();
         let forms = document.select(&form_selector).collect::<Vec<_>>();
@@ -245,7 +247,8 @@ mod log_in_tests {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
         let text = String::from_utf8_lossy(&body).to_string();
-        let document = scraper::Html::parse_document(&text);
+        let document = scraper::Html::parse_fragment(&text);
+        assert_valid_html(&document);
 
         let form_selector = scraper::Selector::parse("form").unwrap();
         let forms = document.select(&form_selector).collect::<Vec<_>>();
@@ -287,5 +290,15 @@ mod log_in_tests {
             .unwrap();
 
         state
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors: {:?}\n{}",
+            html.errors,
+            html.html()
+        );
     }
 }

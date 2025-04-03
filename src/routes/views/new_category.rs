@@ -1,24 +1,29 @@
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
+use askama_axum::Template;
+use axum::response::{IntoResponse, Response};
+
+use crate::routes::{
+    endpoints,
+    navigation::{NavbarTemplate, get_nav_bar},
 };
 
-pub async fn get_new_category_page() -> Response {
-    let mut response = (StatusCode::OK, "New Category Page").into_response();
-    response.headers_mut().insert(
-        "content-type",
-        "text/html; charset=utf-8"
-            .parse()
-            .expect("valid header value"),
-    );
-    // TODO: Render HTML template with askama
+/// Renders the new Category page.
+#[derive(Template)]
+#[template(path = "views/new_category.html")]
+struct NewCategoryTemplate<'a> {
+    nav_bar: NavbarTemplate<'a>,
+}
 
-    response
+pub async fn get_new_category_page() -> Response {
+    NewCategoryTemplate {
+        nav_bar: get_nav_bar(endpoints::NEW_CATEGORY_VIEW),
+    }
+    .into_response()
 }
 
 #[cfg(test)]
 mod new_category_tests {
-    use axum::http::StatusCode;
+    use axum::{http::StatusCode, response::Response};
+    use scraper::Html;
 
     use crate::routes::views::new_category::get_new_category_page;
 
@@ -34,7 +39,10 @@ mod new_category_tests {
                 .expect("content-type header missing"),
             "text/html; charset=utf-8"
         );
-        // TODO: check that body is valid html
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+
         // TODO: check that there is a form
         // TODO: check that the form has a hx-post attribute to the correct endpoint
         // TODO: check that the form has a text input called 'name'
@@ -44,5 +52,22 @@ mod new_category_tests {
     #[tokio::test]
     async fn error_on_invalid_name() {
         // TODO: check that submitting an empty name results in an error being displayed
+    }
+
+    async fn parse_html(response: Response) -> Html {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+
+        Html::parse_document(&text)
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors: {:?}",
+            html.errors
+        );
     }
 }

@@ -7,3 +7,4 @@
   HTML templates.
   Refer to [v3.tailwindcss.com/docs/reusing-styles](https://v3.tailwindcss.com/docs/reusing-styles) and [v3.tailwindcss.com/docs/adding-custom-styles](https://v3.tailwindcss.com/docs/adding-custom-styles).
 - Fix broken [icon](./static/seal.png).
+- Refactor common testing functions into a separate module.

@@ -34,6 +34,7 @@ mod tests {
         body::Body,
         http::{Response, StatusCode, header::CONTENT_TYPE},
     };
+    use scraper::Html;
     use serde::{Deserialize, Serialize};
 
     use crate::routes::{endpoints, views::register::get_register_page};
@@ -59,6 +60,7 @@ mod tests {
         );
 
         let document = parse_html(response).await;
+        assert_valid_html(&document);
 
         let h1_selector = scraper::Selector::parse("h1").unwrap();
         let titles = document.select(&h1_selector).collect::<Vec<_>>();
@@ -141,5 +143,14 @@ mod tests {
         let text = String::from_utf8_lossy(&body).to_string();
 
         scraper::Html::parse_document(&text)
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors: {:?}",
+            html.errors
+        );
     }
 }
