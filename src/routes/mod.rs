@@ -21,7 +21,7 @@ mod transaction;
 mod user;
 mod views;
 
-use category::{create_category, get_category};
+use category::create_category;
 use log_in::post_log_in;
 use log_out::get_log_out;
 use transaction::{create_transaction, get_transaction};
@@ -54,7 +54,7 @@ pub fn build_router(state: SQLAppState) -> Router {
     let protected_routes = Router::new()
         .route(endpoints::ROOT, get(get_index_page))
         .route(endpoints::DASHBOARD_VIEW, get(get_dashboard_page))
-        .route(endpoints::CATEGORY, get(get_category))
+        .route(endpoints::CATEGORIES, post(create_category))
         .route(endpoints::TRANSACTION, get(get_transaction))
         .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
         .route(

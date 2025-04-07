@@ -1,19 +1,14 @@
 //! This files defines the API routes for the category type.
 
-use axum::{
-    Form, Json,
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-};
-use axum_extra::extract::PrivateCookieJar;
+use axum::{Form, Json, extract::State, http::StatusCode, response::IntoResponse};
 
+use axum_extra::extract::PrivateCookieJar;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AppState, Error,
+    AppState,
     auth::cookie::get_user_id_from_auth_cookie,
-    models::{CategoryName, DatabaseID, UserID},
+    models::CategoryName,
     stores::{CategoryStore, TransactionStore, UserStore},
 };
 
@@ -29,8 +24,7 @@ pub struct CategoryData {
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn create_category<C, T, U>(
     State(state): State<AppState<C, T, U>>,
-    Path(user_id): Path<UserID>,
-    _: PrivateCookieJar,
+    jar: PrivateCookieJar,
     Form(new_category): Form<CategoryData>,
 ) -> impl IntoResponse
 where
@@ -38,6 +32,7 @@ where
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
 {
+    let user_id = get_user_id_from_auth_cookie(&jar)?;
     let name = CategoryName::new(&new_category.name)?;
 
     state
@@ -46,49 +41,12 @@ where
         .map(|category| (StatusCode::OK, Json(category)))
 }
 
-/// A route handler for getting a category by its database ID.
-///
-/// This function will return the status code 404 if the requested resource does not exist (e.g., not created yet).
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
-pub async fn get_category<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
-    jar: PrivateCookieJar,
-    Path(category_id): Path<DatabaseID>,
-) -> impl IntoResponse
-where
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
-{
-    state
-        .category_store
-        .get(category_id)
-        .and_then(|category| {
-            let user_id = get_user_id_from_auth_cookie(&jar)?;
-
-            if user_id == category.user_id {
-                Ok(category)
-            } else {
-                // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
-                Err(Error::NotFound)
-            }
-        })
-        .map(|category| (StatusCode::OK, Json(category)))
-}
-
 #[cfg(test)]
 mod category_tests {
     use std::sync::{Arc, Mutex};
 
     use askama_axum::IntoResponse;
-    use axum::{
-        Form,
-        extract::{Path, State},
-        http::StatusCode,
-    };
+    use axum::{Form, extract::State, http::StatusCode};
     use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 
     use crate::{
@@ -98,7 +56,7 @@ mod category_tests {
             Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
             User, UserID,
         },
-        routes::category::{create_category, get_category},
+        routes::category::create_category,
         stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
     };
 
@@ -244,12 +202,13 @@ mod category_tests {
         };
         let jar = get_cookie_jar(want.user_id, state.cookie_key.clone());
 
-        let response = create_category(State(state), Path(want.user_id), jar, Form(form))
+        let response = create_category(State(state), jar, Form(form))
             .await
             .into_response();
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_create_calls(&store, &want);
+        // TODO: Assert hx-redirect to new transaction view.
     }
 
     #[tokio::test]
@@ -263,55 +222,13 @@ mod category_tests {
         };
         let jar = get_cookie_jar(user_id, state.cookie_key.clone());
 
-        let response = create_category(State(state), Path(user_id), jar, Form(form))
+        let response = create_category(State(state), jar, Form(form))
             .await
             .into_response();
 
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    }
-
-    #[tokio::test]
-    async fn can_get_category() {
-        let (state, store) = get_test_app_config();
-
-        let category = store
-            .create(CategoryName::new_unchecked("Foo"), UserID::new(123))
-            .unwrap();
-
-        let want = GetCategoryCall {
-            category_id: category.id,
-        };
-
-        let jar = get_cookie_jar(category.user_id, state.cookie_key.clone());
-
-        let response = get_category(State(state), jar, Path(category.id))
-            .await
-            .into_response();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_get_calls(&store, &want);
-    }
-
-    #[tokio::test]
-    async fn get_category_fails_on_wrong_user() {
-        let (state, store) = get_test_app_config();
-
-        let category = store
-            .create(CategoryName::new_unchecked("Foo"), UserID::new(123))
-            .unwrap();
-        let unauthorized_user_id = UserID::new(category.user_id.as_i64() + 999);
-
-        let want = GetCategoryCall {
-            category_id: category.id,
-        };
-        let jar = get_cookie_jar(unauthorized_user_id, state.cookie_key.clone());
-
-        let response = get_category(State(state), jar, Path(category.id))
-            .await
-            .into_response();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        assert_get_calls(&store, &want);
+        // TODO: Assert HTML content type
+        // TODO: Assert renders new category form with error message
     }
 
     fn get_cookie_jar(user_id: UserID, key: Key) -> PrivateCookieJar {
@@ -319,6 +236,7 @@ mod category_tests {
         set_auth_cookie(jar, user_id, DEFAULT_COOKIE_DURATION).unwrap()
     }
 
+    #[track_caller]
     fn assert_create_calls(store: &SpyCategoryStore, want: &CreateCategoryCall) {
         let create_calls = store.create_calls.lock().unwrap().clone();
         assert!(
@@ -331,22 +249,6 @@ mod category_tests {
         assert_eq!(
             got, want,
             "got call to CategoryStore.create {:?}, want {:?}",
-            got, want
-        );
-    }
-
-    fn assert_get_calls(store: &SpyCategoryStore, want: &GetCategoryCall) {
-        let get_calls = store.get_calls.lock().unwrap().clone();
-        assert!(
-            get_calls.len() == 1,
-            "got {} calls to route handler 'get_category', want 1",
-            get_calls.len()
-        );
-
-        let got = get_calls.first().unwrap();
-        assert_eq!(
-            got, want,
-            "got call to CategoryStore.get {:?}, want {:?}",
             got, want
         );
     }
