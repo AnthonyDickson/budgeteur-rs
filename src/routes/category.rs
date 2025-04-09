@@ -1,8 +1,14 @@
 //! This files defines the API routes for the category type.
 
-use axum::{Form, Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{
+    Form,
+    extract::State,
+    http::{StatusCode, Uri},
+    response::IntoResponse,
+};
 
 use axum_extra::extract::PrivateCookieJar;
+use axum_htmx::HxRedirect;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -11,6 +17,8 @@ use crate::{
     models::CategoryName,
     stores::{CategoryStore, TransactionStore, UserStore},
 };
+
+use super::endpoints;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CategoryData {
@@ -35,10 +43,12 @@ where
     let user_id = get_user_id_from_auth_cookie(&jar)?;
     let name = CategoryName::new(&new_category.name)?;
 
-    state
-        .category_store
-        .create(name, user_id)
-        .map(|category| (StatusCode::OK, Json(category)))
+    state.category_store.create(name, user_id).map(|_category| {
+        (
+            HxRedirect(Uri::from_static(endpoints::CATEGORIES)),
+            StatusCode::SEE_OTHER,
+        )
+    })
 }
 
 #[cfg(test)]
@@ -46,7 +56,12 @@ mod category_tests {
     use std::sync::{Arc, Mutex};
 
     use askama_axum::IntoResponse;
-    use axum::{Form, extract::State, http::StatusCode};
+    use axum::{
+        Form,
+        body::Body,
+        extract::State,
+        http::{Response, StatusCode},
+    };
     use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 
     use crate::{
@@ -56,7 +71,7 @@ mod category_tests {
             Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
             User, UserID,
         },
-        routes::category::create_category,
+        routes::{category::create_category, endpoints},
         stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
     };
 
@@ -206,9 +221,9 @@ mod category_tests {
             .await
             .into_response();
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_hx_redirect(&response, endpoints::CATEGORIES);
         assert_create_calls(&store, &want);
-        // TODO: Assert hx-redirect to new transaction view.
     }
 
     #[tokio::test]
@@ -250,6 +265,19 @@ mod category_tests {
             got, want,
             "got call to CategoryStore.create {:?}, want {:?}",
             got, want
+        );
+    }
+
+    #[track_caller]
+    fn assert_hx_redirect(response: &Response<Body>, endpoint: &str) {
+        assert_eq!(
+            response
+                .headers()
+                .get("hx-redirect")
+                .expect("Headers missing hx-redirect")
+                .to_str()
+                .expect("Could not convert to str"),
+            endpoint,
         );
     }
 }

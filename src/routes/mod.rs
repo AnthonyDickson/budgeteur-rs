@@ -54,7 +54,6 @@ pub fn build_router(state: SQLAppState) -> Router {
     let protected_routes = Router::new()
         .route(endpoints::ROOT, get(get_index_page))
         .route(endpoints::DASHBOARD_VIEW, get(get_dashboard_page))
-        .route(endpoints::CATEGORIES, post(create_category))
         .route(endpoints::TRANSACTION, get(get_transaction))
         .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
         .route(
@@ -70,6 +69,7 @@ pub fn build_router(state: SQLAppState) -> Router {
         Router::new()
             .route(endpoints::TRANSACTIONS_API, post(create_transaction))
             .route(endpoints::USER_CATEGORIES, post(create_category))
+            .route(endpoints::CATEGORIES, post(create_category))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),
     );
 
