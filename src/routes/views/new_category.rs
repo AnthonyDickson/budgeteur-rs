@@ -4,6 +4,7 @@ use axum::response::{IntoResponse, Response};
 use crate::routes::{
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
+    templates::NewCategoryFormTemplate,
 };
 
 /// Renders the new Category page.
@@ -11,13 +12,16 @@ use crate::routes::{
 #[template(path = "views/new_category.html")]
 struct NewCategoryTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
-    category_route: &'a str,
+    form: NewCategoryFormTemplate<'a>,
 }
 
 pub async fn get_new_category_page() -> Response {
     NewCategoryTemplate {
         nav_bar: get_nav_bar(endpoints::NEW_CATEGORY_VIEW),
-        category_route: endpoints::CATEGORIES,
+        form: NewCategoryFormTemplate {
+            category_route: endpoints::CATEGORIES,
+            error_message: "",
+        },
     }
     .into_response()
 }

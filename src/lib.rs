@@ -112,7 +112,7 @@ pub enum Error {
     InvalidCategory,
 
     /// An empty string was used to create a category name.
-    #[error("an empty string is not a valid category name")]
+    #[error("Category name cannot be empty")]
     EmptyCategoryName,
 
     /// A date in the future was used to create a transaction.
@@ -162,10 +162,6 @@ impl From<rusqlite::Error> for Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
-            Error::EmptyCategoryName => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "category name cannot be emtpy.",
-            ),
             Error::NotFound => (StatusCode::NOT_FOUND, "Resource not found"),
             Error::InternalError(err) => {
                 tracing::error!("An unexpected error occurred: {}", err);

@@ -55,3 +55,11 @@ impl Default for RegisterFormTemplate<'_> {
 pub struct ConfirmPasswordInputTemplate<'a> {
     pub error_message: &'a str,
 }
+
+/// Renders the form for creating a category.
+#[derive(Template)]
+#[template(path = "partials/new_category_form.html")]
+pub struct NewCategoryFormTemplate<'a> {
+    pub category_route: &'a str,
+    pub error_message: &'a str,
+}
