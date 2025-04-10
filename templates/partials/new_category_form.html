@@ -2,7 +2,7 @@
 <form hx-post="{{ category_route }}">
   <div>
     <label for="name">Category Name</label>
-    <input id="name" type="text" name="name" placeholder="Category Name" />
+    <input id="name" type="text" name="name" placeholder="Category Name" required />
   </div>
 
   {% if !error_message.is_empty() %}

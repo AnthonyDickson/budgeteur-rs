@@ -51,7 +51,6 @@ mod new_category_tests {
 
         let form = must_get_form(&html);
         assert_hx_endpoint(&form, endpoints::CATEGORIES);
-        // TODO: assert that the name input is required
         assert_form_input(&form, "name", "text");
         assert_form_submit_button(&form);
     }
@@ -98,13 +97,21 @@ mod new_category_tests {
     fn assert_form_input(form: &ElementRef, name: &str, type_: &str) {
         for input in form.select(&scraper::Selector::parse("input").unwrap()) {
             let input_name = input.value().attr("name").unwrap_or_default();
-            let input_type = input.value().attr("type").unwrap_or_default();
 
             if input_name == name {
+                let input_type = input.value().attr("type").unwrap_or_default();
+                let input_required = input.value().attr("required");
+
                 assert_eq!(
                     input_type, type_,
                     "want input with type \"{type_}\", got {input_type:?}"
                 );
+
+                assert!(
+                    input_required.is_some(),
+                    "want input with name {name} to have the required attribute but got none"
+                );
+
                 return;
             }
         }
