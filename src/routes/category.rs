@@ -75,7 +75,7 @@ where
         .create(name, user_id)
         .map(|_category| {
             (
-                HxRedirect(Uri::from_static(endpoints::CATEGORIES)),
+                HxRedirect(Uri::from_static(endpoints::NEW_TRANSACTION_VIEW)),
                 StatusCode::SEE_OTHER,
             )
         })
@@ -265,7 +265,7 @@ mod category_tests {
             .into_response();
 
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        assert_hx_redirect(&response, endpoints::CATEGORIES);
+        assert_hx_redirect(&response, endpoints::NEW_TRANSACTION_VIEW);
         assert_create_calls(&store, &want);
     }
 
