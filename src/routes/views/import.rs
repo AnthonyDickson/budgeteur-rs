@@ -1,9 +1,17 @@
 use askama_axum::Template;
-use axum::response::{IntoResponse, Response};
+use axum::{
+    Extension,
+    extract::Multipart,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 
-use crate::routes::{
-    endpoints,
-    navigation::{NavbarTemplate, get_nav_bar},
+use crate::{
+    models::UserID,
+    routes::{
+        endpoints,
+        navigation::{NavbarTemplate, get_nav_bar},
+    },
 };
 
 /// Renders the form for creating a category.
@@ -33,6 +41,20 @@ pub async fn get_import_page() -> Response {
     .into_response()
 }
 
+pub async fn import_transactions(
+    Extension(user_id): Extension<UserID>,
+    mut multipart: Multipart,
+) -> Response {
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        let name = field.name().unwrap().to_string();
+        let data = field.bytes().await.unwrap();
+
+        println!("Length of `{}` is {} bytes", name, data.len());
+    }
+
+    (StatusCode::OK, "File upload successful").into_response()
+}
+
 #[cfg(test)]
 mod import_transactions_tests {
     use axum::{http::StatusCode, response::Response};
@@ -58,7 +80,7 @@ mod import_transactions_tests {
 
         let form = must_get_form(&html);
         assert_hx_endpoint(&form, endpoints::IMPORT);
-        assert_form_hx_enctype(&form, "multipart/form-data");
+        assert_form_enctype(&form, "multipart/form-data");
         assert_form_input(&form, "files", "file");
         assert_form_submit_button(&form);
     }
@@ -102,15 +124,15 @@ mod import_transactions_tests {
     }
 
     #[track_caller]
-    fn assert_form_hx_enctype(form: &ElementRef, enctype: &str) {
+    fn assert_form_enctype(form: &ElementRef, enctype: &str) {
         let form_enctype = form
             .value()
-            .attr("hx-enctype")
-            .expect("hx-enctype attribute missing");
+            .attr("enctype")
+            .expect("enctype attribute missing");
 
         assert_eq!(
             form_enctype, enctype,
-            "want form with attribute hx-enctype=\"{enctype}\", got {form_enctype:?}"
+            "want form with attribute enctype=\"{enctype}\", got {form_enctype:?}"
         );
     }
 
