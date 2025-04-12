@@ -29,6 +29,8 @@ struct TransactionsTemplate<'a> {
     transactions: Vec<TransactionRow>,
     /// The route for creating a new transaction for the current user.
     create_transaction_route: Uri,
+    /// The route for importing transactions from CSV files.
+    import_transaction_route: Uri,
 }
 
 pub async fn get_transactions_page<C, T, U>(
@@ -62,6 +64,7 @@ where
         nav_bar,
         transactions,
         create_transaction_route: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
+        import_transaction_route: Uri::from_static(endpoints::IMPORT_VIEW),
     }
     .into_response()
 }

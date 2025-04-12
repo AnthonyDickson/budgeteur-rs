@@ -12,6 +12,8 @@ pub const TRANSACTIONS_VIEW: &str = "/transactions";
 pub const NEW_TRANSACTION_VIEW: &str = "/transactions/new";
 /// The page for creating a new category.
 pub const NEW_CATEGORY_VIEW: &str = "/categories/new";
+/// The page for importing transactions from CSV files.
+pub const IMPORT_VIEW: &str = "/transactions/import";
 /// The route for getting the registration page.
 pub const REGISTER_VIEW: &str = "/register";
 /// The route for getting the log in page.
@@ -39,6 +41,8 @@ pub const CATEGORY: &str = "/api/categories/:category_id";
 pub const TRANSACTIONS_API: &str = "/api/transactions";
 /// The route to access a single transaction.
 pub const TRANSACTION: &str = "/api/transactions/:transaction_id";
+/// The route to upload CSV files for importing transactions.
+pub const IMPORT: &str = "/api/import";
 
 /// Replace the parameter in `endpoint_path` with `id`.
 ///
@@ -107,6 +111,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_VIEW);
         assert_endpoint_is_valid_uri(endpoints::NEW_TRANSACTION_VIEW);
         assert_endpoint_is_valid_uri(endpoints::NEW_CATEGORY_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::IMPORT_VIEW);
         assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
         assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
@@ -121,6 +126,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::CATEGORY);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTION);
+        assert_endpoint_is_valid_uri(endpoints::IMPORT);
     }
 
     #[test]
