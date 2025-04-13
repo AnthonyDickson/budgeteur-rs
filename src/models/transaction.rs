@@ -20,7 +20,7 @@ pub struct Transaction {
     description: String,
     category_id: Option<DatabaseID>,
     user_id: UserID,
-    // TODO: Add import ID: Option<u64>
+    import_id: Option<i64>,
     // TODO: Make all fields pub and remove the accessor methods.
 }
 
@@ -40,6 +40,7 @@ impl Transaction {
         description: String,
         category_id: Option<DatabaseID>,
         user_id: UserID,
+        import_id: Option<i64>,
     ) -> Self {
         Self {
             id,
@@ -48,6 +49,7 @@ impl Transaction {
             description,
             category_id,
             user_id,
+            import_id,
         }
     }
 
@@ -87,6 +89,11 @@ impl Transaction {
     pub fn user_id(&self) -> UserID {
         self.user_id
     }
+
+    /// The ID of the import that this transaction belongs to.
+    pub fn import_id(&self) -> Option<i64> {
+        self.import_id
+    }
 }
 
 /// Builder for creating a new [Transaction].
@@ -99,6 +106,7 @@ pub struct TransactionBuilder {
     description: String,
     category_id: Option<DatabaseID>,
     user_id: UserID,
+    import_id: Option<i64>,
 }
 
 impl TransactionBuilder {
@@ -112,6 +120,7 @@ impl TransactionBuilder {
             description: String::new(),
             category_id: None,
             user_id,
+            import_id: None,
         }
     }
 
@@ -124,6 +133,7 @@ impl TransactionBuilder {
             description: self.description,
             category_id: self.category_id,
             user_id: self.user_id,
+            import_id: self.import_id,
         }
     }
 
@@ -149,6 +159,12 @@ impl TransactionBuilder {
     /// Set the category for the transaction.
     pub fn category(mut self, category_id: Option<DatabaseID>) -> Self {
         self.category_id = category_id;
+        self
+    }
+
+    /// Set the import ID for the transaction.
+    pub fn import_id(mut self, import_id: Option<i64>) -> Self {
+        self.import_id = import_id;
         self
     }
 }
@@ -214,12 +230,14 @@ mod transaction_builder_tests {
         let description = "Rust Pie".to_string();
         let category_id = Some(42);
         let user_id = UserID::new(321);
+        let import_id = Some(123456789);
 
         let transaction = Transaction::build(amount, user_id)
             .category(category_id)
             .description(&description)
             .date(date)
             .unwrap()
+            .import_id(import_id)
             .finalise(id);
 
         assert_eq!(transaction.id(), id);
@@ -228,5 +246,6 @@ mod transaction_builder_tests {
         assert_eq!(transaction.description(), description);
         assert_eq!(transaction.category_id(), category_id);
         assert_eq!(transaction.user_id(), user_id);
+        assert_eq!(transaction.import_id, import_id);
     }
 }

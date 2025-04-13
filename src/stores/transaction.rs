@@ -139,8 +139,8 @@ impl TransactionStore for SQLiteTransactionStore {
 
         connection
                 .execute(
-                    "INSERT INTO \"transaction\" (id, amount, date, description, category_id, user_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    (transaction.id(), transaction.amount(), transaction.date(), transaction.description(), transaction.category_id(), transaction.user_id().as_i64()),
+                    "INSERT INTO \"transaction\" (id, amount, date, description, category_id, user_id, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    (transaction.id(), transaction.amount(), transaction.date(), transaction.description(), transaction.category_id(), transaction.user_id().as_i64(), transaction.import_id()),
                 ).map_err(|error| match error
                 {
                     // Code 787 occurs when a FOREIGN KEY constraint failed.
@@ -162,7 +162,7 @@ impl TransactionStore for SQLiteTransactionStore {
     /// - or [Error::SqlError] there is some other SQL error.
     fn get(&self, id: DatabaseID) -> Result<Transaction, Error> {
         let transaction = self.connection.lock().unwrap()
-                .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE id = :id")?
+                .prepare("SELECT id, amount, date, description, category_id, user_id, import_id FROM \"transaction\" WHERE id = :id")?
                 .query_row(&[(":id", &id)], Self::map_row)?;
 
         Ok(transaction)
@@ -176,7 +176,7 @@ impl TransactionStore for SQLiteTransactionStore {
     /// This function will return a [Error::SqlError] if there is an SQL error.
     fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, Error> {
         self.connection.lock().unwrap()
-                .prepare("SELECT id, amount, date, description, category_id, user_id FROM \"transaction\" WHERE user_id = :user_id")?
+                .prepare("SELECT id, amount, date, description, category_id, user_id, import_id FROM \"transaction\" WHERE user_id = :user_id")?
                 .query_map(&[(":user_id", &user_id.as_i64())], Self::map_row)?
                 .map(|maybe_category| maybe_category.map_err(Error::SqlError))
                 .collect()
@@ -184,7 +184,7 @@ impl TransactionStore for SQLiteTransactionStore {
 
     fn get_query(&self, filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
         let mut query_string_parts = vec![
-            "SELECT id, amount, date, description, category_id, user_id FROM \"transaction\""
+            "SELECT id, amount, date, description, category_id, user_id, import_id FROM \"transaction\""
                 .to_string(),
         ];
         let mut where_clause_parts = vec![];
@@ -236,7 +236,6 @@ impl TransactionStore for SQLiteTransactionStore {
 
 impl CreateTable for SQLiteTransactionStore {
     fn create_table(connection: &Connection) -> Result<(), rusqlite::Error> {
-        // TODO: Add import ID: Nullable integer
         connection
                 .execute(
                     "CREATE TABLE \"transaction\" (
@@ -246,6 +245,7 @@ impl CreateTable for SQLiteTransactionStore {
                             description TEXT NOT NULL,
                             category_id INTEGER,
                             user_id INTEGER NOT NULL,
+                            import_id INTEGER,
                             FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE CASCADE,
                             FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
                             )",
@@ -266,9 +266,17 @@ impl MapRow for SQLiteTransactionStore {
         let description = row.get(offset + 3)?;
         let category_id = row.get(offset + 4)?;
         let user_id = UserID::new(row.get(offset + 5)?);
+        let import_id = row.get(offset + 6)?;
 
-        let transaction =
-            Transaction::new_unchecked(id, amount, date, description, category_id, user_id);
+        let transaction = Transaction::new_unchecked(
+            id,
+            amount,
+            date,
+            description,
+            category_id,
+            user_id,
+            import_id,
+        );
 
         Ok(transaction)
     }

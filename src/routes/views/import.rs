@@ -70,6 +70,9 @@ where
         transactions.extend(parse_csv(&data, user_id));
     }
 
+    // TODO: Add function to store to add many transactions at once.
+    // TODO: Filter out transactions that have already been imported by
+    // checking the import ID.
     for transaction in transactions {
         state
             .transaction_store
