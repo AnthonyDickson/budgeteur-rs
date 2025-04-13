@@ -5,6 +5,7 @@ pub use password::{PasswordHash, ValidatedPassword};
 pub use transaction::{Transaction, TransactionBuilder};
 pub use user::{User, UserID};
 
+// TODO: Add model for account numbers and balances.
 mod category;
 mod password;
 mod transaction;

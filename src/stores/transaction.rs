@@ -236,6 +236,7 @@ impl TransactionStore for SQLiteTransactionStore {
 
 impl CreateTable for SQLiteTransactionStore {
     fn create_table(connection: &Connection) -> Result<(), rusqlite::Error> {
+        // TODO: Add import ID: Nullable integer
         connection
                 .execute(
                     "CREATE TABLE \"transaction\" (

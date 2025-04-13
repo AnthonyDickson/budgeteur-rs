@@ -1,17 +1,20 @@
 use askama_axum::Template;
 use axum::{
     Extension,
-    extract::Multipart,
+    extract::{Multipart, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
 
 use crate::{
+    AppState,
+    csv::parse_csv,
     models::UserID,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
     },
+    stores::{CategoryStore, TransactionStore, UserStore},
 };
 
 /// Renders the form for creating a category.
@@ -41,15 +44,37 @@ pub async fn get_import_page() -> Response {
     .into_response()
 }
 
-pub async fn import_transactions(
+pub async fn import_transactions<C, T, U>(
+    State(mut state): State<AppState<C, T, U>>,
     Extension(user_id): Extension<UserID>,
     mut multipart: Multipart,
-) -> Response {
-    while let Some(field) = multipart.next_field().await.unwrap() {
-        let name = field.name().unwrap().to_string();
-        let data = field.bytes().await.unwrap();
+) -> Response
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+    U: UserStore + Send + Sync,
+{
+    let mut transactions = Vec::new();
 
-        println!("Length of `{}` is {} bytes", name, data.len());
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        let file_name = field.file_name().unwrap().to_string();
+        let data = field.text().await.unwrap();
+
+        tracing::debug!(
+            "Received file '{}' that is {} bytes: {}",
+            file_name,
+            data.len(),
+            data
+        );
+
+        transactions.extend(parse_csv(&data, user_id));
+    }
+
+    for transaction in transactions {
+        state
+            .transaction_store
+            .create_from_builder(transaction)
+            .unwrap();
     }
 
     (StatusCode::OK, "File upload successful").into_response()
@@ -57,10 +82,61 @@ pub async fn import_transactions(
 
 #[cfg(test)]
 mod import_transactions_tests {
-    use axum::{http::StatusCode, response::Response};
-    use scraper::{ElementRef, Html};
+    use std::sync::{Arc, Mutex};
 
-    use crate::routes::{endpoints, views::import::get_import_page};
+    use axum::{
+        Extension,
+        extract::{FromRequest, Multipart, State},
+        http::{Request, StatusCode},
+        response::Response,
+    };
+    use scraper::{ElementRef, Html};
+    use time::macros::date;
+
+    use crate::{
+        AppState, Error,
+        models::{Category, DatabaseID, PasswordHash, Transaction, TransactionBuilder, UserID},
+        routes::{
+            endpoints,
+            views::import::{get_import_page, import_transactions},
+        },
+        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
+    };
+
+    const ASB_BANK_STATEMENT_CSV: &str = "Created date / time : 12 April 2025 / 11:10:19\n\
+        Bank 12; Branch 3405; Account 0123456-50 (Streamline)\n\
+        From date 20250101\n\
+        To date 20250412\n\
+        Avail Bal : 1020.00 as of 20250320\n\
+        Ledger Balance : 20.00 as of 20250412\n\
+        Date,Unique Id,Tran Type,Cheque Number,Payee,Memo,Amount\n\
+        \n\
+        2025/01/18,2025011801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",1300.00\n\
+        2025/01/18,2025011802,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  Credit Card\",-1300.00\n\
+        2025/02/18,2025021801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",4400.00\n\
+        2025/02/19,2025021901,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-4400.00\n\
+        2025/03/20,2025032001,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",2750.00\n\
+        2025/03/20,2025032002,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-2750.00";
+
+    const ASB_CC_STATEMENT_CSV: &str = "Created date / time : 12 April 2025 / 11:09:26\n\
+        Card Number XXXX-XXXX-XXXX-5023 (Visa Light)\n\
+        From date 20250101\n\
+        To date 20250412\n\
+        Date Processed,Date of Transaction,Unique Id,Tran Type,Reference,Description,Amount\n\
+        \n\
+        2025/03/20,2025/03/20,2025032002,CREDIT,5023,\"PAYMENT RECEIVED THANK YOU\",-2750.00\n\
+        2025/04/09,2025/04/08,2025040902,DEBIT,5023,\"Birdy Bytes\",8.50\n\
+        2025/04/10,2025/04/07,2025041001,DEBIT,5023,\"AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)\",10.63\n\
+        2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22\n\
+        2025/04/11,2025/04/10,2025041101,DEBIT,5023,\"Buckstars\",11.50";
+
+    const KIWIBANK_BANK_STATEMENT_CSV: &str = "Account number,Date,Memo/Description,Source Code (payment type),TP ref,TP part,TP code,OP ref,OP part,OP code,OP name,OP Bank Account Number,Amount (credit),Amount (debit),Amount,Balance\n\
+        38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16\n\
+        38-1234-0123456-01,31-01-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.03,-0.03,71.13\n\
+        38-1234-0123456-01,28-02-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.35\n\
+        38-1234-0123456-01,28-02-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.33\n\
+        38-1234-0123456-01,31-03-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.55\n\
+        38-1234-0123456-01,31-03-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.53";
 
     #[tokio::test]
     async fn render_page() {
@@ -83,6 +159,344 @@ mod import_transactions_tests {
         assert_form_enctype(&form, "multipart/form-data");
         assert_form_input(&form, "files", "file");
         assert_form_submit_button(&form);
+    }
+
+    #[tokio::test]
+    async fn post_asb_bank_csv() {
+        let state = AppState::new(
+            "foo",
+            DummyCategoryStore {},
+            FakeTransactionStore::new(),
+            DummyUserStore {},
+        );
+        let user_id = UserID::new(123);
+
+        let want_transactions: Vec<Transaction> = vec![
+            TransactionBuilder::new(1300.00, user_id)
+                .date(date!(2025 - 01 - 18))
+                .expect("Could not parse date")
+                .description("Credit Card")
+                .finalise(0),
+            TransactionBuilder::new(-1300.00, user_id)
+                .date(date!(2025 - 01 - 18))
+                .expect("Could not parse date")
+                .description("TO CARD 5023  Credit Card")
+                .finalise(1),
+            TransactionBuilder::new(4400.00, user_id)
+                .date(date!(2025 - 02 - 18))
+                .expect("Could not parse date")
+                .description("Credit Card")
+                .finalise(2),
+            TransactionBuilder::new(-4400.00, user_id)
+                .date(date!(2025 - 02 - 19))
+                .expect("Could not parse date")
+                .description("TO CARD 5023  THANK YOU")
+                .finalise(3),
+            TransactionBuilder::new(2750.00, user_id)
+                .date(date!(2025 - 03 - 20))
+                .expect("Could not parse date")
+                .description("Credit Card")
+                .finalise(4),
+            TransactionBuilder::new(-2750.00, user_id)
+                .date(date!(2025 - 03 - 20))
+                .expect("Could not parse date")
+                .description("TO CARD 5023  THANK YOU")
+                .finalise(5),
+        ];
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(user_id),
+            must_make_multipart_csv(&[ASB_BANK_STATEMENT_CSV]).await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        assert_eq!(
+            create_transaction_calls,
+            want_transactions.len(),
+            "want {} transaction created, got {create_transaction_calls}",
+            want_transactions.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn post_asb_cc_csv() {
+        let state = AppState::new(
+            "foo",
+            DummyCategoryStore {},
+            FakeTransactionStore::new(),
+            DummyUserStore {},
+        );
+        let user_id = UserID::new(123);
+
+        let want_transactions: Vec<Transaction> = vec![
+            TransactionBuilder::new(-2750.00, user_id)
+                .date(date!(2025 - 03 - 20))
+                .expect("Could not parse date")
+                .description("PAYMENT RECEIVED THANK YOU")
+                .finalise(0),
+            TransactionBuilder::new(8.50, user_id)
+                .date(date!(2025 - 04 - 09))
+                .expect("Could not parse date")
+                .description("Birdy Bytes")
+                .finalise(1),
+            TransactionBuilder::new(10.63, user_id)
+                .date(date!(2025 - 04 - 10))
+                .expect("Could not parse date")
+                .description(
+                    "AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)",
+                )
+                .finalise(2),
+            TransactionBuilder::new(0.22, user_id)
+                .date(date!(2025 - 04 - 10))
+                .expect("Could not parse date")
+                .description("OFFSHORE SERVICE MARGINS")
+                .finalise(3),
+            TransactionBuilder::new(11.50, user_id)
+                .date(date!(2025 - 04 - 11))
+                .expect("Could not parse date")
+                .description("Buckstars")
+                .finalise(4),
+        ];
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(user_id),
+            must_make_multipart_csv(&[ASB_CC_STATEMENT_CSV]).await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        assert_eq!(
+            create_transaction_calls,
+            want_transactions.len(),
+            "want {} transaction created, got {create_transaction_calls}",
+            want_transactions.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn post_kiwibank_bank_csv() {
+        let state = AppState::new(
+            "foo",
+            DummyCategoryStore {},
+            FakeTransactionStore::new(),
+            DummyUserStore {},
+        );
+        let user_id = UserID::new(999);
+
+        let want_transactions: Vec<Transaction> = vec![
+            TransactionBuilder::new(0.25, user_id)
+                .date(date!(2025 - 01 - 31))
+                .expect("Could not parse date")
+                .description("INTEREST EARNED")
+                .finalise(0),
+            TransactionBuilder::new(-0.03, user_id)
+                .date(date!(2025 - 01 - 31))
+                .expect("Could not parse date")
+                .description("PIE TAX 10.500%")
+                .finalise(1),
+            TransactionBuilder::new(0.22, user_id)
+                .date(date!(2025 - 02 - 28))
+                .expect("Could not parse date")
+                .description("INTEREST EARNED")
+                .finalise(2),
+            TransactionBuilder::new(-0.02, user_id)
+                .date(date!(2025 - 02 - 28))
+                .expect("Could not parse date")
+                .description("PIE TAX 10.500%")
+                .finalise(3),
+            TransactionBuilder::new(0.22, user_id)
+                .date(date!(2025 - 03 - 31))
+                .expect("Could not parse date")
+                .description("INTEREST EARNED")
+                .finalise(4),
+            TransactionBuilder::new(-0.02, user_id)
+                .date(date!(2025 - 03 - 31))
+                .expect("Could not parse date")
+                .description("PIE TAX 10.500%")
+                .finalise(5),
+        ];
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(user_id),
+            must_make_multipart_csv(&[KIWIBANK_BANK_STATEMENT_CSV]).await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        assert_eq!(
+            create_transaction_calls,
+            want_transactions.len(),
+            "want {} transaction created, got {create_transaction_calls}",
+            want_transactions.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn post_multiple_bank_csv() {
+        let state = AppState::new(
+            "foo",
+            DummyCategoryStore {},
+            FakeTransactionStore::new(),
+            DummyUserStore {},
+        );
+        let user_id = UserID::new(123);
+
+        let want_transactions: Vec<Transaction> = vec![
+            TransactionBuilder::new(1300.00, user_id)
+                .date(date!(2025 - 01 - 18))
+                .expect("Could not parse date")
+                .description("Credit Card")
+                .finalise(0),
+            TransactionBuilder::new(-1300.00, user_id)
+                .date(date!(2025 - 01 - 18))
+                .expect("Could not parse date")
+                .description("TO CARD 5023  Credit Card")
+                .finalise(1),
+            TransactionBuilder::new(4400.00, user_id)
+                .date(date!(2025 - 02 - 18))
+                .expect("Could not parse date")
+                .description("Credit Card")
+                .finalise(2),
+            TransactionBuilder::new(-4400.00, user_id)
+                .date(date!(2025 - 02 - 19))
+                .expect("Could not parse date")
+                .description("TO CARD 5023  THANK YOU")
+                .finalise(3),
+            TransactionBuilder::new(2750.00, user_id)
+                .date(date!(2025 - 03 - 20))
+                .expect("Could not parse date")
+                .description("Credit Card")
+                .finalise(4),
+            TransactionBuilder::new(-2750.00, user_id)
+                .date(date!(2025 - 03 - 20))
+                .expect("Could not parse date")
+                .description("TO CARD 5023  THANK YOU")
+                .finalise(5),
+            TransactionBuilder::new(-2750.00, user_id)
+                .date(date!(2025 - 03 - 20))
+                .expect("Could not parse date")
+                .description("PAYMENT RECEIVED THANK YOU")
+                .finalise(6),
+            TransactionBuilder::new(8.50, user_id)
+                .date(date!(2025 - 04 - 09))
+                .expect("Could not parse date")
+                .description("Birdy Bytes")
+                .finalise(7),
+            TransactionBuilder::new(10.63, user_id)
+                .date(date!(2025 - 04 - 10))
+                .expect("Could not parse date")
+                .description(
+                    "AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)",
+                )
+                .finalise(8),
+            TransactionBuilder::new(0.22, user_id)
+                .date(date!(2025 - 04 - 10))
+                .expect("Could not parse date")
+                .description("OFFSHORE SERVICE MARGINS")
+                .finalise(9),
+            TransactionBuilder::new(11.50, user_id)
+                .date(date!(2025 - 04 - 11))
+                .expect("Could not parse date")
+                .description("Buckstars")
+                .finalise(10),
+            TransactionBuilder::new(0.25, user_id)
+                .date(date!(2025 - 01 - 31))
+                .expect("Could not parse date")
+                .description("INTEREST EARNED")
+                .finalise(11),
+            TransactionBuilder::new(-0.03, user_id)
+                .date(date!(2025 - 01 - 31))
+                .expect("Could not parse date")
+                .description("PIE TAX 10.500%")
+                .finalise(12),
+            TransactionBuilder::new(0.22, user_id)
+                .date(date!(2025 - 02 - 28))
+                .expect("Could not parse date")
+                .description("INTEREST EARNED")
+                .finalise(13),
+            TransactionBuilder::new(-0.02, user_id)
+                .date(date!(2025 - 02 - 28))
+                .expect("Could not parse date")
+                .description("PIE TAX 10.500%")
+                .finalise(14),
+            TransactionBuilder::new(0.22, user_id)
+                .date(date!(2025 - 03 - 31))
+                .expect("Could not parse date")
+                .description("INTEREST EARNED")
+                .finalise(15),
+            TransactionBuilder::new(-0.02, user_id)
+                .date(date!(2025 - 03 - 31))
+                .expect("Could not parse date")
+                .description("PIE TAX 10.500%")
+                .finalise(16),
+        ];
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(user_id),
+            must_make_multipart_csv(&[
+                ASB_BANK_STATEMENT_CSV,
+                ASB_CC_STATEMENT_CSV,
+                KIWIBANK_BANK_STATEMENT_CSV,
+            ])
+            .await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        assert_eq!(
+            create_transaction_calls,
+            want_transactions.len(),
+            "want {} transaction created, got {create_transaction_calls}",
+            want_transactions.len()
+        );
+    }
+
+    // TODO: Test post import with invalid CSV data renders import form with error message.
+    // TODO: Test post import with invalid file type renders import form with error message.
+    // TODO: Test post import extracts balance, account number and creates unique IDs for each
+    // transaction.
+    // TODO: Test post import rejects transactions that have already been imported.
+    // TODO: Test post redirects to the transactions page after successful import.
+
+    async fn must_make_multipart_csv(csv_strings: &[&str]) -> Multipart {
+        let boundary = "MY_BOUNDARY123456789";
+        let boundary_start = format!("--{boundary}");
+        let boundary_end = format!("--{boundary}--");
+
+        let mut lines: Vec<&str> = Vec::new();
+
+        for csv_string in csv_strings {
+            lines.push(&boundary_start);
+            lines.push("Content-Disposition: form-data; name=\"files\"; filename=\"foobar.CSV\";");
+            lines.push("Content-Type: text/csv");
+            lines.push("");
+            lines.push(csv_string);
+        }
+
+        lines.push(&boundary_end);
+
+        let data = lines.join("\r\n").into_bytes();
+
+        let request = Request::builder()
+            .method("POST")
+            .uri(endpoints::IMPORT)
+            .header(
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(data.into())
+            .unwrap();
+
+        Multipart::from_request(request, &{}).await.unwrap()
     }
 
     async fn parse_html(response: Response) -> Html {
@@ -186,5 +600,104 @@ mod import_transactions_tests {
             "submit",
             "want submit button with type=\"submit\""
         );
+    }
+
+    #[derive(Clone)]
+    struct DummyUserStore {}
+
+    impl UserStore for DummyUserStore {
+        fn create(
+            &mut self,
+            _email: email_address::EmailAddress,
+            _password_hash: PasswordHash,
+        ) -> Result<crate::models::User, Error> {
+            todo!()
+        }
+
+        fn get(&self, _id: UserID) -> Result<crate::models::User, Error> {
+            todo!()
+        }
+
+        fn get_by_email(
+            &self,
+            _email: &email_address::EmailAddress,
+        ) -> Result<crate::models::User, Error> {
+            todo!()
+        }
+    }
+
+    #[derive(Clone)]
+    struct DummyCategoryStore {}
+
+    impl CategoryStore for DummyCategoryStore {
+        fn create(
+            &self,
+            _name: crate::models::CategoryName,
+            _user_id: UserID,
+        ) -> Result<Category, Error> {
+            todo!()
+        }
+
+        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
+            todo!()
+        }
+
+        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
+            todo!()
+        }
+    }
+
+    #[derive(Clone)]
+    struct FakeTransactionStore {
+        transactions: Vec<Transaction>,
+        create_calls: Arc<Mutex<Vec<Transaction>>>,
+    }
+
+    impl FakeTransactionStore {
+        fn new() -> Self {
+            Self {
+                transactions: Vec::new(),
+                create_calls: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    impl TransactionStore for FakeTransactionStore {
+        fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, Error> {
+            self.create_from_builder(TransactionBuilder::new(amount, user_id))
+        }
+
+        fn create_from_builder(
+            &mut self,
+            builder: TransactionBuilder,
+        ) -> Result<Transaction, Error> {
+            let next_id = match self.transactions.last() {
+                Some(transaction) => transaction.id() + 1,
+                None => 0,
+            };
+
+            let transaction = builder.finalise(next_id);
+
+            self.transactions.push(transaction.clone());
+            self.create_calls.lock().unwrap().push(transaction.clone());
+
+            Ok(transaction)
+        }
+
+        fn get(&self, id: DatabaseID) -> Result<Transaction, Error> {
+            self.transactions
+                .iter()
+                .find(|transaction| transaction.id() == id)
+                .ok_or(Error::NotFound)
+                .map(|transaction| transaction.to_owned())
+        }
+
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
+            todo!()
+        }
+
+        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
+            todo!()
+        }
     }
 }

@@ -20,6 +20,8 @@ pub struct Transaction {
     description: String,
     category_id: Option<DatabaseID>,
     user_id: UserID,
+    // TODO: Add import ID: Option<u64>
+    // TODO: Make all fields pub and remove the accessor methods.
 }
 
 impl Transaction {
@@ -27,7 +29,7 @@ impl Transaction {
     ///
     /// This function is intended to be used when loading data from a trusted source such as the
     /// application databases/stores which validate data on insertion. You **should not** use this
-    /// function with unvaldated data.
+    /// function with unvalidated data.
     ///
     /// This function has `_unchecked` in the name but is not `unsafe`, because if an invalid date
     /// is provided it may cause incorrect behaviour but will not affect memory safety.
