@@ -123,15 +123,11 @@ mod transactions_route_tests {
         let transactions = vec![
             state
                 .transaction_store
-                .create_from_builder(
-                    Transaction::build(1.0, user.id()).description("foo".to_string()),
-                )
+                .create_from_builder(Transaction::build(1.0, user.id()).description("foo"))
                 .unwrap(),
             state
                 .transaction_store
-                .create_from_builder(
-                    Transaction::build(2.0, user.id()).description("bar".to_string()),
-                )
+                .create_from_builder(Transaction::build(2.0, user.id()).description("bar"))
                 .unwrap(),
         ];
 

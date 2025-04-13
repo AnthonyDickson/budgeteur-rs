@@ -512,7 +512,7 @@ mod sqlite_transaction_store_tests {
             let transaction_builder = TransactionBuilder::new(i as f64, user.id())
                 .date(today.checked_sub(Duration::days(i)).unwrap())
                 .unwrap()
-                .description(format!("transaction #{i}"));
+                .description(&format!("transaction #{i}"));
 
             state
                 .transaction_store
@@ -545,7 +545,7 @@ mod sqlite_transaction_store_tests {
             let transaction_builder = TransactionBuilder::new(i as f64, user.id())
                 .date(start_date.checked_add(Duration::days(i)).unwrap())
                 .unwrap()
-                .description(format!("transaction #{i}"));
+                .description(&format!("transaction #{i}"));
 
             let transaction = state
                 .transaction_store

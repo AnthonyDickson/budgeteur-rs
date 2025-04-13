@@ -59,7 +59,7 @@ where
     };
 
     let transaction = Transaction::build(data.amount, user_id)
-        .description(data.description)
+        .description(&data.description)
         .category(category)
         .date(data.date);
 
@@ -253,7 +253,7 @@ mod transaction_tests {
         let want = Transaction::build(12.3, user_id)
             .date(OffsetDateTime::now_utc().date())
             .unwrap()
-            .description("aaaaaaaaaaaaa".to_string())
+            .description("aaaaaaaaaaaaa")
             .category(Some(1))
             .finalise(0);
 
@@ -289,7 +289,7 @@ mod transaction_tests {
             .create_from_builder(
                 TransactionBuilder::new(13.34, user_id)
                     .category(Some(24))
-                    .description("foobar".to_string()),
+                    .description("foobar"),
             )
             .unwrap();
 
@@ -324,7 +324,7 @@ mod transaction_tests {
             .create_from_builder(
                 TransactionBuilder::new(12.34, user_id)
                     .category(Some(24))
-                    .description("foobar".to_string()),
+                    .description("foobar"),
             )
             .unwrap();
 

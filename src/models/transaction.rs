@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 
 use crate::{
-    models::{DatabaseID, UserID},
     Error,
+    models::{DatabaseID, UserID},
 };
 
 /// An expense or income, i.e. an event where money was either spent or earned.
@@ -139,8 +139,8 @@ impl TransactionBuilder {
     }
 
     /// Set the description for the transaction.
-    pub fn description(mut self, description: String) -> Self {
-        self.description = description;
+    pub fn description(mut self, description: &str) -> Self {
+        self.description = description.to_owned();
         self
     }
 
@@ -215,7 +215,7 @@ mod transaction_builder_tests {
 
         let transaction = Transaction::build(amount, user_id)
             .category(category_id)
-            .description(description.clone())
+            .description(&description)
             .date(date)
             .unwrap()
             .finalise(id);
