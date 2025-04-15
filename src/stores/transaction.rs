@@ -148,7 +148,7 @@ impl TransactionStore for SQLiteTransactionStore {
                     rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
                         Error::InvalidUser
                     }
-                    error => Error::SqlError(error)
+                    error => error.into()
                 })?;
 
         Ok(transaction)
@@ -245,7 +245,7 @@ impl CreateTable for SQLiteTransactionStore {
                             description TEXT NOT NULL,
                             category_id INTEGER,
                             user_id INTEGER NOT NULL,
-                            import_id INTEGER,
+                            import_id INTEGER UNIQUE,
                             FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE CASCADE,
                             FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
                             )",
@@ -377,6 +377,21 @@ mod sqlite_transaction_store_tests {
         // The server should not give any information indicating to the client that the category exists or belongs to another user,
         // so we give the same error as if the referenced category does not exist.
         assert_eq!(maybe_transaction, Err(Error::InvalidCategory));
+    }
+
+    #[test]
+    fn create_fails_on_duplicate_import_id() {
+        let (state, user) = get_app_state_and_test_user();
+        let mut store = state.transaction_store;
+        let import_id = Some(123456789);
+        store
+            .create_from_builder(Transaction::build(123.45, user.id()).import_id(import_id))
+            .expect("Could not create transaction");
+
+        let duplicate_transaction =
+            store.create_from_builder(Transaction::build(123.45, user.id()).import_id(import_id));
+
+        assert_eq!(duplicate_transaction, Err(Error::DuplicateImportId));
     }
 
     #[test]

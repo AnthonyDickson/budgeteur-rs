@@ -123,6 +123,15 @@ pub enum Error {
     #[error("transaction dates must not be later than the current date")]
     FutureDate,
 
+    /// The specified import ID already exists in the database.
+    ///
+    /// When importing transactions from a CSV file, an import ID is used to
+    /// uniquely identify each transaction. Rejecting duplicate import IDs
+    /// avoids importing the same transaction multiple times, which is likely
+    /// to happen if the user tries to import CSV files that overlap in time.
+    #[error("the import ID already exists in the database")]
+    DuplicateImportId,
+
     /// The requested resource was not found.
     ///
     /// For HTTP request handlers, the client should check that the parameters
@@ -150,7 +159,11 @@ impl From<rusqlite::Error> for Error {
             {
                 Error::DuplicateEmail
             }
-
+            rusqlite::Error::SqliteFailure(sql_error, Some(ref desc))
+                if sql_error.extended_code == 2067 && desc.ends_with("transaction.import_id") =>
+            {
+                Error::DuplicateImportId
+            }
             rusqlite::Error::QueryReturnedNoRows => Error::NotFound,
             error => {
                 tracing::error!("an unhandled SQL error occurred: {}", error);
