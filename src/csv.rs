@@ -17,20 +17,35 @@ use crate::{
 pub fn parse_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilder>, Error> {
     let transactions = parse_asb_bank_csv(text, user_id);
 
-    if transactions.is_ok() {
-        return transactions;
+    match transactions {
+        Ok(_) => {
+            return transactions;
+        }
+        Err(error) => {
+            tracing::debug!("Could not parse ASB bank statement: {error}");
+        }
     }
 
     let transactions = parse_asb_cc_csv(text, user_id);
 
-    if transactions.is_ok() {
-        return transactions;
+    match transactions {
+        Ok(_) => {
+            return transactions;
+        }
+        Err(error) => {
+            tracing::debug!("Could not parse ASB credit card statement: {error}");
+        }
     }
 
     let transactions = parse_kiwibank_bank_csv(text, user_id);
 
-    if transactions.is_ok() {
-        return transactions;
+    match transactions {
+        Ok(_) => {
+            return transactions;
+        }
+        Err(error) => {
+            tracing::debug!("Could not parse Kiwibank bank statement: {error}");
+        }
     }
 
     Err(Error::InvalidCSV(
