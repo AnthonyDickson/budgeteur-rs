@@ -2,7 +2,10 @@
 
 use time::{Date, format_description::BorrowedFormatItem, macros::format_description};
 
-use crate::models::{TransactionBuilder, UserID};
+use crate::{
+    Error,
+    models::{TransactionBuilder, UserID},
+};
 
 /// Parses CSV data from ASB and Kiwibank bank statements.
 ///
@@ -11,20 +14,28 @@ use crate::models::{TransactionBuilder, UserID};
 ///
 /// Returns a vector of `Transaction` objects found in the CSV data or an empty vector if no
 /// transactions were found.
-pub fn parse_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
+pub fn parse_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilder>, Error> {
     let transactions = parse_asb_bank_csv(text, user_id);
 
-    if !transactions.is_empty() {
+    if transactions.is_ok() {
         return transactions;
     }
 
     let transactions = parse_asb_cc_csv(text, user_id);
 
-    if !transactions.is_empty() {
+    if transactions.is_ok() {
         return transactions;
     }
 
-    parse_kiwibank_bank_csv(text, user_id)
+    let transactions = parse_kiwibank_bank_csv(text, user_id);
+
+    if transactions.is_ok() {
+        return transactions;
+    }
+
+    Err(Error::InvalidCSV(
+        "Could not parse CSV data from ASB or Kiwibank".to_owned(),
+    ))
 }
 
 /// Parses ASB bank account CSV exported from FastNet Classic.
@@ -34,7 +45,7 @@ pub fn parse_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
 ///
 /// Returns a vector of `Transaction` objects found in the CSV data or an empty vector if no
 /// transactions were found.
-fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
+fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilder>, Error> {
     // Header looks like:
     // Created date / time : 12 April 2025 / 11:10:19
     // Bank 12; Branch 3405; Account 0123456-50 (Streamline)
@@ -54,9 +65,7 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
     let lines = text.lines().collect::<Vec<_>>();
 
     if lines.len() < 8 {
-        // TODO: Return an error instead of an empty vector indicating that the
-        // CSV format is invalid
-        return Vec::new();
+        return Err(Error::InvalidCSV("header too short".to_owned()));
     }
 
     let mut transactions = Vec::new();
@@ -65,37 +74,53 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
     for (line_number, line) in text.lines().enumerate() {
         match line_number {
             0 if !line.starts_with("Created date / time") => {
-                return Vec::new();
-            }
-            1 if !line.starts_with("Bank ") => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB bank statement missing header 'Created date / time' on line 0".to_owned(),
+                ));
             }
             1 => {
+                // Bank 12; Branch 3456; Account 0123456-50 (Streamline)
                 let parts = line.split(';').collect::<Vec<_>>();
+                let error = || {
+                    Error::InvalidCSV(
+                    "ASB bank statement missing header with format 'Bank XX; Branch XXXX; Account XXXXXXX-XX (Acount Name)' on line 1".to_owned(),
+                )
+                };
 
-                // TODO: return an error instead unwrap and get rid of the previous match arm.
-                let bank = parts[0].strip_prefix("Bank ").unwrap();
-                let branch = parts[1].strip_prefix(" Branch ").unwrap();
-                let account = parts[2].strip_prefix(" Account ").unwrap();
+                let bank = parts[0].strip_prefix("Bank ").ok_or_else(error)?;
+                let branch = parts[1].strip_prefix(" Branch ").ok_or_else(error)?;
+                let account = parts[2].strip_prefix(" Account ").ok_or_else(error)?;
                 account_number = [bank, branch, account].join("-");
             }
             2 if !line.starts_with("From date ") => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB bank statement missing header 'From date' on line 2".to_owned(),
+                ));
             }
             3 if !line.starts_with("To date ") => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB bank statement missing header 'To date' on line 3".to_owned(),
+                ));
             }
             4 if !line.starts_with("Avail Bal") => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB bank statement missing header 'Avail Bal' on line 4".to_owned(),
+                ));
             }
             5 if !line.starts_with("Ledger Balance") => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB bank statement missing header 'Ledger Balance' on line 5".to_owned(),
+                ));
             }
             6 if line != "Date,Unique Id,Tran Type,Cheque Number,Payee,Memo,Amount" => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB bank statement missing header 'Date,Unique Id,Tran Type,Cheque Number,Payee,Memo,Amount' on line 6".to_owned(),
+                ));
             }
             7 if !line.is_empty() => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB bank statement missing empty line on line 7".to_owned(),
+                ));
             }
             _ if line_number > 7 => {
                 let parts: Vec<&str> = line.split(',').collect();
@@ -104,22 +129,32 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
                     continue;
                 }
 
-                // TODO: Return an error instead of panicking.
                 let date = match Date::parse(parts[DATE_COLUMN], &DATE_FORMAT) {
                     Ok(date) => date,
                     Err(error) => {
-                        panic!("Error parsing {} as date: {}", parts[DATE_COLUMN], error);
+                        return Err(Error::InvalidCSV(format!(
+                            "Could not parse '{}' as date on line {line_number}: {error}",
+                            parts[DATE_COLUMN]
+                        )));
                     }
                 };
                 let description = parts[DESCRIPTION_COLUMN];
                 let description = description.trim_matches('"');
-                // TODO: Return an error instead of panicking.
-                let amount: f64 = parts[AMOUNT_COLUMN].parse().unwrap();
+                let amount: f64 = parts[AMOUNT_COLUMN].parse().map_err(|error| {
+                    Error::InvalidCSV(format!(
+                        "Could not parse '{}' as amount on line {line_number}: {error}",
+                        parts[AMOUNT_COLUMN]
+                    ))
+                })?;
 
                 let transaction = TransactionBuilder::new(amount, user_id)
                     .date(date)
-                    // TODO: Return an error instead of panicking.
-                    .expect("Got future date")
+                    .map_err(|error| {
+                        Error::InvalidCSV(format!(
+                            "Date '{}' on line {line_number} is invalid: {error}",
+                            parts[DATE_COLUMN]
+                        ))
+                    })?
                     .description(description)
                     .import_id(Some(create_import_id(
                         &account_number,
@@ -134,7 +169,7 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
         }
     }
 
-    transactions
+    Ok(transactions)
 }
 
 /// Parses ASB credit card CSV exported from FastNet Classic.
@@ -144,7 +179,7 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
 ///
 /// Returns a vector of `Transaction` objects found in the CSV data or an empty vector if no
 /// transactions were found.
-fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
+fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilder>, Error> {
     // Header looks like:
     // Created date / time : 12 April 2025 / 11:09:26
     // Card Number XXXX-XXXX-XXXX-5023 (Visa Light)
@@ -161,9 +196,7 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
     let lines = text.lines().collect::<Vec<_>>();
 
     if lines.len() < 6 {
-        // TODO: Return an error instead of an empty vector indicating that the
-        // CSV format is invalid
-        return Vec::new();
+        return Err(Error::InvalidCSV("header too short".to_owned()));
     }
 
     let mut transactions = Vec::new();
@@ -172,29 +205,43 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
     for (line_number, line) in text.lines().enumerate() {
         match line_number {
             0 if !line.starts_with("Created date / time") => {
-                return Vec::new();
-            }
-            1 if !line.starts_with("Card Number ") => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB credit card statement missing header 'Created date / time' on line 0"
+                        .to_owned(),
+                ));
             }
             1 => {
-                // TODO: return an error instead unwrap: let account_number line.strip_prefix("Card Number ")?;
-                // Also get rid of the previous match arm.
-                account_number = line.strip_prefix("Card Number ").unwrap().to_string();
+                account_number = line
+                    .strip_prefix("Card Number ")
+                    .ok_or_else(|| {
+                        Error::InvalidCSV(
+                            "ASB credit card statement missing header 'Card Number' on line 1"
+                                .to_owned(),
+                        )
+                    })?
+                    .to_string();
             }
             2 if !line.starts_with("From date ") => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB credit card statement missing header 'From date' on line 2".to_owned(),
+                ));
             }
             3 if !line.starts_with("To date ") => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB credit card statement missing header 'To date' on line 3".to_owned(),
+                ));
             }
             4 if line
                 != "Date Processed,Date of Transaction,Unique Id,Tran Type,Reference,Description,Amount" =>
             {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB credit card statement missing header 'Date Processed,Date of Transaction,Unique Id,Tran Type,Reference,Description,Amount' on line 4".to_owned(),
+                ));
             }
             5 if !line.is_empty() => {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "ASB credit card statement missing empty line on line 5".to_owned(),
+                ));
             }
             _ if line_number > 5 => {
                 let parts: Vec<&str> = line.split(',').collect();
@@ -203,22 +250,29 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
                     continue;
                 }
 
-                // TODO: Return an error instead of panicking.
-                let date = match Date::parse(parts[DATE_COLUMN], &DATE_FORMAT) {
-                    Ok(date) => date,
-                    Err(error) => {
-                        panic!("Error parsing {} as date: {}", parts[DATE_COLUMN], error);
-                    }
-                };
+                let date = Date::parse(parts[DATE_COLUMN], &DATE_FORMAT).map_err(|error| {
+                    Error::InvalidCSV(format!(
+                        "Could not parse '{}' as date on line {line_number}: {error}",
+                        parts[DATE_COLUMN]
+                    ))
+                })?;
                 let description = parts[DESCRIPTION_COLUMN];
                 let description = description.trim_matches('"');
-                // TODO: Return an error instead of panicking.
-                let amount: f64 = parts[AMOUNT_COLUMN].parse().unwrap();
+                let amount: f64 = parts[AMOUNT_COLUMN].parse().map_err(|error| {
+                    Error::InvalidCSV(format!(
+                        "Could not parse '{}' as amount on line {line_number}: {error}",
+                        parts[AMOUNT_COLUMN]
+                    ))
+                })?;
 
                 let transaction = TransactionBuilder::new(amount, user_id)
                     .date(date)
-                    // TODO: Return an error instead of panicking.
-                    .expect("Got future date")
+                    .map_err(|error| {
+                        Error::InvalidCSV(format!(
+                            "Date '{}' on line {line_number} is invalid: {error}",
+                            parts[DATE_COLUMN]
+                        ))
+                    })?
                     .description(description)
                     .import_id(Some(create_import_id(
                         &account_number,
@@ -233,7 +287,7 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
         }
     }
 
-    transactions
+    Ok(transactions)
 }
 
 /// Parses detailed Kiwibank account CSV exported from form ib.kiwibank.co.nz.
@@ -243,7 +297,7 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
 ///
 /// Returns a vector of `Transaction` objects found in the CSV data or an empty vector if no
 /// transactions were found.
-fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilder> {
+fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilder>, Error> {
     // Header looks like:
     // Account number,Date,Memo/Description,Source Code (payment type),TP ref,TP part,TP code,OP ref,OP part,OP code,OP name,OP Bank Account Number,Amount (credit),Amount (debit),Amount,Balance
     const ACCOUNT_NUMBER_COLUMN: usize = 0;
@@ -256,9 +310,7 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilde
     let lines = text.lines().collect::<Vec<_>>();
 
     if lines.is_empty() {
-        // TODO: Return an error instead of an empty vector indicating that the
-        // CSV format is invalid
-        return Vec::new();
+        return Err(Error::InvalidCSV("header too short".to_owned()));
     }
 
     let mut transactions = Vec::new();
@@ -268,7 +320,10 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilde
             0 if line
                 != "Account number,Date,Memo/Description,Source Code (payment type),TP ref,TP part,TP code,OP ref,OP part,OP code,OP name,OP Bank Account Number,Amount (credit),Amount (debit),Amount,Balance" =>
             {
-                return Vec::new();
+                return Err(Error::InvalidCSV(
+                    "Kiwibank bank statement missing header 'Account number,Date,Memo/Description,Source Code (payment type),TP ref,TP part,TP code,OP ref,OP part,OP code,OP name,OP Bank Account Number,Amount (credit),Amount (debit),Amount,Balance' on line 0"
+                        .to_owned(),
+                ));
             }
             _ if line_number > 0 => {
                 let parts: Vec<&str> = line.split(',').collect();
@@ -278,23 +333,30 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilde
                 }
 
                 let account_number = parts[ACCOUNT_NUMBER_COLUMN];
-                // TODO: Return an error instead of panicking.
-                let date = match Date::parse(parts[DATE_COLUMN], &DATE_FORMAT) {
-                    Ok(date) => date,
-                    Err(error) => {
-                        panic!("Error parsing {} as date: {}", parts[DATE_COLUMN], error);
-                    }
-                };
+                let date = Date::parse(parts[DATE_COLUMN], &DATE_FORMAT).map_err(|error| {
+                    Error::InvalidCSV(format!(
+                        "Could not parse '{}' as date on line {line_number}: {error}",
+                        parts[DATE_COLUMN]
+                    ))
+                })?;
                 let description = parts[DESCRIPTION_COLUMN];
                 let description = description.trim_matches('"');
                 let description = description.trim_end_matches(" ;");
-                // TODO: Return an error instead of panicking.
-                let amount: f64 = parts[AMOUNT_COLUMN].parse().unwrap();
+                let amount: f64 = parts[AMOUNT_COLUMN].parse().map_err(|error| {
+                    Error::InvalidCSV(format!(
+                        "Could not parse '{}' as amount on line {line_number}: {error}",
+                        parts[AMOUNT_COLUMN]
+                    ))
+                })?;
 
                 let transaction = TransactionBuilder::new(amount, user_id)
                     .date(date)
-                    // TODO: Return an error instead of panicking.
-                    .expect("Got future date")
+                    .map_err(|error| {
+                        Error::InvalidCSV(format!(
+                            "Date '{}' on line {line_number} is invalid: {error}",
+                            parts[DATE_COLUMN]
+                        ))
+                    })?
                     .description(description)
                     .import_id(Some(create_import_id(
                         account_number,
@@ -309,7 +371,7 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Vec<TransactionBuilde
         }
     }
 
-    transactions
+    Ok(transactions)
 }
 
 /// Creates a hash for a transaction based on the account number, date, description, and amount.
@@ -574,7 +636,8 @@ mod parse_csv_tests {
                 ))),
         ];
 
-        let result = parse_asb_bank_csv(ASB_BANK_STATEMENT_CSV, user_id);
+        let result =
+            parse_asb_bank_csv(ASB_BANK_STATEMENT_CSV, user_id).expect("Could not parse CSV");
 
         assert_eq!(
             want.len(),
@@ -644,7 +707,7 @@ mod parse_csv_tests {
                 ))),
         ];
 
-        let result = parse_asb_cc_csv(ASB_CC_STATEMENT_CSV, user_id);
+        let result = parse_asb_cc_csv(ASB_CC_STATEMENT_CSV, user_id).expect("Could not parse CSV");
 
         assert_eq!(
             want.len(),
@@ -722,7 +785,8 @@ mod parse_csv_tests {
                 ))),
         ];
 
-        let result = parse_kiwibank_bank_csv(KIWIBANK_BANK_STATEMENT_CSV, user_id);
+        let result = parse_kiwibank_bank_csv(KIWIBANK_BANK_STATEMENT_CSV, user_id)
+            .expect("Could not parse CSV");
 
         assert_eq!(
             want.len(),

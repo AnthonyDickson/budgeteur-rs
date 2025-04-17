@@ -67,7 +67,8 @@ where
             data
         );
 
-        transactions.extend(parse_csv(&data, user_id));
+        // TODO: Render form with error message if parsing fails.
+        transactions.extend(parse_csv(&data, user_id).expect("Failed to parse CSV"));
     }
 
     // TODO: Add function to store to add many transactions at once.

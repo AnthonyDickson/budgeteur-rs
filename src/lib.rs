@@ -132,6 +132,10 @@ pub enum Error {
     #[error("the import ID already exists in the database")]
     DuplicateImportId,
 
+    /// The CSV had issues that prevented it from being parsed.
+    #[error("Could not parse the CSV file: {0}")]
+    InvalidCSV(String),
+
     /// The requested resource was not found.
     ///
     /// For HTTP request handlers, the client should check that the parameters
