@@ -67,8 +67,22 @@ where
             data
         );
 
-        // TODO: Render form with error message if parsing fails.
-        transactions.extend(parse_csv(&data, user_id).expect("Failed to parse CSV"));
+        match parse_csv(&data, user_id) {
+            Ok(parsed_transactions) => {
+                transactions.extend(parsed_transactions);
+            }
+            Err(e) => {
+                tracing::debug!("Failed to parse CSV: {}", e);
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    ImportTransactionFormTemplate {
+                        import_route: endpoints::IMPORT,
+                        error_message: "Failed to parse CSV, check that the provided file is a valid CSV from ASB or Kiwibank.",
+                    },
+                )
+                    .into_response();
+            }
+        }
     }
 
     // TODO: Add function to store to add many transactions at once.
@@ -155,7 +169,7 @@ mod import_transactions_tests {
             "text/html; charset=utf-8"
         );
 
-        let html = parse_html(response).await;
+        let html = parse_html(response, HTMLParsingMode::Document).await;
         assert_valid_html(&html);
 
         let form = must_get_form(&html);
@@ -464,12 +478,64 @@ mod import_transactions_tests {
         );
     }
 
-    // TODO: Test post import with invalid CSV data renders import form with error message.
     // TODO: Test post import with invalid file type renders import form with error message.
     // TODO: Test post import extracts balance, account number and creates unique IDs for each
     // transaction.
     // TODO: Test post import rejects transactions that have already been imported.
     // TODO: Test post redirects to the transactions page after successful import.
+    #[tokio::test]
+    async fn invalid_csv_renders_error_message() {
+        let state = AppState::new(
+            "foo",
+            DummyCategoryStore {},
+            FakeTransactionStore::new(),
+            DummyUserStore {},
+        );
+        let user_id = UserID::new(123);
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(user_id),
+            must_make_multipart_csv(&[""]).await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_content_type(&response, "text/html; charset=utf-8");
+        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        assert_eq!(
+            create_transaction_calls, 0,
+            "want {} transaction created, got {create_transaction_calls}",
+            0
+        );
+
+        let html = parse_html(response, HTMLParsingMode::Fragment).await;
+        assert_valid_html(&html);
+        let form = must_get_form(&html);
+        assert_error_message(
+            &form,
+            "Failed to parse CSV, check that the provided file is a valid CSV from ASB or Kiwibank.",
+        );
+    }
+
+    #[track_caller]
+    fn assert_content_type(response: &Response, content_type: &str) {
+        let content_type_header = response
+            .headers()
+            .get("content-type")
+            .expect("content-type header missing");
+        assert_eq!(content_type_header, content_type);
+    }
+
+    #[track_caller]
+    fn assert_error_message(form: &ElementRef, want_error_message: &str) {
+        let p = form
+            .select(&scraper::Selector::parse("p.text-red-500").unwrap())
+            .next()
+            .expect("No p tag found");
+        let error_message = p.text().collect::<String>();
+        assert_eq!(want_error_message, error_message.trim());
+    }
 
     async fn must_make_multipart_csv(csv_strings: &[&str]) -> Multipart {
         let boundary = "MY_BOUNDARY123456789";
@@ -503,12 +569,20 @@ mod import_transactions_tests {
         Multipart::from_request(request, &{}).await.unwrap()
     }
 
-    async fn parse_html(response: Response) -> Html {
+    enum HTMLParsingMode {
+        Document,
+        Fragment,
+    }
+
+    async fn parse_html(response: Response, mode: HTMLParsingMode) -> Html {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
         let text = String::from_utf8_lossy(&body).to_string();
 
-        Html::parse_document(&text)
+        match mode {
+            HTMLParsingMode::Document => Html::parse_document(&text),
+            HTMLParsingMode::Fragment => Html::parse_fragment(&text),
+        }
     }
 
     #[track_caller]
