@@ -274,6 +274,10 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilde
                         parts[AMOUNT_COLUMN]
                     ))
                 })?;
+                // Credit card statements record debits as positive amounts, so
+                // we need to negate them to match the other bank statements
+                // which represent debits with negative numbers.
+                let amount = -amount;
 
                 let transaction = TransactionBuilder::new(amount, user_id)
                     .date(date)
