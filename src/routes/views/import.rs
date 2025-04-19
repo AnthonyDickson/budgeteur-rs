@@ -2,9 +2,10 @@ use askama_axum::Template;
 use axum::{
     Extension,
     extract::{Multipart, State},
-    http::StatusCode,
+    http::{StatusCode, Uri},
     response::{IntoResponse, Response},
 };
+use axum_htmx::HxRedirect;
 
 use crate::{
     AppState,
@@ -106,7 +107,11 @@ where
             .unwrap();
     }
 
-    (StatusCode::OK, "File upload successful").into_response()
+    (
+        HxRedirect(Uri::from_static(endpoints::TRANSACTIONS_VIEW)),
+        StatusCode::SEE_OTHER,
+    )
+        .into_response()
 }
 
 #[cfg(test)]
@@ -240,7 +245,7 @@ mod import_transactions_tests {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
         let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
         assert_eq!(
             create_transaction_calls,
@@ -248,6 +253,7 @@ mod import_transactions_tests {
             "want {} transaction created, got {create_transaction_calls}",
             want_transactions.len()
         );
+        assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
     #[tokio::test]
@@ -297,7 +303,7 @@ mod import_transactions_tests {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
         let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
         assert_eq!(
             create_transaction_calls,
@@ -305,6 +311,7 @@ mod import_transactions_tests {
             "want {} transaction created, got {create_transaction_calls}",
             want_transactions.len()
         );
+        assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
     #[tokio::test]
@@ -357,7 +364,7 @@ mod import_transactions_tests {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
         let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
         assert_eq!(
             create_transaction_calls,
@@ -365,6 +372,7 @@ mod import_transactions_tests {
             "want {} transaction created, got {create_transaction_calls}",
             want_transactions.len()
         );
+        assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
     #[tokio::test]
@@ -479,7 +487,7 @@ mod import_transactions_tests {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
         let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
         assert_eq!(
             create_transaction_calls,
@@ -487,12 +495,12 @@ mod import_transactions_tests {
             "want {} transaction created, got {create_transaction_calls}",
             want_transactions.len()
         );
+        assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
     // TODO: Test post import extracts balance, account number and creates unique IDs for each
     // transaction.
     // TODO: Test post import rejects transactions that have already been imported.
-    // TODO: Test post redirects to the transactions page after successful import.
     #[tokio::test]
     async fn invalid_csv_renders_error_message() {
         let state = AppState::new(
@@ -609,6 +617,23 @@ mod import_transactions_tests {
             .unwrap();
 
         Multipart::from_request(request, &{}).await.unwrap()
+    }
+    #[track_caller]
+    fn assert_hx_redirect(response: &Response, endpoint: &str) {
+        assert_eq!(get_header(response, "hx-redirect"), endpoint,);
+    }
+
+    #[track_caller]
+    fn get_header(response: &Response, header_name: &str) -> String {
+        let header_error_message = format!("Headers missing {header_name}");
+
+        response
+            .headers()
+            .get(header_name)
+            .expect(&header_error_message)
+            .to_str()
+            .expect("Could not convert to str")
+            .to_string()
     }
 
     async fn must_make_multipart(file_types: &[&str]) -> Multipart {
