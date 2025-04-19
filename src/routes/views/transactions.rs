@@ -33,6 +33,8 @@ struct TransactionsTemplate<'a> {
     import_transaction_route: Uri,
 }
 
+// TODO: implement pagination
+/// Render an overview of the user's transactions.
 pub async fn get_transactions_page<C, T, U>(
     State(state): State<AppState<C, T, U>>,
     Extension(user_id): Extension<UserID>,

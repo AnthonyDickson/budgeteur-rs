@@ -171,12 +171,7 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuil
                         ))
                     })?
                     .description(description)
-                    .import_id(Some(create_import_id(
-                        &account_number,
-                        date,
-                        description,
-                        amount,
-                    )));
+                    .import_id(Some(create_import_id(line)));
 
                 transactions.push(transaction);
             }
@@ -289,12 +284,7 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilde
                         ))
                     })?
                     .description(description)
-                    .import_id(Some(create_import_id(
-                        &account_number,
-                        date,
-                        description,
-                        amount,
-                    )));
+                    .import_id(Some(create_import_id(line)));
 
                 transactions.push(transaction);
             }
@@ -373,12 +363,7 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<Vec<Transactio
                         ))
                     })?
                     .description(description)
-                    .import_id(Some(create_import_id(
-                        account_number,
-                        date,
-                        description,
-                        amount,
-                    )));
+                    .import_id(Some(create_import_id(line)));
 
                 transactions.push(transaction);
             }
@@ -392,43 +377,11 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<Vec<Transactio
 /// Creates a hash for a transaction based on the account number, date, description, and amount.
 ///
 /// Not sure how likely collisions are, should be fine ¯\_(ツ)_/¯
-fn create_import_id(account_number: &str, date: Date, description: &str, amount: f64) -> i64 {
-    let (year, day) = date.to_ordinal_date();
-
-    let mut bytes: Vec<u8> = [
-        account_number.as_bytes(),
-        &year.to_le_bytes(),
-        &day.to_le_bytes(),
-        description.as_bytes(),
-        &amount.to_le_bytes(),
-    ]
-    .concat()
-    .into_iter()
-    .collect();
-
-    while bytes.len() % 8 != 0 {
-        bytes.push(0);
-    }
-
-    let mut hash: i64 = 0;
-
-    for i in 0..(bytes.len() / 8) {
-        let start = i * 8;
-        let end = start + 8;
-        let chunk = &bytes[start..end];
-
-        let mut chunk_bytes: [u8; 8] = [0; 8];
-        chunk_bytes.copy_from_slice(chunk);
-        let bit_set = i64::from_le_bytes(chunk_bytes);
-
-        hash ^= bit_set;
-        hash = hash.wrapping_mul(0x5bd1e995);
-        hash ^= hash >> 15;
-        hash = hash.wrapping_mul(0x5bd1e995);
-        hash ^= hash >> 13;
-    }
-
-    hash
+fn create_import_id(csv_line: &str) -> i64 {
+    let hash_128 = md5::compute(csv_line);
+    let mut hash_64 = [0; 8];
+    hash_64.copy_from_slice(&hash_128[0..8]);
+    i64::from_le_bytes(hash_64)
 }
 
 #[cfg(test)]
@@ -481,106 +434,22 @@ mod parse_csv_tests {
     fn create_import_id_matching_inputs() {
         assert_eq!(
             create_import_id(
-                "12-3405-0123456-50 (Streamline)",
-                date!(2025 - 01 - 18),
-                "Credit Card",
-                1300.00
+                "38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16",
             ),
             create_import_id(
-                "12-3405-0123456-50 (Streamline)",
-                date!(2025 - 01 - 18),
-                "Credit Card",
-                1300.00
+                "38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16",
             )
         )
     }
 
     #[test]
-    fn create_import_id_different_amounts() {
+    fn create_import_id_different_inputs() {
         assert_ne!(
             create_import_id(
-                "12-3405-0123456-50 (Streamline)",
-                date!(2025 - 01 - 18),
-                "Credit Card",
-                1300.00
+                "38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16",
             ),
             create_import_id(
-                "12-3405-0123456-50 (Streamline)",
-                date!(2025 - 01 - 18),
-                "Credit Card",
-                1300.01
-            )
-        );
-    }
-
-    #[test]
-    fn create_import_id_different_dates() {
-        assert_ne!(
-            create_import_id(
-                "12-3405-0123456-50 (Streamline)",
-                date!(2025 - 01 - 18),
-                "Credit Card",
-                1300.00
-            ),
-            create_import_id(
-                "12-3405-0123456-50 (Streamline)",
-                date!(2025 - 01 - 19),
-                "Credit Card",
-                1300.00
-            )
-        );
-    }
-
-    #[test]
-    fn create_import_id_different_descriptions() {
-        assert_ne!(
-            create_import_id(
-                "12-3405-0123456-50 (Streamline)",
-                date!(2025 - 01 - 18),
-                "Credit Card",
-                1300.00
-            ),
-            create_import_id(
-                "12-3405-0123456-50 (Streamline)",
-                date!(2025 - 01 - 18),
-                "Credit Card 2",
-                1300.00
-            )
-        );
-    }
-
-    #[test]
-    fn create_import_id_different_account_numbers() {
-        assert_ne!(
-            create_import_id(
-                "12-3405-0123456-50 (Streamline)",
-                date!(2025 - 01 - 18),
-                "Credit Card",
-                1300.00
-            ),
-            create_import_id(
-                "12-3405-0123456-51 (Streamline)",
-                date!(2025 - 01 - 18),
-                "Credit Card",
-                1300.00
-            )
-        );
-    }
-
-    #[test]
-    fn create_import_id_different_everything() {
-        assert_ne!(
-            create_import_id(
-                "12-3405-0123456-50 (Streamline)",
-                date!(2025 - 01 - 18),
-                "Credit Card",
-                1300.00
-            ),
-            create_import_id(
-                "12-3405-0123456-51 (Streamline)",
-                date!(2025 - 01 - 19),
-                "Credit Card 2",
-                1300.01
+                "2025/04/10,2025/04/07,2025041001,DEBIT,5023,\"AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)\",10.63"
             )
         );
     }
@@ -594,60 +463,42 @@ mod parse_csv_tests {
                 .expect("Could not set date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id(
-                    "12-3405-0123456-50 (Streamline)",
-                    date!(2025 - 01 - 18),
-                    "Credit Card",
-                    1300.00,
+                    "2025/01/18,2025011801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",1300.00"
                 ))),
             TransactionBuilder::new(-1300.00, user_id)
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not set date")
                 .description("TO CARD 5023  Credit Card")
                 .import_id(Some(create_import_id(
-                    "12-3405-0123456-50 (Streamline)",
-                    date!(2025 - 01 - 18),
-                    "TO CARD 5023  Credit Card",
-                    -1300.00,
+                    "2025/01/18,2025011802,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  Credit Card\",-1300.00"
                 ))),
             TransactionBuilder::new(4400.00, user_id)
                 .date(date!(2025 - 02 - 18))
                 .expect("Could not set date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id(
-                    "12-3405-0123456-50 (Streamline)",
-                    date!(2025 - 02 - 18),
-                    "Credit Card",
-                    4400.00,
+                    "2025/02/18,2025021801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",4400.00"
                 ))),
             TransactionBuilder::new(-4400.00, user_id)
                 .date(date!(2025 - 02 - 19))
                 .expect("Could not set date")
                 .description("TO CARD 5023  THANK YOU")
                 .import_id(Some(create_import_id(
-                    "12-3405-0123456-50 (Streamline)",
-                    date!(2025 - 02 - 19),
-                    "TO CARD 5023  THANK YOU",
-                    -4400.00,
+                    "2025/02/19,2025021901,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-4400.00"
                 ))),
             TransactionBuilder::new(2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not set date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id(
-                    "12-3405-0123456-50 (Streamline)",
-                    date!(2025 - 03 - 20),
-                    "Credit Card",
-                    2750.00,
+                    "2025/03/20,2025032001,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",2750.00"
                 ))),
             TransactionBuilder::new(-2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not set date")
                 .description("TO CARD 5023  THANK YOU")
                 .import_id(Some(create_import_id(
-                    "12-3405-0123456-50 (Streamline)",
-                    date!(2025 - 03 - 20),
-                    "TO CARD 5023  THANK YOU",
-                    -2750.00,
+                    "2025/03/20,2025032002,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-2750.00"
                 ))),
         ];
 
@@ -673,20 +524,14 @@ mod parse_csv_tests {
                 .expect("Could not parse date")
                 .description("PAYMENT RECEIVED THANK YOU")
                 .import_id(Some(create_import_id(
-                    "XXXX-XXXX-XXXX-5023 (Visa Light)",
-                    date!(2025 - 03 - 20),
-                    "PAYMENT RECEIVED THANK YOU",
-                    -2750.00,
+                    "2025/03/20,2025/03/20,2025032002,CREDIT,5023,\"PAYMENT RECEIVED THANK YOU\",-2750.00"
                 ))),
             TransactionBuilder::new(8.50, user_id)
                 .date(date!(2025 - 04 - 09))
                 .expect("Could not parse date")
                 .description("Birdy Bytes")
                 .import_id(Some(create_import_id(
-                    "XXXX-XXXX-XXXX-5023 (Visa Light)",
-                    date!(2025 - 04 - 09),
-                    "Birdy Bytes",
-                    8.50,
+                    "2025/04/09,2025/04/08,2025040902,DEBIT,5023,\"Birdy Bytes\",8.50"
                 ))),
             TransactionBuilder::new(10.63, user_id)
                 .date(date!(2025 - 04 - 10))
@@ -695,30 +540,21 @@ mod parse_csv_tests {
                     "AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)",
                 )
                 .import_id(Some(create_import_id(
-                    "XXXX-XXXX-XXXX-5023 (Visa Light)",
-                    date!(2025 - 04 - 10),
-                    "AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)",
-                    10.63,
+                    "2025/04/10,2025/04/07,2025041001,DEBIT,5023,\"AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)\",10.63"
                 ))),
             TransactionBuilder::new(0.22, user_id)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description("OFFSHORE SERVICE MARGINS")
                 .import_id(Some(create_import_id(
-                    "XXXX-XXXX-XXXX-5023 (Visa Light)",
-                    date!(2025 - 04 - 10),
-                    "OFFSHORE SERVICE MARGINS",
-                    0.22,
+                    "2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22"
                 ))),
             TransactionBuilder::new(11.50, user_id)
                 .date(date!(2025 - 04 - 11))
                 .expect("Could not parse date")
                 .description("Buckstars")
                 .import_id(Some(create_import_id(
-                    "XXXX-XXXX-XXXX-5023 (Visa Light)",
-                    date!(2025 - 04 - 11),
-                    "Buckstars",
-                    11.50,
+                    "2025/04/11,2025/04/10,2025041101,DEBIT,5023,\"Buckstars\",11.50"
                 ))),
         ];
 
@@ -737,66 +573,49 @@ mod parse_csv_tests {
     #[test]
     fn can_parse_kiwibank_bank_statement() {
         let user_id = UserID::new(42);
+
         let want = vec![
             TransactionBuilder::new(0.25, user_id)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
                 .import_id(Some(create_import_id(
-                    "38-1234-0123456-01",
-                    date!(2025 - 01 - 31),
-                    "INTEREST EARNED",
-                    0.25,
+                    "38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16",
                 ))),
             TransactionBuilder::new(-0.03, user_id)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
                 .import_id(Some(create_import_id(
-                    "38-1234-0123456-01",
-                    date!(2025 - 01 - 31),
-                    "PIE TAX 10.500%",
-                    -0.03,
+                    "38-1234-0123456-01,31-01-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.03,-0.03,71.13",
                 ))),
             TransactionBuilder::new(0.22, user_id)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
                 .import_id(Some(create_import_id(
-                    "38-1234-0123456-01",
-                    date!(2025 - 02 - 28),
-                    "INTEREST EARNED",
-                    0.22,
+                    "38-1234-0123456-01,28-02-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.35",
                 ))),
             TransactionBuilder::new(-0.02, user_id)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
                 .import_id(Some(create_import_id(
-                    "38-1234-0123456-01",
-                    date!(2025 - 02 - 28),
-                    "PIE TAX 10.500%",
-                    -0.02,
+                    "38-1234-0123456-01,28-02-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.33",
                 ))),
             TransactionBuilder::new(0.22, user_id)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
                 .import_id(Some(create_import_id(
-                    "38-1234-0123456-01",
-                    date!(2025 - 03 - 31),
-                    "INTEREST EARNED",
-                    0.22,
+                    "38-1234-0123456-01,31-03-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.55",
                 ))),
             TransactionBuilder::new(-0.02, user_id)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
                 .import_id(Some(create_import_id(
-                    "38-1234-0123456-01",
-                    date!(2025 - 03 - 31),
-                    "PIE TAX 10.500%",
-                    -0.02,
+                    "38-1234-0123456-01,31-03-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.53",
                 ))),
         ];
 
