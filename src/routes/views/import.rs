@@ -57,6 +57,17 @@ where
     let mut transactions = Vec::new();
 
     while let Some(field) = multipart.next_field().await.unwrap() {
+        if field.content_type() != Some("text/csv") {
+            return (
+                StatusCode::BAD_REQUEST,
+                ImportTransactionFormTemplate {
+                    import_route: endpoints::IMPORT,
+                    error_message: "File type must be CSV.",
+                },
+            )
+                .into_response();
+        }
+
         let file_name = field.file_name().unwrap().to_string();
         let data = field.text().await.unwrap();
 
@@ -478,7 +489,6 @@ mod import_transactions_tests {
         );
     }
 
-    // TODO: Test post import with invalid file type renders import form with error message.
     // TODO: Test post import extracts balance, account number and creates unique IDs for each
     // transaction.
     // TODO: Test post import rejects transactions that have already been imported.
@@ -518,6 +528,38 @@ mod import_transactions_tests {
         );
     }
 
+    #[tokio::test]
+    async fn invalid_file_type_renders_error_message() {
+        let state = AppState::new(
+            "foo",
+            DummyCategoryStore {},
+            FakeTransactionStore::new(),
+            DummyUserStore {},
+        );
+        let user_id = UserID::new(123);
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(user_id),
+            must_make_multipart(&["text/plain"]).await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_content_type(&response, "text/html; charset=utf-8");
+        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        assert_eq!(
+            create_transaction_calls, 0,
+            "want {} transaction created, got {create_transaction_calls}",
+            0
+        );
+
+        let html = parse_html(response, HTMLParsingMode::Fragment).await;
+        assert_valid_html(&html);
+        let form = must_get_form(&html);
+        assert_error_message(&form, "File type must be CSV.");
+    }
+
     #[track_caller]
     fn assert_content_type(response: &Response, content_type: &str) {
         let content_type_header = response
@@ -553,6 +595,41 @@ mod import_transactions_tests {
         }
 
         lines.push(&boundary_end);
+
+        let data = lines.join("\r\n").into_bytes();
+
+        let request = Request::builder()
+            .method("POST")
+            .uri(endpoints::IMPORT)
+            .header(
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(data.into())
+            .unwrap();
+
+        Multipart::from_request(request, &{}).await.unwrap()
+    }
+
+    async fn must_make_multipart(file_types: &[&str]) -> Multipart {
+        let boundary = "MY_BOUNDARY123456789";
+        let boundary_start = format!("--{boundary}");
+        let boundary_end = format!("--{boundary}--");
+
+        let mut lines: Vec<String> = Vec::new();
+
+        for file_type in file_types {
+            lines.push(boundary_start.clone());
+            lines.push(
+                "Content-Disposition: form-data; name=\"files\"; filename=\"foobar.CSV\";"
+                    .to_owned(),
+            );
+            lines.push(format!("Content-Type: {file_type}"));
+            lines.push("".to_owned());
+            lines.push("foo".to_owned());
+        }
+
+        lines.push(boundary_end);
 
         let data = lines.join("\r\n").into_bytes();
 
