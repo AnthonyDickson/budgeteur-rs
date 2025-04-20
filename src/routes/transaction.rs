@@ -220,6 +220,13 @@ mod transaction_tests {
             Ok(transaction)
         }
 
+        fn import(
+            &mut self,
+            _builders: Vec<TransactionBuilder>,
+        ) -> Result<Vec<Transaction>, Error> {
+            todo!()
+        }
+
         fn get(&self, id: DatabaseID) -> Result<Transaction, Error> {
             self.transactions
                 .iter()

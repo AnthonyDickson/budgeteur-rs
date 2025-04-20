@@ -262,6 +262,13 @@ mod tests {
             todo!()
         }
 
+        fn import(
+            &mut self,
+            _builders: Vec<TransactionBuilder>,
+        ) -> Result<Vec<Transaction>, Error> {
+            todo!()
+        }
+
         fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
             todo!()
         }

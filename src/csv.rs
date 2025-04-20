@@ -381,7 +381,7 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<Vec<Transactio
 /// Creates a hash for a transaction based on the account number, date, description, and amount.
 ///
 /// Not sure how likely collisions are, should be fine ¯\_(ツ)_/¯
-fn create_import_id(csv_line: &str) -> i64 {
+pub fn create_import_id(csv_line: &str) -> i64 {
     let hash_128 = md5::compute(csv_line);
     let mut hash_64 = [0; 8];
     hash_64.copy_from_slice(&hash_128[0..8]);

@@ -97,15 +97,11 @@ where
         }
     }
 
-    // TODO: Add function to store to add many transactions at once.
-    // TODO: Filter out transactions that have already been imported by
-    // checking the import ID.
-    for transaction in transactions {
-        state
-            .transaction_store
-            .create_from_builder(transaction)
-            .unwrap();
-    }
+    state
+        .transaction_store
+        .import(transactions)
+        // TODO: Render error message if import fails
+        .expect("Could not import transactions");
 
     (
         HxRedirect(Uri::from_static(endpoints::TRANSACTIONS_VIEW)),
@@ -129,6 +125,7 @@ mod import_transactions_tests {
 
     use crate::{
         AppState, Error,
+        csv::create_import_id,
         models::{Category, DatabaseID, PasswordHash, Transaction, TransactionBuilder, UserID},
         routes::{
             endpoints,
@@ -210,31 +207,37 @@ mod import_transactions_tests {
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not parse date")
                 .description("Credit Card")
+                .import_id(Some(create_import_id("2025/01/18,2025011801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",1300.00")))
                 .finalise(0),
             TransactionBuilder::new(-1300.00, user_id)
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  Credit Card")
+                .import_id(Some(create_import_id("2025/01/18,2025011802,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  Credit Card\",-1300.00")))
                 .finalise(1),
             TransactionBuilder::new(4400.00, user_id)
                 .date(date!(2025 - 02 - 18))
                 .expect("Could not parse date")
                 .description("Credit Card")
+                .import_id(Some(create_import_id("2025/02/18,2025021801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",4400.00")))
                 .finalise(2),
             TransactionBuilder::new(-4400.00, user_id)
                 .date(date!(2025 - 02 - 19))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  THANK YOU")
+                .import_id(Some(create_import_id("2025/02/19,2025021901,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-4400.00")))
                 .finalise(3),
             TransactionBuilder::new(2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("Credit Card")
+                .import_id(Some(create_import_id("2025/03/20,2025032001,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",2750.00")))
                 .finalise(4),
             TransactionBuilder::new(-2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  THANK YOU")
+                .import_id(Some(create_import_id("2025/03/20,2025032002,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-2750.00")))
                 .finalise(5),
         ];
 
@@ -246,13 +249,16 @@ mod import_transactions_tests {
         .await;
 
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap();
         assert_eq!(
-            create_transaction_calls,
-            want_transactions.len(),
-            "want {} transaction created, got {create_transaction_calls}",
-            want_transactions.len()
+            1,
+            create_transaction_calls.len(),
+            "want 1 call to import, got {}",
+            create_transaction_calls.len()
         );
+
+        let got = state.transaction_store.transactions.lock().unwrap().clone();
+        assert_eq!(want_transactions, got);
         assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
@@ -271,11 +277,13 @@ mod import_transactions_tests {
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("PAYMENT RECEIVED THANK YOU")
+                .import_id(Some(create_import_id("2025/03/20,2025/03/20,2025032002,CREDIT,5023,\"PAYMENT RECEIVED THANK YOU\",-2750.00")))
                 .finalise(0),
             TransactionBuilder::new(-8.50, user_id)
                 .date(date!(2025 - 04 - 09))
                 .expect("Could not parse date")
                 .description("Birdy Bytes")
+                .import_id(Some(create_import_id("2025/04/09,2025/04/08,2025040902,DEBIT,5023,\"Birdy Bytes\",8.50")))
                 .finalise(1),
             TransactionBuilder::new(-10.63, user_id)
                 .date(date!(2025 - 04 - 10))
@@ -283,16 +291,19 @@ mod import_transactions_tests {
                 .description(
                     "AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)",
                 )
+                .import_id(Some(create_import_id("2025/04/10,2025/04/07,2025041001,DEBIT,5023,\"AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)\",10.63")))
                 .finalise(2),
             TransactionBuilder::new(-0.22, user_id)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description("OFFSHORE SERVICE MARGINS")
+                .import_id(Some(create_import_id("2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22")))
                 .finalise(3),
             TransactionBuilder::new(-11.50, user_id)
                 .date(date!(2025 - 04 - 11))
                 .expect("Could not parse date")
                 .description("Buckstars")
+                .import_id(Some(create_import_id("2025/04/11,2025/04/10,2025041101,DEBIT,5023,\"Buckstars\",11.50")))
                 .finalise(4),
         ];
 
@@ -304,13 +315,16 @@ mod import_transactions_tests {
         .await;
 
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap();
         assert_eq!(
-            create_transaction_calls,
-            want_transactions.len(),
-            "want {} transaction created, got {create_transaction_calls}",
-            want_transactions.len()
+            1,
+            create_transaction_calls.len(),
+            "want 1 call to import, got {}",
+            create_transaction_calls.len()
         );
+
+        let got = state.transaction_store.transactions.lock().unwrap().clone();
+        assert_eq!(want_transactions, got);
         assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
@@ -329,31 +343,49 @@ mod import_transactions_tests {
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16",
+                )))
                 .finalise(0),
             TransactionBuilder::new(-0.03, user_id)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,31-01-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.03,-0.03,71.13",
+                )))
                 .finalise(1),
             TransactionBuilder::new(0.22, user_id)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,28-02-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.35",
+                )))
                 .finalise(2),
             TransactionBuilder::new(-0.02, user_id)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,28-02-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.33",
+                )))
                 .finalise(3),
             TransactionBuilder::new(0.22, user_id)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,31-03-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.55",
+                )))
                 .finalise(4),
             TransactionBuilder::new(-0.02, user_id)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,31-03-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.53",
+                )))
                 .finalise(5),
         ];
 
@@ -365,13 +397,16 @@ mod import_transactions_tests {
         .await;
 
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap();
         assert_eq!(
-            create_transaction_calls,
-            want_transactions.len(),
-            "want {} transaction created, got {create_transaction_calls}",
-            want_transactions.len()
+            1,
+            create_transaction_calls.len(),
+            "want 1 call to import, got {}",
+            create_transaction_calls.len()
         );
+
+        let got = state.transaction_store.transactions.lock().unwrap().clone();
+        assert_eq!(want_transactions, got);
         assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
@@ -390,41 +425,51 @@ mod import_transactions_tests {
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not parse date")
                 .description("Credit Card")
+                .import_id(Some(create_import_id(
+                    "2025/01/18,2025011801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",1300.00",
+                )))
                 .finalise(0),
             TransactionBuilder::new(-1300.00, user_id)
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  Credit Card")
+                .import_id(Some(create_import_id("2025/01/18,2025011802,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  Credit Card\",-1300.00")))
                 .finalise(1),
             TransactionBuilder::new(4400.00, user_id)
                 .date(date!(2025 - 02 - 18))
                 .expect("Could not parse date")
                 .description("Credit Card")
+                .import_id(Some(create_import_id("2025/02/18,2025021801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",4400.00")))
                 .finalise(2),
             TransactionBuilder::new(-4400.00, user_id)
                 .date(date!(2025 - 02 - 19))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  THANK YOU")
+                .import_id(Some(create_import_id("2025/02/19,2025021901,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-4400.00")))
                 .finalise(3),
             TransactionBuilder::new(2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("Credit Card")
+                .import_id(Some(create_import_id("2025/03/20,2025032001,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",2750.00")))
                 .finalise(4),
             TransactionBuilder::new(-2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  THANK YOU")
+                .import_id(Some(create_import_id("2025/03/20,2025032002,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-2750.00")))
                 .finalise(5),
             TransactionBuilder::new(2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("PAYMENT RECEIVED THANK YOU")
+                .import_id(Some(create_import_id("2025/03/20,2025/03/20,2025032002,CREDIT,5023,\"PAYMENT RECEIVED THANK YOU\",-2750.00")))
                 .finalise(6),
             TransactionBuilder::new(-8.50, user_id)
                 .date(date!(2025 - 04 - 09))
                 .expect("Could not parse date")
                 .description("Birdy Bytes")
+                .import_id(Some(create_import_id("2025/04/09,2025/04/08,2025040902,DEBIT,5023,\"Birdy Bytes\",8.50")))
                 .finalise(7),
             TransactionBuilder::new(-10.63, user_id)
                 .date(date!(2025 - 04 - 10))
@@ -432,46 +477,67 @@ mod import_transactions_tests {
                 .description(
                     "AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)",
                 )
+                    .import_id(Some(create_import_id("2025/04/10,2025/04/07,2025041001,DEBIT,5023,\"AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)\",10.63")))
                 .finalise(8),
             TransactionBuilder::new(-0.22, user_id)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description("OFFSHORE SERVICE MARGINS")
+                .import_id(Some(create_import_id("2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22")))
                 .finalise(9),
             TransactionBuilder::new(-11.50, user_id)
                 .date(date!(2025 - 04 - 11))
                 .expect("Could not parse date")
                 .description("Buckstars")
+                .import_id(Some(create_import_id("2025/04/11,2025/04/10,2025041101,DEBIT,5023,\"Buckstars\",11.50")))
                 .finalise(10),
             TransactionBuilder::new(0.25, user_id)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16",
+                )))
                 .finalise(11),
             TransactionBuilder::new(-0.03, user_id)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,31-01-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.03,-0.03,71.13",
+                )))
                 .finalise(12),
             TransactionBuilder::new(0.22, user_id)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,28-02-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.35",
+                )))
                 .finalise(13),
             TransactionBuilder::new(-0.02, user_id)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,28-02-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.33",
+                )))
                 .finalise(14),
             TransactionBuilder::new(0.22, user_id)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,31-03-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.55",
+                )))
                 .finalise(15),
             TransactionBuilder::new(-0.02, user_id)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
+                .import_id(Some(create_import_id(
+                    "38-1234-0123456-01,31-03-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.53",
+                )))
                 .finalise(16),
         ];
 
@@ -488,13 +554,16 @@ mod import_transactions_tests {
         .await;
 
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap();
         assert_eq!(
-            create_transaction_calls,
-            want_transactions.len(),
-            "want {} transaction created, got {create_transaction_calls}",
-            want_transactions.len()
+            1,
+            create_transaction_calls.len(),
+            "want 1 call to import, got {}",
+            create_transaction_calls.len()
         );
+
+        let got = state.transaction_store.transactions.lock().unwrap().clone();
+        assert_eq!(want_transactions, got);
         assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
@@ -520,7 +589,7 @@ mod import_transactions_tests {
 
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         assert_content_type(&response, "text/html; charset=utf-8");
-        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap().len();
         assert_eq!(
             create_transaction_calls, 0,
             "want {} transaction created, got {create_transaction_calls}",
@@ -555,7 +624,7 @@ mod import_transactions_tests {
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_content_type(&response, "text/html; charset=utf-8");
-        let create_transaction_calls = state.transaction_store.create_calls.lock().unwrap().len();
+        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap().len();
         assert_eq!(
             create_transaction_calls, 0,
             "want {} transaction created, got {create_transaction_calls}",
@@ -829,15 +898,15 @@ mod import_transactions_tests {
 
     #[derive(Clone)]
     struct FakeTransactionStore {
-        transactions: Vec<Transaction>,
-        create_calls: Arc<Mutex<Vec<Transaction>>>,
+        transactions: Arc<Mutex<Vec<Transaction>>>,
+        import_calls: Arc<Mutex<Vec<Vec<TransactionBuilder>>>>,
     }
 
     impl FakeTransactionStore {
         fn new() -> Self {
             Self {
-                transactions: Vec::new(),
-                create_calls: Arc::new(Mutex::new(Vec::new())),
+                transactions: Arc::new(Mutex::new(Vec::new())),
+                import_calls: Arc::new(Mutex::new(Vec::new())),
             }
         }
     }
@@ -849,27 +918,35 @@ mod import_transactions_tests {
 
         fn create_from_builder(
             &mut self,
-            builder: TransactionBuilder,
+            _builder: TransactionBuilder,
         ) -> Result<Transaction, Error> {
-            let next_id = match self.transactions.last() {
+            todo!()
+        }
+
+        fn import(&mut self, builders: Vec<TransactionBuilder>) -> Result<Vec<Transaction>, Error> {
+            self.import_calls.lock().unwrap().push(builders.clone());
+
+            let next_id = match self.transactions.lock().unwrap().last() {
                 Some(transaction) => transaction.id() + 1,
                 None => 0,
             };
 
-            let transaction = builder.finalise(next_id);
+            let transactions: Vec<Transaction> = builders
+                .into_iter()
+                .enumerate()
+                .map(|(i, builder)| builder.finalise(next_id + i as i64))
+                .collect();
 
-            self.transactions.push(transaction.clone());
-            self.create_calls.lock().unwrap().push(transaction.clone());
+            self.transactions
+                .lock()
+                .unwrap()
+                .extend(transactions.clone());
 
-            Ok(transaction)
+            Ok(transactions)
         }
 
-        fn get(&self, id: DatabaseID) -> Result<Transaction, Error> {
-            self.transactions
-                .iter()
-                .find(|transaction| transaction.id() == id)
-                .ok_or(Error::NotFound)
-                .map(|transaction| transaction.to_owned())
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
+            todo!()
         }
 
         fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {

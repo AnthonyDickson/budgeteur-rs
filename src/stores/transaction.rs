@@ -24,6 +24,12 @@ pub trait TransactionStore {
     /// Create a new transaction in the store.
     fn create_from_builder(&mut self, builder: TransactionBuilder) -> Result<Transaction, Error>;
 
+    /// Import many transactions from a CSV file.
+    ///
+    /// Implementers should ignore transactions with import IDs that already
+    /// exist in the store.
+    fn import(&mut self, builders: Vec<TransactionBuilder>) -> Result<Vec<Transaction>, Error>;
+
     /// Retrieve a transaction from the store.
     fn get(&self, id: DatabaseID) -> Result<Transaction, Error>;
 
@@ -152,6 +158,41 @@ impl TransactionStore for SQLiteTransactionStore {
                 })?;
 
         Ok(transaction)
+    }
+
+    fn import(&mut self, builders: Vec<TransactionBuilder>) -> Result<Vec<Transaction>, Error> {
+        let connection = self.connection.lock().unwrap();
+        let next_id: i64 = connection.query_row(
+            "SELECT COALESCE(MAX(id), 0) FROM \"transaction\"",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let transactions = builders
+            .into_iter()
+            .enumerate()
+            .map(|(i, builder)| builder.finalise(next_id + 1 + i as i64))
+            .collect::<Vec<_>>();
+
+        let mut statements = vec!["BEGIN".to_string()];
+        for transaction in transactions.iter() {
+            statements.push(format!(
+                r#"INSERT INTO "transaction" (id, amount, date, description, category_id, user_id, import_id) VALUES ({}, {}, '{}', '{}', {}, {}, {}) ON CONFLICT(import_id) DO NOTHING"#,
+                transaction.id(),
+                transaction.amount(),
+                transaction.date(),
+                transaction.description(),
+                transaction.category_id().map(|id| id.to_string()).unwrap_or("NULL".to_string()),
+                transaction.user_id().as_i64(),
+                transaction.import_id().map(|id| id.to_string()).unwrap_or("NULL".to_string()),
+            ));
+        }
+        statements.push("COMMIT;".to_string());
+
+        let query = statements.join(";\n");
+        connection.execute_batch(&query)?;
+
+        Ok(transactions)
     }
 
     /// Retrieve a transaction in the database by its `id`.
@@ -392,6 +433,73 @@ mod sqlite_transaction_store_tests {
             store.create_from_builder(Transaction::build(123.45, user.id()).import_id(import_id));
 
         assert_eq!(duplicate_transaction, Err(Error::DuplicateImportId));
+    }
+
+    #[test]
+    fn import_multiple() {
+        let (state, user) = get_app_state_and_test_user();
+        let mut store = state.transaction_store;
+        let want = vec![
+            Transaction::build(123.45, user.id()).import_id(Some(123456789)),
+            Transaction::build(678.90, user.id()).import_id(Some(101112131)),
+        ];
+
+        let duplicate_transactions = store
+            .import(want.clone())
+            .expect("Could not create transaction");
+
+        assert_eq!(
+            want.len(),
+            duplicate_transactions.len(),
+            "want {} transactions, got {}",
+            want.len(),
+            duplicate_transactions.len()
+        );
+
+        want.into_iter()
+            .zip(duplicate_transactions.iter())
+            .for_each(|(want, got)| {
+                let want = want.finalise(got.id());
+                let error_message = format!("want transaction {want:?}, got {got:?}");
+                assert_eq!(want.amount(), got.amount(), "{error_message}");
+                assert_eq!(want.date(), got.date(), "{error_message}");
+                assert_eq!(want.description(), got.description(), "{error_message}");
+                assert_eq!(want.category_id(), got.category_id(), "{error_message}");
+                assert_eq!(want.user_id(), got.user_id(), "{error_message}");
+                assert_eq!(want.import_id(), got.import_id(), "{error_message}");
+            });
+    }
+
+    #[test]
+    fn import_ignores_duplicate_import_id() {
+        let (state, user) = get_app_state_and_test_user();
+        let mut store = state.transaction_store;
+        let import_id = Some(123456789);
+        let want = store
+            .create_from_builder(Transaction::build(123.45, user.id()).import_id(import_id))
+            .expect("Could not create transaction");
+
+        let duplicate_transactions = store
+            .import(vec![
+                Transaction::build(123.45, user.id()).import_id(import_id),
+            ])
+            .expect("Could not create transaction");
+
+        assert_eq!(
+            duplicate_transactions.len(),
+            1,
+            "import should ignore transactions with duplicate import IDs: want 1 transaction, got {}",
+            duplicate_transactions.len()
+        );
+
+        let got = &duplicate_transactions[0];
+        let error_message = format!("want transaction {want:?}, got {got:?}");
+        assert_eq!(want.amount(), got.amount(), "{error_message}");
+        assert_eq!(want.date(), got.date(), "{error_message}");
+        assert_eq!(want.description(), got.description(), "{error_message}");
+        assert_eq!(want.category_id(), got.category_id(), "{error_message}");
+        assert_eq!(want.user_id(), got.user_id(), "{error_message}");
+        assert_eq!(want.import_id(), got.import_id(), "{error_message}");
     }
 
     #[test]
