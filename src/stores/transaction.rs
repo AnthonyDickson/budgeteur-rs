@@ -246,7 +246,7 @@ impl CreateTable for SQLiteTransactionStore {
                             category_id INTEGER,
                             user_id INTEGER NOT NULL,
                             import_id INTEGER UNIQUE,
-                            FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE CASCADE,
+                            FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE SET NULL,
                             FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
                             )",
                     (),
