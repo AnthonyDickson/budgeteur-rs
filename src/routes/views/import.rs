@@ -267,29 +267,29 @@ mod import_transactions_tests {
         let user_id = UserID::new(123);
 
         let want_transactions: Vec<Transaction> = vec![
-            TransactionBuilder::new(-2750.00, user_id)
+            TransactionBuilder::new(2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("PAYMENT RECEIVED THANK YOU")
                 .finalise(0),
-            TransactionBuilder::new(8.50, user_id)
+            TransactionBuilder::new(-8.50, user_id)
                 .date(date!(2025 - 04 - 09))
                 .expect("Could not parse date")
                 .description("Birdy Bytes")
                 .finalise(1),
-            TransactionBuilder::new(10.63, user_id)
+            TransactionBuilder::new(-10.63, user_id)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description(
                     "AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)",
                 )
                 .finalise(2),
-            TransactionBuilder::new(0.22, user_id)
+            TransactionBuilder::new(-0.22, user_id)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description("OFFSHORE SERVICE MARGINS")
                 .finalise(3),
-            TransactionBuilder::new(11.50, user_id)
+            TransactionBuilder::new(-11.50, user_id)
                 .date(date!(2025 - 04 - 11))
                 .expect("Could not parse date")
                 .description("Buckstars")
@@ -416,29 +416,29 @@ mod import_transactions_tests {
                 .expect("Could not parse date")
                 .description("TO CARD 5023  THANK YOU")
                 .finalise(5),
-            TransactionBuilder::new(-2750.00, user_id)
+            TransactionBuilder::new(2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("PAYMENT RECEIVED THANK YOU")
                 .finalise(6),
-            TransactionBuilder::new(8.50, user_id)
+            TransactionBuilder::new(-8.50, user_id)
                 .date(date!(2025 - 04 - 09))
                 .expect("Could not parse date")
                 .description("Birdy Bytes")
                 .finalise(7),
-            TransactionBuilder::new(10.63, user_id)
+            TransactionBuilder::new(-10.63, user_id)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description(
                     "AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)",
                 )
                 .finalise(8),
-            TransactionBuilder::new(0.22, user_id)
+            TransactionBuilder::new(-0.22, user_id)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description("OFFSHORE SERVICE MARGINS")
                 .finalise(9),
-            TransactionBuilder::new(11.50, user_id)
+            TransactionBuilder::new(-11.50, user_id)
                 .date(date!(2025 - 04 - 11))
                 .expect("Could not parse date")
                 .description("Buckstars")

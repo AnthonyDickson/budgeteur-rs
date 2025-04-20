@@ -523,21 +523,21 @@ mod parse_csv_tests {
     fn can_parse_asb_cc_statement() {
         let user_id = UserID::new(42);
         let want = vec![
-            TransactionBuilder::new(-2750.00, user_id)
+            TransactionBuilder::new(2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("PAYMENT RECEIVED THANK YOU")
                 .import_id(Some(create_import_id(
                     "2025/03/20,2025/03/20,2025032002,CREDIT,5023,\"PAYMENT RECEIVED THANK YOU\",-2750.00"
                 ))),
-            TransactionBuilder::new(8.50, user_id)
+            TransactionBuilder::new(-8.50, user_id)
                 .date(date!(2025 - 04 - 09))
                 .expect("Could not parse date")
                 .description("Birdy Bytes")
                 .import_id(Some(create_import_id(
                     "2025/04/09,2025/04/08,2025040902,DEBIT,5023,\"Birdy Bytes\",8.50"
                 ))),
-            TransactionBuilder::new(10.63, user_id)
+            TransactionBuilder::new(-10.63, user_id)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description(
@@ -546,14 +546,14 @@ mod parse_csv_tests {
                 .import_id(Some(create_import_id(
                     "2025/04/10,2025/04/07,2025041001,DEBIT,5023,\"AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)\",10.63"
                 ))),
-            TransactionBuilder::new(0.22, user_id)
+            TransactionBuilder::new(-0.22, user_id)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description("OFFSHORE SERVICE MARGINS")
                 .import_id(Some(create_import_id(
                     "2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22"
                 ))),
-            TransactionBuilder::new(11.50, user_id)
+            TransactionBuilder::new(-11.50, user_id)
                 .date(date!(2025 - 04 - 11))
                 .expect("Could not parse date")
                 .description("Buckstars")
