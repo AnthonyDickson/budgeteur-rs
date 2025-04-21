@@ -59,14 +59,11 @@ where
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         if field.content_type() != Some("text/csv") {
-            return (
-                StatusCode::BAD_REQUEST,
-                ImportTransactionFormTemplate {
-                    import_route: endpoints::IMPORT,
-                    error_message: "File type must be CSV.",
-                },
-            )
-                .into_response();
+            return ImportTransactionFormTemplate {
+                import_route: endpoints::IMPORT,
+                error_message: "File type must be CSV.",
+            }
+            .into_response();
         }
 
         let file_name = field.file_name().unwrap().to_string();
@@ -85,23 +82,27 @@ where
             }
             Err(e) => {
                 tracing::debug!("Failed to parse CSV: {}", e);
-                return (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    ImportTransactionFormTemplate {
-                        import_route: endpoints::IMPORT,
-                        error_message: "Failed to parse CSV, check that the provided file is a valid CSV from ASB or Kiwibank.",
-                    },
-                )
-                    .into_response();
+                return ImportTransactionFormTemplate {
+                    import_route: endpoints::IMPORT,
+                    error_message: "Failed to parse CSV, check that the provided file is a valid CSV from ASB or Kiwibank.",
+                }
+                .into_response();
             }
         }
     }
 
-    state
-        .transaction_store
-        .import(transactions)
-        // TODO: Render error message if import fails
-        .expect("Could not import transactions");
+    match state.transaction_store.import(transactions) {
+        Ok(_) => {}
+        Err(error) => {
+            tracing::error!("Failed to import transactions: {}", error);
+
+            return ImportTransactionFormTemplate {
+                import_route: endpoints::IMPORT,
+                error_message: "An unexpected error occurred, please try again later.",
+            }
+            .into_response();
+        }
+    };
 
     (
         HxRedirect(Uri::from_static(endpoints::TRANSACTIONS_VIEW)),
@@ -587,7 +588,7 @@ mod import_transactions_tests {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
         let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap().len();
         assert_eq!(
@@ -622,7 +623,7 @@ mod import_transactions_tests {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
         let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap().len();
         assert_eq!(
@@ -635,6 +636,35 @@ mod import_transactions_tests {
         assert_valid_html(&html);
         let form = must_get_form(&html);
         assert_error_message(&form, "File type must be CSV.");
+    }
+
+    #[tokio::test]
+    async fn sql_error_renders_error_message() {
+        let state = AppState::new(
+            "foo",
+            DummyCategoryStore {},
+            StubTransactionStore {},
+            DummyUserStore {},
+        );
+        let user_id = UserID::new(123);
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(user_id),
+            must_make_multipart_csv(&[ASB_BANK_STATEMENT_CSV]).await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_content_type(&response, "text/html; charset=utf-8");
+
+        let html = parse_html(response, HTMLParsingMode::Fragment).await;
+        assert_valid_html(&html);
+        let form = must_get_form(&html);
+        assert_error_message(
+            &form,
+            "An unexpected error occurred, please try again later.",
+        );
     }
 
     #[track_caller]
@@ -943,6 +973,42 @@ mod import_transactions_tests {
                 .extend(transactions.clone());
 
             Ok(transactions)
+        }
+
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
+            todo!()
+        }
+
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
+            todo!()
+        }
+
+        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
+            todo!()
+        }
+    }
+
+    #[derive(Clone)]
+    struct StubTransactionStore;
+
+    impl TransactionStore for StubTransactionStore {
+        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
+            todo!()
+        }
+
+        fn create_from_builder(
+            &mut self,
+            _builder: TransactionBuilder,
+        ) -> Result<Transaction, Error> {
+            todo!()
+        }
+
+        fn import(
+            &mut self,
+            _builders: Vec<TransactionBuilder>,
+        ) -> Result<Vec<Transaction>, Error> {
+            // The exact error does not matter.
+            Err(Error::SqlError(rusqlite::Error::ExecuteReturnedResults))
         }
 
         fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {

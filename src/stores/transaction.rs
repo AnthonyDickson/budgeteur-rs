@@ -160,6 +160,12 @@ impl TransactionStore for SQLiteTransactionStore {
         Ok(transaction)
     }
 
+    /// Import many transactions from a CSV file.
+    ///
+    /// Ignores transactions with import IDs that already exist in the store.
+    ///
+    /// # Errors
+    /// Returns an [Error::SqlError] if there is an unexpected SQL error.
     fn import(&mut self, builders: Vec<TransactionBuilder>) -> Result<Vec<Transaction>, Error> {
         let connection = self.connection.lock().unwrap();
         let next_id: i64 = connection.query_row(
