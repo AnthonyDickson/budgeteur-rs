@@ -183,11 +183,14 @@ impl TransactionStore for SQLiteTransactionStore {
         let mut statements = vec!["BEGIN".to_string()];
         for transaction in transactions.iter() {
             statements.push(format!(
-                r#"INSERT INTO "transaction" (id, amount, date, description, category_id, user_id, import_id) VALUES ({}, {}, '{}', '{}', {}, {}, {}) ON CONFLICT(import_id) DO NOTHING"#,
+                r#"INSERT INTO "transaction" (id, amount, date, description, category_id, user_id, import_id)
+                   VALUES ({}, {}, '{}', '{}', {}, {}, {}) ON CONFLICT(import_id) DO NOTHING"#,
                 transaction.id(),
                 transaction.amount(),
                 transaction.date(),
-                transaction.description(),
+                // SQLite uses a single quote for strings, so we need to escape single quotes in
+                // the description with double single quotes.
+                transaction.description().replace("'", "''"),
                 transaction.category_id().map(|id| id.to_string()).unwrap_or("NULL".to_string()),
                 transaction.user_id().as_i64(),
                 transaction.import_id().map(|id| id.to_string()).unwrap_or("NULL".to_string()),
@@ -506,6 +509,42 @@ mod sqlite_transaction_store_tests {
         assert_eq!(want.category_id(), got.category_id(), "{error_message}");
         assert_eq!(want.user_id(), got.user_id(), "{error_message}");
         assert_eq!(want.import_id(), got.import_id(), "{error_message}");
+    }
+
+    #[tokio::test]
+    async fn import_escapes_single_quotes() {
+        let (state, user) = get_app_state_and_test_user();
+        let mut store = state.transaction_store;
+        let want = vec![
+            Transaction::build(123.45, user.id())
+                .import_id(Some(123456789))
+                .description("Tom's Hardware"),
+        ];
+
+        let duplicate_transactions = store
+            .import(want.clone())
+            .expect("Could not create transaction");
+
+        assert_eq!(
+            want.len(),
+            duplicate_transactions.len(),
+            "want {} transactions, got {}",
+            want.len(),
+            duplicate_transactions.len()
+        );
+
+        want.into_iter()
+            .zip(duplicate_transactions.iter())
+            .for_each(|(want, got)| {
+                let want = want.finalise(got.id());
+                let error_message = format!("want transaction {want:?}, got {got:?}");
+                assert_eq!(want.amount(), got.amount(), "{error_message}");
+                assert_eq!(want.date(), got.date(), "{error_message}");
+                assert_eq!(want.description(), got.description(), "{error_message}");
+                assert_eq!(want.category_id(), got.category_id(), "{error_message}");
+                assert_eq!(want.user_id(), got.user_id(), "{error_message}");
+                assert_eq!(want.import_id(), got.import_id(), "{error_message}");
+            });
     }
 
     #[test]
