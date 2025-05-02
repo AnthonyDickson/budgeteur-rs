@@ -570,7 +570,6 @@ mod import_transactions_tests {
 
     // TODO: Test post import extracts balance, account number and creates unique IDs for each
     // transaction.
-    // TODO: Test post import rejects transactions that have already been imported.
     #[tokio::test]
     async fn invalid_csv_renders_error_message() {
         let state = AppState::new(
