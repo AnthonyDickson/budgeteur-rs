@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{FromRequestParts, Request, State},
-    http::{header::SET_COOKIE, StatusCode, Uri},
+    http::{StatusCode, Uri, header::SET_COOKIE},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
@@ -11,9 +11,9 @@ use axum_htmx::HxRedirect;
 use time::Duration;
 
 use crate::{
+    AppState,
     routes::endpoints,
     stores::{CategoryStore, TransactionStore, UserStore},
-    AppState,
 };
 
 use super::cookie::{extend_auth_cookie_duration_if_needed, get_user_id_from_auth_cookie};
@@ -123,15 +123,15 @@ where
 #[cfg(test)]
 mod auth_guard_tests {
     use axum::{
+        Router,
         extract::State,
         middleware,
         routing::{get, post},
-        Router,
     };
     use axum_extra::{
         extract::{
-            cookie::{Cookie, Key, SameSite},
             PrivateCookieJar,
+            cookie::{Cookie, Key, SameSite},
         },
         response::Html,
     };
@@ -140,8 +140,9 @@ mod auth_guard_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
+        AppState, Error,
         auth::{
-            cookie::{set_auth_cookie, COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION},
+            cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
             middleware::auth_guard,
         },
         models::{
@@ -149,8 +150,7 @@ mod auth_guard_tests {
             User, UserID,
         },
         routes::endpoints::{self, format_endpoint},
-        stores::{transaction::TransactionQuery, CategoryStore, TransactionStore, UserStore},
-        AppState, Error,
+        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
     };
 
     #[derive(Clone)]
@@ -182,6 +182,13 @@ mod auth_guard_tests {
             &mut self,
             _builder: TransactionBuilder,
         ) -> Result<Transaction, Error> {
+            todo!()
+        }
+
+        fn import(
+            &mut self,
+            _builders: Vec<TransactionBuilder>,
+        ) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
 

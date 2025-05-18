@@ -70,6 +70,19 @@ need_stdout = false
 on_success = "back"                               # so that we don't open the browser at each change
 
 # Run tailwindcss and then start the server
+[jobs.tailwindcss]
+command = [
+  "tailwindcss",
+  "-i",
+  "templates/source.css",
+  "-o",
+  "static/main.css",
+  "--minify",
+]
+need_stdout = true
+watch = ["templates/"]
+
+# Run tailwindcss and then start the server
 [jobs.run]
 command = [
   "tailwindcss",
@@ -114,8 +127,9 @@ on_change_strategy = "kill_then_restart"
 # Shortcuts to internal functions (scrolling, toggling, etc.)
 # should go in your personal global prefs.toml file instead.
 [keybindings]
-c = "job:clippy-all" # comment this to have 'c' run clippy on only the default target
+c = "job:clippy-all"  # comment this to have 'c' run clippy on only the default target
 r = "job:run"
+w = "job:tailwindcss"
 # vim bindings :)
 k = "scroll-lines(-1)"
 j = "scroll-lines(1)"

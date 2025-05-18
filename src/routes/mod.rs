@@ -27,8 +27,12 @@ use log_out::get_log_out;
 use transaction::{create_transaction, get_transaction};
 use user::create_user;
 use views::{
-    dashboard::get_dashboard_page, log_in::get_log_in_page, new_category::get_new_category_page,
-    new_transaction::get_new_transaction_page, register::get_register_page,
+    dashboard::get_dashboard_page,
+    import::{get_import_page, import_transactions},
+    log_in::get_log_in_page,
+    new_category::get_new_category_page,
+    new_transaction::get_new_transaction_page,
+    register::get_register_page,
     transactions::get_transactions_page,
 };
 
@@ -61,6 +65,7 @@ pub fn build_router(state: SQLAppState) -> Router {
             get(get_new_transaction_page),
         )
         .route(endpoints::NEW_CATEGORY_VIEW, get(get_new_category_page))
+        .route(endpoints::IMPORT_VIEW, get(get_import_page))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
 
     // These POST routes need to use the HX-REDIRECT header for auth redirects to work properly for
@@ -70,6 +75,7 @@ pub fn build_router(state: SQLAppState) -> Router {
             .route(endpoints::TRANSACTIONS_API, post(create_transaction))
             .route(endpoints::USER_CATEGORIES, post(create_category))
             .route(endpoints::CATEGORIES, post(create_category))
+            .route(endpoints::IMPORT, post(import_transactions))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),
     );
 

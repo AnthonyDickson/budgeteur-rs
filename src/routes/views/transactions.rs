@@ -29,8 +29,12 @@ struct TransactionsTemplate<'a> {
     transactions: Vec<TransactionRow>,
     /// The route for creating a new transaction for the current user.
     create_transaction_route: Uri,
+    /// The route for importing transactions from CSV files.
+    import_transaction_route: Uri,
 }
 
+// TODO: implement pagination
+/// Render an overview of the user's transactions.
 pub async fn get_transactions_page<C, T, U>(
     State(state): State<AppState<C, T, U>>,
     Extension(user_id): Extension<UserID>,
@@ -62,6 +66,7 @@ where
         nav_bar,
         transactions,
         create_transaction_route: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
+        import_transaction_route: Uri::from_static(endpoints::IMPORT_VIEW),
     }
     .into_response()
 }
@@ -120,15 +125,11 @@ mod transactions_route_tests {
         let transactions = vec![
             state
                 .transaction_store
-                .create_from_builder(
-                    Transaction::build(1.0, user.id()).description("foo".to_string()),
-                )
+                .create_from_builder(Transaction::build(1.0, user.id()).description("foo"))
                 .unwrap(),
             state
                 .transaction_store
-                .create_from_builder(
-                    Transaction::build(2.0, user.id()).description("bar".to_string()),
-                )
+                .create_from_builder(Transaction::build(2.0, user.id()).description("bar"))
                 .unwrap(),
         ];
 
