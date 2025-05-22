@@ -20,6 +20,8 @@ pub const REGISTER_VIEW: &str = "/register";
 pub const LOG_IN_VIEW: &str = "/log_in";
 /// The page to display when an internal server error occurs.
 pub const INTERNAL_ERROR_VIEW: &str = "/error";
+/// The page to display account balances.
+pub const BALANCES_VIEW: &str = "/balances";
 /// The route for static files.
 pub const STATIC: &str = "/static";
 
@@ -115,6 +117,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
         assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::BALANCES_VIEW);
         assert_endpoint_is_valid_uri(endpoints::STATIC);
 
         assert_endpoint_is_valid_uri(endpoints::COFFEE);
