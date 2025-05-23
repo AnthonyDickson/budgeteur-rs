@@ -49,6 +49,7 @@ where
 
 mod tests {
     use axum::{Extension, extract::State, http::StatusCode, response::Response};
+    use scraper::Html;
 
     use crate::{
         AppState,
@@ -71,6 +72,8 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
     }
 
     #[track_caller]
@@ -80,6 +83,23 @@ mod tests {
             .get("content-type")
             .expect("content-type header missing");
         assert_eq!(content_type_header, content_type);
+    }
+
+    async fn parse_html(response: Response) -> scraper::Html {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+
+        scraper::Html::parse_document(&text)
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors: {:?}",
+            html.errors
+        );
     }
 
     struct DummyCategoryStore;
