@@ -4,45 +4,39 @@ use askama_axum::IntoResponse;
 use askama_axum::Template;
 use axum::{Extension, extract::State, response::Response};
 
+use crate::models::Balance;
+use crate::state::BalanceState;
+use crate::stores::BalanceStore;
 use crate::{
-    AppState,
     models::UserID,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
     },
-    stores::{CategoryStore, TransactionStore, UserStore},
 };
-
-struct Balance<'a> {
-    account: &'a str,
-    balance: f64,
-}
 
 /// Renders the balances page.
 #[derive(Template)]
 #[template(path = "views/balances.html")]
 struct BalancesTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
-    balances: &'a [Balance<'a>],
+    balances: &'a [Balance],
 }
 
 /// Renders the page for creating a transaction.
-pub async fn get_balances_page<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+pub async fn get_balances_page<B>(
+    State(state): State<BalanceState<B>>,
     Extension(user_id): Extension<UserID>,
 ) -> Response
 where
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
+    B: BalanceStore + Send + Sync,
 {
+    // TODO: Implement proper error handling for balance store
+    let balances = state.balance_store.get_by_user_id(user_id).unwrap();
+
     BalancesTemplate {
         nav_bar: get_nav_bar(endpoints::BALANCES_VIEW),
-        balances: &[Balance {
-            account: "1234-5678-9101-12",
-            balance: 1234.56,
-        }],
+        balances: &balances,
     }
     .into_response()
 }
@@ -52,20 +46,40 @@ mod tests {
     use scraper::Html;
 
     use crate::{
-        AppState,
-        models::UserID,
+        Error,
+        models::{Balance, DatabaseID, UserID},
         routes::views::balances::get_balances_page,
-        stores::{CategoryStore, TransactionStore, UserStore},
+        state::BalanceState,
+        stores::BalanceStore,
     };
+
+    struct StubBalanceStore {
+        balances: Vec<Balance>,
+    }
+
+    impl BalanceStore for StubBalanceStore {
+        fn create(&mut self, _account: &str, _balance: f64) -> Result<Balance, Error> {
+            todo!()
+        }
+
+        fn get(&self, _id: DatabaseID) -> Result<Balance, Error> {
+            todo!()
+        }
+
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Balance>, Error> {
+            Ok(self.balances.clone())
+        }
+    }
 
     #[tokio::test]
     async fn test_get_balances_view() {
-        let state = AppState::new(
-            "foo",
-            DummyCategoryStore {},
-            DummyTransactionStore {},
-            DummyUserStore {},
-        );
+        let balances = vec![Balance {
+            account: "1234-5678-9101-12".to_string(),
+            balance: 1234.56,
+        }];
+        let state = BalanceState {
+            balance_store: StubBalanceStore { balances },
+        };
         let user_id = UserID::new(1);
 
         let response = get_balances_page(State(state), Extension(user_id)).await;
@@ -74,6 +88,7 @@ mod tests {
         assert_content_type(&response, "text/html; charset=utf-8");
         let html = parse_html(response).await;
         assert_valid_html(&html);
+        // TODO: Check HTML for balances.
     }
 
     #[track_caller]
@@ -100,101 +115,5 @@ mod tests {
             "Got HTML parsing errors: {:?}",
             html.errors
         );
-    }
-
-    struct DummyCategoryStore;
-
-    impl CategoryStore for DummyCategoryStore {
-        fn create(
-            &self,
-            name: crate::models::CategoryName,
-            user_id: crate::models::UserID,
-        ) -> Result<crate::models::Category, crate::Error> {
-            todo!()
-        }
-
-        fn get(
-            &self,
-            category_id: crate::models::DatabaseID,
-        ) -> Result<crate::models::Category, crate::Error> {
-            todo!()
-        }
-
-        fn get_by_user(
-            &self,
-            user_id: crate::models::UserID,
-        ) -> Result<Vec<crate::models::Category>, crate::Error> {
-            todo!()
-        }
-    }
-
-    struct DummyTransactionStore;
-
-    impl TransactionStore for DummyTransactionStore {
-        fn create(
-            &mut self,
-            amount: f64,
-            user_id: crate::models::UserID,
-        ) -> Result<crate::models::Transaction, crate::Error> {
-            todo!()
-        }
-
-        fn create_from_builder(
-            &mut self,
-            builder: crate::models::TransactionBuilder,
-        ) -> Result<crate::models::Transaction, crate::Error> {
-            todo!()
-        }
-
-        fn import(
-            &mut self,
-            builders: Vec<crate::models::TransactionBuilder>,
-        ) -> Result<Vec<crate::models::Transaction>, crate::Error> {
-            todo!()
-        }
-
-        fn get(
-            &self,
-            id: crate::models::DatabaseID,
-        ) -> Result<crate::models::Transaction, crate::Error> {
-            todo!()
-        }
-
-        fn get_by_user_id(
-            &self,
-            user_id: crate::models::UserID,
-        ) -> Result<Vec<crate::models::Transaction>, crate::Error> {
-            todo!()
-        }
-
-        fn get_query(
-            &self,
-            query: crate::stores::transaction::TransactionQuery,
-        ) -> Result<Vec<crate::models::Transaction>, crate::Error> {
-            todo!()
-        }
-    }
-
-    struct DummyUserStore;
-
-    impl UserStore for DummyUserStore {
-        fn create(
-            &mut self,
-            email: email_address::EmailAddress,
-            password_hash: crate::models::PasswordHash,
-        ) -> Result<crate::models::User, crate::Error> {
-            todo!()
-        }
-
-        fn get(&self, id: crate::models::UserID) -> Result<crate::models::User, crate::Error> {
-            todo!()
-        }
-
-        fn get_by_email(
-            &self,
-            email: &email_address::EmailAddress,
-        ) -> Result<crate::models::User, crate::Error> {
-            todo!()
-        }
     }
 }

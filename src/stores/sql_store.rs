@@ -3,14 +3,41 @@
 
 use std::sync::{Arc, Mutex};
 
-use rusqlite::{Connection, Error};
+use rusqlite::Connection;
 
-use crate::{db::initialize, AppState};
+use crate::{
+    AppState, Error,
+    db::initialize,
+    models::{Balance, DatabaseID, UserID},
+};
 
-use super::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore};
+use super::{BalanceStore, SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore};
+
+// TODO: Implement SQLiteBalanceStore
+/// Placeholder
+#[derive(Debug, Clone)]
+pub struct StubBalanceStore;
+
+impl BalanceStore for StubBalanceStore {
+    fn create(&mut self, _account: &str, _balance: f64) -> Result<Balance, Error> {
+        todo!()
+    }
+
+    fn get(&self, _id: DatabaseID) -> Result<Balance, Error> {
+        todo!()
+    }
+
+    fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Balance>, Error> {
+        Ok(vec![Balance {
+            account: "1234-5678-9101-12".to_string(),
+            balance: 1234.56,
+        }])
+    }
+}
 
 /// An alias for an [AppState] that uses SQLite for the backend.
-pub type SQLAppState = AppState<SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore>;
+pub type SQLAppState =
+    AppState<StubBalanceStore, SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore>;
 
 /// Creates an [AppState] instance that uses SQLite for the backend.
 ///
@@ -29,6 +56,7 @@ pub fn create_app_state(
 
     Ok(AppState::new(
         cookie_secret,
+        StubBalanceStore {},
         category_store,
         transaction_store,
         user_store,

@@ -10,11 +10,7 @@ use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
 use time::Duration;
 
-use crate::{
-    AppState,
-    routes::endpoints,
-    stores::{CategoryStore, TransactionStore, UserStore},
-};
+use crate::{routes::endpoints, state::AuthState};
 
 use super::cookie::{extend_auth_cookie_duration_if_needed, get_user_id_from_auth_cookie};
 
@@ -25,17 +21,12 @@ use super::cookie::{extend_auth_cookie_duration_if_needed, get_user_id_from_auth
 ///
 /// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
 #[inline]
-async fn auth_guard_internal<C, T, U>(
-    state: AppState<C, T, U>,
+async fn auth_guard_internal(
+    state: AuthState,
     request: Request,
     next: Next,
     get_redirect: fn() -> Response,
-) -> Response
-where
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
-{
+) -> Response {
     let (mut parts, body) = request.into_parts();
     let jar = match PrivateCookieJar::from_request_parts(&mut parts, &state).await {
         Ok(jar) => jar,
@@ -78,16 +69,7 @@ where
 /// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
 ///
 /// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
-pub async fn auth_guard<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
-    request: Request,
-    next: Next,
-) -> Response
-where
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
-{
+pub async fn auth_guard(State(state): State<AuthState>, request: Request, next: Next) -> Response {
     auth_guard_internal(state, request, next, || {
         Redirect::to(endpoints::LOG_IN_VIEW).into_response()
     })
@@ -100,16 +82,11 @@ where
 /// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
 ///
 /// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
-pub async fn auth_guard_hx<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+pub async fn auth_guard_hx(
+    State(state): State<AuthState>,
     request: Request,
     next: Next,
-) -> Response
-where
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
-{
+) -> Response {
     auth_guard_internal(state, request, next, || {
         (
             HxRedirect(Uri::from_static(endpoints::LOG_IN_VIEW)),
@@ -140,100 +117,22 @@ mod auth_guard_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        AppState, Error,
+        Error,
         auth::{
             cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
             middleware::auth_guard,
         },
-        models::{
-            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
-            User, UserID,
-        },
+        models::UserID,
         routes::endpoints::{self, format_endpoint},
-        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
+        state::AuthState,
     };
-
-    #[derive(Clone)]
-    struct DummyCategoryStore {}
-
-    impl CategoryStore for DummyCategoryStore {
-        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct DummyTransactionStore {}
-
-    impl TransactionStore for DummyTransactionStore {
-        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn import(
-            &mut self,
-            _builders: Vec<TransactionBuilder>,
-        ) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct DummyUserStore;
-
-    impl UserStore for DummyUserStore {
-        fn create(
-            &mut self,
-            _email: email_address::EmailAddress,
-            _password_hash: PasswordHash,
-        ) -> Result<User, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: UserID) -> Result<User, Error> {
-            todo!()
-        }
-
-        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, Error> {
-            todo!()
-        }
-    }
-
-    type TestAppState = AppState<DummyCategoryStore, DummyTransactionStore, DummyUserStore>;
 
     async fn test_handler() -> Html<&'static str> {
         Html("<h1>Hello, World!</h1>")
     }
 
     async fn stub_log_in_route(
-        State(state): State<TestAppState>,
+        State(state): State<AuthState>,
         jar: PrivateCookieJar,
     ) -> Result<PrivateCookieJar, Error> {
         set_auth_cookie(jar, UserID::new(1), state.cookie_duration)
@@ -244,12 +143,9 @@ mod auth_guard_tests {
 
     fn get_test_server(cookie_duration: Duration) -> TestServer {
         let hash = sha2::Sha512::digest("nafstenoas");
-        let state = AppState {
+        let state = AuthState {
             cookie_key: Key::from(&hash),
             cookie_duration,
-            category_store: DummyCategoryStore {},
-            transaction_store: DummyTransactionStore {},
-            user_store: DummyUserStore {},
         };
 
         let app = Router::new()

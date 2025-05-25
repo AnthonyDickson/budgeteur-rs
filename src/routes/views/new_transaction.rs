@@ -7,13 +7,13 @@ use axum::{
 use time::Date;
 
 use crate::{
-    AppState,
     models::{Category, UserID},
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
     },
-    stores::{CategoryStore, TransactionStore, UserStore},
+    state::NewTransactionState,
+    stores::CategoryStore,
 };
 
 /// Renders the new transaction page.
@@ -28,14 +28,12 @@ struct NewTransactionTemplate<'a> {
 }
 
 /// Renders the page for creating a transaction.
-pub async fn get_new_transaction_page<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+pub async fn get_new_transaction_page<C>(
+    State(state): State<NewTransactionState<C>>,
     Extension(user_id): Extension<UserID>,
 ) -> Response
 where
     C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
     let categories = state.category_store.get_by_user(user_id).unwrap();
 
@@ -65,37 +63,14 @@ mod new_transaction_route_tests {
     use time::OffsetDateTime;
 
     use crate::{
-        AppState, Error,
-        models::{
-            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
-            User, UserID,
-        },
+        Error,
+        models::{Category, CategoryName, DatabaseID, UserID},
         routes::endpoints,
-        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
+        state::NewTransactionState,
+        stores::CategoryStore,
     };
 
     use super::get_new_transaction_page;
-
-    #[derive(Clone)]
-    struct DummyUserStore {}
-
-    impl UserStore for DummyUserStore {
-        fn create(
-            &mut self,
-            _email: email_address::EmailAddress,
-            _password_hash: PasswordHash,
-        ) -> Result<User, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: UserID) -> Result<User, Error> {
-            todo!()
-        }
-
-        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, Error> {
-            todo!()
-        }
-    }
 
     #[derive(Clone)]
     struct StubCategoryStore {
@@ -125,40 +100,6 @@ mod new_transaction_route_tests {
         }
     }
 
-    struct DummyTransactionStore {}
-
-    impl TransactionStore for DummyTransactionStore {
-        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn import(
-            &mut self,
-            _builders: Vec<TransactionBuilder>,
-        ) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-    }
-
     #[tokio::test]
     async fn returns_form() {
         let user_id = UserID::new(42);
@@ -174,7 +115,6 @@ mod new_transaction_route_tests {
                 user_id,
             },
         ];
-
         let category_store = StubCategoryStore {
             categories: categories.clone(),
         };
@@ -184,13 +124,7 @@ mod new_transaction_route_tests {
             name: CategoryName::new_unchecked("None"),
             user_id,
         });
-
-        let app_state = AppState::new(
-            "foobar",
-            category_store,
-            DummyTransactionStore {},
-            DummyUserStore {},
-        );
+        let app_state = NewTransactionState { category_store };
 
         let response = get_new_transaction_page(State(app_state), Extension(user_id)).await;
 

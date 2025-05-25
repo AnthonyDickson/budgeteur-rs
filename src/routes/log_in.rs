@@ -13,12 +13,13 @@ use axum_htmx::HxRedirect;
 use time::Duration;
 
 use crate::{
-    AppState, Error,
+    Error,
     auth::{
         cookie::{invalidate_auth_cookie, set_auth_cookie},
         log_in::{LogInData, verify_credentials},
     },
-    stores::{CategoryStore, TransactionStore, UserStore},
+    state::LoginState,
+    stores::UserStore,
 };
 
 use super::{
@@ -65,15 +66,13 @@ pub const REMEMBER_ME_COOKIE_DURATION: Duration = Duration::days(7);
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn post_log_in<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+pub async fn post_log_in<U>(
+    State(state): State<LoginState<U>>,
     jar: PrivateCookieJar,
     Form(user_data): Form<LogInData>,
 ) -> Response
 where
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
+    U: UserStore + Clone + Send + Sync,
 {
     verify_credentials(user_data.clone(), &state.user_store)
         .map(|user| {
@@ -141,20 +140,18 @@ mod log_in_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        AppState, Error,
+        Error,
         auth::{
             cookie::{COOKIE_EXPIRY, COOKIE_USER_ID},
             log_in::LogInData,
         },
-        models::{
-            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
-            User, UserID, ValidatedPassword,
-        },
+        models::{PasswordHash, User, UserID, ValidatedPassword},
         routes::{
             endpoints,
             log_in::{INVALID_CREDENTIALS_ERROR_MSG, REMEMBER_ME_COOKIE_DURATION, post_log_in},
         },
-        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
+        state::LoginState,
+        stores::UserStore,
     };
 
     #[derive(Clone)]
@@ -195,60 +192,6 @@ mod log_in_tests {
                 .map(|user| user.to_owned())
         }
     }
-
-    #[derive(Clone)]
-    struct DummyCategoryStore {}
-
-    impl CategoryStore for DummyCategoryStore {
-        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct DummyTransactionStore {}
-
-    impl TransactionStore for DummyTransactionStore {
-        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn import(
-            &mut self,
-            _builders: Vec<TransactionBuilder>,
-        ) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-    }
-
-    type TestAppState = AppState<DummyCategoryStore, DummyTransactionStore, StubUserStore>;
 
     #[tokio::test]
     async fn log_in_succeeds_with_valid_credentials() {
@@ -372,13 +315,8 @@ mod log_in_tests {
         assert_body_contains_message(response, INVALID_CREDENTIALS_ERROR_MSG).await;
     }
 
-    fn get_test_app_config() -> TestAppState {
-        let mut state = AppState::new(
-            "42",
-            DummyCategoryStore {},
-            DummyTransactionStore {},
-            StubUserStore { users: vec![] },
-        );
+    fn get_test_app_config() -> LoginState<StubUserStore> {
+        let mut state = LoginState::new("foobar", StubUserStore { users: vec![] });
 
         state
             .user_store

@@ -1,11 +1,12 @@
 //! This module defines the domain data types.
 
+pub use balance::Balance;
 pub use category::{Category, CategoryName};
 pub use password::{PasswordHash, ValidatedPassword};
 pub use transaction::{Transaction, TransactionBuilder};
 pub use user::{User, UserID};
 
-// TODO: Add model for account numbers and balances.
+mod balance;
 mod category;
 mod password;
 mod transaction;
