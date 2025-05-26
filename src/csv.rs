@@ -4,44 +4,54 @@ use time::{Date, format_description::BorrowedFormatItem, macros::format_descript
 
 use crate::{
     Error,
-    models::{TransactionBuilder, UserID},
+    models::{Balance, TransactionBuilder, UserID},
 };
+
+/// The transactions and accounts balances found after parsing a CSV statement.
+pub struct ParseCSVResult {
+    /// The transactions found in the CSV document, may be empty.
+    pub transactions: Vec<TransactionBuilder>,
+    /// The account balance found in the CSV document, if found.
+    /// ASB credit card CSVs do not provide the balance, for example.
+    pub balance: Option<Balance>,
+}
 
 /// Parses CSV data from ASB and Kiwibank bank statements.
 ///
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
 /// Uses `user_id` to set the user ID for the transactions.
 ///
-/// Returns a vector of `Transaction` objects found in the CSV data or an empty vector if no
-/// transactions were found.
-pub fn parse_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilder>, Error> {
-    let transactions = parse_asb_bank_csv(text, user_id);
+/// Returns a `ParseCSVResult` which consists of the transactions and account
+/// balance found in the CSV data.
+/// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
+pub fn parse_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
+    let parse_result = parse_asb_bank_csv(text, user_id);
 
-    match transactions {
+    match parse_result {
         Ok(_) => {
-            return transactions;
+            return parse_result;
         }
         Err(error) => {
             tracing::debug!("Could not parse ASB bank statement: {error}");
         }
     }
 
-    let transactions = parse_asb_cc_csv(text, user_id);
+    let parse_result = parse_asb_cc_csv(text, user_id);
 
-    match transactions {
+    match parse_result {
         Ok(_) => {
-            return transactions;
+            return parse_result;
         }
         Err(error) => {
             tracing::debug!("Could not parse ASB credit card statement: {error}");
         }
     }
 
-    let transactions = parse_kiwibank_bank_csv(text, user_id);
+    let parse_result = parse_kiwibank_bank_csv(text, user_id);
 
-    match transactions {
+    match parse_result {
         Ok(_) => {
-            return transactions;
+            return parse_result;
         }
         Err(error) => {
             tracing::debug!("Could not parse Kiwibank bank statement: {error}");
@@ -58,9 +68,10 @@ pub fn parse_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilder>,
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
 /// Uses `user_id` to set the user ID for the transactions.
 ///
-/// Returns a vector of `Transaction` objects found in the CSV data or an empty vector if no
-/// transactions were found.
-fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilder>, Error> {
+/// Returns a `ParseCSVResult` which consists of the transactions and account
+/// balances found in the CSV data.
+/// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
+fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
     // Header looks like:
     // Created date / time : 12 April 2025 / 11:10:19
     // Bank 12; Branch 3405; Account 0123456-50 (Streamline)
@@ -84,7 +95,8 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuil
     }
 
     let mut transactions = Vec::new();
-    let mut account_number = String::new();
+    let mut account = String::new();
+    let mut balance = 0.0;
 
     for (line_number, line) in text.lines().enumerate() {
         match line_number {
@@ -104,8 +116,8 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuil
 
                 let bank = parts[0].strip_prefix("Bank ").ok_or_else(error)?;
                 let branch = parts[1].strip_prefix(" Branch ").ok_or_else(error)?;
-                let account = parts[2].strip_prefix(" Account ").ok_or_else(error)?;
-                account_number = [bank, branch, account].join("-");
+                let account_part = parts[2].strip_prefix(" Account ").ok_or_else(error)?;
+                account = [bank, branch, account_part].join("-");
             }
             2 if !line.starts_with("From date ") => {
                 return Err(Error::InvalidCSV(
@@ -126,6 +138,28 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuil
                 return Err(Error::InvalidCSV(
                     "ASB bank statement missing header 'Ledger Balance' on line 5".to_owned(),
                 ));
+            }
+            5 => {
+                // Example line
+                // Ledger Balance : 20.00 as of 20250412
+                let balance_string =
+                    line.strip_prefix("Ledger Balance : ")
+                        .ok_or(Error::InvalidCSV(
+                        "ASB bank ledger balance on line 6 should start with 'Ledger Balance : ', but got '{line}'."
+                            .to_owned(),
+                    ))?;
+                let balance_string = balance_string
+                    .split_once(' ')
+                    .ok_or(Error::InvalidCSV(
+                        "ASB bank ledger balance on line 6 should have a space after the balance, but got '{line}'."
+                            .to_owned(),
+                    ))?
+                    .0;
+                balance = balance_string.parse().map_err(|error| {
+                    Error::InvalidCSV(format!(
+                        "Balance found on line 6 '{balance_string}' cannot be parsed as a float: {error}."
+                    ))
+                })?;
             }
             6 if line != "Date,Unique Id,Tran Type,Cheque Number,Payee,Memo,Amount" => {
                 return Err(Error::InvalidCSV(
@@ -179,7 +213,10 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuil
         }
     }
 
-    Ok(transactions)
+    Ok(ParseCSVResult {
+        transactions,
+        balance: Some(Balance { account, balance }),
+    })
 }
 
 /// Parses ASB credit card CSV exported from FastNet Classic.
@@ -187,9 +224,10 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuil
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
 /// Uses `user_id` to set the user ID for the transactions.
 ///
-/// Returns a vector of `Transaction` objects found in the CSV data or an empty vector if no
-/// transactions were found.
-fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilder>, Error> {
+/// Returns a `ParseCSVResult` which consists of the transactions and account
+/// balances found in the CSV data.
+/// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
+fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
     // Header looks like:
     // Created date / time : 12 April 2025 / 11:09:26
     // Card Number XXXX-XXXX-XXXX-5023 (Visa Light)
@@ -210,7 +248,6 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilde
     }
 
     let mut transactions = Vec::new();
-    let mut account_number = String::new();
 
     for (line_number, line) in text.lines().enumerate() {
         match line_number {
@@ -220,16 +257,10 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilde
                         .to_owned(),
                 ));
             }
-            1 => {
-                account_number = line
-                    .strip_prefix("Card Number ")
-                    .ok_or_else(|| {
-                        Error::InvalidCSV(
-                            "ASB credit card statement missing header 'Card Number' on line 1"
-                                .to_owned(),
-                        )
-                    })?
-                    .to_string();
+            1 if !line.starts_with("Card Number") => {
+                return Err(Error::InvalidCSV(
+                    "ASB credit card statement missing header 'Card Number' on line 1".to_owned(),
+                ));
             }
             2 if !line.starts_with("From date ") => {
                 return Err(Error::InvalidCSV(
@@ -296,7 +327,10 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilde
         }
     }
 
-    Ok(transactions)
+    Ok(ParseCSVResult {
+        transactions,
+        balance: None,
+    })
 }
 
 /// Parses detailed Kiwibank account CSV exported from form ib.kiwibank.co.nz.
@@ -304,15 +338,17 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilde
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
 /// Uses `user_id` to set the user ID for the transactions.
 ///
-/// Returns a vector of `Transaction` objects found in the CSV data or an empty vector if no
-/// transactions were found.
-fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<Vec<TransactionBuilder>, Error> {
+/// Returns a `ParseCSVResult` which consists of the transactions and account
+/// balances found in the CSV data.
+/// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
+fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
     // Header looks like:
     // Account number,Date,Memo/Description,Source Code (payment type),TP ref,TP part,TP code,OP ref,OP part,OP code,OP name,OP Bank Account Number,Amount (credit),Amount (debit),Amount,Balance
     const ACCOUNT_NUMBER_COLUMN: usize = 0;
     const DATE_COLUMN: usize = 1;
     const DESCRIPTION_COLUMN: usize = 2;
     const AMOUNT_COLUMN: usize = 14;
+    const BALANCE_COLUMN: usize = 15;
     const DATE_FORMAT: &[BorrowedFormatItem] = format_description!("[day]-[month]-[year]");
 
     // Parse the header to get the account number
@@ -323,6 +359,8 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<Vec<Transactio
     }
 
     let mut transactions = Vec::new();
+    let mut account_number = String::new();
+    let mut balance = 0.0;
 
     for (line_number, line) in text.lines().enumerate() {
         match line_number {
@@ -341,7 +379,13 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<Vec<Transactio
                     continue;
                 }
 
-                let account_number = parts[ACCOUNT_NUMBER_COLUMN];
+                account_number = parts[ACCOUNT_NUMBER_COLUMN].to_owned();
+                balance = parts[BALANCE_COLUMN].parse().map_err(|error| {
+                    Error::InvalidCSV(format!(
+                        "Could not parse '{}' as amount on line {line_number}: {error}",
+                        parts[AMOUNT_COLUMN]
+                    ))
+                })?;
                 let date = Date::parse(parts[DATE_COLUMN], &DATE_FORMAT).map_err(|error| {
                     Error::InvalidCSV(format!(
                         "Could not parse '{}' as date on line {line_number}: {error}",
@@ -375,7 +419,13 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<Vec<Transactio
         }
     }
 
-    Ok(transactions)
+    Ok(ParseCSVResult {
+        transactions,
+        balance: Some(Balance {
+            account: account_number,
+            balance,
+        }),
+    })
 }
 
 /// Creates a hash for a transaction based on the account number, date, description, and amount.
@@ -393,8 +443,8 @@ mod parse_csv_tests {
     use time::macros::date;
 
     use crate::{
-        csv::{create_import_id, parse_asb_bank_csv, parse_kiwibank_bank_csv},
-        models::{TransactionBuilder, UserID},
+        csv::{ParseCSVResult, create_import_id, parse_asb_bank_csv, parse_kiwibank_bank_csv},
+        models::{Balance, TransactionBuilder, UserID},
     };
 
     use super::parse_asb_cc_csv;
@@ -461,7 +511,7 @@ mod parse_csv_tests {
     #[test]
     fn can_parse_asb_bank_statement() {
         let user_id = UserID::new(42);
-        let want = vec![
+        let want_transactions = vec![
             TransactionBuilder::new(1300.00, user_id)
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not set date")
@@ -505,24 +555,31 @@ mod parse_csv_tests {
                     "2025/03/20,2025032002,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-2750.00"
                 ))),
         ];
+        let want_balance = Some(Balance {
+            account: "12-3405-0123456-50 (Streamline)".to_owned(),
+            balance: 20.0,
+        });
 
-        let result =
-            parse_asb_bank_csv(ASB_BANK_STATEMENT_CSV, user_id).expect("Could not parse CSV");
+        let ParseCSVResult {
+            transactions: got_transactions,
+            balance: got_balance,
+        } = parse_asb_bank_csv(ASB_BANK_STATEMENT_CSV, user_id).expect("Could not parse CSV");
 
         assert_eq!(
-            want.len(),
-            result.len(),
+            want_transactions.len(),
+            got_transactions.len(),
             "want {} transactions, got {}",
-            want.len(),
-            result.len()
+            want_transactions.len(),
+            got_transactions.len()
         );
-        assert_eq!(want, result);
+        assert_eq!(want_transactions, got_transactions);
+        assert_eq!(want_balance, got_balance);
     }
 
     #[test]
     fn can_parse_asb_cc_statement() {
         let user_id = UserID::new(42);
-        let want = vec![
+        let want_transactions = vec![
             TransactionBuilder::new(2750.00, user_id)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
@@ -561,24 +618,29 @@ mod parse_csv_tests {
                     "2025/04/11,2025/04/10,2025041101,DEBIT,5023,\"Buckstars\",11.50"
                 ))),
         ];
+        let want_balance = None;
 
-        let result = parse_asb_cc_csv(ASB_CC_STATEMENT_CSV, user_id).expect("Could not parse CSV");
+        let ParseCSVResult {
+            transactions: got_transactions,
+            balance: got_balance,
+        } = parse_asb_cc_csv(ASB_CC_STATEMENT_CSV, user_id).expect("Could not parse CSV");
 
         assert_eq!(
-            want.len(),
-            result.len(),
+            want_transactions.len(),
+            got_transactions.len(),
             "want {} transactions, got {}",
-            want.len(),
-            result.len()
+            want_transactions.len(),
+            got_transactions.len()
         );
-        assert_eq!(want, result);
+        assert_eq!(want_transactions, got_transactions);
+        assert_eq!(want_balance, got_balance);
     }
 
     #[test]
     fn can_parse_kiwibank_bank_statement() {
         let user_id = UserID::new(42);
 
-        let want = vec![
+        let want_transactions = vec![
             TransactionBuilder::new(0.25, user_id)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
@@ -623,16 +685,25 @@ mod parse_csv_tests {
                 ))),
         ];
 
-        let result = parse_kiwibank_bank_csv(KIWIBANK_BANK_STATEMENT_CSV, user_id)
+        let want_balance = Some(Balance {
+            account: "38-1234-0123456-01".to_owned(),
+            balance: 71.53,
+        });
+
+        let ParseCSVResult {
+            transactions: got_transactions,
+            balance: got_balance,
+        } = parse_kiwibank_bank_csv(KIWIBANK_BANK_STATEMENT_CSV, user_id)
             .expect("Could not parse CSV");
 
         assert_eq!(
-            want.len(),
-            result.len(),
+            want_transactions.len(),
+            got_transactions.len(),
             "want {} transactions, got {}",
-            want.len(),
-            result.len()
+            want_transactions.len(),
+            got_transactions.len()
         );
-        assert_eq!(want, result);
+        assert_eq!(want_transactions, got_transactions);
+        assert_eq!(want_balance, got_balance);
     }
 }

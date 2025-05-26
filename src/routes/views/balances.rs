@@ -41,7 +41,8 @@ where
     .into_response()
 }
 
-mod tests {
+#[cfg(test)]
+mod balances_view_tests {
     use axum::{Extension, extract::State, http::StatusCode, response::Response};
     use scraper::Html;
 

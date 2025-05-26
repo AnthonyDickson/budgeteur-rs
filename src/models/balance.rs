@@ -1,7 +1,7 @@
 //! Defines the model for account balances.
 
 /// The amount of money available for a bank account or credit card.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Balance {
     /// The account with which to associate the balance.
     pub account: String,
