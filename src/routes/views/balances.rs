@@ -31,8 +31,10 @@ pub async fn get_balances_page<B>(
 where
     B: BalanceStore + Send + Sync,
 {
-    // TODO: Implement proper error handling for balance store
-    let balances = state.balance_store.get_by_user_id(user_id).unwrap();
+    let balances = match state.balance_store.get_by_user_id(user_id) {
+        Ok(balances) => balances,
+        Err(error) => return error.into_response(),
+    };
 
     BalancesTemplate {
         nav_bar: get_nav_bar(endpoints::BALANCES_VIEW),
