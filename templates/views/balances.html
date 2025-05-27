@@ -3,11 +3,22 @@
 {{ nav_bar|safe }}
 <div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
   <div>
-    <ul>
-    {% for balance in balances %}
-      <li>{{ balance.account }} - ${{ balance.balance }}</li>
-    {% endfor %}
-    </ul>
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Account</th>
+          <th scope="col">Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for balance in balances %}
+        <tr>
+          <th scope="row">{{ balance.account }}</th>
+          <td>${{ balance.balance }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% endblock %}

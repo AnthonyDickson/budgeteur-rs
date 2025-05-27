@@ -45,8 +45,10 @@ where
 
 #[cfg(test)]
 mod balances_view_tests {
+    use std::iter::zip;
+
     use axum::{Extension, extract::State, http::StatusCode, response::Response};
-    use scraper::Html;
+    use scraper::{ElementRef, Html, Selector};
 
     use crate::{
         Error,
@@ -74,6 +76,9 @@ mod balances_view_tests {
         }
     }
 
+    // TODO: Add test for when there are no balances.
+    // Should display some message, e.g. "No account balances, add balances
+    // by importing transactions from here" and link to import page.
     #[tokio::test]
     async fn test_get_balances_view() {
         let balances = vec![Balance {
@@ -81,17 +86,71 @@ mod balances_view_tests {
             balance: 1234.56,
         }];
         let state = BalanceState {
-            balance_store: StubBalanceStore { balances },
+            balance_store: StubBalanceStore {
+                balances: balances.clone(),
+            },
         };
-        let user_id = UserID::new(1);
 
-        let response = get_balances_page(State(state), Extension(user_id)).await;
+        let response = get_balances_page(State(state), Extension(UserID::new(1))).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
         let html = parse_html(response).await;
         assert_valid_html(&html);
-        // TODO: Check HTML for balances.
+        let table = must_get_table(&html);
+        assert_table_contains_balances(table, &balances);
+    }
+
+    #[track_caller]
+    fn must_get_table(html: &Html) -> ElementRef<'_> {
+        let table_selector = Selector::parse("table").unwrap();
+        html.select(&table_selector)
+            .next()
+            .expect("Could not find table in HTML")
+    }
+
+    #[track_caller]
+    fn must_get_table_rows(table: ElementRef<'_>, want_row_count: usize) -> Vec<ElementRef<'_>> {
+        let table_row_selector = Selector::parse("tbody tr").unwrap();
+        let table_rows = table.select(&table_row_selector).collect::<Vec<_>>();
+
+        assert_eq!(
+            table_rows.len(),
+            want_row_count,
+            "want {want_row_count} table row, got {}",
+            table_rows.len()
+        );
+
+        table_rows
+    }
+
+    #[track_caller]
+    fn assert_table_contains_balances(table: ElementRef<'_>, balances: &[Balance]) {
+        let table_rows = must_get_table_rows(table, balances.len());
+        let row_header_selector = Selector::parse("th").unwrap();
+        let row_cell_selector = Selector::parse("td").unwrap();
+
+        for (row, (table_row, want_balance)) in zip(table_rows, balances).enumerate() {
+            let got_account: String = table_row
+                .select(&row_header_selector)
+                .next()
+                .expect(&format!(
+                    "Could not find table header <th> in table row {row}."
+                ))
+                .text()
+                .collect();
+            let got_balance: String = table_row
+                .select(&row_cell_selector)
+                .next()
+                .expect(&format!(
+                    "Could not find table cell <td> in table row {row}."
+                ))
+                .text()
+                .collect();
+
+            assert_eq!(want_balance.account, got_account);
+            assert_eq!(format!("${}", want_balance.balance), got_balance);
+        }
     }
 
     #[track_caller]
