@@ -1019,10 +1019,6 @@ mod import_transactions_tests {
             todo!()
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
         fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
@@ -1052,10 +1048,6 @@ mod import_transactions_tests {
         }
 
         fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
 

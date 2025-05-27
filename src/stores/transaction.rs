@@ -33,9 +33,6 @@ pub trait TransactionStore {
     /// Retrieve a transaction from the store.
     fn get(&self, id: DatabaseID) -> Result<Transaction, Error>;
 
-    /// Retrieve a user's transactions from the store.
-    fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, Error>;
-
     /// Retrieve transactions from the store in the way defined by `query`.
     fn get_query(&self, query: TransactionQuery) -> Result<Vec<Transaction>, Error>;
 }
@@ -216,20 +213,6 @@ impl TransactionStore for SQLiteTransactionStore {
                 .query_row(&[(":id", &id)], Self::map_row)?;
 
         Ok(transaction)
-    }
-
-    /// Retrieve the transactions in the database that have `user_id`.
-    ///
-    /// An empty vector is returned if the specified user has no transactions.
-    ///
-    /// # Errors
-    /// This function will return a [Error::SqlError] if there is an SQL error.
-    fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Transaction>, Error> {
-        self.connection.lock().unwrap()
-                .prepare("SELECT id, amount, date, description, category_id, user_id, import_id FROM \"transaction\" WHERE user_id = :user_id")?
-                .query_map(&[(":user_id", &user_id.as_i64())], Self::map_row)?
-                .map(|maybe_category| maybe_category.map_err(Error::SqlError))
-                .collect()
     }
 
     fn get_query(&self, filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
@@ -567,32 +550,6 @@ mod sqlite_transaction_store_tests {
         let maybe_transaction = store.get(transaction.id() + 654);
 
         assert_eq!(maybe_transaction, Err(Error::NotFound));
-    }
-
-    #[test]
-    fn get_transactions_by_user_id_succeeds_with_no_transactions() {
-        let (state, user) = get_app_state_and_test_user();
-        let store = state.transaction_store;
-        let expected_transactions = vec![];
-
-        let transactions = store.get_by_user_id(user.id());
-
-        assert_eq!(transactions, Ok(expected_transactions));
-    }
-
-    #[test]
-    fn get_transactions_by_user_id_succeeds() {
-        let (state, user) = get_app_state_and_test_user();
-        let mut store = state.transaction_store;
-
-        let expected_transactions = vec![
-            store.create(PI, user.id()).unwrap(),
-            store.create(PI + 1.0, user.id()).unwrap(),
-        ];
-
-        let transactions = store.get_by_user_id(user.id());
-
-        assert_eq!(transactions, Ok(expected_transactions));
     }
 
     #[test]

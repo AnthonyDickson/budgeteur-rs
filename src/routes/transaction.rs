@@ -179,10 +179,6 @@ mod transaction_tests {
                 .map(|transaction| transaction.to_owned())
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
         fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             todo!()
         }

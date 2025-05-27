@@ -112,10 +112,6 @@ mod transactions_route_tests {
             todo!()
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
         fn get_query(&self, _query: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             Ok(self.transactions.clone())
         }
