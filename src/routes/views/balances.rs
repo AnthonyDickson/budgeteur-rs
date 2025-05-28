@@ -21,6 +21,7 @@ use crate::{
 struct BalancesTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     balances: &'a [Balance],
+    import_page_link: &'a str,
 }
 
 /// Renders the page for creating a transaction.
@@ -39,6 +40,7 @@ where
     BalancesTemplate {
         nav_bar: get_nav_bar(endpoints::BALANCES_VIEW),
         balances: &balances,
+        import_page_link: endpoints::IMPORT_VIEW,
     }
     .into_response()
 }
@@ -53,7 +55,7 @@ mod balances_view_tests {
     use crate::{
         Error,
         models::{Balance, DatabaseID, UserID},
-        routes::views::balances::get_balances_page,
+        routes::{endpoints, views::balances::get_balances_page},
         state::BalanceState,
         stores::BalanceStore,
     };
@@ -76,9 +78,6 @@ mod balances_view_tests {
         }
     }
 
-    // TODO: Add test for when there are no balances.
-    // Should display some message, e.g. "No account balances, add balances
-    // by importing transactions from here" and link to import page.
     #[tokio::test]
     async fn test_get_balances_view() {
         let balances = vec![Balance {
@@ -99,6 +98,25 @@ mod balances_view_tests {
         assert_valid_html(&html);
         let table = must_get_table(&html);
         assert_table_contains_balances(table, &balances);
+    }
+
+    #[tokio::test]
+    async fn test_get_balances_view_no_data() {
+        let balances = vec![];
+        let state = BalanceState {
+            balance_store: StubBalanceStore {
+                balances: balances.clone(),
+            },
+        };
+
+        let response = get_balances_page(State(state), Extension(UserID::new(1))).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_content_type(&response, "text/html; charset=utf-8");
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+        let paragraph = must_get_no_data_paragraph(&html);
+        assert_paragraph_contains_link(paragraph, endpoints::IMPORT_VIEW);
     }
 
     #[track_caller]
@@ -151,6 +169,30 @@ mod balances_view_tests {
             assert_eq!(want_balance.account, got_account);
             assert_eq!(format!("${}", want_balance.balance), got_balance);
         }
+    }
+
+    #[track_caller]
+    fn must_get_no_data_paragraph(html: &Html) -> ElementRef<'_> {
+        let paragraph_selector = Selector::parse("p.no-data").unwrap();
+        html.select(&paragraph_selector)
+            .next()
+            .expect("Could not find paragraph with class 'no-data' in HTML")
+    }
+    #[track_caller]
+    fn assert_paragraph_contains_link(paragraph: ElementRef<'_>, want_url: &str) {
+        let link_selector = Selector::parse("a").unwrap();
+        let link = paragraph
+            .select(&link_selector)
+            .next()
+            .expect("Could not find link element in paragraph.");
+        let link_target = link
+            .attr("href")
+            .expect("Link element does define an href attribute.");
+
+        assert_eq!(
+            want_url, link_target,
+            "want link with href = \"{want_url}\", but got \"{link_target}\""
+        );
     }
 
     #[track_caller]

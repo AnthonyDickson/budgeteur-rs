@@ -3,6 +3,7 @@
 {{ nav_bar|safe }}
 <div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
   <div>
+    {% if balances.len() > 0 %}
     <table>
       <thead>
         <tr>
@@ -19,6 +20,17 @@
         {% endfor %}
       </tbody>
     </table>
+    {% else %}
+    <p class="no-data">
+      No account balances found, you can add account balances by
+      <a
+        href="{{ import_page_link }}"
+        class="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+      >
+        importing from CSV files
+      </a>.
+    </p>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

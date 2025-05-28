@@ -28,10 +28,7 @@ impl BalanceStore for StubBalanceStore {
     }
 
     fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Balance>, Error> {
-        Ok(vec![Balance {
-            account: "1234-5678-9101-12".to_string(),
-            balance: 1234.56,
-        }])
+        Ok(vec![])
     }
 }
 
