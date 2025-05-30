@@ -1,36 +1,21 @@
 //! Contains convenience type alias and function for [AppState] that uses
 //! the SQLite backend.
 
+pub mod balance;
+pub mod category;
+pub mod transaction;
+pub mod user;
+
+pub use balance::StubBalanceStore;
+pub use category::SQLiteCategoryStore;
+pub use transaction::SQLiteTransactionStore;
+pub use user::SQLiteUserStore;
+
 use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 
-use crate::{
-    AppState, Error,
-    db::initialize,
-    models::{Balance, DatabaseID, UserID},
-};
-
-use super::{BalanceStore, SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore};
-
-// TODO: Implement SQLiteBalanceStore
-/// Placeholder
-#[derive(Debug, Clone)]
-pub struct StubBalanceStore;
-
-impl BalanceStore for StubBalanceStore {
-    fn create(&mut self, _account: &str, _balance: f64) -> Result<Balance, Error> {
-        todo!()
-    }
-
-    fn get(&self, _id: DatabaseID) -> Result<Balance, Error> {
-        todo!()
-    }
-
-    fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Balance>, Error> {
-        Ok(vec![])
-    }
-}
+use crate::{AppState, Error, db::initialize};
 
 /// An alias for an [AppState] that uses SQLite for the backend.
 pub type SQLAppState =

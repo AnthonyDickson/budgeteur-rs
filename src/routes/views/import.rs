@@ -149,7 +149,7 @@ mod import_transactions_tests {
             views::import::{get_import_page, import_transactions},
         },
         state::ImportState,
-        stores::{BalanceStore, TransactionStore, transaction::TransactionQuery},
+        stores::{BalanceStore, TransactionQuery, TransactionStore},
     };
 
     const ASB_BANK_STATEMENT_CSV: &str = "Created date / time : 12 April 2025 / 11:10:19\n\

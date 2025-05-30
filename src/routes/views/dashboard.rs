@@ -15,7 +15,7 @@ use crate::{
         navigation::{NavbarTemplate, get_nav_bar},
     },
     state::DashboardState,
-    stores::{TransactionStore, transaction::TransactionQuery},
+    stores::{TransactionQuery, TransactionStore},
 };
 
 /// Renders the dashboard page.
@@ -86,7 +86,7 @@ mod dashboard_route_tests {
         Error,
         models::{DatabaseID, Transaction, TransactionBuilder, UserID},
         state::DashboardState,
-        stores::{TransactionStore, transaction::TransactionQuery},
+        stores::{TransactionQuery, TransactionStore},
     };
 
     use super::get_dashboard_page;

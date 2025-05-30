@@ -39,7 +39,7 @@ use views::{
 
 use crate::{
     auth::middleware::{auth_guard, auth_guard_hx},
-    stores::sql_store::SQLAppState,
+    stores::sqlite::SQLAppState,
 };
 
 /// Return a router with all the app's routes.

@@ -21,8 +21,8 @@ use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberIn
 
 use budgeteur_rs::{
     AppState, build_router, graceful_shutdown, logging_middleware,
-    stores::{
-        SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore, sql_store::StubBalanceStore,
+    stores::sqlite::{
+        SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore, StubBalanceStore,
     },
 };
 

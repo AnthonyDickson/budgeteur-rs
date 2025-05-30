@@ -124,7 +124,7 @@ mod transaction_tests {
         models::{DatabaseID, Transaction, TransactionBuilder, UserID},
         routes::transaction::{TransactionForm, create_transaction, get_transaction},
         state::TransactionState,
-        stores::transaction::TransactionQuery,
+        stores::TransactionQuery,
     };
 
     #[derive(Clone)]

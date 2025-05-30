@@ -14,10 +14,7 @@ use crate::{
         templates::TransactionRow,
     },
     state::TransactionsViewState,
-    stores::{
-        TransactionStore,
-        transaction::{SortOrder, TransactionQuery},
-    },
+    stores::{SortOrder, TransactionQuery, TransactionStore},
 };
 
 /// Renders the dashboard page.
@@ -79,7 +76,7 @@ mod transactions_route_tests {
         Error,
         models::{DatabaseID, Transaction, TransactionBuilder, UserID},
         state::TransactionsViewState,
-        stores::{TransactionStore, transaction::TransactionQuery},
+        stores::{TransactionQuery, TransactionStore},
     };
 
     use super::get_transactions_page;
