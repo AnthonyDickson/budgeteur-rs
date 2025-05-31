@@ -3,14 +3,14 @@
 use std::{cmp::max, num::ParseIntError};
 
 use axum_extra::extract::{
-    cookie::{Cookie, SameSite},
     PrivateCookieJar,
+    cookie::{Cookie, SameSite},
 };
 use time::{
-    format_description::BorrowedFormatItem, macros::format_description, Duration, OffsetDateTime,
+    Duration, OffsetDateTime, format_description::BorrowedFormatItem, macros::format_description,
 };
 
-use crate::{models::UserID, Error};
+use crate::{Error, models::UserID};
 
 pub(crate) const COOKIE_USER_ID: &str = "user_id";
 pub(crate) const COOKIE_EXPIRY: &str = "expiry";
@@ -62,7 +62,8 @@ pub(crate) fn set_auth_cookie(
         ))
 }
 
-/// Set the auth cookie to an invalid value and set its max age to zero, which should delete the cookie on the client side.
+/// Set the auth cookie to an invalid value and set its max age to zero,
+/// which should delete the cookie on the client side.
 pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar {
     jar.add(
         Cookie::build((COOKIE_USER_ID, "deleted"))
@@ -70,7 +71,12 @@ pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar 
             .max_age(Duration::ZERO)
             .http_only(true)
             .same_site(SameSite::Strict)
-            .secure(true),
+            .secure(true)
+            // Explicitly set path to root to avoid issues with subpaths.
+            // For example, if the cookie is invalidated from a subpath such
+            // as 'http://example.com/api/logout', the browser will not
+            // invalidate the cookie for 'http://example.com/path1'.
+            .path("/"),
     )
     .add(
         Cookie::build((COOKIE_EXPIRY, "deleted"))
@@ -78,7 +84,8 @@ pub(crate) fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar 
             .max_age(Duration::ZERO)
             .http_only(true)
             .same_site(SameSite::Strict)
-            .secure(true),
+            .secure(true)
+            .path("/"),
     )
 }
 
@@ -181,19 +188,19 @@ pub(crate) fn extract_user_id(cookie: &Cookie) -> Result<UserID, ParseIntError> 
 mod cookie_tests {
 
     use axum_extra::extract::{
-        cookie::{Cookie, Key, SameSite},
         PrivateCookieJar,
+        cookie::{Cookie, Key, SameSite},
     };
     use sha2::{Digest, Sha512};
-    use time::{macros::datetime, Duration, OffsetDateTime, UtcOffset};
+    use time::{Duration, OffsetDateTime, UtcOffset, macros::datetime};
 
     use crate::{
+        Error,
         auth::cookie::{
-            extract_date_time, extract_user_id, get_user_id_from_auth_cookie, COOKIE_EXPIRY,
-            COOKIE_USER_ID, DATE_TIME_FORMAT, DEFAULT_COOKIE_DURATION,
+            COOKIE_EXPIRY, COOKIE_USER_ID, DATE_TIME_FORMAT, DEFAULT_COOKIE_DURATION,
+            extract_date_time, extract_user_id, get_user_id_from_auth_cookie,
         },
         models::UserID,
-        Error,
     };
 
     use super::{
