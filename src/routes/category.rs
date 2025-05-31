@@ -1,21 +1,19 @@
 //! This files defines the API routes for the category type.
 
 use axum::{
-    Form,
+    Extension, Form,
     extract::State,
     http::{StatusCode, Uri},
     response::IntoResponse,
 };
 
-use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AppState,
-    auth::cookie::get_user_id_from_auth_cookie,
-    models::CategoryName,
-    stores::{CategoryStore, TransactionStore, UserStore},
+    models::{CategoryName, UserID},
+    state::CategoryState,
+    stores::CategoryStore,
 };
 
 use super::{endpoints, templates::NewCategoryFormTemplate};
@@ -30,32 +28,14 @@ pub struct CategoryData {
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn create_category<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
-    jar: PrivateCookieJar,
+pub async fn create_category<C>(
+    State(state): State<CategoryState<C>>,
+    Extension(user_id): Extension<UserID>,
     Form(new_category): Form<CategoryData>,
 ) -> impl IntoResponse
 where
     C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
-    let user_id = match get_user_id_from_auth_cookie(&jar) {
-        Ok(user_id) => user_id,
-        Err(_) => {
-            tracing::error!("Could not get user id from auth cookie. Cookie jar: {jar:#?}");
-
-            return (
-                StatusCode::UNAUTHORIZED,
-                NewCategoryFormTemplate {
-                    category_route: endpoints::CATEGORIES,
-                    error_message: "Error: Try logging in again.",
-                },
-            )
-                .into_response();
-        }
-    };
-
     let name = match CategoryName::new(&new_category.name) {
         Ok(name) => name,
         Err(error) => {
@@ -99,23 +79,19 @@ mod category_tests {
 
     use askama_axum::IntoResponse;
     use axum::{
-        Form,
+        Extension, Form,
         extract::State,
         http::{StatusCode, header::CONTENT_TYPE},
         response::Response,
     };
-    use axum_extra::extract::{PrivateCookieJar, cookie::Key};
     use scraper::{ElementRef, Html};
 
     use crate::{
-        AppState, Error,
-        auth::cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
-        models::{
-            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
-            User, UserID,
-        },
+        Error,
+        models::{Category, CategoryName, DatabaseID, UserID},
         routes::{category::create_category, endpoints},
-        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
+        state::CategoryState,
+        stores::CategoryStore,
     };
 
     use super::CategoryData;
@@ -177,78 +153,16 @@ mod category_tests {
         }
     }
 
-    #[derive(Clone)]
-    struct DummyUserStore {}
-
-    impl UserStore for DummyUserStore {
-        fn create(
-            &mut self,
-            _email: email_address::EmailAddress,
-            _password_hash: PasswordHash,
-        ) -> Result<User, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: UserID) -> Result<User, Error> {
-            todo!()
-        }
-
-        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct DummyTransactionStore {}
-
-    impl TransactionStore for DummyTransactionStore {
-        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn import(
-            &mut self,
-            _builders: Vec<TransactionBuilder>,
-        ) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-    }
-
-    fn get_test_app_config() -> (
-        AppState<SpyCategoryStore, DummyTransactionStore, DummyUserStore>,
-        SpyCategoryStore,
-    ) {
+    fn get_test_app_config() -> (CategoryState<SpyCategoryStore>, SpyCategoryStore) {
         let store = SpyCategoryStore {
             create_calls: Arc::new(Mutex::new(vec![])),
             get_calls: Arc::new(Mutex::new(vec![])),
             categories: Arc::new(Mutex::new(vec![])),
         };
 
-        let state = AppState::new(
-            "42",
-            store.clone(),
-            DummyTransactionStore {},
-            DummyUserStore {},
-        );
+        let state = CategoryState {
+            category_store: store.clone(),
+        };
 
         (state, store)
     }
@@ -256,18 +170,17 @@ mod category_tests {
     #[tokio::test]
     async fn can_create_category() {
         let (state, store) = get_test_app_config();
-
+        let user_id = UserID::new(123);
         let want = CreateCategoryCall {
-            user_id: UserID::new(123),
+            user_id,
             name: CategoryName::new_unchecked("Foo"),
         };
 
         let form = CategoryData {
             name: want.name.to_string(),
         };
-        let jar = get_cookie_jar(want.user_id, state.cookie_key.clone());
 
-        let response = create_category(State(state), jar, Form(form))
+        let response = create_category(State(state), Extension(user_id), Form(form))
             .await
             .into_response();
 
@@ -279,15 +192,12 @@ mod category_tests {
     #[tokio::test]
     async fn create_category_fails_on_empty_name() {
         let (state, _store) = get_test_app_config();
-
         let user_id = UserID::new(123);
-
         let form = CategoryData {
             name: "".to_string(),
         };
-        let jar = get_cookie_jar(user_id, state.cookie_key.clone());
 
-        let response = create_category(State(state), jar, Form(form))
+        let response = create_category(State(state), Extension(user_id), Form(form))
             .await
             .into_response();
 
@@ -301,11 +211,6 @@ mod category_tests {
         assert_valid_html(&html);
         let form = must_get_form(&html);
         assert_error_message(&form, "Error: Category name cannot be empty");
-    }
-
-    fn get_cookie_jar(user_id: UserID, key: Key) -> PrivateCookieJar {
-        let jar = PrivateCookieJar::new(key);
-        set_auth_cookie(jar, user_id, DEFAULT_COOKIE_DURATION).unwrap()
     }
 
     #[track_caller]

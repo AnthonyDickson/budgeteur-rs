@@ -1,5 +1,6 @@
 //! Route handlers for views, as opposed to fragments.
 
+pub mod balances;
 pub mod dashboard;
 pub mod import;
 pub mod log_in;

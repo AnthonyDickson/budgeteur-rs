@@ -9,13 +9,13 @@ use axum::{
 use time::{Duration, OffsetDateTime};
 
 use crate::{
-    AppState,
     models::UserID,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
     },
-    stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
+    state::DashboardState,
+    stores::{TransactionQuery, TransactionStore},
 };
 
 /// Renders the dashboard page.
@@ -29,14 +29,12 @@ struct DashboardTemplate<'a> {
 }
 
 /// Display a page with an overview of the user's data.
-pub async fn get_dashboard_page<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+pub async fn get_dashboard_page<T>(
+    State(state): State<DashboardState<T>>,
     Extension(user_id): Extension<UserID>,
 ) -> Response
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
     let nav_bar = get_nav_bar(endpoints::DASHBOARD_VIEW);
 
@@ -85,53 +83,13 @@ mod dashboard_route_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        AppState, Error,
-        models::{
-            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
-            User, UserID,
-        },
-        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
+        Error,
+        models::{DatabaseID, Transaction, TransactionBuilder, UserID},
+        state::DashboardState,
+        stores::{TransactionQuery, TransactionStore},
     };
 
     use super::get_dashboard_page;
-
-    #[derive(Clone)]
-    struct DummyUserStore {}
-
-    impl UserStore for DummyUserStore {
-        fn create(
-            &mut self,
-            _email: email_address::EmailAddress,
-            _password_hash: PasswordHash,
-        ) -> Result<User, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: UserID) -> Result<User, Error> {
-            todo!()
-        }
-
-        fn get_by_email(&self, _email: &email_address::EmailAddress) -> Result<User, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct DummyCategoryStore {}
-
-    impl CategoryStore for DummyCategoryStore {
-        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
-            todo!()
-        }
-    }
 
     #[derive(Clone)]
     struct FakeTransactionStore {
@@ -167,10 +125,6 @@ mod dashboard_route_tests {
         }
 
         fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
 
@@ -217,12 +171,9 @@ mod dashboard_route_tests {
             // Transactions from other users should not be included either.
             Transaction::build(999.99, UserID::new(999)).finalise(5),
         ];
-        let state = AppState::new(
-            "123",
-            DummyCategoryStore {},
-            FakeTransactionStore { transactions },
-            DummyUserStore {},
-        );
+        let state = DashboardState {
+            transaction_store: FakeTransactionStore { transactions },
+        };
 
         let response = get_dashboard_page(State(state), Extension(user_id)).await;
 
@@ -234,12 +185,9 @@ mod dashboard_route_tests {
     async fn dashboard_displays_negative_balance_without_sign() {
         let user_id = UserID::new(321);
         let transactions = vec![Transaction::build(-123.0, user_id).finalise(2)];
-        let state = AppState::new(
-            "123",
-            DummyCategoryStore {},
-            FakeTransactionStore { transactions },
-            DummyUserStore {},
-        );
+        let state = DashboardState {
+            transaction_store: FakeTransactionStore { transactions },
+        };
 
         let response = get_dashboard_page(State(state), Extension(user_id)).await;
 

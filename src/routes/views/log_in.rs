@@ -56,17 +56,15 @@ mod log_in_tests {
     use scraper::Html;
 
     use crate::{
-        AppState, Error,
+        Error,
         auth::log_in::LogInData,
-        models::{
-            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
-            User, UserID, ValidatedPassword,
-        },
+        models::{PasswordHash, User, UserID, ValidatedPassword},
         routes::{
             endpoints,
             log_in::{INVALID_CREDENTIALS_ERROR_MSG, post_log_in},
         },
-        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
+        state::LoginState,
+        stores::UserStore,
     };
 
     use super::get_log_in_page;
@@ -109,60 +107,6 @@ mod log_in_tests {
                 .map(|user| user.to_owned())
         }
     }
-
-    #[derive(Clone)]
-    struct DummyCategoryStore {}
-
-    impl CategoryStore for DummyCategoryStore {
-        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct DummyTransactionStore {}
-
-    impl TransactionStore for DummyTransactionStore {
-        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn import(
-            &mut self,
-            _builders: Vec<TransactionBuilder>,
-        ) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-    }
-
-    type TestAppState = AppState<DummyCategoryStore, DummyTransactionStore, StubUserStore>;
 
     #[tokio::test]
     async fn log_in_page_displays_form() {
@@ -280,13 +224,8 @@ mod log_in_tests {
         );
     }
 
-    fn get_test_app_config() -> TestAppState {
-        let mut state = AppState::new(
-            "42",
-            DummyCategoryStore {},
-            DummyTransactionStore {},
-            StubUserStore { users: vec![] },
-        );
+    fn get_test_app_config() -> LoginState<StubUserStore> {
+        let mut state = LoginState::new("42", StubUserStore { users: vec![] });
 
         state
             .user_store

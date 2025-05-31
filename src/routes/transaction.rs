@@ -6,16 +6,15 @@ use axum::{
     http::{StatusCode, Uri},
     response::IntoResponse,
 };
-use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
 use serde::Deserialize;
 use time::Date;
 
 use crate::{
-    AppState, Error,
-    auth::cookie::get_user_id_from_auth_cookie,
+    Error,
     models::{DatabaseID, Transaction, UserID},
-    stores::{CategoryStore, TransactionStore, UserStore},
+    state::TransactionState,
+    stores::TransactionStore,
 };
 
 use super::endpoints;
@@ -40,16 +39,13 @@ pub struct TransactionForm {
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn create_transaction<C, T, U>(
-    State(mut state): State<AppState<C, T, U>>,
-    _jar: PrivateCookieJar,
+pub async fn create_transaction<T>(
+    State(mut state): State<TransactionState<T>>,
     Extension(user_id): Extension<UserID>,
     Form(data): Form<TransactionForm>,
 ) -> impl IntoResponse
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
     // HACK: Zero is used as a sentinel value for None. Currently, options do not work with empty
     // form values. For example, the URL encoded form "num=" will return an error.
@@ -87,21 +83,19 @@ where
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn get_transaction<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
-    jar: PrivateCookieJar,
+pub async fn get_transaction<T>(
+    State(state): State<TransactionState<T>>,
+    Extension(logged_in_user_id): Extension<UserID>,
     Path(transaction_id): Path<DatabaseID>,
 ) -> impl IntoResponse
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
     state
         .transaction_store
         .get(transaction_id)
         .and_then(|transaction| {
-            if get_user_id_from_auth_cookie(&jar)? == transaction.user_id() {
+            if logged_in_user_id == transaction.user_id() {
                 Ok(transaction)
             } else {
                 // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
@@ -122,66 +116,16 @@ mod transaction_tests {
         extract::{Path, State},
         http::{Response, StatusCode},
     };
-    use axum_extra::extract::PrivateCookieJar;
     use axum_htmx::HX_REDIRECT;
     use time::OffsetDateTime;
 
+    use crate::{Error, stores::TransactionStore};
     use crate::{
-        AppState,
-        auth::cookie::set_auth_cookie,
-        models::{Category, DatabaseID, PasswordHash, Transaction, TransactionBuilder, UserID},
+        models::{DatabaseID, Transaction, TransactionBuilder, UserID},
         routes::transaction::{TransactionForm, create_transaction, get_transaction},
-        stores::transaction::TransactionQuery,
+        state::TransactionState,
+        stores::TransactionQuery,
     };
-    use crate::{
-        Error,
-        stores::{CategoryStore, TransactionStore, UserStore},
-    };
-
-    #[derive(Clone)]
-    struct DummyUserStore {}
-
-    impl UserStore for DummyUserStore {
-        fn create(
-            &mut self,
-            _email: email_address::EmailAddress,
-            _password_hash: PasswordHash,
-        ) -> Result<crate::models::User, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: UserID) -> Result<crate::models::User, Error> {
-            todo!()
-        }
-
-        fn get_by_email(
-            &self,
-            _email: &email_address::EmailAddress,
-        ) -> Result<crate::models::User, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct DummyCategoryStore {}
-
-    impl CategoryStore for DummyCategoryStore {
-        fn create(
-            &self,
-            _name: crate::models::CategoryName,
-            _user_id: UserID,
-        ) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
-            todo!()
-        }
-    }
 
     #[derive(Clone)]
     struct FakeTransactionStore {
@@ -235,10 +179,6 @@ mod transaction_tests {
                 .map(|transaction| transaction.to_owned())
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
         fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
@@ -246,14 +186,9 @@ mod transaction_tests {
 
     #[tokio::test]
     async fn can_create_transaction() {
-        let state = AppState::new(
-            "42",
-            DummyCategoryStore {},
-            FakeTransactionStore::new(),
-            DummyUserStore {},
-        );
-
-        let jar = PrivateCookieJar::new(state.cookie_key.clone());
+        let state = TransactionState {
+            transaction_store: FakeTransactionStore::new(),
+        };
 
         let user_id = UserID::new(123);
 
@@ -271,10 +206,9 @@ mod transaction_tests {
             category_id: want.category_id().unwrap(),
         };
 
-        let response =
-            create_transaction(State(state.clone()), jar, Extension(user_id), Form(form))
-                .await
-                .into_response();
+        let response = create_transaction(State(state.clone()), Extension(user_id), Form(form))
+            .await
+            .into_response();
 
         assert_create_calls(state, want.clone());
         assert_redirects_to_transactions_view(response);
@@ -284,12 +218,9 @@ mod transaction_tests {
     async fn can_get_transaction() {
         let user_id = UserID::new(42);
 
-        let mut state = AppState::new(
-            "42",
-            DummyCategoryStore {},
-            FakeTransactionStore::new(),
-            DummyUserStore {},
-        );
+        let mut state = TransactionState {
+            transaction_store: FakeTransactionStore::new(),
+        };
 
         let transaction = state
             .transaction_store
@@ -300,10 +231,7 @@ mod transaction_tests {
             )
             .unwrap();
 
-        let jar = PrivateCookieJar::new(state.cookie_key.clone());
-        let jar = set_auth_cookie(jar, user_id, state.cookie_duration).unwrap();
-
-        let response = get_transaction(State(state), jar, Path(transaction.id()))
+        let response = get_transaction(State(state), Extension(user_id), Path(transaction.id()))
             .await
             .into_response();
 
@@ -319,12 +247,9 @@ mod transaction_tests {
         let user_id = UserID::new(42);
         let unauthorized_user_id = UserID::new(1337);
 
-        let mut state = AppState::new(
-            "42",
-            DummyCategoryStore {},
-            FakeTransactionStore::new(),
-            DummyUserStore {},
-        );
+        let mut state = TransactionState {
+            transaction_store: FakeTransactionStore::new(),
+        };
 
         let transaction = state
             .transaction_store
@@ -335,12 +260,13 @@ mod transaction_tests {
             )
             .unwrap();
 
-        let jar = PrivateCookieJar::new(state.cookie_key.clone());
-        let jar = set_auth_cookie(jar, unauthorized_user_id, state.cookie_duration).unwrap();
-
-        let response = get_transaction(State(state), jar, Path(transaction.id()))
-            .await
-            .into_response();
+        let response = get_transaction(
+            State(state),
+            Extension(unauthorized_user_id),
+            Path(transaction.id()),
+        )
+        .await
+        .into_response();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
@@ -353,10 +279,7 @@ mod transaction_tests {
     }
 
     #[track_caller]
-    fn assert_create_calls(
-        state: AppState<DummyCategoryStore, FakeTransactionStore, DummyUserStore>,
-        want: Transaction,
-    ) {
+    fn assert_create_calls(state: TransactionState<FakeTransactionStore>, want: Transaction) {
         let create_calls = state.transaction_store.create_calls.lock().unwrap().clone();
 
         assert_eq!(

@@ -13,11 +13,12 @@ use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AppState, Error,
+    Error,
     auth::cookie::set_auth_cookie,
     models::{PasswordHash, ValidatedPassword},
     routes::get_internal_server_error_redirect,
-    stores::{CategoryStore, TransactionStore, UserStore},
+    state::RegistrationState,
+    stores::UserStore,
 };
 
 use super::{
@@ -38,15 +39,13 @@ pub struct RegisterForm {
     pub confirm_password: String,
 }
 
-pub async fn create_user<C, T, U>(
-    State(mut state): State<AppState<C, T, U>>,
+pub async fn create_user<U>(
+    State(mut state): State<RegistrationState<U>>,
     jar: PrivateCookieJar,
     Form(user_data): Form<RegisterForm>,
 ) -> Response
 where
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
+    U: UserStore + Clone + Send + Sync,
 {
     // Make templates ahead of time that preserve the user's input since they are used multiple times in this function.
     let email_input = EmailInputTemplate {
@@ -179,16 +178,14 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use crate::{
-        AppState, Error,
-        models::{
-            Category, CategoryName, DatabaseID, PasswordHash, Transaction, TransactionBuilder,
-            User, UserID,
-        },
+        Error,
+        models::{PasswordHash, User, UserID},
         routes::{
             endpoints,
             user::{RegisterForm, create_user},
         },
-        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
+        state::RegistrationState,
+        stores::UserStore,
     };
 
     #[derive(Clone)]
@@ -230,64 +227,10 @@ mod tests {
         }
     }
 
-    #[derive(Clone)]
-    struct DummyCategoryStore;
-
-    impl CategoryStore for DummyCategoryStore {
-        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct DummyTransactionStore;
-
-    impl TransactionStore for DummyTransactionStore {
-        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn import(
-            &mut self,
-            _builders: Vec<TransactionBuilder>,
-        ) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-    }
-
-    fn get_test_app_config() -> AppState<DummyCategoryStore, DummyTransactionStore, StubUserStore> {
-        let category_store = DummyCategoryStore {};
-        let transaction_store = DummyTransactionStore {};
+    fn get_test_app_config() -> RegistrationState<StubUserStore> {
         let user_store = StubUserStore { users: vec![] };
 
-        AppState::new("42", category_store, transaction_store, user_store)
+        RegistrationState::new("42", user_store)
     }
 
     #[derive(Serialize, Deserialize)]

@@ -7,17 +7,14 @@ use axum::{
 };
 
 use crate::{
-    AppState,
     models::UserID,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
         templates::TransactionRow,
     },
-    stores::{
-        CategoryStore, TransactionStore, UserStore,
-        transaction::{SortOrder, TransactionQuery},
-    },
+    state::TransactionsViewState,
+    stores::{SortOrder, TransactionQuery, TransactionStore},
 };
 
 /// Renders the dashboard page.
@@ -35,14 +32,12 @@ struct TransactionsTemplate<'a> {
 
 // TODO: implement pagination
 /// Render an overview of the user's transactions.
-pub async fn get_transactions_page<C, T, U>(
-    State(state): State<AppState<C, T, U>>,
+pub async fn get_transactions_page<T>(
+    State(state): State<TransactionsViewState<T>>,
     Extension(user_id): Extension<UserID>,
 ) -> Response
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
     let nav_bar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
 
@@ -73,91 +68,96 @@ where
 
 #[cfg(test)]
 mod transactions_route_tests {
-    use axum::{
-        Router, middleware,
-        routing::{get, post},
-    };
-    use axum_test::TestServer;
-    use rusqlite::Connection;
+    use askama::Result;
+    use axum::{Extension, extract::State, http::StatusCode, response::Response};
     use scraper::Html;
 
     use crate::{
-        auth::{log_in::LogInData, middleware::auth_guard},
-        models::{PasswordHash, Transaction, User, ValidatedPassword},
-        routes::{endpoints, log_in::post_log_in},
-        stores::{
-            TransactionStore, UserStore,
-            sql_store::{SQLAppState, create_app_state},
-        },
+        Error,
+        models::{DatabaseID, Transaction, TransactionBuilder, UserID},
+        state::TransactionsViewState,
+        stores::{TransactionQuery, TransactionStore},
     };
 
     use super::get_transactions_page;
 
-    fn get_test_state_server_and_user() -> (SQLAppState, TestServer, User) {
-        let db_connection =
-            Connection::open_in_memory().expect("Could not open database in memory.");
+    #[derive(Debug, Clone)]
+    struct StubTransactionStore {
+        transactions: Vec<Transaction>,
+    }
 
-        let mut state = create_app_state(db_connection, "42").unwrap();
+    impl TransactionStore for StubTransactionStore {
+        fn create(&mut self, _amount: f64, _user_idd: UserID) -> Result<Transaction, Error> {
+            todo!()
+        }
 
-        let user = state
-            .user_store
-            .create(
-                "test@test.com".parse().unwrap(),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test"), 4).unwrap(),
-            )
-            .unwrap();
+        fn create_from_builder(
+            &mut self,
+            _builder: TransactionBuilder,
+        ) -> Result<Transaction, Error> {
+            todo!()
+        }
 
-        let app = Router::new()
-            .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
-            .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
-            .route(endpoints::LOG_IN_API, post(post_log_in))
-            .with_state(state.clone());
+        fn import(
+            &mut self,
+            _builders: Vec<TransactionBuilder>,
+        ) -> Result<Vec<Transaction>, Error> {
+            todo!()
+        }
 
-        let server = TestServer::new(app).expect("Could not create test server.");
+        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
+            todo!()
+        }
 
-        (state, server, user)
+        fn get_query(&self, _query: TransactionQuery) -> Result<Vec<Transaction>, Error> {
+            Ok(self.transactions.clone())
+        }
     }
 
     #[tokio::test]
     async fn transactions_page_displays_correct_info() {
-        let (mut state, server, user) = get_test_state_server_and_user();
-
+        let user_id = UserID::new(123);
         let transactions = vec![
-            state
-                .transaction_store
-                .create_from_builder(Transaction::build(1.0, user.id()).description("foo"))
-                .unwrap(),
-            state
-                .transaction_store
-                .create_from_builder(Transaction::build(2.0, user.id()).description("bar"))
-                .unwrap(),
+            Transaction::build(1.0, user_id)
+                .description("foo")
+                .finalise(1),
+            Transaction::build(2.0, user_id)
+                .description("bar")
+                .finalise(2),
         ];
+        let transaction_store = StubTransactionStore {
+            transactions: transactions.clone(),
+        };
+        let state = TransactionsViewState { transaction_store };
 
-        let jar = server
-            .post(endpoints::LOG_IN_API)
-            .form(&LogInData {
-                email: "test@test.com".to_string(),
-                password: "test".to_string(),
-                remember_me: None,
-            })
-            .await
-            .cookies();
+        let response = get_transactions_page(State(state), Extension(user_id)).await;
 
-        let transactions_page = server
-            .get(endpoints::TRANSACTIONS_VIEW)
-            .add_cookies(jar)
-            .await;
+        assert_eq!(response.status(), StatusCode::OK);
 
-        transactions_page.assert_status_ok();
-
-        let transactions_page_text = transactions_page.text();
+        let transactions_page_text = get_response_body_text(response).await;
         let html = Html::parse_document(&transactions_page_text);
         assert_valid_html(&html);
 
         for transaction in transactions {
-            assert!(transactions_page_text.contains(&transaction.date().to_string()));
-            assert!(transactions_page_text.contains(transaction.description()));
+            assert!(
+                transactions_page_text.contains(&transaction.date().to_string()),
+                "Could not find date {} in text \"{}\"",
+                transaction.date(),
+                transactions_page_text
+            );
+            assert!(
+                transactions_page_text.contains(transaction.description()),
+                "Could not find description \"{}\" in text \"{}\"",
+                transaction.description(),
+                transactions_page_text
+            );
         }
+    }
+
+    async fn get_response_body_text(response: Response) -> String {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        String::from_utf8_lossy(&body).to_string()
     }
 
     #[track_caller]

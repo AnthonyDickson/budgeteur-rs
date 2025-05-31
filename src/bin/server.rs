@@ -21,7 +21,9 @@ use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberIn
 
 use budgeteur_rs::{
     AppState, build_router, graceful_shutdown, logging_middleware,
-    stores::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore},
+    stores::sqlite::{
+        SQLiteBalanceStore, SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore,
+    },
 };
 
 /// The REST API server for budgeteur_rs.
@@ -48,6 +50,7 @@ async fn main() {
     let secret = env::var("SECRET").expect("The environment variable 'SECRET' must be set");
     let app_config = AppState::new(
         &secret,
+        SQLiteBalanceStore::new(conn.clone()),
         SQLiteCategoryStore::new(conn.clone()),
         SQLiteTransactionStore::new(conn.clone()),
         SQLiteUserStore::new(conn.clone()),

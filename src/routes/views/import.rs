@@ -8,14 +8,14 @@ use axum::{
 use axum_htmx::HxRedirect;
 
 use crate::{
-    AppState,
     csv::parse_csv,
     models::UserID,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
     },
-    stores::{CategoryStore, TransactionStore, UserStore},
+    state::ImportState,
+    stores::{BalanceStore, TransactionStore},
 };
 
 /// Renders the form for creating a category.
@@ -45,17 +45,17 @@ pub async fn get_import_page() -> Response {
     .into_response()
 }
 
-pub async fn import_transactions<C, T, U>(
-    State(mut state): State<AppState<C, T, U>>,
+pub async fn import_transactions<B, T>(
+    State(mut state): State<ImportState<B, T>>,
     Extension(user_id): Extension<UserID>,
     mut multipart: Multipart,
 ) -> Response
 where
-    C: CategoryStore + Send + Sync,
+    B: BalanceStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
     let mut transactions = Vec::new();
+    let mut balances = Vec::new();
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         if field.content_type() != Some("text/csv") {
@@ -77,8 +77,12 @@ where
         );
 
         match parse_csv(&data, user_id) {
-            Ok(parsed_transactions) => {
-                transactions.extend(parsed_transactions);
+            Ok(parse_result) => {
+                transactions.extend(parse_result.transactions);
+
+                if let Some(balance) = parse_result.balance {
+                    balances.push(balance);
+                }
             }
             Err(e) => {
                 tracing::debug!("Failed to parse CSV: {}", e);
@@ -91,10 +95,23 @@ where
         }
     }
 
-    match state.transaction_store.import(transactions) {
-        Ok(_) => {}
-        Err(error) => {
-            tracing::error!("Failed to import transactions: {}", error);
+    if let Err(error) = state.transaction_store.import(transactions) {
+        tracing::error!("Failed to import transactions: {}", error);
+
+        return ImportTransactionFormTemplate {
+            import_route: endpoints::IMPORT,
+            error_message: "An unexpected error occurred, please try again later.",
+        }
+        .into_response();
+    }
+
+    for balance in balances {
+        if let Err(error) =
+            state
+                .balance_store
+                .upsert(&balance.account, balance.balance, &balance.date)
+        {
+            tracing::error!("Failed to import account balances: {}", error);
 
             return ImportTransactionFormTemplate {
                 import_route: endpoints::IMPORT,
@@ -102,7 +119,7 @@ where
             }
             .into_response();
         }
-    };
+    }
 
     (
         HxRedirect(Uri::from_static(endpoints::TRANSACTIONS_VIEW)),
@@ -122,17 +139,18 @@ mod import_transactions_tests {
         response::Response,
     };
     use scraper::{ElementRef, Html};
-    use time::macros::date;
+    use time::{Date, macros::date};
 
     use crate::{
-        AppState, Error,
+        Error,
         csv::create_import_id,
-        models::{Category, DatabaseID, PasswordHash, Transaction, TransactionBuilder, UserID},
+        models::{Balance, DatabaseID, Transaction, TransactionBuilder, UserID},
         routes::{
             endpoints,
             views::import::{get_import_page, import_transactions},
         },
-        stores::{CategoryStore, TransactionStore, UserStore, transaction::TransactionQuery},
+        state::ImportState,
+        stores::{BalanceStore, TransactionQuery, TransactionStore},
     };
 
     const ASB_BANK_STATEMENT_CSV: &str = "Created date / time : 12 April 2025 / 11:10:19\n\
@@ -195,12 +213,10 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn post_asb_bank_csv() {
-        let state = AppState::new(
-            "foo",
-            DummyCategoryStore {},
-            FakeTransactionStore::new(),
-            DummyUserStore {},
-        );
+        let state = ImportState {
+            balance_store: DummyBalanceStore,
+            transaction_store: FakeTransactionStore::new(),
+        };
         let user_id = UserID::new(123);
 
         let want_transactions: Vec<Transaction> = vec![
@@ -265,12 +281,10 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn post_asb_cc_csv() {
-        let state = AppState::new(
-            "foo",
-            DummyCategoryStore {},
-            FakeTransactionStore::new(),
-            DummyUserStore {},
-        );
+        let state = ImportState {
+            balance_store: DummyBalanceStore,
+            transaction_store: FakeTransactionStore::new(),
+        };
         let user_id = UserID::new(123);
 
         let want_transactions: Vec<Transaction> = vec![
@@ -331,12 +345,10 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn post_kiwibank_bank_csv() {
-        let state = AppState::new(
-            "foo",
-            DummyCategoryStore {},
-            FakeTransactionStore::new(),
-            DummyUserStore {},
-        );
+        let state = ImportState {
+            balance_store: DummyBalanceStore,
+            transaction_store: FakeTransactionStore::new(),
+        };
         let user_id = UserID::new(999);
 
         let want_transactions: Vec<Transaction> = vec![
@@ -413,12 +425,10 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn post_multiple_bank_csv() {
-        let state = AppState::new(
-            "foo",
-            DummyCategoryStore {},
-            FakeTransactionStore::new(),
-            DummyUserStore {},
-        );
+        let state = ImportState {
+            balance_store: DummyBalanceStore,
+            transaction_store: FakeTransactionStore::new(),
+        };
         let user_id = UserID::new(123);
 
         let want_transactions: Vec<Transaction> = vec![
@@ -568,16 +578,97 @@ mod import_transactions_tests {
         assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
-    // TODO: Test post import extracts balance, account number and creates unique IDs for each
-    // transaction.
+    #[tokio::test]
+    async fn extracts_accounts_and_balances_asb_bank_account() {
+        let state = ImportState {
+            balance_store: FakeBalanceStore::new(),
+            transaction_store: FakeTransactionStore::new(),
+        };
+        let want_account = "12-3405-0123456-50 (Streamline)";
+        let want_balance = 20.00;
+        let want_date = date!(2025 - 04 - 12);
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(UserID::new(42)),
+            must_make_multipart_csv(&[ASB_BANK_STATEMENT_CSV]).await,
+        )
+        .await;
+
+        let balances = state.balance_store.balances.lock().unwrap().clone();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            balances.len(),
+            1,
+            "want 1 balance, but got {}",
+            balances.len()
+        );
+        let got = &balances[0];
+        assert_eq!(want_account, got.account);
+        assert_eq!(want_balance, got.balance);
+        assert_eq!(want_date, got.date);
+    }
+
+    #[tokio::test]
+    async fn does_not_extract_accounts_and_balances_asb_cc_account() {
+        let state = ImportState {
+            balance_store: FakeBalanceStore::new(),
+            transaction_store: FakeTransactionStore::new(),
+        };
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(UserID::new(42)),
+            must_make_multipart_csv(&[ASB_CC_STATEMENT_CSV]).await,
+        )
+        .await;
+
+        let balances = state.balance_store.balances.lock().unwrap().clone();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            balances.len(),
+            0,
+            "want 0 balance, but got {}",
+            balances.len()
+        );
+    }
+    #[tokio::test]
+    async fn extracts_accounts_and_balances_kiwibank_bank_account() {
+        let state = ImportState {
+            balance_store: FakeBalanceStore::new(),
+            transaction_store: FakeTransactionStore::new(),
+        };
+        let want_account = "38-1234-0123456-01";
+        let want_balance = 71.53;
+        let want_date = date!(2025 - 03 - 31);
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(UserID::new(42)),
+            must_make_multipart_csv(&[KIWIBANK_BANK_STATEMENT_CSV]).await,
+        )
+        .await;
+
+        let balances = state.balance_store.balances.lock().unwrap().clone();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            balances.len(),
+            1,
+            "want 1 balance, but got {}",
+            balances.len()
+        );
+        let got = &balances[0];
+        assert_eq!(want_account, got.account);
+        assert_eq!(want_balance, got.balance);
+        assert_eq!(want_date, got.date);
+    }
+
     #[tokio::test]
     async fn invalid_csv_renders_error_message() {
-        let state = AppState::new(
-            "foo",
-            DummyCategoryStore {},
-            FakeTransactionStore::new(),
-            DummyUserStore {},
-        );
+        let state = ImportState {
+            balance_store: DummyBalanceStore,
+            transaction_store: FakeTransactionStore::new(),
+        };
         let user_id = UserID::new(123);
 
         let response = import_transactions(
@@ -607,12 +698,10 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn invalid_file_type_renders_error_message() {
-        let state = AppState::new(
-            "foo",
-            DummyCategoryStore {},
-            FakeTransactionStore::new(),
-            DummyUserStore {},
-        );
+        let state = ImportState {
+            balance_store: DummyBalanceStore,
+            transaction_store: FakeTransactionStore::new(),
+        };
         let user_id = UserID::new(123);
 
         let response = import_transactions(
@@ -639,12 +728,10 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn sql_error_renders_error_message() {
-        let state = AppState::new(
-            "foo",
-            DummyCategoryStore {},
-            StubTransactionStore {},
-            DummyUserStore {},
-        );
+        let state = ImportState {
+            balance_store: DummyBalanceStore,
+            transaction_store: SQLErrorTransactionStore,
+        };
         let user_id = UserID::new(123);
 
         let response = import_transactions(
@@ -881,46 +968,59 @@ mod import_transactions_tests {
     }
 
     #[derive(Clone)]
-    struct DummyUserStore {}
+    struct DummyBalanceStore;
 
-    impl UserStore for DummyUserStore {
-        fn create(
+    impl BalanceStore for DummyBalanceStore {
+        fn upsert(
             &mut self,
-            _email: email_address::EmailAddress,
-            _password_hash: PasswordHash,
-        ) -> Result<crate::models::User, Error> {
-            todo!()
+            _account: &str,
+            _balance: f64,
+            _date: &Date,
+        ) -> Result<Balance, Error> {
+            Ok(Balance {
+                id: -1,
+                account: "".to_owned(),
+                balance: 0.0,
+                date: date!(2025 - 05 - 31),
+                user_id: UserID::new(123),
+            })
         }
 
-        fn get(&self, _id: UserID) -> Result<crate::models::User, Error> {
-            todo!()
-        }
-
-        fn get_by_email(
-            &self,
-            _email: &email_address::EmailAddress,
-        ) -> Result<crate::models::User, Error> {
+        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Balance>, Error> {
             todo!()
         }
     }
 
     #[derive(Clone)]
-    struct DummyCategoryStore {}
+    struct FakeBalanceStore {
+        balances: Arc<Mutex<Vec<Balance>>>,
+    }
 
-    impl CategoryStore for DummyCategoryStore {
-        fn create(
-            &self,
-            _name: crate::models::CategoryName,
-            _user_id: UserID,
-        ) -> Result<Category, Error> {
-            todo!()
+    impl FakeBalanceStore {
+        fn new() -> Self {
+            Self {
+                balances: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    impl BalanceStore for FakeBalanceStore {
+        fn upsert(&mut self, account: &str, balance: f64, date: &Date) -> Result<Balance, Error> {
+            let balance = Balance {
+                id: 0,
+                account: account.to_owned(),
+                balance,
+                date: date.to_owned(),
+                user_id: UserID::new(0),
+            };
+
+            self.balances.lock().unwrap().push(balance.clone());
+
+            Ok(balance)
         }
 
-        fn get(&self, _category_id: DatabaseID) -> Result<Category, Error> {
-            todo!()
-        }
-
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
+        fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Balance>, Error> {
+            let _ = user_id;
             todo!()
         }
     }
@@ -978,19 +1078,15 @@ mod import_transactions_tests {
             todo!()
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
         fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
     }
 
     #[derive(Clone)]
-    struct StubTransactionStore;
+    struct SQLErrorTransactionStore;
 
-    impl TransactionStore for StubTransactionStore {
+    impl TransactionStore for SQLErrorTransactionStore {
         fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
             todo!()
         }
@@ -1011,10 +1107,6 @@ mod import_transactions_tests {
         }
 
         fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
 

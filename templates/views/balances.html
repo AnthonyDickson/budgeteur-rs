@@ -1,0 +1,38 @@
+{% extends "base.html" %} {% block title %}Balances{% endblock %}
+{% block content %}
+{{ nav_bar|safe }}
+<div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
+  <div>
+    {% if balances.len() > 0 %}
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Account</th>
+          <th scope="col">Balance</th>
+          <th scope="col">Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for balance in balances %}
+        <tr>
+          <th scope="row">{{ balance.account }}</th>
+          <td>${{ balance.balance }}</td>
+          <td>{{ balance.date }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="no-data">
+      No account balances found, you can add account balances by
+      <a
+        href="{{ import_page_link }}"
+        class="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+      >
+        importing from CSV files
+      </a>.
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
