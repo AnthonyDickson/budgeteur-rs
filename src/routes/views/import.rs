@@ -109,9 +109,9 @@ where
         if let Err(error) =
             state
                 .balance_store
-                .create(&balance.account, balance.balance, &balance.date)
+                .upsert(&balance.account, balance.balance, &balance.date)
         {
-            tracing::error!("Failed to import transactions: {}", error);
+            tracing::error!("Failed to import account balances: {}", error);
 
             return ImportTransactionFormTemplate {
                 import_route: endpoints::IMPORT,
@@ -586,6 +586,7 @@ mod import_transactions_tests {
         };
         let want_account = "12-3405-0123456-50 (Streamline)";
         let want_balance = 20.00;
+        let want_date = date!(2025 - 04 - 12);
 
         let response = import_transactions(
             State(state.clone()),
@@ -605,6 +606,61 @@ mod import_transactions_tests {
         let got = &balances[0];
         assert_eq!(want_account, got.account);
         assert_eq!(want_balance, got.balance);
+        assert_eq!(want_date, got.date);
+    }
+
+    #[tokio::test]
+    async fn does_not_extract_accounts_and_balances_asb_cc_account() {
+        let state = ImportState {
+            balance_store: FakeBalanceStore::new(),
+            transaction_store: FakeTransactionStore::new(),
+        };
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(UserID::new(42)),
+            must_make_multipart_csv(&[ASB_CC_STATEMENT_CSV]).await,
+        )
+        .await;
+
+        let balances = state.balance_store.balances.lock().unwrap().clone();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            balances.len(),
+            0,
+            "want 0 balance, but got {}",
+            balances.len()
+        );
+    }
+    #[tokio::test]
+    async fn extracts_accounts_and_balances_kiwibank_bank_account() {
+        let state = ImportState {
+            balance_store: FakeBalanceStore::new(),
+            transaction_store: FakeTransactionStore::new(),
+        };
+        let want_account = "38-1234-0123456-01";
+        let want_balance = 71.53;
+        let want_date = date!(2025 - 03 - 31);
+
+        let response = import_transactions(
+            State(state.clone()),
+            Extension(UserID::new(42)),
+            must_make_multipart_csv(&[KIWIBANK_BANK_STATEMENT_CSV]).await,
+        )
+        .await;
+
+        let balances = state.balance_store.balances.lock().unwrap().clone();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            balances.len(),
+            1,
+            "want 1 balance, but got {}",
+            balances.len()
+        );
+        let got = &balances[0];
+        assert_eq!(want_account, got.account);
+        assert_eq!(want_balance, got.balance);
+        assert_eq!(want_date, got.date);
     }
 
     #[tokio::test]
@@ -915,7 +971,7 @@ mod import_transactions_tests {
     struct DummyBalanceStore;
 
     impl BalanceStore for DummyBalanceStore {
-        fn create(
+        fn upsert(
             &mut self,
             _account: &str,
             _balance: f64,
@@ -949,7 +1005,7 @@ mod import_transactions_tests {
     }
 
     impl BalanceStore for FakeBalanceStore {
-        fn create(&mut self, account: &str, balance: f64, date: &Date) -> Result<Balance, Error> {
+        fn upsert(&mut self, account: &str, balance: f64, date: &Date) -> Result<Balance, Error> {
             let balance = Balance {
                 id: 0,
                 account: account.to_owned(),

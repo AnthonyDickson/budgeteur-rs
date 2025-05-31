@@ -28,7 +28,7 @@ impl CreateTable for SQLiteBalanceStore {
         connection.execute(
             "CREATE TABLE balance (
                 id INTEGER PRIMARY KEY,
-                account TEXT NOT NULL,
+                account TEXT NOT NULL UNIQUE,
                 balance REAL NOT NULL,
                 date TEXT NOT NULL,
                 user_id INTEGER NOT NULL,
@@ -65,30 +65,35 @@ impl MapRow for SQLiteBalanceStore {
 }
 
 impl BalanceStore for SQLiteBalanceStore {
-    fn create(&mut self, account: &str, balance: f64, date: &Date) -> Result<Balance, Error> {
+    fn upsert(&mut self, account: &str, balance: f64, date: &Date) -> Result<Balance, Error> {
         let connection = self
             .connection
             .lock()
             .expect("Could not acquire lock to database");
 
         let next_id: i64 =
-            connection.query_row("SELECT COALESCE(MAX(id), 0) FROM balance", [], |row| {
+            connection.query_row("SELECT COALESCE(MAX(id), 0) FROM balance;", [], |row| {
                 row.get(0)
             })?;
         let next_id = next_id + 1;
 
         connection.execute(
-            "INSERT INTO balance (id, account, balance, date, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO balance AS b (id, account, balance, date, user_id)
+                VALUES (?1, ?2, ?3, ?4, ?5)
+                ON CONFLICT(account) DO UPDATE SET
+                    balance=excluded.balance,
+                    date=excluded.date
+                WHERE excluded.date > b.date;",
             (next_id, account, balance, date, 1),
         )?;
 
-        Ok(Balance {
-            id: next_id,
-            account: account.to_owned(),
-            balance,
-            date: date.to_owned(),
-            user_id: UserID::new(1),
-        })
+        let row_id = connection.last_insert_rowid();
+
+        let balance = connection
+            .prepare("SELECT id, account, balance, date, user_id FROM balance WHERE id = :id;")?
+            .query_row(&[(":id", &row_id)], SQLiteBalanceStore::map_row)?;
+
+        Ok(balance)
     }
 
     fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Balance>, Error> {
@@ -96,7 +101,7 @@ impl BalanceStore for SQLiteBalanceStore {
             .lock()
             .expect("Could not acquire database lock")
             .prepare(
-                "SELECT id, account, balance, date, user_id FROM balance WHERE user_id = :user_id",
+                "SELECT id, account, balance, date, user_id FROM balance WHERE user_id = :user_id;",
             )?
             .query_map(
                 &[(":user_id", &user_id.as_i64())],
@@ -151,7 +156,7 @@ mod sqlite_balance_store_tests {
     }
 
     #[tokio::test]
-    async fn can_create_balance() {
+    async fn can_upsert_balance() {
         let (mut store, test_user) = get_store_and_user();
         let want = Balance {
             id: 1,
@@ -162,14 +167,14 @@ mod sqlite_balance_store_tests {
         };
 
         let got = store
-            .create(&want.account, want.balance, &want.date)
+            .upsert(&want.account, want.balance, &want.date)
             .expect("Could not create account balance");
 
         assert_eq!(want, got, "want balance {want:?}, got {got:?}");
     }
 
     #[tokio::test]
-    async fn create_balance_increments_id() {
+    async fn upsert_balance_increments_id() {
         let (mut store, test_user) = get_store_and_user();
         let want = vec![
             Balance {
@@ -181,7 +186,7 @@ mod sqlite_balance_store_tests {
             },
             Balance {
                 id: 2,
-                account: "1234-5678-9101-012".to_owned(),
+                account: "2345-6789-1011-123".to_owned(),
                 balance: 37_337_252_784.63,
                 date: date!(2025 - 05 - 31),
                 user_id: test_user.id(),
@@ -192,12 +197,79 @@ mod sqlite_balance_store_tests {
 
         for balance in &want {
             let got_balance = store
-                .create(&balance.account, balance.balance, &balance.date)
+                .upsert(&balance.account, balance.balance, &balance.date)
                 .expect("Could not create account balance");
             got.push(got_balance);
         }
 
         assert_eq!(want, got, "want balance {want:?}, got {got:?}");
+    }
+
+    #[tokio::test]
+    async fn upsert_takes_balance_with_latest_date() {
+        let (mut store, test_user) = get_store_and_user();
+        let account = "1234-5678-9101-112";
+        let test_balances = vec![
+            // This entry should be accepted in the first upsert
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 73_254.89,
+                date: date!(2025 - 05 - 30),
+                user_id: test_user.id(),
+            },
+            // This entry should overwrite the balance from the first upsert
+            // because it is newer
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
+                user_id: test_user.id(),
+            },
+            // This entry should be ignored because it is older.
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 2_727_843.43,
+                date: date!(2025 - 05 - 29),
+                user_id: test_user.id(),
+            },
+        ];
+        let want = vec![
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 73_254.89,
+                date: date!(2025 - 05 - 30),
+                user_id: test_user.id(),
+            },
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
+                user_id: test_user.id(),
+            },
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
+                user_id: test_user.id(),
+            },
+        ];
+
+        let mut got = Vec::new();
+
+        for balance in test_balances {
+            let got_balance = store
+                .upsert(&balance.account, balance.balance, &balance.date)
+                .expect("Could not create account balance");
+            got.push(got_balance);
+        }
+
+        assert_eq!(want, got, "want left");
     }
 
     #[tokio::test]
@@ -213,7 +285,7 @@ mod sqlite_balance_store_tests {
             },
             Balance {
                 id: 2,
-                account: "1234-5678-9101-012".to_owned(),
+                account: "2345-6789-1011-123".to_owned(),
                 balance: 37_337_252_784.63,
                 date: date!(2025 - 05 - 31),
                 user_id: test_user.id(),
@@ -221,7 +293,7 @@ mod sqlite_balance_store_tests {
         ];
         for balance in &want {
             store
-                .create(&balance.account, balance.balance, &balance.date)
+                .upsert(&balance.account, balance.balance, &balance.date)
                 .expect("Could not create account balance");
         }
 

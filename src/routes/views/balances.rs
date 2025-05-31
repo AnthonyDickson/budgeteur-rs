@@ -66,7 +66,7 @@ mod balances_view_tests {
     }
 
     impl BalanceStore for StubBalanceStore {
-        fn create(
+        fn upsert(
             &mut self,
             _account: &str,
             _balance: f64,
