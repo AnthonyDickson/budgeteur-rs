@@ -51,6 +51,7 @@ mod balances_view_tests {
 
     use axum::{Extension, extract::State, http::StatusCode, response::Response};
     use scraper::{ElementRef, Html, Selector};
+    use time::{Date, macros::date};
 
     use crate::{
         Error,
@@ -65,7 +66,12 @@ mod balances_view_tests {
     }
 
     impl BalanceStore for StubBalanceStore {
-        fn create(&mut self, _account: &str, _balance: f64) -> Result<Balance, Error> {
+        fn create(
+            &mut self,
+            _account: &str,
+            _balance: f64,
+            _date: &Date,
+        ) -> Result<Balance, Error> {
             todo!()
         }
 
@@ -80,6 +86,7 @@ mod balances_view_tests {
             id: 0,
             account: "1234-5678-9101-12".to_string(),
             balance: 1234.56,
+            date: date!(2025 - 05 - 31),
             user_id: UserID::new(0),
         }];
         let state = BalanceState {
@@ -146,7 +153,7 @@ mod balances_view_tests {
         let row_header_selector = Selector::parse("th").unwrap();
         let row_cell_selector = Selector::parse("td").unwrap();
 
-        for (row, (table_row, want_balance)) in zip(table_rows, balances).enumerate() {
+        for (row, (table_row, want)) in zip(table_rows, balances).enumerate() {
             let got_account: String = table_row
                 .select(&row_header_selector)
                 .next()
@@ -155,17 +162,33 @@ mod balances_view_tests {
                 ))
                 .text()
                 .collect();
-            let got_balance: String = table_row
-                .select(&row_cell_selector)
-                .next()
-                .expect(&format!(
-                    "Could not find table cell <td> in table row {row}."
-                ))
-                .text()
-                .collect();
+            let columns: Vec<ElementRef<'_>> = table_row.select(&row_cell_selector).collect();
+            assert_eq!(
+                2,
+                columns.len(),
+                "Want 2 table cells <td> in table row {row}, got {}",
+                columns.len()
+            );
+            let got_balance: String = columns[0].text().collect();
+            let got_date: String = columns[1].text().collect();
 
-            assert_eq!(want_balance.account, got_account);
-            assert_eq!(format!("${}", want_balance.balance), got_balance);
+            assert_eq!(
+                want.account, got_account,
+                "want account '{}', got '{got_account}'.",
+                want.account
+            );
+            assert_eq!(
+                format!("${}", want.balance),
+                got_balance,
+                "want balance ${}, got {got_balance}.",
+                want.balance
+            );
+            assert_eq!(
+                want.date.to_string(),
+                got_date,
+                "want date {}, got {got_date}",
+                want.date
+            );
         }
     }
 

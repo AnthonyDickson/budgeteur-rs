@@ -1,6 +1,8 @@
 //! Implements a SQLite backed balance store.
 use std::sync::{Arc, Mutex};
 
+use time::Date;
+
 use crate::{
     Error,
     db::{CreateTable, MapRow},
@@ -28,6 +30,7 @@ impl CreateTable for SQLiteBalanceStore {
                 id INTEGER PRIMARY KEY,
                 account TEXT NOT NULL,
                 balance REAL NOT NULL,
+                date TEXT NOT NULL,
                 user_id INTEGER NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
             )",
@@ -48,19 +51,21 @@ impl MapRow for SQLiteBalanceStore {
         let id = row.get(offset)?;
         let account = row.get(offset + 1)?;
         let balance = row.get(offset + 2)?;
-        let user_id = row.get(offset + 3)?;
+        let date = row.get(offset + 3)?;
+        let user_id = row.get(offset + 4)?;
 
         Ok(Balance {
             id,
             account,
             balance,
+            date,
             user_id: UserID::new(user_id),
         })
     }
 }
 
 impl BalanceStore for SQLiteBalanceStore {
-    fn create(&mut self, account: &str, balance: f64) -> Result<Balance, Error> {
+    fn create(&mut self, account: &str, balance: f64, date: &Date) -> Result<Balance, Error> {
         let connection = self
             .connection
             .lock()
@@ -73,14 +78,15 @@ impl BalanceStore for SQLiteBalanceStore {
         let next_id = next_id + 1;
 
         connection.execute(
-            "INSERT INTO balance (id, account, balance, user_id) VALUES (?1, ?2, ?3, ?4)",
-            (next_id, account, balance, 1),
+            "INSERT INTO balance (id, account, balance, date, user_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+            (next_id, account, balance, date, 1),
         )?;
 
         Ok(Balance {
             id: next_id,
             account: account.to_owned(),
             balance,
+            date: date.to_owned(),
             user_id: UserID::new(1),
         })
     }
@@ -89,7 +95,9 @@ impl BalanceStore for SQLiteBalanceStore {
         self.connection
             .lock()
             .expect("Could not acquire database lock")
-            .prepare("SELECT id, account, balance, user_id FROM balance WHERE user_id = :user_id")?
+            .prepare(
+                "SELECT id, account, balance, date, user_id FROM balance WHERE user_id = :user_id",
+            )?
             .query_map(
                 &[(":user_id", &user_id.as_i64())],
                 SQLiteBalanceStore::map_row,
@@ -114,6 +122,7 @@ mod sqlite_balance_store_tests {
     use std::sync::{Arc, Mutex};
 
     use rusqlite::Connection;
+    use time::macros::date;
 
     use crate::{
         db::CreateTable,
@@ -148,11 +157,12 @@ mod sqlite_balance_store_tests {
             id: 1,
             account: "1234-5678-9101-012".to_owned(),
             balance: 37_337_252_784.63,
+            date: date!(2025 - 05 - 31),
             user_id: test_user.id(),
         };
 
         let got = store
-            .create(&want.account, want.balance)
+            .create(&want.account, want.balance, &want.date)
             .expect("Could not create account balance");
 
         assert_eq!(want, got, "want balance {want:?}, got {got:?}");
@@ -166,12 +176,14 @@ mod sqlite_balance_store_tests {
                 id: 1,
                 account: "1234-5678-9101-012".to_owned(),
                 balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
                 user_id: test_user.id(),
             },
             Balance {
                 id: 2,
                 account: "1234-5678-9101-012".to_owned(),
                 balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
                 user_id: test_user.id(),
             },
         ];
@@ -180,7 +192,7 @@ mod sqlite_balance_store_tests {
 
         for balance in &want {
             let got_balance = store
-                .create(&balance.account, balance.balance)
+                .create(&balance.account, balance.balance, &balance.date)
                 .expect("Could not create account balance");
             got.push(got_balance);
         }
@@ -196,18 +208,20 @@ mod sqlite_balance_store_tests {
                 id: 1,
                 account: "1234-5678-9101-012".to_owned(),
                 balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
                 user_id: test_user.id(),
             },
             Balance {
                 id: 2,
                 account: "1234-5678-9101-012".to_owned(),
                 balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
                 user_id: test_user.id(),
             },
         ];
         for balance in &want {
             store
-                .create(&balance.account, balance.balance)
+                .create(&balance.account, balance.balance, &balance.date)
                 .expect("Could not create account balance");
         }
 

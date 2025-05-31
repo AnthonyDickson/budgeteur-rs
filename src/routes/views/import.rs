@@ -106,9 +106,10 @@ where
     }
 
     for balance in balances {
-        if let Err(error) = state
-            .balance_store
-            .create(&balance.account, balance.balance)
+        if let Err(error) =
+            state
+                .balance_store
+                .create(&balance.account, balance.balance, &balance.date)
         {
             tracing::error!("Failed to import transactions: {}", error);
 
@@ -138,7 +139,7 @@ mod import_transactions_tests {
         response::Response,
     };
     use scraper::{ElementRef, Html};
-    use time::macros::date;
+    use time::{Date, macros::date};
 
     use crate::{
         Error,
@@ -914,12 +915,18 @@ mod import_transactions_tests {
     struct DummyBalanceStore;
 
     impl BalanceStore for DummyBalanceStore {
-        fn create(&mut self, account: &str, balance: f64) -> Result<Balance, Error> {
+        fn create(
+            &mut self,
+            _account: &str,
+            _balance: f64,
+            _date: &Date,
+        ) -> Result<Balance, Error> {
             Ok(Balance {
-                id: 0,
-                account: account.to_owned(),
-                balance,
-                user_id: UserID::new(0),
+                id: -1,
+                account: "".to_owned(),
+                balance: 0.0,
+                date: date!(2025 - 05 - 31),
+                user_id: UserID::new(123),
             })
         }
 
@@ -942,11 +949,12 @@ mod import_transactions_tests {
     }
 
     impl BalanceStore for FakeBalanceStore {
-        fn create(&mut self, account: &str, balance: f64) -> Result<Balance, Error> {
+        fn create(&mut self, account: &str, balance: f64, date: &Date) -> Result<Balance, Error> {
             let balance = Balance {
                 id: 0,
-                account: account.to_string(),
+                account: account.to_owned(),
                 balance,
+                date: date.to_owned(),
                 user_id: UserID::new(0),
             };
 

@@ -1,5 +1,7 @@
 //! Defines the model for account balances.
 
+use time::Date;
+
 use super::{DatabaseID, UserID};
 
 /// The amount of money available for a bank account or credit card.
@@ -11,6 +13,8 @@ pub struct Balance {
     pub account: String,
     /// The balance.
     pub balance: f64,
+    /// When the balance was updated.
+    pub date: Date,
     /// The id of the user this balance belong to.
     pub user_id: UserID,
 }

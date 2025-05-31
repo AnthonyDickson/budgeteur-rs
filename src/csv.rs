@@ -1,6 +1,8 @@
 //! Functions to parse CSV data from ASB and Kiwibank bank statements.
 
-use time::{Date, format_description::BorrowedFormatItem, macros::format_description};
+use time::{
+    Date, OffsetDateTime, format_description::BorrowedFormatItem, macros::format_description,
+};
 
 use crate::{
     Error,
@@ -14,6 +16,8 @@ pub struct ImportBalance {
     pub account: String,
     /// The balance in the account.
     pub balance: f64,
+    /// The date the balance is for.
+    pub date: Date,
 }
 
 /// The transactions and accounts balances found after parsing a CSV statement.
@@ -95,6 +99,7 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Err
     const DESCRIPTION_COLUMN: usize = 5;
     const AMOUNT_COLUMN: usize = 6;
     const DATE_FORMAT: &[BorrowedFormatItem] = format_description!("[year]/[month]/[day]");
+    const BALANCE_DATE_FORMAT: &[BorrowedFormatItem] = format_description!("[year][month][day]");
 
     // Parse the header to get the account number
     let lines = text.lines().collect::<Vec<_>>();
@@ -106,6 +111,7 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Err
     let mut transactions = Vec::new();
     let mut account = String::new();
     let mut balance = 0.0;
+    let mut date = OffsetDateTime::now_utc().date();
 
     for (line_number, line) in text.lines().enumerate() {
         match line_number {
@@ -153,22 +159,35 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Err
                 // Ledger Balance : 20.00 as of 20250412
                 let balance_string =
                     line.strip_prefix("Ledger Balance : ")
-                        .ok_or(Error::InvalidCSV(
-                        "ASB bank ledger balance on line 6 should start with 'Ledger Balance : ', but got '{line}'."
-                            .to_owned(),
+                        .ok_or(Error::InvalidCSV(format!(
+                        "ASB bank ledger balance on line 6 should start with 'Ledger Balance : ', but got '{line}'.")
                     ))?;
-                let balance_string = balance_string
+                let (balance_string, date_string) = balance_string
                     .split_once(' ')
                     .ok_or(Error::InvalidCSV(
-                        "ASB bank ledger balance on line 6 should have a space after the balance, but got '{line}'."
-                            .to_owned(),
-                    ))?
-                    .0;
+                        format!(
+                        "ASB bank ledger balance on line 6 should have a space after the balance, but got '{line}'."),
+                    ))?;
                 balance = balance_string.parse().map_err(|error| {
                     Error::InvalidCSV(format!(
                         "Balance found on line 6 '{balance_string}' cannot be parsed as a float: {error}."
                     ))
                 })?;
+                let date_string =
+                    date_string
+                        .split(' ')
+                        .last()
+                        .ok_or(Error::InvalidCSV(format!(
+                            "ASB bank ledger should have a date on line 6, but got '{line}'."
+                        )))?;
+                date = match Date::parse(&date_string, &BALANCE_DATE_FORMAT) {
+                    Ok(date) => date,
+                    Err(error) => {
+                        return Err(Error::InvalidCSV(format!(
+                            "Could not parse '{date_string}' as date on line 6: {error}"
+                        )));
+                    }
+                }
             }
             6 if line != "Date,Unique Id,Tran Type,Cheque Number,Payee,Memo,Amount" => {
                 return Err(Error::InvalidCSV(
@@ -224,7 +243,11 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Err
 
     Ok(ParseCSVResult {
         transactions,
-        balance: Some(ImportBalance { account, balance }),
+        balance: Some(ImportBalance {
+            account,
+            balance,
+            date,
+        }),
     })
 }
 
@@ -370,6 +393,7 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult
     let mut transactions = Vec::new();
     let mut account_number = String::new();
     let mut balance = 0.0;
+    let mut date = OffsetDateTime::now_utc().date();
 
     for (line_number, line) in text.lines().enumerate() {
         match line_number {
@@ -395,7 +419,8 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult
                         parts[AMOUNT_COLUMN]
                     ))
                 })?;
-                let date = Date::parse(parts[DATE_COLUMN], &DATE_FORMAT).map_err(|error| {
+                // TODO: Does this get moved by transaction builder?
+                date = Date::parse(parts[DATE_COLUMN], &DATE_FORMAT).map_err(|error| {
                     Error::InvalidCSV(format!(
                         "Could not parse '{}' as date on line {line_number}: {error}",
                         parts[DATE_COLUMN]
@@ -433,6 +458,7 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult
         balance: Some(ImportBalance {
             account: account_number,
             balance,
+            date,
         }),
     })
 }
@@ -570,6 +596,7 @@ mod parse_csv_tests {
         let want_balance = Some(ImportBalance {
             account: "12-3405-0123456-50 (Streamline)".to_owned(),
             balance: 20.0,
+            date: date!(2025 - 04 - 12),
         });
 
         let ParseCSVResult {
@@ -700,6 +727,7 @@ mod parse_csv_tests {
         let want_balance = Some(ImportBalance {
             account: "38-1234-0123456-01".to_owned(),
             balance: 71.53,
+            date: date!(2025 - 03 - 31),
         });
 
         let ParseCSVResult {

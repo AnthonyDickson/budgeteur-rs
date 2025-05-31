@@ -9,6 +9,7 @@
         <tr>
           <th scope="col">Account</th>
           <th scope="col">Balance</th>
+          <th scope="col">Date</th>
         </tr>
       </thead>
       <tbody>
@@ -16,6 +17,7 @@
         <tr>
           <th scope="row">{{ balance.account }}</th>
           <td>${{ balance.balance }}</td>
+          <td>{{ balance.date }}</td>
         </tr>
         {% endfor %}
       </tbody>
