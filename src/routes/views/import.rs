@@ -916,13 +916,11 @@ mod import_transactions_tests {
     impl BalanceStore for DummyBalanceStore {
         fn create(&mut self, account: &str, balance: f64) -> Result<Balance, Error> {
             Ok(Balance {
+                id: 0,
                 account: account.to_owned(),
                 balance,
+                user_id: UserID::new(0),
             })
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Balance, Error> {
-            todo!()
         }
 
         fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Balance>, Error> {
@@ -946,18 +944,15 @@ mod import_transactions_tests {
     impl BalanceStore for FakeBalanceStore {
         fn create(&mut self, account: &str, balance: f64) -> Result<Balance, Error> {
             let balance = Balance {
+                id: 0,
                 account: account.to_string(),
                 balance,
+                user_id: UserID::new(0),
             };
 
             self.balances.lock().unwrap().push(balance.clone());
 
             Ok(balance)
-        }
-
-        fn get(&self, id: DatabaseID) -> Result<Balance, Error> {
-            let _ = id;
-            todo!()
         }
 
         fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Balance>, Error> {

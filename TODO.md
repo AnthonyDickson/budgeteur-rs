@@ -8,18 +8,11 @@
   Refer to [v3.tailwindcss.com/docs/reusing-styles](https://v3.tailwindcss.com/docs/reusing-styles) and [v3.tailwindcss.com/docs/adding-custom-styles](https://v3.tailwindcss.com/docs/adding-custom-styles).
 - Fix broken [icon](./static/seal.png).
 - Refactor common testing functions into a separate module.
-- Track account and credit card balances:
-  - Add page to view balances.
-  - Add to database:
-    - CREATE: Table for bank/credit card accounts with:
-      - Numeric ID: INTEGER
-      - Account/card number: TEXT
-    - CREATE: Table for balances with:
-      - Account/card ID: Integer
-      - Date: TEXT
-      - Balance: REAL
-  - Add route for reading csv files and populating transactions.
-    - For both credit cards and bank accounts, extract the following fields:
-      - Account number
-    - For bank accounts, extract:
-      - Balance
+- Refactor app to assume single user
+  - Simpler and all I need!
+  - Create:
+    - Page to set password on first startup
+  - Update:
+    - Remove user ID fields in models
+  - Delete:
+    - Registration page

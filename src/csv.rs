@@ -4,8 +4,17 @@ use time::{Date, format_description::BorrowedFormatItem, macros::format_descript
 
 use crate::{
     Error,
-    models::{Balance, TransactionBuilder, UserID},
+    models::{TransactionBuilder, UserID},
 };
+
+/// An account and balance imported from a CSV.
+#[derive(Debug, PartialEq)]
+pub struct ImportBalance {
+    /// The account name/number.
+    pub account: String,
+    /// The balance in the account.
+    pub balance: f64,
+}
 
 /// The transactions and accounts balances found after parsing a CSV statement.
 pub struct ParseCSVResult {
@@ -13,7 +22,7 @@ pub struct ParseCSVResult {
     pub transactions: Vec<TransactionBuilder>,
     /// The account balance found in the CSV document, if found.
     /// ASB credit card CSVs do not provide the balance, for example.
-    pub balance: Option<Balance>,
+    pub balance: Option<ImportBalance>,
 }
 
 /// Parses CSV data from ASB and Kiwibank bank statements.
@@ -215,7 +224,7 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Err
 
     Ok(ParseCSVResult {
         transactions,
-        balance: Some(Balance { account, balance }),
+        balance: Some(ImportBalance { account, balance }),
     })
 }
 
@@ -421,7 +430,7 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult
 
     Ok(ParseCSVResult {
         transactions,
-        balance: Some(Balance {
+        balance: Some(ImportBalance {
             account: account_number,
             balance,
         }),
@@ -443,8 +452,11 @@ mod parse_csv_tests {
     use time::macros::date;
 
     use crate::{
-        csv::{ParseCSVResult, create_import_id, parse_asb_bank_csv, parse_kiwibank_bank_csv},
-        models::{Balance, TransactionBuilder, UserID},
+        csv::{
+            ImportBalance, ParseCSVResult, create_import_id, parse_asb_bank_csv,
+            parse_kiwibank_bank_csv,
+        },
+        models::{TransactionBuilder, UserID},
     };
 
     use super::parse_asb_cc_csv;
@@ -555,7 +567,7 @@ mod parse_csv_tests {
                     "2025/03/20,2025032002,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-2750.00"
                 ))),
         ];
-        let want_balance = Some(Balance {
+        let want_balance = Some(ImportBalance {
             account: "12-3405-0123456-50 (Streamline)".to_owned(),
             balance: 20.0,
         });
@@ -685,7 +697,7 @@ mod parse_csv_tests {
                 ))),
         ];
 
-        let want_balance = Some(Balance {
+        let want_balance = Some(ImportBalance {
             account: "38-1234-0123456-01".to_owned(),
             balance: 71.53,
         });

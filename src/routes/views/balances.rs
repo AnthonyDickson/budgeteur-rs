@@ -54,7 +54,7 @@ mod balances_view_tests {
 
     use crate::{
         Error,
-        models::{Balance, DatabaseID, UserID},
+        models::{Balance, UserID},
         routes::{endpoints, views::balances::get_balances_page},
         state::BalanceState,
         stores::BalanceStore,
@@ -69,10 +69,6 @@ mod balances_view_tests {
             todo!()
         }
 
-        fn get(&self, _id: DatabaseID) -> Result<Balance, Error> {
-            todo!()
-        }
-
         fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Balance>, Error> {
             Ok(self.balances.clone())
         }
@@ -81,8 +77,10 @@ mod balances_view_tests {
     #[tokio::test]
     async fn test_get_balances_view() {
         let balances = vec![Balance {
+            id: 0,
             account: "1234-5678-9101-12".to_string(),
             balance: 1234.56,
+            user_id: UserID::new(0),
         }];
         let state = BalanceState {
             balance_store: StubBalanceStore {
