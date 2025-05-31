@@ -1,7 +1,7 @@
 //! This files defines the routes for the transaction type.
 
 use axum::{
-    Extension, Form, Json,
+    Form, Json,
     extract::{Path, State},
     http::{StatusCode, Uri},
     response::IntoResponse,
@@ -11,8 +11,7 @@ use serde::Deserialize;
 use time::Date;
 
 use crate::{
-    Error,
-    models::{DatabaseID, Transaction, UserID},
+    models::{DatabaseID, Transaction},
     state::TransactionState,
     stores::TransactionStore,
 };
@@ -41,7 +40,6 @@ pub struct TransactionForm {
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn create_transaction<T>(
     State(mut state): State<TransactionState<T>>,
-    Extension(user_id): Extension<UserID>,
     Form(data): Form<TransactionForm>,
 ) -> impl IntoResponse
 where
@@ -54,7 +52,7 @@ where
         id => Some(id),
     };
 
-    let transaction = Transaction::build(data.amount, user_id)
+    let transaction = Transaction::build(data.amount)
         .description(&data.description)
         .category(category)
         .date(data.date);
@@ -85,7 +83,6 @@ where
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_transaction<T>(
     State(state): State<TransactionState<T>>,
-    Extension(logged_in_user_id): Extension<UserID>,
     Path(transaction_id): Path<DatabaseID>,
 ) -> impl IntoResponse
 where
@@ -94,14 +91,6 @@ where
     state
         .transaction_store
         .get(transaction_id)
-        .and_then(|transaction| {
-            if logged_in_user_id == transaction.user_id() {
-                Ok(transaction)
-            } else {
-                // Respond with 404 not found so that unauthorized users cannot know whether another user's resource exists.
-                Err(Error::NotFound)
-            }
-        })
         .map(|transaction| (StatusCode::OK, Json(transaction)))
 }
 
@@ -111,7 +100,7 @@ mod transaction_tests {
 
     use askama_axum::IntoResponse;
     use axum::{
-        Extension, Form,
+        Form,
         body::Body,
         extract::{Path, State},
         http::{Response, StatusCode},
@@ -121,7 +110,7 @@ mod transaction_tests {
 
     use crate::{Error, stores::TransactionStore};
     use crate::{
-        models::{DatabaseID, Transaction, TransactionBuilder, UserID},
+        models::{DatabaseID, Transaction, TransactionBuilder},
         routes::transaction::{TransactionForm, create_transaction, get_transaction},
         state::TransactionState,
         stores::TransactionQuery,
@@ -143,8 +132,8 @@ mod transaction_tests {
     }
 
     impl TransactionStore for FakeTransactionStore {
-        fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, Error> {
-            self.create_from_builder(TransactionBuilder::new(amount, user_id))
+        fn create(&mut self, amount: f64) -> Result<Transaction, Error> {
+            self.create_from_builder(TransactionBuilder::new(amount))
         }
 
         fn create_from_builder(
@@ -189,10 +178,7 @@ mod transaction_tests {
         let state = TransactionState {
             transaction_store: FakeTransactionStore::new(),
         };
-
-        let user_id = UserID::new(123);
-
-        let want = Transaction::build(12.3, user_id)
+        let want = Transaction::build(12.3)
             .date(OffsetDateTime::now_utc().date())
             .unwrap()
             .description("aaaaaaaaaaaaa")
@@ -206,7 +192,7 @@ mod transaction_tests {
             category_id: want.category_id().unwrap(),
         };
 
-        let response = create_transaction(State(state.clone()), Extension(user_id), Form(form))
+        let response = create_transaction(State(state.clone()), Form(form))
             .await
             .into_response();
 
@@ -216,59 +202,25 @@ mod transaction_tests {
 
     #[tokio::test]
     async fn can_get_transaction() {
-        let user_id = UserID::new(42);
-
         let mut state = TransactionState {
             transaction_store: FakeTransactionStore::new(),
         };
-
         let transaction = state
             .transaction_store
             .create_from_builder(
-                TransactionBuilder::new(13.34, user_id)
+                TransactionBuilder::new(13.34)
                     .category(Some(24))
                     .description("foobar"),
             )
             .unwrap();
 
-        let response = get_transaction(State(state), Extension(user_id), Path(transaction.id()))
+        let response = get_transaction(State(state), Path(transaction.id()))
             .await
             .into_response();
 
         assert_eq!(response.status(), StatusCode::OK);
-
         let json_response = extract_from_json(response).await;
-
         assert_eq!(json_response, transaction);
-    }
-
-    #[tokio::test]
-    async fn cannot_get_transaction_with_unauthorized_user() {
-        let user_id = UserID::new(42);
-        let unauthorized_user_id = UserID::new(1337);
-
-        let mut state = TransactionState {
-            transaction_store: FakeTransactionStore::new(),
-        };
-
-        let transaction = state
-            .transaction_store
-            .create_from_builder(
-                TransactionBuilder::new(12.34, user_id)
-                    .category(Some(24))
-                    .description("foobar"),
-            )
-            .unwrap();
-
-        let response = get_transaction(
-            State(state),
-            Extension(unauthorized_user_id),
-            Path(transaction.id()),
-        )
-        .await
-        .into_response();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     async fn extract_from_json(response: Response<Body>) -> Transaction {

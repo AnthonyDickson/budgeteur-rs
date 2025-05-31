@@ -2,18 +2,15 @@
 
 use askama_axum::IntoResponse;
 use askama_axum::Template;
-use axum::{Extension, extract::State, response::Response};
+use axum::{extract::State, response::Response};
 
 use crate::models::Balance;
+use crate::routes::{
+    endpoints,
+    navigation::{NavbarTemplate, get_nav_bar},
+};
 use crate::state::BalanceState;
 use crate::stores::BalanceStore;
-use crate::{
-    models::UserID,
-    routes::{
-        endpoints,
-        navigation::{NavbarTemplate, get_nav_bar},
-    },
-};
 
 /// Renders the balances page.
 #[derive(Template)]
@@ -25,14 +22,11 @@ struct BalancesTemplate<'a> {
 }
 
 /// Renders the page for creating a transaction.
-pub async fn get_balances_page<B>(
-    State(state): State<BalanceState<B>>,
-    Extension(user_id): Extension<UserID>,
-) -> Response
+pub async fn get_balances_page<B>(State(state): State<BalanceState<B>>) -> Response
 where
     B: BalanceStore + Send + Sync,
 {
-    let balances = match state.balance_store.get_by_user_id(user_id) {
+    let balances = match state.balance_store.get_all() {
         Ok(balances) => balances,
         Err(error) => return error.into_response(),
     };
@@ -49,13 +43,13 @@ where
 mod balances_view_tests {
     use std::iter::zip;
 
-    use axum::{Extension, extract::State, http::StatusCode, response::Response};
+    use axum::{extract::State, http::StatusCode, response::Response};
     use scraper::{ElementRef, Html, Selector};
     use time::{Date, macros::date};
 
     use crate::{
         Error,
-        models::{Balance, UserID},
+        models::Balance,
         routes::{endpoints, views::balances::get_balances_page},
         state::BalanceState,
         stores::BalanceStore,
@@ -75,7 +69,7 @@ mod balances_view_tests {
             todo!()
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Balance>, Error> {
+        fn get_all(&self) -> Result<Vec<Balance>, Error> {
             Ok(self.balances.clone())
         }
     }
@@ -87,7 +81,6 @@ mod balances_view_tests {
             account: "1234-5678-9101-12".to_string(),
             balance: 1234.56,
             date: date!(2025 - 05 - 31),
-            user_id: UserID::new(0),
         }];
         let state = BalanceState {
             balance_store: StubBalanceStore {
@@ -95,7 +88,7 @@ mod balances_view_tests {
             },
         };
 
-        let response = get_balances_page(State(state), Extension(UserID::new(1))).await;
+        let response = get_balances_page(State(state)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
@@ -114,7 +107,7 @@ mod balances_view_tests {
             },
         };
 
-        let response = get_balances_page(State(state), Extension(UserID::new(1))).await;
+        let response = get_balances_page(State(state)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");

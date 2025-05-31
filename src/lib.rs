@@ -104,10 +104,6 @@ pub enum Error {
     #[error("hashing failed: {0}")]
     HashingError(String),
 
-    /// The user ID used to create a category does not refer to a valid user.
-    #[error("the user ID does not refer to a valid user.")]
-    InvalidUser,
-
     /// The category ID used to create a transaction did not match a valid category.
     #[error("the category ID does not refer to a valid category")]
     InvalidCategory,

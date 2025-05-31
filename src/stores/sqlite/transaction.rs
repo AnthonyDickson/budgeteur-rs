@@ -6,14 +6,12 @@ use rusqlite::{Connection, Row, params_from_iter, types::Value};
 use crate::{
     Error,
     db::{CreateTable, MapRow},
-    models::{DatabaseID, Transaction, TransactionBuilder, UserID},
+    models::{DatabaseID, Transaction, TransactionBuilder},
     stores::{
         TransactionStore,
         transaction::{SortOrder, TransactionQuery},
     },
 };
-
-use super::SQLiteCategoryStore;
 
 /// Stores transactions in a SQLite database.
 ///
@@ -41,11 +39,10 @@ impl TransactionStore for SQLiteTransactionStore {
     /// # Errors
     /// This function will return a:
     /// - [Error::InvalidCategory] if `category_id` does not refer to a valid category,
-    /// - [Error::InvalidUser] if `user_id` does not refer to a valid user,
     /// - [Error::SqlError] if there is some other SQL error,
     /// - or [Error::Unspecified] if there was an unexpected error.
-    fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, Error> {
-        let transaction = Transaction::build(amount, user_id);
+    fn create(&mut self, amount: f64) -> Result<Transaction, Error> {
+        let transaction = Transaction::build(amount);
 
         self.create_from_builder(transaction)
     }
@@ -57,7 +54,6 @@ impl TransactionStore for SQLiteTransactionStore {
     /// # Errors
     /// This function will return a:
     /// - [Error::InvalidCategory] if `category_id` does not refer to a valid category,
-    /// - [Error::InvalidUser] if `user_id` does not refer to a valid user,
     /// - [Error::SqlError] if there is some other SQL error,
     /// - or [Error::Unspecified] if there was an unexpected error.
     fn create_from_builder(&mut self, builder: TransactionBuilder) -> Result<Transaction, Error> {
@@ -72,40 +68,16 @@ impl TransactionStore for SQLiteTransactionStore {
 
         let transaction = builder.finalise(next_id);
 
-        if let Some(category_id) = transaction.category_id() {
-            let category = connection
-                .query_row(
-                    "SELECT id, name, user_id FROM category WHERE id = ?1",
-                    (category_id,),
-                    SQLiteCategoryStore::map_row,
-                )
-                .map_err(|error| match error {
-                    // We enforce the foreign key constraint (the ID refers to a valid, existing
-                    // record) here so that we know later that if a foreign key constraint is
-                    // violated, it is for the user ID. Otherwise, it would difficult to know
-                    // which foreign key constraint was violated since the SQL error does not
-                    // provide any useful information.
-                    rusqlite::Error::QueryReturnedNoRows => Error::InvalidCategory,
-                    error => Error::SqlError(error),
-                })?;
-
-            if category.user_id != transaction.user_id() {
-                // Use same error as if the category doesn't exist so that unauthorized users can't
-                // poke around to find out what data exists.
-                return Err(Error::InvalidCategory);
-            }
-        }
-
         connection
                 .execute(
-                    "INSERT INTO \"transaction\" (id, amount, date, description, category_id, user_id, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                    (transaction.id(), transaction.amount(), transaction.date(), transaction.description(), transaction.category_id(), transaction.user_id().as_i64(), transaction.import_id()),
+                    "INSERT INTO \"transaction\" (id, amount, date, description, category_id, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    (transaction.id(), transaction.amount(), transaction.date(), transaction.description(), transaction.category_id(), transaction.import_id()),
                 ).map_err(|error| match error
                 {
                     // Code 787 occurs when a FOREIGN KEY constraint failed.
-                    // The client tried to add a transaction for a nonexistent user.
+                    // The client tried to add a transaction for a non-existent category.
                     rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
-                        Error::InvalidUser
+                        Error::InvalidCategory
                     }
                     error => error.into()
                 })?;
@@ -136,17 +108,22 @@ impl TransactionStore for SQLiteTransactionStore {
         let mut statements = vec!["BEGIN".to_string()];
         for transaction in transactions.iter() {
             statements.push(format!(
-                r#"INSERT INTO "transaction" (id, amount, date, description, category_id, user_id, import_id)
-                   VALUES ({}, {}, '{}', '{}', {}, {}, {}) ON CONFLICT(import_id) DO NOTHING"#,
+                r#"INSERT INTO "transaction" (id, amount, date, description, category_id, import_id)
+                   VALUES ({}, {}, '{}', '{}', {}, {}) ON CONFLICT(import_id) DO NOTHING"#,
                 transaction.id(),
                 transaction.amount(),
                 transaction.date(),
                 // SQLite uses a single quote for strings, so we need to escape single quotes in
                 // the description with double single quotes.
                 transaction.description().replace("'", "''"),
-                transaction.category_id().map(|id| id.to_string()).unwrap_or("NULL".to_string()),
-                transaction.user_id().as_i64(),
-                transaction.import_id().map(|id| id.to_string()).unwrap_or("NULL".to_string()),
+                transaction
+                    .category_id()
+                    .map(|id| id.to_string())
+                    .unwrap_or("NULL".to_string()),
+                transaction
+                    .import_id()
+                    .map(|id| id.to_string())
+                    .unwrap_or("NULL".to_string()),
             ));
         }
         statements.push("COMMIT;".to_string());
@@ -165,7 +142,7 @@ impl TransactionStore for SQLiteTransactionStore {
     /// - or [Error::SqlError] there is some other SQL error.
     fn get(&self, id: DatabaseID) -> Result<Transaction, Error> {
         let transaction = self.connection.lock().unwrap()
-                .prepare("SELECT id, amount, date, description, category_id, user_id, import_id FROM \"transaction\" WHERE id = :id")?
+                .prepare("SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" WHERE id = :id")?
                 .query_row(&[(":id", &id)], Self::map_row)?;
 
         Ok(transaction)
@@ -173,16 +150,11 @@ impl TransactionStore for SQLiteTransactionStore {
 
     fn get_query(&self, filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
         let mut query_string_parts = vec![
-            "SELECT id, amount, date, description, category_id, user_id, import_id FROM \"transaction\""
+            "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\""
                 .to_string(),
         ];
         let mut where_clause_parts = vec![];
         let mut query_parameters = vec![];
-
-        if let Some(user_id) = filter.user_id {
-            where_clause_parts.push(format!("user_id = ?{}", query_parameters.len() + 1));
-            query_parameters.push(Value::Integer(user_id.as_i64()));
-        }
 
         if let Some(date_range) = filter.date_range {
             where_clause_parts.push(format!(
@@ -233,10 +205,8 @@ impl CreateTable for SQLiteTransactionStore {
                             date TEXT NOT NULL,
                             description TEXT NOT NULL,
                             category_id INTEGER,
-                            user_id INTEGER NOT NULL,
                             import_id INTEGER UNIQUE,
-                            FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE SET NULL,
-                            FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE
+                            FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE SET NULL
                             )",
                     (),
                 )?;
@@ -254,18 +224,10 @@ impl MapRow for SQLiteTransactionStore {
         let date = row.get(offset + 2)?;
         let description = row.get(offset + 3)?;
         let category_id = row.get(offset + 4)?;
-        let user_id = UserID::new(row.get(offset + 5)?);
-        let import_id = row.get(offset + 6)?;
+        let import_id = row.get(offset + 5)?;
 
-        let transaction = Transaction::new_unchecked(
-            id,
-            amount,
-            date,
-            description,
-            category_id,
-            user_id,
-            import_id,
-        );
+        let transaction =
+            Transaction::new_unchecked(id, amount, date, description, category_id, import_id);
 
         Ok(transaction)
     }
@@ -279,9 +241,8 @@ mod sqlite_transaction_store_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        models::{CategoryName, PasswordHash, Transaction, TransactionBuilder, User, UserID},
+        models::{Transaction, TransactionBuilder},
         stores::{
-            CategoryStore, UserStore,
             sqlite::{SQLAppState, create_app_state},
             transaction::{SortOrder, TransactionQuery},
         },
@@ -289,107 +250,56 @@ mod sqlite_transaction_store_tests {
 
     use super::{Error, TransactionStore};
 
-    fn get_app_state_and_test_user() -> (SQLAppState, User) {
+    fn get_app_state() -> SQLAppState {
         let conn = Connection::open_in_memory().unwrap();
-        let mut state = create_app_state(conn, "stneaoetse").unwrap();
-
-        let test_user = state
-            .user_store
-            .create(
-                "test@test.com".parse().unwrap(),
-                PasswordHash::new_unchecked("hunter2"),
-            )
-            .unwrap();
-
-        (state, test_user)
+        create_app_state(conn, "stneaoetse").unwrap()
     }
 
     #[test]
     fn create_succeeds() {
-        let (mut state, user) = get_app_state_and_test_user();
+        let mut state = get_app_state();
         let amount = 12.3;
 
-        let result = state.transaction_store.create(amount, user.id());
+        let result = state.transaction_store.create(amount);
 
         assert!(result.is_ok());
-
         let transaction = result.unwrap();
-
         assert_eq!(transaction.amount(), amount);
-        assert_eq!(transaction.user_id(), user.id());
-    }
-
-    #[test]
-    fn create_fails_on_invalid_user_id() {
-        let (mut state, user) = get_app_state_and_test_user();
-
-        let transaction = state
-            .transaction_store
-            .create(PI, UserID::new(user.id().as_i64() + 42));
-
-        assert_eq!(transaction, Err(Error::InvalidUser));
     }
 
     #[test]
     fn create_fails_on_invalid_category_id() {
-        let (mut state, user) = get_app_state_and_test_user();
+        let mut state = get_app_state();
 
         let transaction = state
             .transaction_store
-            .create_from_builder(Transaction::build(PI, user.id()).category(Some(999)));
+            .create_from_builder(Transaction::build(PI).category(Some(999)));
 
         assert_eq!(transaction, Err(Error::InvalidCategory));
     }
 
     #[test]
-    fn create_fails_on_user_id_mismatch() {
-        // `user` is the owner of `someone_elses_category`.
-        let (mut state, user) = get_app_state_and_test_user();
-        let someone_elses_category = state
-            .category_store
-            .create(CategoryName::new_unchecked("hands off"), user.id())
-            .unwrap();
-
-        let unauthorized_user = state
-            .user_store
-            .create(
-                "bar@baz.qux".parse().unwrap(),
-                PasswordHash::new_unchecked("hunter3"),
-            )
-            .unwrap();
-
-        let maybe_transaction = state.transaction_store.create_from_builder(
-            Transaction::build(PI, unauthorized_user.id())
-                .category(Some(someone_elses_category.id)),
-        );
-
-        // The server should not give any information indicating to the client that the category exists or belongs to another user,
-        // so we give the same error as if the referenced category does not exist.
-        assert_eq!(maybe_transaction, Err(Error::InvalidCategory));
-    }
-
-    #[test]
     fn create_fails_on_duplicate_import_id() {
-        let (state, user) = get_app_state_and_test_user();
+        let state = get_app_state();
         let mut store = state.transaction_store;
         let import_id = Some(123456789);
         store
-            .create_from_builder(Transaction::build(123.45, user.id()).import_id(import_id))
+            .create_from_builder(Transaction::build(123.45).import_id(import_id))
             .expect("Could not create transaction");
 
         let duplicate_transaction =
-            store.create_from_builder(Transaction::build(123.45, user.id()).import_id(import_id));
+            store.create_from_builder(Transaction::build(123.45).import_id(import_id));
 
         assert_eq!(duplicate_transaction, Err(Error::DuplicateImportId));
     }
 
     #[test]
     fn import_multiple() {
-        let (state, user) = get_app_state_and_test_user();
+        let state = get_app_state();
         let mut store = state.transaction_store;
         let want = vec![
-            Transaction::build(123.45, user.id()).import_id(Some(123456789)),
-            Transaction::build(678.90, user.id()).import_id(Some(101112131)),
+            Transaction::build(123.45).import_id(Some(123456789)),
+            Transaction::build(678.90).import_id(Some(101112131)),
         ];
 
         let duplicate_transactions = store
@@ -413,24 +323,21 @@ mod sqlite_transaction_store_tests {
                 assert_eq!(want.date(), got.date(), "{error_message}");
                 assert_eq!(want.description(), got.description(), "{error_message}");
                 assert_eq!(want.category_id(), got.category_id(), "{error_message}");
-                assert_eq!(want.user_id(), got.user_id(), "{error_message}");
                 assert_eq!(want.import_id(), got.import_id(), "{error_message}");
             });
     }
 
     #[test]
     fn import_ignores_duplicate_import_id() {
-        let (state, user) = get_app_state_and_test_user();
+        let state = get_app_state();
         let mut store = state.transaction_store;
         let import_id = Some(123456789);
         let want = store
-            .create_from_builder(Transaction::build(123.45, user.id()).import_id(import_id))
+            .create_from_builder(Transaction::build(123.45).import_id(import_id))
             .expect("Could not create transaction");
 
         let duplicate_transactions = store
-            .import(vec![
-                Transaction::build(123.45, user.id()).import_id(import_id),
-            ])
+            .import(vec![Transaction::build(123.45).import_id(import_id)])
             .expect("Could not create transaction");
 
         assert_eq!(
@@ -446,16 +353,15 @@ mod sqlite_transaction_store_tests {
         assert_eq!(want.date(), got.date(), "{error_message}");
         assert_eq!(want.description(), got.description(), "{error_message}");
         assert_eq!(want.category_id(), got.category_id(), "{error_message}");
-        assert_eq!(want.user_id(), got.user_id(), "{error_message}");
         assert_eq!(want.import_id(), got.import_id(), "{error_message}");
     }
 
     #[tokio::test]
     async fn import_escapes_single_quotes() {
-        let (state, user) = get_app_state_and_test_user();
+        let state = get_app_state();
         let mut store = state.transaction_store;
         let want = vec![
-            Transaction::build(123.45, user.id())
+            Transaction::build(123.45)
                 .import_id(Some(123456789))
                 .description("Tom's Hardware"),
         ];
@@ -481,16 +387,15 @@ mod sqlite_transaction_store_tests {
                 assert_eq!(want.date(), got.date(), "{error_message}");
                 assert_eq!(want.description(), got.description(), "{error_message}");
                 assert_eq!(want.category_id(), got.category_id(), "{error_message}");
-                assert_eq!(want.user_id(), got.user_id(), "{error_message}");
                 assert_eq!(want.import_id(), got.import_id(), "{error_message}");
             });
     }
 
     #[test]
     fn get_transaction_by_id_succeeds() {
-        let (state, user) = get_app_state_and_test_user();
+        let state = get_app_state();
         let mut store = state.transaction_store;
-        let transaction = store.create(PI, user.id()).unwrap();
+        let transaction = store.create(PI).unwrap();
 
         let selected_transaction = store.get(transaction.id());
 
@@ -499,9 +404,9 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transaction_fails_on_invalid_id() {
-        let (state, user) = get_app_state_and_test_user();
+        let state = get_app_state();
         let mut store = state.transaction_store;
-        let transaction = store.create(123.0, user.id()).unwrap();
+        let transaction = store.create(123.0).unwrap();
 
         let maybe_transaction = store.get(transaction.id() + 654);
 
@@ -510,16 +415,7 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transactions_by_date_range() {
-        let (mut state, user) = get_app_state_and_test_user();
-
-        let other_user = state
-            .user_store
-            .create(
-                "other@example.com".parse().unwrap(),
-                PasswordHash::from_raw_password("averysecretpassword", 4).unwrap(),
-            )
-            .unwrap();
-
+        let state = get_app_state();
         let mut store = state.transaction_store;
 
         let end_date = OffsetDateTime::now_utc()
@@ -530,60 +426,34 @@ mod sqlite_transaction_store_tests {
 
         let want = [
             store
-                .create_from_builder(
-                    TransactionBuilder::new(12.3, user.id())
-                        .date(start_date)
-                        .unwrap(),
-                )
+                .create_from_builder(TransactionBuilder::new(12.3).date(start_date).unwrap())
                 .unwrap(),
             store
                 .create_from_builder(
-                    TransactionBuilder::new(23.4, user.id())
+                    TransactionBuilder::new(23.4)
                         .date(start_date.checked_add(Duration::days(3)).unwrap())
                         .unwrap(),
                 )
                 .unwrap(),
             store
-                .create_from_builder(
-                    TransactionBuilder::new(34.5, user.id())
-                        .date(end_date)
-                        .unwrap(),
-                )
+                .create_from_builder(TransactionBuilder::new(34.5).date(end_date).unwrap())
                 .unwrap(),
         ];
 
         // The below transactions should NOT be returned by the query.
         let cases = [
-            (
-                user.id(),
-                start_date.checked_sub(Duration::days(1)).unwrap(),
-            ),
-            (user.id(), end_date.checked_add(Duration::days(1)).unwrap()),
-            (
-                other_user.id(),
-                start_date.checked_sub(Duration::days(1)).unwrap(),
-            ),
-            (other_user.id(), start_date),
-            (
-                other_user.id(),
-                start_date.checked_add(Duration::days(3)).unwrap(),
-            ),
-            (other_user.id(), end_date),
-            (
-                other_user.id(),
-                end_date.checked_add(Duration::days(1)).unwrap(),
-            ),
+            start_date.checked_sub(Duration::days(1)).unwrap(),
+            end_date.checked_add(Duration::days(1)).unwrap(),
         ];
 
-        for (user_id, date) in cases {
+        for date in cases {
             store
-                .create_from_builder(TransactionBuilder::new(999.99, user_id).date(date).unwrap())
+                .create_from_builder(TransactionBuilder::new(999.99).date(date).unwrap())
                 .unwrap();
         }
 
         let got = store
             .get_query(TransactionQuery {
-                user_id: Some(user.id()),
                 date_range: Some(start_date..=end_date),
                 ..Default::default()
             })
@@ -594,12 +464,12 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transactions_with_limit() {
-        let (mut state, user) = get_app_state_and_test_user();
+        let mut state = get_app_state();
 
         let today = OffsetDateTime::now_utc().date();
 
         for i in 1..=10 {
-            let transaction_builder = TransactionBuilder::new(i as f64, user.id())
+            let transaction_builder = TransactionBuilder::new(i as f64)
                 .date(today.checked_sub(Duration::days(i)).unwrap())
                 .unwrap()
                 .description(&format!("transaction #{i}"));
@@ -623,7 +493,7 @@ mod sqlite_transaction_store_tests {
 
     #[test]
     fn get_transactions_descending_date() {
-        let (mut state, user) = get_app_state_and_test_user();
+        let mut state = get_app_state();
 
         let mut want = vec![];
         let start_date = OffsetDateTime::now_utc()
@@ -632,7 +502,7 @@ mod sqlite_transaction_store_tests {
             .unwrap();
 
         for i in 1..=3 {
-            let transaction_builder = TransactionBuilder::new(i as f64, user.id())
+            let transaction_builder = TransactionBuilder::new(i as f64)
                 .date(start_date.checked_add(Duration::days(i)).unwrap())
                 .unwrap()
                 .description(&format!("transaction #{i}"));

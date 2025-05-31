@@ -75,7 +75,6 @@ pub fn build_router(state: SQLAppState) -> Router {
     let protected_routes = protected_routes.merge(
         Router::new()
             .route(endpoints::TRANSACTIONS_API, post(create_transaction))
-            .route(endpoints::USER_CATEGORIES, post(create_category))
             .route(endpoints::CATEGORIES, post(create_category))
             .route(endpoints::IMPORT, post(import_transactions))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),

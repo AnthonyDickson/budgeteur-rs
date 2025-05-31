@@ -6,13 +6,13 @@ use time::Date;
 
 use crate::{
     Error,
-    models::{DatabaseID, Transaction, TransactionBuilder, UserID},
+    models::{DatabaseID, Transaction, TransactionBuilder},
 };
 
 /// Handles the creation and retrieval of transactions.
 pub trait TransactionStore {
     /// Create a new transaction in the store.
-    fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, Error>;
+    fn create(&mut self, amount: f64) -> Result<Transaction, Error>;
 
     /// Create a new transaction in the store.
     fn create_from_builder(&mut self, builder: TransactionBuilder) -> Result<Transaction, Error>;
@@ -33,8 +33,6 @@ pub trait TransactionStore {
 /// Defines how transactions should be fetched from [TransactionStore::get_query].
 #[derive(Default)]
 pub struct TransactionQuery {
-    /// Matches transactions belonging to the user with the ID `user_id`.
-    pub user_id: Option<UserID>,
     /// Include transactions within `date_range` (inclusive).
     pub date_range: Option<RangeInclusive<Date>>,
     /// Selects up to the first N (`limit`) transactions.

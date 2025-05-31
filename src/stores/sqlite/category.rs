@@ -7,7 +7,7 @@ use rusqlite::{Connection, Row};
 use crate::{
     Error,
     db::{CreateTable, MapRow},
-    models::{Category, CategoryName, DatabaseID, UserID},
+    models::{Category, CategoryName, DatabaseID},
     stores::CategoryStore,
 };
 
@@ -25,20 +25,17 @@ impl SQLiteCategoryStore {
 }
 
 impl CategoryStore for SQLiteCategoryStore {
-    /// Create a category in the database for the user `user_id`.
+    /// Create a category in the database.
     ///
     /// # Errors
     /// This function will return an error if there is an SQL error.
-    fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, Error> {
+    fn create(&self, name: CategoryName) -> Result<Category, Error> {
         let connection = self.connection.lock().unwrap();
-        connection.execute(
-            "INSERT INTO category (name, user_id) VALUES (?1, ?2)",
-            (name.as_ref(), user_id.as_i64()),
-        )?;
+        connection.execute("INSERT INTO category (name) VALUES (?1);", (name.as_ref(),))?;
 
         let id = connection.last_insert_rowid();
 
-        Ok(Category { id, name, user_id })
+        Ok(Category { id, name })
     }
 
     /// Retrieve categories in the database for the category with `category_id`.
@@ -49,35 +46,22 @@ impl CategoryStore for SQLiteCategoryStore {
         self.connection
             .lock()
             .unwrap()
-            .prepare("SELECT id, name, user_id FROM category WHERE id = :id")?
+            .prepare("SELECT id, name FROM category WHERE id = :id;")?
             .query_row(&[(":id", &category_id)], SQLiteCategoryStore::map_row)
             .map_err(|error| error.into())
     }
 
-    /// Retrieve categories in the database for the user `user_id`.
+    /// Retrieve categories in the database.
     ///
     /// # Errors
     /// This function will return an error if there is an SQL error.
-    fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, Error> {
+    fn get_all(&self) -> Result<Vec<Category>, Error> {
         self.connection
             .lock()
             .unwrap()
-            .prepare("SELECT id, name, user_id FROM category WHERE user_id = :user_id")?
-            .query_map(
-                &[(":user_id", &user_id.as_i64())],
-                SQLiteCategoryStore::map_row,
-            )?
-            .map(|maybe_category| {
-                maybe_category.map_err(|error| match error {
-                    // Code 787 occurs when a FOREIGN KEY constraint failed.
-                    rusqlite::Error::SqliteFailure(error, Some(_))
-                        if error.extended_code == 787 =>
-                    {
-                        Error::InvalidUser
-                    }
-                    error => error.into(),
-                })
-            })
+            .prepare("SELECT id, name FROM category;")?
+            .query_map([], SQLiteCategoryStore::map_row)?
+            .map(|maybe_category| maybe_category.map_err(|error| error.into()))
             .collect()
     }
 }
@@ -87,11 +71,8 @@ impl CreateTable for SQLiteCategoryStore {
         connection.execute(
             "CREATE TABLE category (
                 id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                user_id INTEGER NOT NULL,
-                FOREIGN KEY(user_id) REFERENCES user(id) ON UPDATE CASCADE ON DELETE CASCADE,
-                UNIQUE(user_id, name) ON CONFLICT ROLLBACK
-                )",
+                name TEXT NOT NULL UNIQUE
+            );",
             (),
         )?;
 
@@ -108,10 +89,7 @@ impl MapRow for SQLiteCategoryStore {
         let raw_name: String = row.get(offset + 1)?;
         let name = CategoryName::new_unchecked(&raw_name);
 
-        let raw_user_id = row.get(offset + 2)?;
-        let user_id = UserID::new(raw_user_id);
-
-        Ok(Self::ReturnType { id, name, user_id })
+        Ok(Self::ReturnType { id, name })
     }
 }
 
@@ -122,50 +100,34 @@ mod category_tests {
 
     use rusqlite::Connection;
 
-    use crate::{
-        Error,
-        db::initialize,
-        models::{CategoryName, PasswordHash, User, UserID},
-        stores::{UserStore, sqlite::SQLiteUserStore},
-    };
+    use crate::{Error, db::initialize, models::CategoryName};
 
     use super::{CategoryStore, SQLiteCategoryStore};
 
-    fn get_store_and_user() -> (SQLiteCategoryStore, User) {
+    fn get_test_store() -> SQLiteCategoryStore {
         let connection = Connection::open_in_memory().unwrap();
         initialize(&connection).unwrap();
         let connection = Arc::new(Mutex::new(connection));
 
-        let user = SQLiteUserStore::new(connection.clone())
-            .create(
-                "foo@bar.baz".parse().unwrap(),
-                PasswordHash::from_raw_password("naetoafntseoafunts", 4).unwrap(),
-            )
-            .unwrap();
-
-        let store = SQLiteCategoryStore::new(connection.clone());
-
-        (store, user)
+        SQLiteCategoryStore::new(connection.clone())
     }
 
     #[test]
     fn create_category_succeeds() {
-        let (store, user) = get_store_and_user();
+        let store = get_test_store();
         let name = CategoryName::new("Categorically a category").unwrap();
 
-        let category = store.create(name.clone(), user.id()).unwrap();
+        let category = store.create(name.clone()).unwrap();
 
         assert!(category.id > 0);
         assert_eq!(category.name, name);
-        assert_eq!(category.user_id, user.id());
     }
 
     #[test]
     fn get_category_succeeds() {
-        let (store, user) = get_store_and_user();
-
+        let store = get_test_store();
         let name = CategoryName::new_unchecked("Foo");
-        let inserted_category = store.create(name, user.id()).unwrap();
+        let inserted_category = store.create(name).unwrap();
 
         let selected_category = store.get(inserted_category.id);
 
@@ -174,10 +136,8 @@ mod category_tests {
 
     #[test]
     fn get_category_with_invalid_id_returns_not_found() {
-        let (store, user) = get_store_and_user();
-        let inserted_category = store
-            .create(CategoryName::new_unchecked("Foo"), user.id())
-            .unwrap();
+        let store = get_test_store();
+        let inserted_category = store.create(CategoryName::new_unchecked("Foo")).unwrap();
 
         let selected_category = store.get(inserted_category.id + 123);
 
@@ -185,37 +145,17 @@ mod category_tests {
     }
 
     #[test]
-    fn get_category_with_user_id() {
-        let (store, user) = get_store_and_user();
+    fn get_all_categories() {
+        let store = get_test_store();
 
         let inserted_categories = HashSet::from([
-            store
-                .create(CategoryName::new_unchecked("Foo"), user.id())
-                .unwrap(),
-            store
-                .create(CategoryName::new_unchecked("Bar"), user.id())
-                .unwrap(),
+            store.create(CategoryName::new_unchecked("Foo")).unwrap(),
+            store.create(CategoryName::new_unchecked("Bar")).unwrap(),
         ]);
 
-        let selected_categories = store.get_by_user(user.id()).unwrap();
+        let selected_categories = store.get_all().unwrap();
         let selected_categories = HashSet::from_iter(selected_categories);
 
         assert_eq!(inserted_categories, selected_categories);
-    }
-
-    #[test]
-    fn get_category_with_invalid_user_id() {
-        let (store, user) = get_store_and_user();
-
-        store
-            .create(CategoryName::new_unchecked("Foo"), user.id())
-            .unwrap();
-        store
-            .create(CategoryName::new_unchecked("Bar"), user.id())
-            .unwrap();
-
-        let selected_categories = store.get_by_user(UserID::new(user.id().as_i64() + 123));
-
-        assert_eq!(selected_categories, Ok(vec![]));
     }
 }

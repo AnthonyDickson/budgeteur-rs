@@ -127,7 +127,8 @@ on_change_strategy = "kill_then_restart"
 # Shortcuts to internal functions (scrolling, toggling, etc.)
 # should go in your personal global prefs.toml file instead.
 [keybindings]
-c = "job:clippy-all"  # comment this to have 'c' run clippy on only the default target
+c = "job:clippy"
+shift-c = "job:check"
 r = "job:run"
 w = "job:tailwindcss"
 # vim bindings :)

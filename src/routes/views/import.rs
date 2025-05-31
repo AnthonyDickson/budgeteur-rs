@@ -1,6 +1,5 @@
 use askama_axum::Template;
 use axum::{
-    Extension,
     extract::{Multipart, State},
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
@@ -9,7 +8,6 @@ use axum_htmx::HxRedirect;
 
 use crate::{
     csv::parse_csv,
-    models::UserID,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
@@ -47,7 +45,6 @@ pub async fn get_import_page() -> Response {
 
 pub async fn import_transactions<B, T>(
     State(mut state): State<ImportState<B, T>>,
-    Extension(user_id): Extension<UserID>,
     mut multipart: Multipart,
 ) -> Response
 where
@@ -76,7 +73,7 @@ where
             data
         );
 
-        match parse_csv(&data, user_id) {
+        match parse_csv(&data) {
             Ok(parse_result) => {
                 transactions.extend(parse_result.transactions);
 
@@ -133,7 +130,6 @@ mod import_transactions_tests {
     use std::sync::{Arc, Mutex};
 
     use axum::{
-        Extension,
         extract::{FromRequest, Multipart, State},
         http::{Request, StatusCode},
         response::Response,
@@ -144,7 +140,7 @@ mod import_transactions_tests {
     use crate::{
         Error,
         csv::create_import_id,
-        models::{Balance, DatabaseID, Transaction, TransactionBuilder, UserID},
+        models::{Balance, DatabaseID, Transaction, TransactionBuilder},
         routes::{
             endpoints,
             views::import::{get_import_page, import_transactions},
@@ -217,40 +213,38 @@ mod import_transactions_tests {
             balance_store: DummyBalanceStore,
             transaction_store: FakeTransactionStore::new(),
         };
-        let user_id = UserID::new(123);
-
         let want_transactions: Vec<Transaction> = vec![
-            TransactionBuilder::new(1300.00, user_id)
+            TransactionBuilder::new(1300.00)
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not parse date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id("2025/01/18,2025011801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",1300.00")))
                 .finalise(0),
-            TransactionBuilder::new(-1300.00, user_id)
+            TransactionBuilder::new(-1300.00)
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  Credit Card")
                 .import_id(Some(create_import_id("2025/01/18,2025011802,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  Credit Card\",-1300.00")))
                 .finalise(1),
-            TransactionBuilder::new(4400.00, user_id)
+            TransactionBuilder::new(4400.00)
                 .date(date!(2025 - 02 - 18))
                 .expect("Could not parse date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id("2025/02/18,2025021801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",4400.00")))
                 .finalise(2),
-            TransactionBuilder::new(-4400.00, user_id)
+            TransactionBuilder::new(-4400.00)
                 .date(date!(2025 - 02 - 19))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  THANK YOU")
                 .import_id(Some(create_import_id("2025/02/19,2025021901,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-4400.00")))
                 .finalise(3),
-            TransactionBuilder::new(2750.00, user_id)
+            TransactionBuilder::new(2750.00)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id("2025/03/20,2025032001,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",2750.00")))
                 .finalise(4),
-            TransactionBuilder::new(-2750.00, user_id)
+            TransactionBuilder::new(-2750.00)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  THANK YOU")
@@ -260,7 +254,6 @@ mod import_transactions_tests {
 
         let response = import_transactions(
             State(state.clone()),
-            Extension(user_id),
             must_make_multipart_csv(&[ASB_BANK_STATEMENT_CSV]).await,
         )
         .await;
@@ -285,22 +278,20 @@ mod import_transactions_tests {
             balance_store: DummyBalanceStore,
             transaction_store: FakeTransactionStore::new(),
         };
-        let user_id = UserID::new(123);
-
         let want_transactions: Vec<Transaction> = vec![
-            TransactionBuilder::new(2750.00, user_id)
+            TransactionBuilder::new(2750.00)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("PAYMENT RECEIVED THANK YOU")
                 .import_id(Some(create_import_id("2025/03/20,2025/03/20,2025032002,CREDIT,5023,\"PAYMENT RECEIVED THANK YOU\",-2750.00")))
                 .finalise(0),
-            TransactionBuilder::new(-8.50, user_id)
+            TransactionBuilder::new(-8.50)
                 .date(date!(2025 - 04 - 09))
                 .expect("Could not parse date")
                 .description("Birdy Bytes")
                 .import_id(Some(create_import_id("2025/04/09,2025/04/08,2025040902,DEBIT,5023,\"Birdy Bytes\",8.50")))
                 .finalise(1),
-            TransactionBuilder::new(-10.63, user_id)
+            TransactionBuilder::new(-10.63)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description(
@@ -308,13 +299,13 @@ mod import_transactions_tests {
                 )
                 .import_id(Some(create_import_id("2025/04/10,2025/04/07,2025041001,DEBIT,5023,\"AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)\",10.63")))
                 .finalise(2),
-            TransactionBuilder::new(-0.22, user_id)
+            TransactionBuilder::new(-0.22)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description("OFFSHORE SERVICE MARGINS")
                 .import_id(Some(create_import_id("2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22")))
                 .finalise(3),
-            TransactionBuilder::new(-11.50, user_id)
+            TransactionBuilder::new(-11.50)
                 .date(date!(2025 - 04 - 11))
                 .expect("Could not parse date")
                 .description("Buckstars")
@@ -324,7 +315,6 @@ mod import_transactions_tests {
 
         let response = import_transactions(
             State(state.clone()),
-            Extension(user_id),
             must_make_multipart_csv(&[ASB_CC_STATEMENT_CSV]).await,
         )
         .await;
@@ -349,10 +339,8 @@ mod import_transactions_tests {
             balance_store: DummyBalanceStore,
             transaction_store: FakeTransactionStore::new(),
         };
-        let user_id = UserID::new(999);
-
         let want_transactions: Vec<Transaction> = vec![
-            TransactionBuilder::new(0.25, user_id)
+            TransactionBuilder::new(0.25)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
@@ -360,7 +348,7 @@ mod import_transactions_tests {
                     "38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16",
                 )))
                 .finalise(0),
-            TransactionBuilder::new(-0.03, user_id)
+            TransactionBuilder::new(-0.03)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
@@ -368,7 +356,7 @@ mod import_transactions_tests {
                     "38-1234-0123456-01,31-01-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.03,-0.03,71.13",
                 )))
                 .finalise(1),
-            TransactionBuilder::new(0.22, user_id)
+            TransactionBuilder::new(0.22)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
@@ -376,7 +364,7 @@ mod import_transactions_tests {
                     "38-1234-0123456-01,28-02-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.35",
                 )))
                 .finalise(2),
-            TransactionBuilder::new(-0.02, user_id)
+            TransactionBuilder::new(-0.02)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
@@ -384,7 +372,7 @@ mod import_transactions_tests {
                     "38-1234-0123456-01,28-02-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.33",
                 )))
                 .finalise(3),
-            TransactionBuilder::new(0.22, user_id)
+            TransactionBuilder::new(0.22)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
@@ -392,7 +380,7 @@ mod import_transactions_tests {
                     "38-1234-0123456-01,31-03-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.55",
                 )))
                 .finalise(4),
-            TransactionBuilder::new(-0.02, user_id)
+            TransactionBuilder::new(-0.02)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
@@ -404,7 +392,6 @@ mod import_transactions_tests {
 
         let response = import_transactions(
             State(state.clone()),
-            Extension(user_id),
             must_make_multipart_csv(&[KIWIBANK_BANK_STATEMENT_CSV]).await,
         )
         .await;
@@ -429,10 +416,8 @@ mod import_transactions_tests {
             balance_store: DummyBalanceStore,
             transaction_store: FakeTransactionStore::new(),
         };
-        let user_id = UserID::new(123);
-
         let want_transactions: Vec<Transaction> = vec![
-            TransactionBuilder::new(1300.00, user_id)
+            TransactionBuilder::new(1300.00)
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not parse date")
                 .description("Credit Card")
@@ -440,49 +425,49 @@ mod import_transactions_tests {
                     "2025/01/18,2025011801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",1300.00",
                 )))
                 .finalise(0),
-            TransactionBuilder::new(-1300.00, user_id)
+            TransactionBuilder::new(-1300.00)
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  Credit Card")
                 .import_id(Some(create_import_id("2025/01/18,2025011802,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  Credit Card\",-1300.00")))
                 .finalise(1),
-            TransactionBuilder::new(4400.00, user_id)
+            TransactionBuilder::new(4400.00)
                 .date(date!(2025 - 02 - 18))
                 .expect("Could not parse date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id("2025/02/18,2025021801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",4400.00")))
                 .finalise(2),
-            TransactionBuilder::new(-4400.00, user_id)
+            TransactionBuilder::new(-4400.00)
                 .date(date!(2025 - 02 - 19))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  THANK YOU")
                 .import_id(Some(create_import_id("2025/02/19,2025021901,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-4400.00")))
                 .finalise(3),
-            TransactionBuilder::new(2750.00, user_id)
+            TransactionBuilder::new(2750.00)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id("2025/03/20,2025032001,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",2750.00")))
                 .finalise(4),
-            TransactionBuilder::new(-2750.00, user_id)
+            TransactionBuilder::new(-2750.00)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("TO CARD 5023  THANK YOU")
                 .import_id(Some(create_import_id("2025/03/20,2025032002,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-2750.00")))
                 .finalise(5),
-            TransactionBuilder::new(2750.00, user_id)
+            TransactionBuilder::new(2750.00)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("PAYMENT RECEIVED THANK YOU")
                 .import_id(Some(create_import_id("2025/03/20,2025/03/20,2025032002,CREDIT,5023,\"PAYMENT RECEIVED THANK YOU\",-2750.00")))
                 .finalise(6),
-            TransactionBuilder::new(-8.50, user_id)
+            TransactionBuilder::new(-8.50)
                 .date(date!(2025 - 04 - 09))
                 .expect("Could not parse date")
                 .description("Birdy Bytes")
                 .import_id(Some(create_import_id("2025/04/09,2025/04/08,2025040902,DEBIT,5023,\"Birdy Bytes\",8.50")))
                 .finalise(7),
-            TransactionBuilder::new(-10.63, user_id)
+            TransactionBuilder::new(-10.63)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description(
@@ -490,19 +475,19 @@ mod import_transactions_tests {
                 )
                     .import_id(Some(create_import_id("2025/04/10,2025/04/07,2025041001,DEBIT,5023,\"AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)\",10.63")))
                 .finalise(8),
-            TransactionBuilder::new(-0.22, user_id)
+            TransactionBuilder::new(-0.22)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description("OFFSHORE SERVICE MARGINS")
                 .import_id(Some(create_import_id("2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22")))
                 .finalise(9),
-            TransactionBuilder::new(-11.50, user_id)
+            TransactionBuilder::new(-11.50)
                 .date(date!(2025 - 04 - 11))
                 .expect("Could not parse date")
                 .description("Buckstars")
                 .import_id(Some(create_import_id("2025/04/11,2025/04/10,2025041101,DEBIT,5023,\"Buckstars\",11.50")))
                 .finalise(10),
-            TransactionBuilder::new(0.25, user_id)
+            TransactionBuilder::new(0.25)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
@@ -510,7 +495,7 @@ mod import_transactions_tests {
                     "38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16",
                 )))
                 .finalise(11),
-            TransactionBuilder::new(-0.03, user_id)
+            TransactionBuilder::new(-0.03)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
@@ -518,7 +503,7 @@ mod import_transactions_tests {
                     "38-1234-0123456-01,31-01-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.03,-0.03,71.13",
                 )))
                 .finalise(12),
-            TransactionBuilder::new(0.22, user_id)
+            TransactionBuilder::new(0.22)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
@@ -526,7 +511,7 @@ mod import_transactions_tests {
                     "38-1234-0123456-01,28-02-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.35",
                 )))
                 .finalise(13),
-            TransactionBuilder::new(-0.02, user_id)
+            TransactionBuilder::new(-0.02)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
@@ -534,7 +519,7 @@ mod import_transactions_tests {
                     "38-1234-0123456-01,28-02-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.33",
                 )))
                 .finalise(14),
-            TransactionBuilder::new(0.22, user_id)
+            TransactionBuilder::new(0.22)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
@@ -542,7 +527,7 @@ mod import_transactions_tests {
                     "38-1234-0123456-01,31-03-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.55",
                 )))
                 .finalise(15),
-            TransactionBuilder::new(-0.02, user_id)
+            TransactionBuilder::new(-0.02)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
@@ -554,7 +539,6 @@ mod import_transactions_tests {
 
         let response = import_transactions(
             State(state.clone()),
-            Extension(user_id),
             must_make_multipart_csv(&[
                 ASB_BANK_STATEMENT_CSV,
                 ASB_CC_STATEMENT_CSV,
@@ -590,7 +574,6 @@ mod import_transactions_tests {
 
         let response = import_transactions(
             State(state.clone()),
-            Extension(UserID::new(42)),
             must_make_multipart_csv(&[ASB_BANK_STATEMENT_CSV]).await,
         )
         .await;
@@ -618,7 +601,6 @@ mod import_transactions_tests {
 
         let response = import_transactions(
             State(state.clone()),
-            Extension(UserID::new(42)),
             must_make_multipart_csv(&[ASB_CC_STATEMENT_CSV]).await,
         )
         .await;
@@ -644,7 +626,6 @@ mod import_transactions_tests {
 
         let response = import_transactions(
             State(state.clone()),
-            Extension(UserID::new(42)),
             must_make_multipart_csv(&[KIWIBANK_BANK_STATEMENT_CSV]).await,
         )
         .await;
@@ -669,14 +650,8 @@ mod import_transactions_tests {
             balance_store: DummyBalanceStore,
             transaction_store: FakeTransactionStore::new(),
         };
-        let user_id = UserID::new(123);
-
-        let response = import_transactions(
-            State(state.clone()),
-            Extension(user_id),
-            must_make_multipart_csv(&[""]).await,
-        )
-        .await;
+        let response =
+            import_transactions(State(state.clone()), must_make_multipart_csv(&[""]).await).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
@@ -702,11 +677,8 @@ mod import_transactions_tests {
             balance_store: DummyBalanceStore,
             transaction_store: FakeTransactionStore::new(),
         };
-        let user_id = UserID::new(123);
-
         let response = import_transactions(
             State(state.clone()),
-            Extension(user_id),
             must_make_multipart(&["text/plain"]).await,
         )
         .await;
@@ -732,18 +704,15 @@ mod import_transactions_tests {
             balance_store: DummyBalanceStore,
             transaction_store: SQLErrorTransactionStore,
         };
-        let user_id = UserID::new(123);
 
         let response = import_transactions(
             State(state.clone()),
-            Extension(user_id),
             must_make_multipart_csv(&[ASB_BANK_STATEMENT_CSV]).await,
         )
         .await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
-
         let html = parse_html(response, HTMLParsingMode::Fragment).await;
         assert_valid_html(&html);
         let form = must_get_form(&html);
@@ -982,11 +951,10 @@ mod import_transactions_tests {
                 account: "".to_owned(),
                 balance: 0.0,
                 date: date!(2025 - 05 - 31),
-                user_id: UserID::new(123),
             })
         }
 
-        fn get_by_user_id(&self, _user_id: UserID) -> Result<Vec<Balance>, Error> {
+        fn get_all(&self) -> Result<Vec<Balance>, Error> {
             todo!()
         }
     }
@@ -1011,7 +979,6 @@ mod import_transactions_tests {
                 account: account.to_owned(),
                 balance,
                 date: date.to_owned(),
-                user_id: UserID::new(0),
             };
 
             self.balances.lock().unwrap().push(balance.clone());
@@ -1019,8 +986,7 @@ mod import_transactions_tests {
             Ok(balance)
         }
 
-        fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Balance>, Error> {
-            let _ = user_id;
+        fn get_all(&self) -> Result<Vec<Balance>, Error> {
             todo!()
         }
     }
@@ -1041,8 +1007,8 @@ mod import_transactions_tests {
     }
 
     impl TransactionStore for FakeTransactionStore {
-        fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, Error> {
-            self.create_from_builder(TransactionBuilder::new(amount, user_id))
+        fn create(&mut self, amount: f64) -> Result<Transaction, Error> {
+            self.create_from_builder(TransactionBuilder::new(amount))
         }
 
         fn create_from_builder(
@@ -1087,7 +1053,7 @@ mod import_transactions_tests {
     struct SQLErrorTransactionStore;
 
     impl TransactionStore for SQLErrorTransactionStore {
-        fn create(&mut self, _amount: f64, _user_id: UserID) -> Result<Transaction, Error> {
+        fn create(&mut self, _amount: f64) -> Result<Transaction, Error> {
             todo!()
         }
 

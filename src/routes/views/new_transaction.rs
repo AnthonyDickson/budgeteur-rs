@@ -1,13 +1,12 @@
 use askama::Template;
 use axum::{
-    Extension,
     extract::State,
     response::{IntoResponse, Response},
 };
 use time::Date;
 
 use crate::{
-    models::{Category, UserID},
+    models::Category,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
@@ -28,14 +27,11 @@ struct NewTransactionTemplate<'a> {
 }
 
 /// Renders the page for creating a transaction.
-pub async fn get_new_transaction_page<C>(
-    State(state): State<NewTransactionState<C>>,
-    Extension(user_id): Extension<UserID>,
-) -> Response
+pub async fn get_new_transaction_page<C>(State(state): State<NewTransactionState<C>>) -> Response
 where
     C: CategoryStore + Send + Sync,
 {
-    let categories = state.category_store.get_by_user(user_id).unwrap();
+    let categories = state.category_store.get_all().unwrap();
 
     let nav_bar = get_nav_bar(endpoints::NEW_TRANSACTION_VIEW);
 
@@ -54,7 +50,6 @@ mod new_transaction_route_tests {
     use std::collections::HashMap;
 
     use axum::{
-        Extension,
         body::Body,
         extract::State,
         http::{StatusCode, response::Response},
@@ -64,7 +59,7 @@ mod new_transaction_route_tests {
 
     use crate::{
         Error,
-        models::{Category, CategoryName, DatabaseID, UserID},
+        models::{Category, CategoryName, DatabaseID},
         routes::endpoints,
         state::NewTransactionState,
         stores::CategoryStore,
@@ -78,7 +73,7 @@ mod new_transaction_route_tests {
     }
 
     impl CategoryStore for StubCategoryStore {
-        fn create(&self, _name: CategoryName, _user_id: UserID) -> Result<Category, Error> {
+        fn create(&self, _name: CategoryName) -> Result<Category, Error> {
             todo!()
         }
 
@@ -86,15 +81,11 @@ mod new_transaction_route_tests {
             todo!()
         }
 
-        fn get_by_user(&self, user_id: UserID) -> Result<Vec<Category>, Error> {
+        fn get_all(&self) -> Result<Vec<Category>, Error> {
             let categories = self
                 .categories
                 .iter()
-                .map(|category| {
-                    let mut new_category = category.clone();
-                    new_category.user_id = user_id;
-                    new_category
-                })
+                .map(|category| category.clone())
                 .collect();
             Ok(categories)
         }
@@ -102,17 +93,14 @@ mod new_transaction_route_tests {
 
     #[tokio::test]
     async fn returns_form() {
-        let user_id = UserID::new(42);
         let mut categories = vec![
             Category {
                 id: 1,
                 name: CategoryName::new_unchecked("foo"),
-                user_id,
             },
             Category {
                 id: 2,
                 name: CategoryName::new_unchecked("bar"),
-                user_id,
             },
         ];
         let category_store = StubCategoryStore {
@@ -122,11 +110,10 @@ mod new_transaction_route_tests {
         categories.push(Category {
             id: 0,
             name: CategoryName::new_unchecked("None"),
-            user_id,
         });
         let app_state = NewTransactionState { category_store };
 
-        let response = get_new_transaction_page(State(app_state), Extension(user_id)).await;
+        let response = get_new_transaction_page(State(app_state)).await;
 
         assert_status_ok(&response);
         assert_html_content_type(&response);

@@ -33,8 +33,6 @@ pub const LOG_IN_API: &str = "/api/log_in";
 pub const LOG_OUT: &str = "/api/log_out";
 /// The route to access users.
 pub const USERS: &str = "/api/users";
-/// The route to access the categories for a given user.
-pub const USER_CATEGORIES: &str = "/api/users/:user_id/categories";
 /// The route to access categories.
 pub const CATEGORIES: &str = "/api/categories";
 /// The route to access a single category.
@@ -124,7 +122,6 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_API);
         assert_endpoint_is_valid_uri(endpoints::LOG_OUT);
         assert_endpoint_is_valid_uri(endpoints::USERS);
-        assert_endpoint_is_valid_uri(endpoints::USER_CATEGORIES);
         assert_endpoint_is_valid_uri(endpoints::CATEGORIES);
         assert_endpoint_is_valid_uri(endpoints::CATEGORY);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);

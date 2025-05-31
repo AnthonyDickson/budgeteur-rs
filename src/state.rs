@@ -100,7 +100,7 @@ where
     fn from_ref(state: &AppState<B, C, T, U>) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
-            cookie_duration: state.cookie_duration.clone(),
+            cookie_duration: state.cookie_duration,
         }
     }
 }
@@ -150,7 +150,7 @@ where
     fn from_ref(state: &AppState<B, C, T, U>) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
-            cookie_duration: state.cookie_duration.clone(),
+            cookie_duration: state.cookie_duration,
             user_store: state.user_store.clone(),
         }
     }
