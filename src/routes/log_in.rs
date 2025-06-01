@@ -1,7 +1,6 @@
 //! This file defines the high-level log-in route logic.
 //! The auth module handles the lower level authentication and cookie auth logic.
 
-use askama::Template;
 use axum::{
     Form,
     extract::State,
@@ -24,29 +23,8 @@ use crate::{
 
 use super::{
     endpoints,
-    templates::{EmailInputTemplate, PasswordInputTemplate},
+    templates::{EmailInputTemplate, LogInFormTemplate, PasswordInputTemplate},
 };
-
-/// Renders a log-in form with client-side and server-side validation.
-#[derive(Template)]
-#[template(path = "partials/log_in/form.html")]
-struct LogInFormTemplate<'a> {
-    email_input: EmailInputTemplate<'a>,
-    password_input: PasswordInputTemplate<'a>,
-    log_in_route: &'a str,
-    register_route: &'a str,
-}
-
-impl Default for LogInFormTemplate<'_> {
-    fn default() -> Self {
-        Self {
-            email_input: Default::default(),
-            password_input: Default::default(),
-            log_in_route: endpoints::LOG_IN_API,
-            register_route: endpoints::REGISTER_VIEW,
-        }
-    }
-}
 
 /// How long the auth cookie should last if the user selects "remember me" at log-in.
 pub const REMEMBER_ME_COOKIE_DURATION: Duration = Duration::days(7);

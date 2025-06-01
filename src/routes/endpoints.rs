@@ -18,6 +18,8 @@ pub const IMPORT_VIEW: &str = "/transactions/import";
 pub const REGISTER_VIEW: &str = "/register";
 /// The route for getting the log in page.
 pub const LOG_IN_VIEW: &str = "/log_in";
+/// The route for instructions for resetting the user's password.
+pub const FORGOT_PASSWORD_VIEW: &str = "/forgot_password";
 /// The page to display when an internal server error occurs.
 pub const INTERNAL_ERROR_VIEW: &str = "/error";
 /// The page to display account balances.
@@ -114,6 +116,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::IMPORT_VIEW);
         assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::FORGOT_PASSWORD_VIEW);
         assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
         assert_endpoint_is_valid_uri(endpoints::BALANCES_VIEW);
         assert_endpoint_is_valid_uri(endpoints::STATIC);

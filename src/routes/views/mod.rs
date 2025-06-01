@@ -2,6 +2,7 @@
 
 pub mod balances;
 pub mod dashboard;
+pub mod forgot_password;
 pub mod import;
 pub mod log_in;
 pub mod new_category;
