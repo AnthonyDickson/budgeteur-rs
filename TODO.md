@@ -10,9 +10,8 @@
 - Refactor common testing functions into a separate module.
 - Refactor app to assume single user
   - Simpler and all I need!
-  - Create:
-    - Page to set password on first startup
-  - Update:
-    - Remove user ID fields in models
-  - Delete:
-    - Registration page
+  - Log in flow
+    - Log in page should have link for "forgot your password?". This should
+      give instructions to run a CLI script that will change the password in the
+      database. The CLI script should use a similar flow to the registration
+      page for setting up a password.

@@ -82,6 +82,14 @@ impl UserStore for SQLiteUserStore {
             .query_row(&[(":email", &email.to_string())], SQLiteUserStore::map_row)
             .map_err(|e| e.into())
     }
+
+    fn count(&self) -> Result<usize, Error> {
+        self.connection
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(id) FROM user;", [], |row| row.get(0))
+            .map_err(|error| error.into())
+    }
 }
 
 impl CreateTable for SQLiteUserStore {
@@ -209,7 +217,6 @@ mod user_tests {
     #[test]
     fn get_user_succeeds_with_existing_email() {
         let mut store = get_store();
-
         let test_user = store
             .create(
                 EmailAddress::from_str("foo@bar.baz").unwrap(),
@@ -220,5 +227,23 @@ mod user_tests {
         let retrieved_user = store.get_by_email(test_user.email()).unwrap();
 
         assert_eq!(retrieved_user, test_user);
+    }
+
+    #[test]
+    fn returns_correct_count() {
+        let mut store = get_store();
+
+        let count = store.count().expect("Could not get user count");
+        assert_eq!(0, count, "Want zero users before insertion, got {count}");
+
+        store
+            .create(
+                EmailAddress::from_str("foo@bar.baz").unwrap(),
+                PasswordHash::new_unchecked("hunter2"),
+            )
+            .unwrap();
+
+        let count = store.count().expect("Could not get user count");
+        assert_eq!(1, count, "Want one user after insertion, got {count}");
     }
 }

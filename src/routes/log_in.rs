@@ -191,6 +191,10 @@ mod log_in_tests {
                 .ok_or(Error::NotFound)
                 .map(|user| user.to_owned())
         }
+
+        fn count(&self) -> Result<usize, Error> {
+            todo!()
+        }
     }
 
     #[tokio::test]

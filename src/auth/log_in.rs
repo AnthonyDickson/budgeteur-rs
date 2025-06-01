@@ -3,7 +3,7 @@
 use email_address::EmailAddress;
 use serde::{Deserialize, Serialize};
 
-use crate::{models::User, stores::UserStore, Error};
+use crate::{Error, models::User, stores::UserStore};
 
 /// The raw data entered by the user in the log-in form.
 ///
@@ -59,10 +59,10 @@ mod log_in_tests {
     use email_address::EmailAddress;
 
     use crate::{
-        auth::log_in::{verify_credentials, LogInData},
+        Error,
+        auth::log_in::{LogInData, verify_credentials},
         models::{PasswordHash, User, UserID},
         stores::UserStore,
-        Error,
     };
 
     #[derive(Clone)]
@@ -89,6 +89,10 @@ mod log_in_tests {
                 .find(|user| user.email() == email)
                 .ok_or(Error::NotFound)
                 .map(|user| user.to_owned())
+        }
+
+        fn count(&self) -> Result<usize, Error> {
+            todo!()
         }
     }
 
