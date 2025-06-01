@@ -6,7 +6,7 @@ use axum::response::{IntoResponse, Response};
 use crate::routes::templates::{PasswordInputTemplate, RegisterFormTemplate};
 
 /// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).
-const PASSWORD_INPUT_MIN_LENGTH: usize = 8;
+const PASSWORD_INPUT_MIN_LENGTH: usize = 14;
 
 #[derive(Template)]
 #[template(path = "views/register.html")]
