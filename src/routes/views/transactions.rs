@@ -1,13 +1,11 @@
 use askama_axum::Template;
 use axum::{
-    Extension,
     extract::State,
     http::Uri,
     response::{IntoResponse, Response},
 };
 
 use crate::{
-    models::UserID,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
@@ -32,17 +30,13 @@ struct TransactionsTemplate<'a> {
 
 // TODO: implement pagination
 /// Render an overview of the user's transactions.
-pub async fn get_transactions_page<T>(
-    State(state): State<TransactionsViewState<T>>,
-    Extension(user_id): Extension<UserID>,
-) -> Response
+pub async fn get_transactions_page<T>(State(state): State<TransactionsViewState<T>>) -> Response
 where
     T: TransactionStore + Send + Sync,
 {
     let nav_bar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
 
     let transactions = state.transaction_store.get_query(TransactionQuery {
-        user_id: Some(user_id),
         limit: Some(20),
         sort_date: Some(SortOrder::Descending),
         ..Default::default()
@@ -69,12 +63,12 @@ where
 #[cfg(test)]
 mod transactions_route_tests {
     use askama::Result;
-    use axum::{Extension, extract::State, http::StatusCode, response::Response};
+    use axum::{extract::State, http::StatusCode, response::Response};
     use scraper::Html;
 
     use crate::{
         Error,
-        models::{DatabaseID, Transaction, TransactionBuilder, UserID},
+        models::{DatabaseID, Transaction, TransactionBuilder},
         state::TransactionsViewState,
         stores::{TransactionQuery, TransactionStore},
     };
@@ -87,7 +81,7 @@ mod transactions_route_tests {
     }
 
     impl TransactionStore for StubTransactionStore {
-        fn create(&mut self, _amount: f64, _user_idd: UserID) -> Result<Transaction, Error> {
+        fn create(&mut self, _amount: f64) -> Result<Transaction, Error> {
             todo!()
         }
 
@@ -116,21 +110,16 @@ mod transactions_route_tests {
 
     #[tokio::test]
     async fn transactions_page_displays_correct_info() {
-        let user_id = UserID::new(123);
         let transactions = vec![
-            Transaction::build(1.0, user_id)
-                .description("foo")
-                .finalise(1),
-            Transaction::build(2.0, user_id)
-                .description("bar")
-                .finalise(2),
+            Transaction::build(1.0).description("foo").finalise(1),
+            Transaction::build(2.0).description("bar").finalise(2),
         ];
         let transaction_store = StubTransactionStore {
             transactions: transactions.clone(),
         };
         let state = TransactionsViewState { transaction_store };
 
-        let response = get_transactions_page(State(state), Extension(user_id)).await;
+        let response = get_transactions_page(State(state)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
 

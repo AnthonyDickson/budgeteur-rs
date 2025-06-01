@@ -1,34 +1,10 @@
 //! This file defines the high-level log-in route logic.
 //! The auth module handles the lower level authentication and cookie auth logic.
 
-use askama::Template;
+use askama_axum::Template;
 use axum::response::{IntoResponse, Response};
 
-use crate::routes::{
-    endpoints,
-    templates::{EmailInputTemplate, PasswordInputTemplate},
-};
-
-/// Renders a log-in form with client-side and server-side validation.
-#[derive(Template)]
-#[template(path = "partials/log_in/form.html")]
-struct LogInFormTemplate<'a> {
-    email_input: EmailInputTemplate<'a>,
-    password_input: PasswordInputTemplate<'a>,
-    log_in_route: &'a str,
-    register_route: &'a str,
-}
-
-impl Default for LogInFormTemplate<'_> {
-    fn default() -> Self {
-        Self {
-            email_input: Default::default(),
-            password_input: Default::default(),
-            log_in_route: endpoints::LOG_IN_API,
-            register_route: endpoints::REGISTER_VIEW,
-        }
-    }
-}
+use crate::routes::templates::LogInFormTemplate;
 
 ///  Renders the full log-in page.
 #[derive(Template, Default)]
@@ -44,7 +20,7 @@ pub async fn get_log_in_page() -> Response {
 
 #[cfg(test)]
 mod log_in_tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, iter::zip};
 
     use axum::{
         Form,
@@ -106,6 +82,10 @@ mod log_in_tests {
                 .ok_or(Error::NotFound)
                 .map(|user| user.to_owned())
         }
+
+        fn count(&self) -> Result<usize, Error> {
+            todo!()
+        }
     }
 
     #[tokio::test]
@@ -162,15 +142,18 @@ mod log_in_tests {
 
         let register_link_selector = scraper::Selector::parse("a[href]").unwrap();
         let links = form.select(&register_link_selector).collect::<Vec<_>>();
-        assert_eq!(links.len(), 1, "want 1 link, got {}", links.len());
-        let link = links.first().unwrap();
-        assert_eq!(
-            link.value().attr("href"),
-            Some(endpoints::REGISTER_VIEW),
-            "want link to {}, got {:?}",
-            endpoints::REGISTER_VIEW,
-            link.value().attr("href")
-        );
+        assert_eq!(links.len(), 2, "want 2 link, got {}", links.len());
+        let want_endpoints = [endpoints::FORGOT_PASSWORD_VIEW, endpoints::REGISTER_VIEW];
+
+        for (link, endpoint) in zip(links, want_endpoints) {
+            assert_eq!(
+                link.value().attr("href"),
+                Some(endpoint),
+                "want link to {}, got {:?}",
+                endpoint,
+                link.value().attr("href")
+            );
+        }
     }
 
     #[tokio::test]

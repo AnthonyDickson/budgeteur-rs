@@ -2,7 +2,7 @@
 
 use time::Date;
 
-use super::{DatabaseID, UserID};
+use super::DatabaseID;
 
 /// The amount of money available for a bank account or credit card.
 #[derive(Debug, Clone, PartialEq)]
@@ -15,6 +15,4 @@ pub struct Balance {
     pub balance: f64,
     /// When the balance was updated.
     pub date: Date,
-    /// The id of the user this balance belong to.
-    pub user_id: UserID,
 }

@@ -30,7 +30,7 @@ use super::{
 };
 
 /// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).
-const PASSWORD_INPUT_MIN_LENGTH: usize = 8;
+const PASSWORD_INPUT_MIN_LENGTH: usize = 14;
 
 #[derive(Serialize, Deserialize)]
 pub struct RegisterForm {
@@ -47,6 +47,18 @@ pub async fn create_user<U>(
 where
     U: UserStore + Clone + Send + Sync,
 {
+    match state.user_store.count() {
+        Ok(count) if count >= 1 => {
+            return RegisterFormTemplate {
+                confirm_password_input: ConfirmPasswordInputTemplate {
+                    error_message: "An account has already been created, please log in with your existing account.",
+                },
+                ..Default::default()
+            }.into_response();
+        }
+        _ => {}
+    }
+
     // Make templates ahead of time that preserve the user's input since they are used multiple times in this function.
     let email_input = EmailInputTemplate {
         value: &user_data.email,
@@ -225,6 +237,10 @@ mod tests {
                 .ok_or(Error::NotFound)
                 .map(|user| user.to_owned())
         }
+
+        fn count(&self) -> Result<usize, Error> {
+            Ok(self.users.len())
+        }
     }
 
     fn get_test_app_config() -> RegistrationState<StubUserStore> {
@@ -258,6 +274,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_user_fails_with_existing_user() {
+        let mut state = get_test_app_config();
+        state
+            .user_store
+            .create(
+                "test@test.com".parse().unwrap(),
+                PasswordHash::from_raw_password("foobarbazquxgobbledygook", 4).unwrap(),
+            )
+            .expect("Could not create test user");
+
+        let response = create_user(
+            State(state.clone()),
+            PrivateCookieJar::new(state.cookie_key),
+            Form(RegisterForm {
+                email: "foo.bar.baz".to_string(),
+                password: "averystrongandsecurepassword".to_string(),
+                confirm_password: "averystrongandsecurepassword".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let fragment = parse_html(response).await;
+        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
+        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
+        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
+        let paragraph = paragraphs.first().unwrap();
+        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
+        assert!(
+            paragraph_text.contains("existing account"),
+            "'{paragraph_text}' does not contain the text 'invalid email address'"
+        );
+    }
+
+    #[tokio::test]
     async fn create_user_fails_with_invalid_email() {
         let state = get_test_app_config();
         let response = create_user(
@@ -283,47 +334,6 @@ mod tests {
         assert!(
             paragraph_text.contains("invalid email address"),
             "'{paragraph_text}' does not contain the text 'invalid email address'"
-        );
-    }
-
-    #[tokio::test]
-    async fn create_user_fails_with_duplicate_email() {
-        let mut state = get_test_app_config();
-
-        state
-            .user_store
-            .create(
-                "foo@bar.baz".parse().unwrap(),
-                PasswordHash::from_raw_password("averystrongandsecurepassword", 4).unwrap(),
-            )
-            .unwrap();
-
-        let app = Router::new()
-            .route(endpoints::USERS, post(create_user))
-            .with_state(state);
-
-        let server = TestServer::new(app).expect("Could not create test server.");
-
-        let response = server
-            .post(endpoints::USERS)
-            .form(&RegisterForm {
-                email: "foo@bar.baz".to_string(),
-                password: "averystrongandsecurepassword".to_string(),
-                confirm_password: "averystrongandsecurepassword".to_string(),
-            })
-            .await
-            .text();
-
-        let fragment = parse_html(response.into_response()).await;
-
-        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
-        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
-        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
-        let paragraph = paragraphs.first().unwrap();
-        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
-        assert!(
-            paragraph_text.contains("email address is already in use"),
-            "'{paragraph_text}' does not contain the text 'email address is already in use'"
         );
     }
 

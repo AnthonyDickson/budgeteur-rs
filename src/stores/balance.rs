@@ -2,10 +2,7 @@
 
 use time::Date;
 
-use crate::{
-    Error,
-    models::{Balance, UserID},
-};
+use crate::{Error, models::Balance};
 
 /// Handles the creation and retrieval of account balances.
 pub trait BalanceStore {
@@ -13,6 +10,6 @@ pub trait BalanceStore {
     /// the same account if it exists.
     fn upsert(&mut self, account: &str, balance: f64, date: &Date) -> Result<Balance, Error>;
 
-    /// Retrieve all balances for a given `user_id` from the store.
-    fn get_by_user_id(&self, user_id: UserID) -> Result<Vec<Balance>, Error>;
+    /// Retrieve all balances from the store.
+    fn get_all(&self) -> Result<Vec<Balance>, Error>;
 }

@@ -8,11 +8,3 @@
   Refer to [v3.tailwindcss.com/docs/reusing-styles](https://v3.tailwindcss.com/docs/reusing-styles) and [v3.tailwindcss.com/docs/adding-custom-styles](https://v3.tailwindcss.com/docs/adding-custom-styles).
 - Fix broken [icon](./static/seal.png).
 - Refactor common testing functions into a separate module.
-- Refactor app to assume single user
-  - Simpler and all I need!
-  - Create:
-    - Page to set password on first startup
-  - Update:
-    - Remove user ID fields in models
-  - Delete:
-    - Registration page

@@ -12,6 +12,8 @@ use super::endpoints;
 pub async fn get_log_out(jar: PrivateCookieJar) -> Response {
     let jar = invalidate_auth_cookie(jar);
 
+    println!("{jar:#?}");
+
     (jar, Redirect::to(endpoints::LOG_IN_VIEW)).into_response()
 }
 
@@ -19,17 +21,17 @@ pub async fn get_log_out(jar: PrivateCookieJar) -> Response {
 mod log_out_tests {
     use axum::{
         body::Body,
-        http::{header::SET_COOKIE, Response, StatusCode},
+        http::{Response, StatusCode, header::SET_COOKIE},
     };
     use axum_extra::extract::{
-        cookie::{Cookie, Key},
         PrivateCookieJar,
+        cookie::{Cookie, Key},
     };
     use sha2::{Digest, Sha512};
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::cookie::{set_auth_cookie, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION},
+        auth::cookie::{COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
         models::UserID,
         routes::{endpoints, log_out::get_log_out},
     };

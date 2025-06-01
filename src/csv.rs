@@ -4,10 +4,7 @@ use time::{
     Date, OffsetDateTime, format_description::BorrowedFormatItem, macros::format_description,
 };
 
-use crate::{
-    Error,
-    models::{TransactionBuilder, UserID},
-};
+use crate::{Error, models::TransactionBuilder};
 
 /// An account and balance imported from a CSV.
 #[derive(Debug, PartialEq)]
@@ -32,13 +29,12 @@ pub struct ParseCSVResult {
 /// Parses CSV data from ASB and Kiwibank bank statements.
 ///
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
-/// Uses `user_id` to set the user ID for the transactions.
 ///
 /// Returns a `ParseCSVResult` which consists of the transactions and account
 /// balance found in the CSV data.
 /// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
-pub fn parse_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
-    let parse_result = parse_asb_bank_csv(text, user_id);
+pub fn parse_csv(text: &str) -> Result<ParseCSVResult, Error> {
+    let parse_result = parse_asb_bank_csv(text);
 
     match parse_result {
         Ok(_) => {
@@ -49,7 +45,7 @@ pub fn parse_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
         }
     }
 
-    let parse_result = parse_asb_cc_csv(text, user_id);
+    let parse_result = parse_asb_cc_csv(text);
 
     match parse_result {
         Ok(_) => {
@@ -60,7 +56,7 @@ pub fn parse_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
         }
     }
 
-    let parse_result = parse_kiwibank_bank_csv(text, user_id);
+    let parse_result = parse_kiwibank_bank_csv(text);
 
     match parse_result {
         Ok(_) => {
@@ -79,12 +75,11 @@ pub fn parse_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
 /// Parses ASB bank account CSV exported from FastNet Classic.
 ///
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
-/// Uses `user_id` to set the user ID for the transactions.
 ///
 /// Returns a `ParseCSVResult` which consists of the transactions and account
 /// balances found in the CSV data.
 /// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
-fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
+fn parse_asb_bank_csv(text: &str) -> Result<ParseCSVResult, Error> {
     // Header looks like:
     // Created date / time : 12 April 2025 / 11:10:19
     // Bank 12; Branch 3405; Account 0123456-50 (Streamline)
@@ -180,7 +175,7 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Err
                         .ok_or(Error::InvalidCSV(format!(
                             "ASB bank ledger should have a date on line 6, but got '{line}'."
                         )))?;
-                date = match Date::parse(&date_string, &BALANCE_DATE_FORMAT) {
+                date = match Date::parse(date_string, &BALANCE_DATE_FORMAT) {
                     Ok(date) => date,
                     Err(error) => {
                         return Err(Error::InvalidCSV(format!(
@@ -224,7 +219,7 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Err
                     ))
                 })?;
 
-                let transaction = TransactionBuilder::new(amount, user_id)
+                let transaction = TransactionBuilder::new(amount)
                     .date(date)
                     .map_err(|error| {
                         Error::InvalidCSV(format!(
@@ -254,12 +249,11 @@ fn parse_asb_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Err
 /// Parses ASB credit card CSV exported from FastNet Classic.
 ///
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
-/// Uses `user_id` to set the user ID for the transactions.
 ///
 /// Returns a `ParseCSVResult` which consists of the transactions and account
 /// balances found in the CSV data.
 /// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
-fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
+fn parse_asb_cc_csv(text: &str) -> Result<ParseCSVResult, Error> {
     // Header looks like:
     // Created date / time : 12 April 2025 / 11:09:26
     // Card Number XXXX-XXXX-XXXX-5023 (Visa Light)
@@ -342,7 +336,7 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error
                 // which represent debits with negative numbers.
                 let amount = -amount;
 
-                let transaction = TransactionBuilder::new(amount, user_id)
+                let transaction = TransactionBuilder::new(amount)
                     .date(date)
                     .map_err(|error| {
                         Error::InvalidCSV(format!(
@@ -368,12 +362,11 @@ fn parse_asb_cc_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error
 /// Parses detailed Kiwibank account CSV exported from form ib.kiwibank.co.nz.
 ///
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
-/// Uses `user_id` to set the user ID for the transactions.
 ///
 /// Returns a `ParseCSVResult` which consists of the transactions and account
 /// balances found in the CSV data.
 /// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
-fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult, Error> {
+fn parse_kiwibank_bank_csv(text: &str) -> Result<ParseCSVResult, Error> {
     // Header looks like:
     // Account number,Date,Memo/Description,Source Code (payment type),TP ref,TP part,TP code,OP ref,OP part,OP code,OP name,OP Bank Account Number,Amount (credit),Amount (debit),Amount,Balance
     const ACCOUNT_NUMBER_COLUMN: usize = 0;
@@ -436,7 +429,7 @@ fn parse_kiwibank_bank_csv(text: &str, user_id: UserID) -> Result<ParseCSVResult
                     ))
                 })?;
 
-                let transaction = TransactionBuilder::new(amount, user_id)
+                let transaction = TransactionBuilder::new(amount)
                     .date(date)
                     .map_err(|error| {
                         Error::InvalidCSV(format!(
@@ -482,7 +475,7 @@ mod parse_csv_tests {
             ImportBalance, ParseCSVResult, create_import_id, parse_asb_bank_csv,
             parse_kiwibank_bank_csv,
         },
-        models::{TransactionBuilder, UserID},
+        models::TransactionBuilder,
     };
 
     use super::parse_asb_cc_csv;
@@ -548,44 +541,43 @@ mod parse_csv_tests {
 
     #[test]
     fn can_parse_asb_bank_statement() {
-        let user_id = UserID::new(42);
         let want_transactions = vec![
-            TransactionBuilder::new(1300.00, user_id)
+            TransactionBuilder::new(1300.00)
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not set date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id(
                     "2025/01/18,2025011801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",1300.00"
                 ))),
-            TransactionBuilder::new(-1300.00, user_id)
+            TransactionBuilder::new(-1300.00)
                 .date(date!(2025 - 01 - 18))
                 .expect("Could not set date")
                 .description("TO CARD 5023  Credit Card")
                 .import_id(Some(create_import_id(
                     "2025/01/18,2025011802,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  Credit Card\",-1300.00"
                 ))),
-            TransactionBuilder::new(4400.00, user_id)
+            TransactionBuilder::new(4400.00)
                 .date(date!(2025 - 02 - 18))
                 .expect("Could not set date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id(
                     "2025/02/18,2025021801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",4400.00"
                 ))),
-            TransactionBuilder::new(-4400.00, user_id)
+            TransactionBuilder::new(-4400.00)
                 .date(date!(2025 - 02 - 19))
                 .expect("Could not set date")
                 .description("TO CARD 5023  THANK YOU")
                 .import_id(Some(create_import_id(
                     "2025/02/19,2025021901,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-4400.00"
                 ))),
-            TransactionBuilder::new(2750.00, user_id)
+            TransactionBuilder::new(2750.00)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not set date")
                 .description("Credit Card")
                 .import_id(Some(create_import_id(
                     "2025/03/20,2025032001,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",2750.00"
                 ))),
-            TransactionBuilder::new(-2750.00, user_id)
+            TransactionBuilder::new(-2750.00)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not set date")
                 .description("TO CARD 5023  THANK YOU")
@@ -602,7 +594,7 @@ mod parse_csv_tests {
         let ParseCSVResult {
             transactions: got_transactions,
             balance: got_balance,
-        } = parse_asb_bank_csv(ASB_BANK_STATEMENT_CSV, user_id).expect("Could not parse CSV");
+        } = parse_asb_bank_csv(ASB_BANK_STATEMENT_CSV).expect("Could not parse CSV");
 
         assert_eq!(
             want_transactions.len(),
@@ -617,23 +609,22 @@ mod parse_csv_tests {
 
     #[test]
     fn can_parse_asb_cc_statement() {
-        let user_id = UserID::new(42);
         let want_transactions = vec![
-            TransactionBuilder::new(2750.00, user_id)
+            TransactionBuilder::new(2750.00)
                 .date(date!(2025 - 03 - 20))
                 .expect("Could not parse date")
                 .description("PAYMENT RECEIVED THANK YOU")
                 .import_id(Some(create_import_id(
                     "2025/03/20,2025/03/20,2025032002,CREDIT,5023,\"PAYMENT RECEIVED THANK YOU\",-2750.00"
                 ))),
-            TransactionBuilder::new(-8.50, user_id)
+            TransactionBuilder::new(-8.50)
                 .date(date!(2025 - 04 - 09))
                 .expect("Could not parse date")
                 .description("Birdy Bytes")
                 .import_id(Some(create_import_id(
                     "2025/04/09,2025/04/08,2025040902,DEBIT,5023,\"Birdy Bytes\",8.50"
                 ))),
-            TransactionBuilder::new(-10.63, user_id)
+            TransactionBuilder::new(-10.63)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description(
@@ -642,14 +633,14 @@ mod parse_csv_tests {
                 .import_id(Some(create_import_id(
                     "2025/04/10,2025/04/07,2025041001,DEBIT,5023,\"AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)\",10.63"
                 ))),
-            TransactionBuilder::new(-0.22, user_id)
+            TransactionBuilder::new(-0.22)
                 .date(date!(2025 - 04 - 10))
                 .expect("Could not parse date")
                 .description("OFFSHORE SERVICE MARGINS")
                 .import_id(Some(create_import_id(
                     "2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22"
                 ))),
-            TransactionBuilder::new(-11.50, user_id)
+            TransactionBuilder::new(-11.50)
                 .date(date!(2025 - 04 - 11))
                 .expect("Could not parse date")
                 .description("Buckstars")
@@ -662,7 +653,7 @@ mod parse_csv_tests {
         let ParseCSVResult {
             transactions: got_transactions,
             balance: got_balance,
-        } = parse_asb_cc_csv(ASB_CC_STATEMENT_CSV, user_id).expect("Could not parse CSV");
+        } = parse_asb_cc_csv(ASB_CC_STATEMENT_CSV).expect("Could not parse CSV");
 
         assert_eq!(
             want_transactions.len(),
@@ -677,45 +668,43 @@ mod parse_csv_tests {
 
     #[test]
     fn can_parse_kiwibank_bank_statement() {
-        let user_id = UserID::new(42);
-
         let want_transactions = vec![
-            TransactionBuilder::new(0.25, user_id)
+            TransactionBuilder::new(0.25)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
                 .import_id(Some(create_import_id(
                     "38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16",
                 ))),
-            TransactionBuilder::new(-0.03, user_id)
+            TransactionBuilder::new(-0.03)
                 .date(date!(2025 - 01 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
                 .import_id(Some(create_import_id(
                     "38-1234-0123456-01,31-01-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.03,-0.03,71.13",
                 ))),
-            TransactionBuilder::new(0.22, user_id)
+            TransactionBuilder::new(0.22)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
                 .import_id(Some(create_import_id(
                     "38-1234-0123456-01,28-02-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.35",
                 ))),
-            TransactionBuilder::new(-0.02, user_id)
+            TransactionBuilder::new(-0.02)
                 .date(date!(2025 - 02 - 28))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
                 .import_id(Some(create_import_id(
                     "38-1234-0123456-01,28-02-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.33",
                 ))),
-            TransactionBuilder::new(0.22, user_id)
+            TransactionBuilder::new(0.22)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("INTEREST EARNED")
                 .import_id(Some(create_import_id(
                     "38-1234-0123456-01,31-03-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.55",
                 ))),
-            TransactionBuilder::new(-0.02, user_id)
+            TransactionBuilder::new(-0.02)
                 .date(date!(2025 - 03 - 31))
                 .expect("Could not parse date")
                 .description("PIE TAX 10.500%")
@@ -733,8 +722,7 @@ mod parse_csv_tests {
         let ParseCSVResult {
             transactions: got_transactions,
             balance: got_balance,
-        } = parse_kiwibank_bank_csv(KIWIBANK_BANK_STATEMENT_CSV, user_id)
-            .expect("Could not parse CSV");
+        } = parse_kiwibank_bank_csv(KIWIBANK_BANK_STATEMENT_CSV).expect("Could not parse CSV");
 
         assert_eq!(
             want_transactions.len(),

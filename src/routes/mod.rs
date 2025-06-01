@@ -29,6 +29,7 @@ use user::create_user;
 use views::{
     balances::get_balances_page,
     dashboard::get_dashboard_page,
+    forgot_password::get_forgot_password_page,
     import::{get_import_page, import_transactions},
     log_in::get_log_in_page,
     new_category::get_new_category_page,
@@ -50,6 +51,10 @@ pub fn build_router(state: SQLAppState) -> Router {
         .route(endpoints::LOG_IN_API, post(post_log_in))
         .route(endpoints::LOG_OUT, get(get_log_out))
         .route(endpoints::REGISTER_VIEW, get(get_register_page))
+        .route(
+            endpoints::FORGOT_PASSWORD_VIEW,
+            get(get_forgot_password_page),
+        )
         .route(endpoints::USERS, post(create_user))
         .route(
             endpoints::INTERNAL_ERROR_VIEW,
@@ -75,7 +80,6 @@ pub fn build_router(state: SQLAppState) -> Router {
     let protected_routes = protected_routes.merge(
         Router::new()
             .route(endpoints::TRANSACTIONS_API, post(create_transaction))
-            .route(endpoints::USER_CATEGORIES, post(create_category))
             .route(endpoints::CATEGORIES, post(create_category))
             .route(endpoints::IMPORT, post(import_transactions))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),

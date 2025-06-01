@@ -51,7 +51,6 @@ where
     };
 
     let transactions = state.transaction_store.get_query(TransactionQuery {
-        user_id: Some(user_id),
         date_range: Some(one_week_ago..=today),
         ..Default::default()
     });
@@ -97,8 +96,8 @@ mod dashboard_route_tests {
     }
 
     impl TransactionStore for FakeTransactionStore {
-        fn create(&mut self, amount: f64, user_id: UserID) -> Result<Transaction, Error> {
-            self.create_from_builder(TransactionBuilder::new(amount, user_id))
+        fn create(&mut self, amount: f64) -> Result<Transaction, Error> {
+            self.create_from_builder(TransactionBuilder::new(amount))
         }
 
         fn create_from_builder(
@@ -134,10 +133,6 @@ mod dashboard_route_tests {
                 .filter(|transaction| {
                     let mut should_keep = true;
 
-                    if let Some(user_id) = filter.user_id {
-                        should_keep &= transaction.user_id() == user_id;
-                    }
-
                     if let Some(ref date_range) = filter.date_range {
                         should_keep &= date_range.start() <= transaction.date()
                             && transaction.date() <= date_range.end();
@@ -155,7 +150,7 @@ mod dashboard_route_tests {
         let user_id = UserID::new(321);
         let transactions = vec![
             // Transactions before the current week should not be included in the balance.
-            Transaction::build(12.3, user_id)
+            Transaction::build(12.3)
                 .date(
                     OffsetDateTime::now_utc()
                         .date()
@@ -165,11 +160,9 @@ mod dashboard_route_tests {
                 .unwrap()
                 .finalise(1),
             // These transactions should be included.
-            Transaction::build(45.6, user_id).finalise(2),
-            Transaction::build(-45.6, user_id).finalise(3),
-            Transaction::build(123.0, user_id).finalise(4),
-            // Transactions from other users should not be included either.
-            Transaction::build(999.99, UserID::new(999)).finalise(5),
+            Transaction::build(45.6).finalise(2),
+            Transaction::build(-45.6).finalise(3),
+            Transaction::build(123.0).finalise(4),
         ];
         let state = DashboardState {
             transaction_store: FakeTransactionStore { transactions },
@@ -184,7 +177,7 @@ mod dashboard_route_tests {
     #[tokio::test]
     async fn dashboard_displays_negative_balance_without_sign() {
         let user_id = UserID::new(321);
-        let transactions = vec![Transaction::build(-123.0, user_id).finalise(2)];
+        let transactions = vec![Transaction::build(-123.0).finalise(2)];
         let state = DashboardState {
             transaction_store: FakeTransactionStore { transactions },
         };

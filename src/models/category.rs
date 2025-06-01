@@ -5,10 +5,7 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    Error,
-    models::{DatabaseID, UserID},
-};
+use crate::{Error, models::DatabaseID};
 
 /// The name of a category.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -58,9 +55,6 @@ pub struct Category {
 
     /// The name of the category.
     pub name: CategoryName,
-
-    /// The id of the user that created the category.
-    pub user_id: UserID,
 }
 
 #[cfg(test)]

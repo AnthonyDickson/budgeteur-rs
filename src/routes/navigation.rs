@@ -79,7 +79,6 @@ mod nav_bar_tests {
         cases.insert(endpoints::REGISTER_VIEW, false);
         cases.insert(endpoints::TRANSACTION, false);
         cases.insert(endpoints::TRANSACTIONS_API, false);
-        cases.insert(endpoints::USER_CATEGORIES, false);
         cases.insert(endpoints::USERS, false);
 
         let get_active_string = |is_active: bool| -> &str {

@@ -18,6 +18,8 @@ pub const IMPORT_VIEW: &str = "/transactions/import";
 pub const REGISTER_VIEW: &str = "/register";
 /// The route for getting the log in page.
 pub const LOG_IN_VIEW: &str = "/log_in";
+/// The route for instructions for resetting the user's password.
+pub const FORGOT_PASSWORD_VIEW: &str = "/forgot_password";
 /// The page to display when an internal server error occurs.
 pub const INTERNAL_ERROR_VIEW: &str = "/error";
 /// The page to display account balances.
@@ -33,8 +35,6 @@ pub const LOG_IN_API: &str = "/api/log_in";
 pub const LOG_OUT: &str = "/api/log_out";
 /// The route to access users.
 pub const USERS: &str = "/api/users";
-/// The route to access the categories for a given user.
-pub const USER_CATEGORIES: &str = "/api/users/:user_id/categories";
 /// The route to access categories.
 pub const CATEGORIES: &str = "/api/categories";
 /// The route to access a single category.
@@ -116,6 +116,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::IMPORT_VIEW);
         assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::FORGOT_PASSWORD_VIEW);
         assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
         assert_endpoint_is_valid_uri(endpoints::BALANCES_VIEW);
         assert_endpoint_is_valid_uri(endpoints::STATIC);
@@ -124,7 +125,6 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_API);
         assert_endpoint_is_valid_uri(endpoints::LOG_OUT);
         assert_endpoint_is_valid_uri(endpoints::USERS);
-        assert_endpoint_is_valid_uri(endpoints::USER_CATEGORIES);
         assert_endpoint_is_valid_uri(endpoints::CATEGORIES);
         assert_endpoint_is_valid_uri(endpoints::CATEGORY);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);

@@ -1,7 +1,7 @@
 //! This files defines the API routes for the category type.
 
 use axum::{
-    Extension, Form,
+    Form,
     extract::State,
     http::{StatusCode, Uri},
     response::IntoResponse,
@@ -10,11 +10,7 @@ use axum::{
 use axum_htmx::HxRedirect;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    models::{CategoryName, UserID},
-    state::CategoryState,
-    stores::CategoryStore,
-};
+use crate::{models::CategoryName, state::CategoryState, stores::CategoryStore};
 
 use super::{endpoints, templates::NewCategoryFormTemplate};
 
@@ -30,7 +26,6 @@ pub struct CategoryData {
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn create_category<C>(
     State(state): State<CategoryState<C>>,
-    Extension(user_id): Extension<UserID>,
     Form(new_category): Form<CategoryData>,
 ) -> impl IntoResponse
 where
@@ -52,7 +47,7 @@ where
 
     state
         .category_store
-        .create(name, user_id)
+        .create(name)
         .map(|_category| {
             (
                 HxRedirect(Uri::from_static(endpoints::NEW_TRANSACTION_VIEW)),
@@ -79,7 +74,7 @@ mod category_tests {
 
     use askama_axum::IntoResponse;
     use axum::{
-        Extension, Form,
+        Form,
         extract::State,
         http::{StatusCode, header::CONTENT_TYPE},
         response::Response,
@@ -88,7 +83,7 @@ mod category_tests {
 
     use crate::{
         Error,
-        models::{Category, CategoryName, DatabaseID, UserID},
+        models::{Category, CategoryName, DatabaseID},
         routes::{category::create_category, endpoints},
         state::CategoryState,
         stores::CategoryStore,
@@ -99,7 +94,6 @@ mod category_tests {
     #[derive(Debug, Clone, PartialEq)]
     struct CreateCategoryCall {
         name: CategoryName,
-        user_id: UserID,
     }
 
     #[derive(Debug, Clone, PartialEq)]
@@ -117,17 +111,13 @@ mod category_tests {
     }
 
     impl CategoryStore for SpyCategoryStore {
-        fn create(&self, name: CategoryName, user_id: UserID) -> Result<Category, Error> {
-            self.create_calls.lock().unwrap().push(CreateCategoryCall {
-                name: name.clone(),
-                user_id,
-            });
+        fn create(&self, name: CategoryName) -> Result<Category, Error> {
+            self.create_calls
+                .lock()
+                .unwrap()
+                .push(CreateCategoryCall { name: name.clone() });
 
-            let category = Category {
-                id: 0,
-                name,
-                user_id,
-            };
+            let category = Category { id: 0, name };
             self.categories.lock().unwrap().push(category.clone());
 
             Ok(category)
@@ -148,7 +138,7 @@ mod category_tests {
                 .map(|category| category.to_owned())
         }
 
-        fn get_by_user(&self, _user_id: UserID) -> Result<Vec<Category>, Error> {
+        fn get_all(&self) -> Result<Vec<Category>, Error> {
             todo!()
         }
     }
@@ -170,9 +160,7 @@ mod category_tests {
     #[tokio::test]
     async fn can_create_category() {
         let (state, store) = get_test_app_config();
-        let user_id = UserID::new(123);
         let want = CreateCategoryCall {
-            user_id,
             name: CategoryName::new_unchecked("Foo"),
         };
 
@@ -180,7 +168,7 @@ mod category_tests {
             name: want.name.to_string(),
         };
 
-        let response = create_category(State(state), Extension(user_id), Form(form))
+        let response = create_category(State(state), Form(form))
             .await
             .into_response();
 
@@ -192,12 +180,11 @@ mod category_tests {
     #[tokio::test]
     async fn create_category_fails_on_empty_name() {
         let (state, _store) = get_test_app_config();
-        let user_id = UserID::new(123);
         let form = CategoryData {
             name: "".to_string(),
         };
 
-        let response = create_category(State(state), Extension(user_id), Form(form))
+        let response = create_category(State(state), Form(form))
             .await
             .into_response();
 

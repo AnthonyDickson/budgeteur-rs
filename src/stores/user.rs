@@ -12,6 +12,9 @@ pub trait UserStore {
     /// Create a new user.
     fn create(&mut self, email: EmailAddress, password_hash: PasswordHash) -> Result<User, Error>;
 
+    /// Get the number of registered accounts/users.
+    fn count(&self) -> Result<usize, Error>;
+
     /// Get a user by their ID.
     fn get(&self, id: UserID) -> Result<User, Error>;
 

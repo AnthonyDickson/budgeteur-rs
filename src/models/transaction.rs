@@ -4,10 +4,7 @@
 use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 
-use crate::{
-    Error,
-    models::{DatabaseID, UserID},
-};
+use crate::{Error, models::DatabaseID};
 
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
@@ -19,7 +16,6 @@ pub struct Transaction {
     date: Date,
     description: String,
     category_id: Option<DatabaseID>,
-    user_id: UserID,
     import_id: Option<i64>,
     // TODO: Make all fields pub and remove the accessor methods.
 }
@@ -39,7 +35,6 @@ impl Transaction {
         date: Date,
         description: String,
         category_id: Option<DatabaseID>,
-        user_id: UserID,
         import_id: Option<i64>,
     ) -> Self {
         Self {
@@ -48,7 +43,6 @@ impl Transaction {
             date,
             description,
             category_id,
-            user_id,
             import_id,
         }
     }
@@ -56,8 +50,8 @@ impl Transaction {
     /// Create a new transaction.
     ///
     /// Shortcut for [TransactionBuilder::new] for discoverability.
-    pub fn build(amount: f64, user_id: UserID) -> TransactionBuilder {
-        TransactionBuilder::new(amount, user_id)
+    pub fn build(amount: f64) -> TransactionBuilder {
+        TransactionBuilder::new(amount)
     }
 
     /// The ID of the transaction.
@@ -85,11 +79,6 @@ impl Transaction {
         self.category_id
     }
 
-    /// The ID of the user that created this transaction.
-    pub fn user_id(&self) -> UserID {
-        self.user_id
-    }
-
     /// The ID of the import that this transaction belongs to.
     pub fn import_id(&self) -> Option<i64> {
         self.import_id
@@ -105,7 +94,6 @@ pub struct TransactionBuilder {
     date: Date,
     description: String,
     category_id: Option<DatabaseID>,
-    user_id: UserID,
     import_id: Option<i64>,
 }
 
@@ -113,13 +101,12 @@ impl TransactionBuilder {
     /// Create a new transaction.
     ///
     /// Finalize the builder with [TransactionBuilder::finalise].
-    pub fn new(amount: f64, user_id: UserID) -> Self {
+    pub fn new(amount: f64) -> Self {
         Self {
             amount,
             date: OffsetDateTime::now_utc().date(),
             description: String::new(),
             category_id: None,
-            user_id,
             import_id: None,
         }
     }
@@ -132,7 +119,6 @@ impl TransactionBuilder {
             date: self.date,
             description: self.description,
             category_id: self.category_id,
-            user_id: self.user_id,
             import_id: self.import_id,
         }
     }
@@ -175,7 +161,7 @@ mod transaction_builder_tests {
 
     use time::{Duration, OffsetDateTime};
 
-    use crate::models::{TransactionBuilder, UserID};
+    use crate::models::TransactionBuilder;
 
     use super::{Error, Transaction};
 
@@ -185,19 +171,17 @@ mod transaction_builder_tests {
             .date()
             .checked_add(Duration::days(1))
             .unwrap();
-        let user_id = UserID::new(42);
 
-        let result = TransactionBuilder::new(123.45, user_id).date(tomorrow);
+        let result = TransactionBuilder::new(123.45).date(tomorrow);
 
         assert_eq!(result, Err(Error::FutureDate));
     }
 
     #[test]
     fn new_succeeds_on_today() {
-        let user_id = UserID::new(42);
         let today = OffsetDateTime::now_utc().date();
 
-        let transaction_buider = TransactionBuilder::new(123.45, user_id).date(today);
+        let transaction_buider = TransactionBuilder::new(123.45).date(today);
 
         assert!(transaction_buider.is_ok());
 
@@ -207,17 +191,14 @@ mod transaction_builder_tests {
 
     #[test]
     fn new_succeeds_on_past_date() {
-        let user_id = UserID::new(42);
-
         let yesterday = OffsetDateTime::now_utc()
             .date()
             .checked_sub(Duration::days(1))
             .unwrap();
 
-        let result = TransactionBuilder::new(123.45, user_id).date(yesterday);
+        let result = TransactionBuilder::new(123.45).date(yesterday);
 
         assert!(result.is_ok());
-
         let transaction = result.unwrap().finalise(1);
         assert_eq!(transaction.date(), &yesterday);
     }
@@ -229,10 +210,9 @@ mod transaction_builder_tests {
         let date = OffsetDateTime::now_utc().date();
         let description = "Rust Pie".to_string();
         let category_id = Some(42);
-        let user_id = UserID::new(321);
         let import_id = Some(123456789);
 
-        let transaction = Transaction::build(amount, user_id)
+        let transaction = Transaction::build(amount)
             .category(category_id)
             .description(&description)
             .date(date)
@@ -245,7 +225,6 @@ mod transaction_builder_tests {
         assert_eq!(transaction.date(), &date);
         assert_eq!(transaction.description(), description);
         assert_eq!(transaction.category_id(), category_id);
-        assert_eq!(transaction.user_id(), user_id);
         assert_eq!(transaction.import_id, import_id);
     }
 }
