@@ -69,7 +69,7 @@ impl CategoryStore for SQLiteCategoryStore {
 impl CreateTable for SQLiteCategoryStore {
     fn create_table(connection: &Connection) -> Result<(), rusqlite::Error> {
         connection.execute(
-            "CREATE TABLE category (
+            "CREATE TABLE IF NOT EXISTS category (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE
             );",

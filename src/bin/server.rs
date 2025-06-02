@@ -1,7 +1,8 @@
 use std::{
     env::{self},
     fs::OpenOptions,
-    net::SocketAddr,
+    net::{Ipv4Addr, SocketAddr},
+    process::exit,
     sync::{Arc, Mutex},
 };
 
@@ -20,7 +21,9 @@ use tower_livereload::LiveReloadLayer;
 use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use budgeteur_rs::{
-    AppState, build_router, graceful_shutdown, logging_middleware,
+    AppState, build_router,
+    db::initialize,
+    graceful_shutdown, logging_middleware,
     stores::sqlite::{
         SQLiteBalanceStore, SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore,
     },
@@ -34,6 +37,10 @@ struct Args {
     #[arg(long)]
     db_path: String,
 
+    /// The IP address to serve from.
+    #[arg(short, long, default_value = "127.0.0.1")]
+    address: String,
+
     /// The port to serve the API from.
     #[arg(short, long, default_value_t = 3000)]
     port: u16,
@@ -44,10 +51,33 @@ async fn main() {
     setup_logging();
 
     let args = Args::parse();
-    let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
-    let conn = Connection::open(&args.db_path).unwrap();
+
+    let Ok(address) = args.address.parse::<Ipv4Addr>() else {
+        eprintln!(
+            "{} is not a valid IP address, please check it and try again.",
+            args.address
+        );
+        exit(1);
+    };
+
+    let Ok(secret) = env::var("SECRET") else {
+        eprintln!(
+            "The environment variable 'SECRET' must be set.
+            Please make sure to set this to a value that is difficult to guess."
+        );
+        exit(1);
+    };
+
+    let addr = SocketAddr::from((address, args.port));
+    let conn = Connection::open(&args.db_path).expect(&format!(
+        "Could not open database file at {}: ",
+        args.db_path
+    ));
+    if let Err(error) = initialize(&conn) {
+        eprintln!("Could not initialize database: {error}");
+        exit(1);
+    }
     let conn = Arc::new(Mutex::new(conn));
-    let secret = env::var("SECRET").expect("The environment variable 'SECRET' must be set");
     let app_config = AppState::new(
         &secret,
         SQLiteBalanceStore::new(conn.clone()),
@@ -64,12 +94,15 @@ async fn main() {
     #[cfg(debug_assertions)]
     let router = router.layer(LiveReloadLayer::new());
 
-    tracing::info!("HTTP server listening on {}", addr);
-    axum_server::bind(addr)
+    tracing::info!("HTTP starting on {}", addr);
+    let result = axum_server::bind(addr)
         .handle(handle)
         .serve(router.into_make_service())
-        .await
-        .unwrap();
+        .await;
+    if let Err(error) = result {
+        eprintln!("Could not start server: {error}");
+        exit(1);
+    }
 }
 
 fn setup_logging() {

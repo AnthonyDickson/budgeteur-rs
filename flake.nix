@@ -25,6 +25,8 @@
           packages = with pkgs; [
             tailwindcss
             bacon
+            dockerfile-language-server-nodejs
+            marksman
           ];
 
           # environment variable for running dev server.

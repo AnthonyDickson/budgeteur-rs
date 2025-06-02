@@ -13,11 +13,14 @@ The application consists of a single REST server that renders and serves HTML di
 - [Budgeteur-rs](#budgeteur-rs)
   - [Nix Development Environment](#nix-development-environment)
   - [Quick Start](#quick-start)
+    - [First Time Setup](#first-time-setup)
     - [Bacon](#bacon)
       - [Running the Server](#running-the-server)
       - [Running Tests](#running-tests)
       - [Build and View Documentation](#build-and-view-documentation)
+  - [Deployment](#deployment)
   - [API Design](#api-design)
+      - [Building and Running the Docker Image Locally](#building-and-running-the-docker-image-locally)
     - [HTTP Status Codes](#http-status-codes)
 <!--toc:end-->
 
@@ -90,6 +93,25 @@ The server serves over HTTP which is not secure. It is recommended to use a
 reverse proxy like Nginx to serve the application over HTTPS.
 
 ## API Design
+
+#### Building and Running the Docker Image Locally
+
+Run:
+
+```shell
+./build_image.sh
+```
+
+This will create an image with the tag `anthonydickson/budgeteur:dev`.
+Run the server with:
+
+```shell
+docker run --rm -p 3000:3000 -e SECRET=<YOUR-SECRET> -it anthonydickson/budgeteur:dev
+```
+
+[!NOTE]
+Add `-v test.db:/app/app.db` to the above command (before `-it`) to persist
+the app database after the container has stopped.
 
 ### HTTP Status Codes
 

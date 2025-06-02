@@ -95,7 +95,7 @@ impl UserStore for SQLiteUserStore {
 impl CreateTable for SQLiteUserStore {
     fn create_table(connection: &Connection) -> Result<(), rusqlite::Error> {
         connection.execute(
-            "CREATE TABLE user (
+            "CREATE TABLE IF NOT EXISTS user (
                     id INTEGER PRIMARY KEY,
                     email TEXT UNIQUE NOT NULL,
                     password TEXT NOT NULL
