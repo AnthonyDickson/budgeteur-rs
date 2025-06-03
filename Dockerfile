@@ -10,8 +10,7 @@ COPY Cargo.lock ./Cargo.lock
 COPY templates ./templates 
 COPY src/ ./src
 
-# TODO: Only build server and reset_password binaries
-RUN cargo build --verbose --profile release
+RUN cargo build --verbose --release --bin server --bin reset_password
 
 #=============================================================================#
 
