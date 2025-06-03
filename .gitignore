@@ -14,8 +14,8 @@ Cargo.lock
 *.pdb
 
 # Project files & artifacts that should not be added to version control.
-test.db
-debug.log
+*.db
+*.log
 
 # Zed Editor Settings
 .zed/

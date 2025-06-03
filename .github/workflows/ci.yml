@@ -31,3 +31,9 @@ jobs:
 
       - name: Test
         run: cargo test --verbose
+
+# TODO: Add Docker build stage.
+# TODO: Once stable (1.0.0), tag image twice, once with full semver and
+# again with the major version. This will allow me to pin to a major version
+# on my NAS and have it download updates with a single click.
+# TODO: Push Docker image to GHCR.

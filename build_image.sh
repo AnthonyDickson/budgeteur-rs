@@ -1,1 +1,1 @@
-docker build --target deploy -t anthonydickson/budgeteur:dev .
+docker build --target deploy -t ghcr.io/anthonydickson/budgeteur:dev .

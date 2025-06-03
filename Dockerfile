@@ -25,4 +25,4 @@ COPY static/ ./static
 
 EXPOSE 3000
 
-CMD [ "server", "--db-path", "app.db", "-a", "0.0.0.0" ]
+CMD [ "server", "--db-path", "/app/data/budgeteur.db", "-a", "0.0.0.0", "-p", "8080" ]
