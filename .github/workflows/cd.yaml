@@ -1,14 +1,18 @@
 name: Build & Push Docker Image
 
 on:
-  workflow_run:
-    workflows:
-      - "Build & Test"
+  push:
     branches:
       - main
       - docker-build-deploy
-    types:
-      - completed
+  # workflow_run:
+  #   workflows:
+  #     - "Build & Test"
+  #   types:
+  #     - completed
+  #   branches:
+  #     - main
+  #     - docker-build-deploy
 
 env:
   REGISTRY: ghcr.io
