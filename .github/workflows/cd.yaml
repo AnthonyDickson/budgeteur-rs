@@ -3,7 +3,7 @@ name: Build & Push Docker Image
 on:
   workflow_run:
     workflows:
-      - "Test & Build"
+      - "Build & Test"
     branches:
       - main
       - docker-build-deploy
