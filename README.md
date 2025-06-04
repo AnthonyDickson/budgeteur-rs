@@ -46,7 +46,8 @@ docker compose up
 
 ## Set Up Development Environment
 
-These instructions are for people who want to compile from source.
+These instructions are for people who want to compile from source and/or modify
+the code.
 
 This project was developed with cargo 1.8.5, other versions have not been tested.
 [bacon](https://dystroy.org/bacon/) is used for running scripts.
@@ -125,7 +126,7 @@ docker run --rm -p 3000:3000 -e SECRET=<YOUR-SECRET> -it anthonydickson/budgeteu
 ```
 
 > [!NOTE]
-> Add `-v test.db:/app/app.db` to the above command (before `-it`) to persist
+> Add `-v $(pwd):/app/data` to the above command (before `-it`) to persist
 > the app database after the container has stopped.
 
 ## API Design
