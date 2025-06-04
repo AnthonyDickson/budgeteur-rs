@@ -6,9 +6,9 @@ on:
       - "Build & Test"
     types:
       - completed
-    branches:
-      - main
-      - docker-build-deploy
+    # branches:
+    #   - main
+    #   - docker-build-deploy
 
 env:
   REGISTRY: ghcr.io
