@@ -1,0 +1,23 @@
+name: budgeteur-rs
+
+services:
+  web:
+    # Replace 'latest' with the latest version tag, e.g. 0.1.0 to avoid suprise
+    # breakages.
+    image: anthonydickson/budgeteur:latest
+    # This is the same as the default command defined in the image.
+    command: server --address 0.0.0.0 --port 8080 --db-path /app/data/budgeteur.db
+    ports:
+      # Change the port on the left if you want to change the port your PC
+      # connects to.
+      - "8080:8080"
+    environment:
+      # Replace this with something harder to guess. This value is safe to
+      # store in plaintext on your server since the database in unencrypted
+      # anyway... just don't store it publicly if you are hosting this app on
+      # the public internet.
+      SECRET: FOOBAR
+    volumes:
+      # Replace ${PWD} with an absolute path to a directory where you want the
+      # application database to be saved.
+      - ${PWD}:/app/data

@@ -7,35 +7,61 @@ This app aims to provide two services:
 - Budgeting: Recording your income and expenses, and tracking savings targets.
 - Personal Finance: Keeping track of your net worth.
 
-The application consists of a single REST server that renders and serves HTML directly.
+The application consists of a single server that renders and serves HTML directly.
 
 <!--toc:start-->
 - [Budgeteur-rs](#budgeteur-rs)
-  - [Nix Development Environment](#nix-development-environment)
-  - [Quick Start](#quick-start)
+  - [Installation and Usage](#installation-and-usage)
+  - [Set Up Development Environment](#set-up-development-environment)
+    - [Nix Flake](#nix-flake)
+    - [First Time Setup](#first-time-setup)
     - [Bacon](#bacon)
       - [Running the Server](#running-the-server)
       - [Running Tests](#running-tests)
       - [Build and View Documentation](#build-and-view-documentation)
+    - [Building and Running the Docker Image Locally](#building-and-running-the-docker-image-locally)
   - [API Design](#api-design)
     - [HTTP Status Codes](#http-status-codes)
 <!--toc:end-->
 
-## Nix Development Environment
+## Installation and Usage
 
-If you have Nix installed, use `nix develop` while in the root directory to
-create the development environment.
-This creates a new shell environment with the correct version of Rust, any
-additional tools required for development such as `tailwindcss` and `bacon`,
-and dummy environment variables, e.g. `SECRET`, for local testing.
+This application is distributed as a Docker image and Docker Compose is the
+recommended way of running the app.
 
-## Quick Start
+See [compose.yaml](./compose.yaml) for an example Docker compose file.
+It is set up to run a local image built with [build_image.sh](./build_image.sh),
+but should be modified to use an image from the GitHub Container Registry.
+
+Once you have your `compose.yaml` set up, just run:
+
+```shell
+docker compose up
+```
+
+> [!CAUTION]
+> The server uses HTTP which is not secure. It is recommended to put the server
+> behind a reverse proxy such as Nginx to serve the application over HTTPS,
+> especially if hosting this app on the public internet.
+
+## Set Up Development Environment
+
+These instructions are for people who want to compile from source and/or modify
+the code.
 
 This project was developed with cargo 1.8.5, other versions have not been tested.
 [bacon](https://dystroy.org/bacon/) is used for running scripts.
 
 **Note**: you cannot test this web app in Safari because it does not support
 secure cookies on localhost.
+
+### Nix Flake
+
+If you have Nix installed, use `nix develop` while in the root directory to
+create the development environment.
+This creates a new shell environment with the correct version of Rust, any
+additional tools required for development such as `tailwindcss` and `bacon`,
+and dummy environment variables, e.g. `SECRET`, for local testing.
 
 ### First Time Setup
 
@@ -84,10 +110,24 @@ This will watch for changes and run all the tests in the project.
 Build the documentation in `bacon` by pressing `d`.
 This will build the documentation and open it in your default browser.
 
-## Deployment
+### Building and Running the Docker Image Locally
 
-The server serves over HTTP which is not secure. It is recommended to use a
-reverse proxy like Nginx to serve the application over HTTPS.
+Run:
+
+```shell
+./build_image.sh
+```
+
+This will create an image with the tag `anthonydickson/budgeteur:dev`.
+Run the server with:
+
+```shell
+docker run --rm -p 3000:3000 -e SECRET=<YOUR-SECRET> -it anthonydickson/budgeteur:dev
+```
+
+> [!NOTE]
+> Add `-v $(pwd):/app/data` to the above command (before `-it`) to persist
+> the app database after the container has stopped.
 
 ## API Design
 

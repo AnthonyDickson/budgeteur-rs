@@ -26,7 +26,7 @@ impl SQLiteBalanceStore {
 impl CreateTable for SQLiteBalanceStore {
     fn create_table(connection: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
         connection.execute(
-            "CREATE TABLE balance (
+            "CREATE TABLE IF NOT EXISTS balance (
                 id INTEGER PRIMARY KEY,
                 account TEXT NOT NULL UNIQUE,
                 balance REAL NOT NULL,

@@ -199,7 +199,7 @@ impl CreateTable for SQLiteTransactionStore {
     fn create_table(connection: &Connection) -> Result<(), rusqlite::Error> {
         connection
                 .execute(
-                    "CREATE TABLE \"transaction\" (
+                    "CREATE TABLE IF NOT EXISTS \"transaction\" (
                             id INTEGER PRIMARY KEY,
                             amount REAL NOT NULL,
                             date TEXT NOT NULL,

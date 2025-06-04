@@ -116,6 +116,10 @@ pub trait MapRow {
 
 /// Create the all of the database tables for the application.
 ///
+/// This function will ignore any existing tables and only create the ones
+/// that do not exist. If you are trying to upgrade from an older schema, then
+/// you should delete the old tables first.
+///
 /// # Errors
 /// This function may return a [rusqlite::Error] if something went wrong creating the tables.
 pub fn initialize(connection: &Connection) -> Result<(), Error> {
