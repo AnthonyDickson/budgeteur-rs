@@ -61,6 +61,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if tag exists
+        run: |
+          RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ ev.IMAGE_NAME }}:${{ needs.get-app-version.outputs.semver }} 2>&1)
+          if [ "$RESULT" = "manifest unknown" ] then;
+            echo "🚨 Tag already exists, update the version in Cargo.toml! 🚨"
+            exit 1
+          fi
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
