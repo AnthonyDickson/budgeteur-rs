@@ -8,6 +8,7 @@ on:
       - completed
     branches:
       - main
+      - pr-check-version
 
 env:
   REGISTRY: ghcr.io
@@ -95,23 +96,23 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
-      - name: Build and Push Docker Image
-        id: push
-        if: ${{ success() && steps.tag-check.outputs.skip == false }}
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-app-version.outputs.semver }}
-          labels: ${{ steps.meta.outputs.labels }}
+      # - name: Build and Push Docker Image
+      #   id: push
+      #   if: ${{ success() && steps.tag-check.outputs.skip == false }}
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     context: .
+      #     push: true
+      #     tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-app-version.outputs.semver }}
+      #     labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Generate Artifact Attestation
-        if: ${{ success() && steps.tag-check.outputs.skip == false }}
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
+      # - name: Generate Artifact Attestation
+      #   if: ${{ success() && steps.tag-check.outputs.skip == false }}
+      #   uses: actions/attest-build-provenance@v2
+      #   with:
+      #     subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      #     subject-digest: ${{ steps.push.outputs.digest }}
+      #     push-to-registry: true
 
 # TODO: Once stable (1.0.0), tag image twice, once with full semver and
 # again with the major version. This will allow me to pin to a major version
