@@ -80,7 +80,7 @@ jobs:
             exit 0
           fi
 
-          RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ ev.IMAGE_NAME }}:${{ needs.get-app-version.outputs.semver }} 2>&1)
+          RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-app-version.outputs.semver }} 2>&1)
 
           if [ "$RESULT" = "manifest unknown" ]; then
             echo "🚨 Tag already exists, update the version in Cargo.toml! 🚨"
