@@ -31,13 +31,10 @@ jobs:
         with:
           python-version: 3.12
 
-      - name: Install Dependencies
-        run: pip install toml
-
       - name: Read Version from Cargo.toml
         id: version
         run: |
-          VERSION=$(python -c 'import toml; print(toml.load("Cargo.toml")["package"]["version"])')
+          VERSION=$(python -c 'import tomllib; f = open("Cargo.toml", "rb"); print(tomllib.load(f)["package"]["version"])')
           echo "semver=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "${VERSION}"
 

@@ -1,5 +1,12 @@
 # To Do
 
+- CI/CD:
+  - Add GitHub Workflow that checks whether any source code has changed (src/,
+    templates/, static/, Cargo.toml, Cargo.lock, Dockerfile, tailwind.config.js),
+    and check that the version in `Cargo.toml` has been updated before allowing a
+    PR to merge into the main branch.
+  - Add step in Docker image build that runs tailwind to build the CSS files.
+    This should be a another stage.
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
 - Move route handler code for views to routes/views module.
