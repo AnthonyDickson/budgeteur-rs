@@ -13,6 +13,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: anthonydickson/budgeteur
 
+
 jobs:
   get-app-version:
     name: Get App Version
@@ -53,6 +54,10 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          # Fetch previous commit as well so we can check which files have changed.
+          # This assumes you are squashing commits when merging into main
+          fetch-depth: 2 
 
       - name: Log in to the Container Registry
         uses: docker/login-action@v3
@@ -62,21 +67,37 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check if tag exists
+        id: tag-check
         run: |
+          # Exits with code 1 if source has changed, 0 if no changes
+          ./scripts/check_source_changed.sh
+
+          if [[ $? -eq 0 ]]; then
+            echo "Did not detect any changes to the source code."
+            echo "Skipping Docker build and push."
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ ev.IMAGE_NAME }}:${{ needs.get-app-version.outputs.semver }} 2>&1)
-          if [ "$RESULT" = "manifest unknown" ] then;
+
+          if [ "$RESULT" = "manifest unknown" ]; then
             echo "🚨 Tag already exists, update the version in Cargo.toml! 🚨"
             exit 1
           fi
 
+          echo "skip=false" >> $GITHUB_OUTPUT
+
       - name: Extract metadata for Docker
         id: meta
+        if: ${{ success() && steps.tag-check.outputs.skip == false }}
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build and Push Docker Image
         id: push
+        if: ${{ success() && steps.tag-check.outputs.skip == false }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -85,6 +106,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Generate Artifact Attestation
+        if: ${{ success() && steps.tag-check.outputs.skip == false }}
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
