@@ -71,7 +71,7 @@ jobs:
         id: tag-check
         run: |
           # Exits with code 1 if source has changed, 0 if no changes
-          ./scripts/check_source_changed.sh
+          ./scripts/check_source_changed.sh -c
 
           if [[ $? -eq 0 ]]; then
             echo "Did not detect any changes to the source code."
