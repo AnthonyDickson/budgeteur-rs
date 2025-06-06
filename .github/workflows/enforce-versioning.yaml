@@ -1,0 +1,82 @@
+
+name: Enforce Versioning
+
+on:
+  pull_request:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: anthonydickson/budgeteur
+
+
+jobs:
+  get-version:
+    name: Get App Versions
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        branch: [develop, main]
+
+    outputs:
+      semver-develop: ${{ steps.version.outputs.semver-develop }}
+      semver-main: ${{ steps.version.outputs.semver-main }}
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.12
+
+      - name: Read Version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(python -c 'import tomllib; f = open("Cargo.toml", "rb"); print(tomllib.load(f)["package"]["version"])')
+          echo "semver-${{ matrix.branch }}=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "${VERSION}"
+
+                    
+  enforce-version-increment:
+    name: Check if version must be incremented
+    needs: get-version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check version
+        run: |
+          # Exits with code 1 if source has changed, 0 if no changes
+          ./scripts/check_source_changed.sh -b main
+
+          dev_version=${{ needs.get-version.outputs.semver-develop }}
+          main_version=${{ needs.get-version.outputs.semver-main }}
+
+          if [[ $? -eq 0 ]]; then
+            if [[ $dev_version == $main_version ]]; then
+              echo "Source has not changed and neither has the version, no action needed 😎👍."
+              exit 0
+            else
+              echo "🚨 🖐️👮 Source has not changed, but the version has changed. Change the version back to $main_version! 🚨" >&2
+              exit 1
+            fi
+          else
+            if [[ $dev_version == $main_version ]]; then
+              echo "🚨 🖐️👮 Source has changed, but the version has not been updated. Increase the version! 🚨" >&2
+              exit 1
+            else
+              echo "Source has changed and so has the version, no action needed 😎👍"
+              exit 0
+            fi
+          fi
+
+
+
