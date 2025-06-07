@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -e
+set -o pipefail
 
 usage() {
   echo "Usage $0 [-h | -c | -b <branch>]"
