@@ -13,7 +13,6 @@ jobs:
   get-version:
     name: Get Version
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     outputs:
       semver: ${{ steps.version.outputs.semver }}
