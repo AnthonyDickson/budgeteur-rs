@@ -8,7 +8,6 @@ on:
       - completed
     branches:
       - main
-      - pr-check-version
 
 env:
   REGISTRY: ghcr.io
@@ -27,6 +26,9 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: Cargo.toml
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -41,23 +43,25 @@ jobs:
           echo "${VERSION}"
 
                     
-  build-and-push-image:
-    name: Build and Push Docker Image
+  enforce-unique-tag:
+    name: Enforce Unique Image Tag
     runs-on: ubuntu-latest
     needs: get-app-version
 
     permissions:
       contents: read
       packages: write
-      attestations: write
       id-token: write
+
+    outputs:
+      skip: ${{ steps.tag-check.outputs.skip }}
       
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           # Fetch previous commit as well so we can check which files have changed.
-          # This assumes you are squashing commits when merging into main
+          # This assumes you are squashing or merging with --no-ff into main
           fetch-depth: 2 
 
       - name: Log in to the Container Registry
@@ -70,36 +74,66 @@ jobs:
       - name: Check if tag exists
         id: tag-check
         run: |
-          # Exits with code 1 if source has changed, 0 if no changes
-          ./scripts/check_source_changed.sh -c
+          ./scripts/check_source_changed.sh -c || exit_code=$?
 
-          if [[ $? -eq 0 ]]; then
-            echo "Did not detect any changes to the source code."
-            echo "Skipping Docker build and push."
-            echo "skip=true" >> $GITHUB_OUTPUT
+          if [[ -z $exit_code ]]; then
+            echo "⏩ Skipping Docker build and push."
+            echo -n "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
+          elif [[ $exit_code -eq 1 ]]; then
+            echo "ℹ️ Checking tag is unique before building."
+          else
+            echo "❗Unexpected exit code $exit_code"
+            exit 1
           fi
 
-          RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-app-version.outputs.semver }} 2>&1)
+          exit_code=""
+          RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-app-version.outputs.semver }} 2>&1 || exit_code=$?)
 
+          if [[ -n $exit_code && $RESULT != "manifest unknown" ]]; then
+            echo "❗Error $exit_code: $RESULT"
+            exit 1
+          fi
 
-          if [ "$RESULT" = "manifest unknown" ]; then
+          if [ "$RESULT" != "manifest unknown" ]; then
             echo "🚨 Tag already exists, update the version in Cargo.toml! 🚨"
             exit 1
           fi
 
-          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "✅ Tag is unique, proceeding with build"
+          echo -n "skip=false" >> "$GITHUB_OUTPUT"
+
+  build-and-push-image:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: enforce-unique-tag
+    if: ${{ success() && needs.enforce-unique-tag.outputs.skip == 'false' }}
+
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+      
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata for Docker
         id: meta
-        if: ${{ success() && steps.tag-check.outputs.skip == false }}
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build and Push Docker Image
         id: push
-        if: ${{ success() && steps.tag-check.outputs.skip == false }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -108,7 +142,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Generate Artifact Attestation
-        if: ${{ success() && steps.tag-check.outputs.skip == false }}
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
