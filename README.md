@@ -1,4 +1,6 @@
 # Budgeteur-rs
+[![Build & Test](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/ci.yml)
+[![Build & Push Docker Image](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/cd.yaml/badge.svg)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/cd.yaml)
 
 Budgeteur is a budgeting and personal finance web-app.
 
