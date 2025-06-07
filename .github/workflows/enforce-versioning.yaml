@@ -73,9 +73,9 @@ jobs:
           head_version=${{ needs.get-version.outputs.semver-head }}
           main_version=${{ needs.get-version.outputs.semver-main }}
 
-          ./scripts/check_source_changed.sh -b origin/main
+          ./scripts/check_source_changed.sh -b origin/main || exit_code=$?
          
-          if [[ "$?" -eq 0 ]]; then
+          if [[ -z $exit_code ]]; then
             if [[ $head_version == $main_version ]]; then
               echo "Source has not changed and neither has the version, no action needed 😎👍."
               exit 0
@@ -83,7 +83,7 @@ jobs:
               echo "🚨 🖐️👮 Source has not changed, but the version has changed. Change the version back to $main_version! 🚨" >&2
               exit 1
             fi
-          elif [[ "$?" -eq 1 ]]; then
+          elif [[ $exit_code -eq 1 ]]; then
             if [[ $head_version == $main_version ]]; then
               echo "🚨 🖐️👮 Source has changed, but the version has not been updated. Increase the version! 🚨" >&2
               exit 1
@@ -92,5 +92,5 @@ jobs:
               exit 0
             fi
           else
-            exit 1
+            exit $exit_code
           fi
