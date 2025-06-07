@@ -1,15 +1,14 @@
-
 name: Enforce Versioning
 
 on:
   pull_request:
     branches:
       - main
+      - develop
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: anthonydickson/budgeteur
-
 
 jobs:
   get-version:
@@ -18,10 +17,12 @@ jobs:
 
     strategy:
       matrix:
-        branch: [develop, main]
+        branch:
+          - ${{ github.head_ref }}
+          - main
 
     outputs:
-      semver-develop: ${{ steps.version.outputs.semver-develop }}
+      semver-head: ${{ steps.version.outputs.semver-head }}
       semver-main: ${{ steps.version.outputs.semver-main }}
     
     steps:
@@ -51,16 +52,17 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          # The checkout action will checkout as a detached head by default.
+          # Setting fetch depth to zero will fetch all branches.
+          fetch-depth: 0
 
       - name: Check version
         run: |
-          # Exits with code 1 if source has changed, 0 if no changes
-          ./scripts/check_source_changed.sh -b main
-
           dev_version=${{ needs.get-version.outputs.semver-develop }}
           main_version=${{ needs.get-version.outputs.semver-main }}
 
-          if [[ $? -eq 0 ]]; then
+          if ./scripts/check_source_changed.sh -b main; then
             if [[ $dev_version == $main_version ]]; then
               echo "Source has not changed and neither has the version, no action needed 😎👍."
               exit 0
@@ -69,7 +71,7 @@ jobs:
               exit 1
             fi
           else
-            if [[ $dev_version == $main_version ]]; then
+            if [[ $head_version == $main_version ]]; then
               echo "🚨 🖐️👮 Source has changed, but the version has not been updated. Increase the version! 🚨" >&2
               exit 1
             else
