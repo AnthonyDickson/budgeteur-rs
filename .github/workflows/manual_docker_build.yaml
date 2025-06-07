@@ -1,18 +1,13 @@
-name: Build & Push Docker Image
+# This workflow is needed for when the automated CD workflow failed to deploy,
+# and the bugfix will not trigger it.
+name: Build & Push Docker Image (Manually Triggered)
 
 on:
-  workflow_run:
-    workflows:
-      - "Build & Test"
-    types:
-      - completed
-    branches:
-      - main
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: anthonydickson/budgeteur
-
 
 jobs:
   get-version:
@@ -53,16 +48,9 @@ jobs:
       packages: write
       id-token: write
 
-    outputs:
-      skip: ${{ steps.tag-check.outputs.skip }}
-      
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          # Fetch previous commit as well so we can check which files have changed.
-          # This assumes you are squashing or merging with --no-ff into main
-          fetch-depth: 2 
 
       - name: Log in to the Container Registry
         uses: docker/login-action@v3
@@ -74,20 +62,6 @@ jobs:
       - name: Check if tag exists
         id: tag-check
         run: |
-          ./scripts/check_source_changed.sh -c || exit_code=$?
-
-          if [[ -z $exit_code ]]; then
-            echo "⏩ Skipping Docker build and push."
-            echo -n "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          elif [[ $exit_code -eq 1 ]]; then
-            echo "ℹ️ Checking tag is unique before building."
-          else
-            echo "❗Unexpected exit code $exit_code"
-            exit 1
-          fi
-
-          exit_code=""
           RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-version.outputs.semver }} 2>&1 || exit_code=$?)
 
           if [[ -n $exit_code && $RESULT != "manifest unknown" ]]; then
@@ -101,7 +75,6 @@ jobs:
           fi
 
           echo "✅ Tag is unique, proceeding with build"
-          echo -n "skip=false" >> "$GITHUB_OUTPUT"
 
   build-and-push-image:
     name: Build and Push Docker Image
@@ -109,7 +82,6 @@ jobs:
     needs:
       - get-version
       - enforce-unique-tag
-    if: ${{ success() && needs.enforce-unique-tag.outputs.skip == 'false' }}
 
     permissions:
       contents: read
