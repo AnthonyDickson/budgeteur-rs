@@ -6,7 +6,11 @@ services:
     # breakages.
     image: ghcr.io/anthonydickson/budgeteur:latest
     # This is the same as the default command defined in the image.
-    command: server --address 0.0.0.0 --port 8080 --db-path /app/data/budgeteur.db
+    command: |
+      server --address 0.0.0.0 \
+        --port 8080 \
+        --db-path /app/data/budgeteur.db \
+        --log-path /app/data/debug.log
     ports:
       # Change the port on the left if you want to change the port your PC
       # connects to.

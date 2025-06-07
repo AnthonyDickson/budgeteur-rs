@@ -42,4 +42,7 @@ COPY --from=build /build/target/release/reset_password /usr/local/bin/reset_pass
 
 EXPOSE 3000
 
-CMD [ "server", "--db-path", "/app/data/budgeteur.db", "-a", "0.0.0.0", "-p", "8080" ]
+CMD [ "server", "--db-path", "/app/data/budgeteur.db", \
+  "--log-path", "/app/data/debug.log", \
+  "-a", "0.0.0.0", \
+  "-p", "8080" ]
