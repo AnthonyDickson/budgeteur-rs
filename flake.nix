@@ -23,7 +23,7 @@
           ];
 
           packages = with pkgs; [
-            tailwindcss_4
+            tailwindcss
             bacon
             dockerfile-language-server-nodejs
             marksman
