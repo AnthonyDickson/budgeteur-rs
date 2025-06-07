@@ -16,16 +16,15 @@ RUN cargo build --verbose --release --bin server --bin reset_password
  
 FROM alpine:3.21 AS tailwind
 
-WORKDIR /build
-
-COPY templates/ /build/templates
-
 RUN apk update
 RUN apk add --no-cache curl libgcc libstdc++
-RUN curl -sL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.8/tailwindcss-linux-x64-musl -o tailwindcss && \
+RUN curl -sL https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-linux-x64 -o tailwindcss && \
   chmod +x tailwindcss && \
   mv tailwindcss /usr/bin
 
+
+WORKDIR /build
+COPY templates/ /build/templates
 RUN tailwindcss --input templates/source.css --output static/main.css --minify
 
 #==============================================================================#
