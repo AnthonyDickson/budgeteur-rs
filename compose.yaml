@@ -4,7 +4,7 @@ services:
   web:
     # Replace 'latest' with the latest version tag, e.g. 0.1.0 to avoid suprise
     # breakages.
-    image: anthonydickson/budgeteur:latest
+    image: ghcr.io/anthonydickson/budgeteur:latest
     # This is the same as the default command defined in the image.
     command: server --address 0.0.0.0 --port 8080 --db-path /app/data/budgeteur.db
     ports:
