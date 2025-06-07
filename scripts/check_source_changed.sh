@@ -1,7 +1,10 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
 usage() {
   echo "Usage $0 [-h | -c | -b <branch>]"
+  echo
+  echo "Checks for changes in the source code of the Budgeteur-rs git repo."
+  echo "Exits with 0 if no change is detected, 1 if a change is detected, "
+  echo "and 2 if an error occurred."
   echo
   echo "Options:"
   echo " -h           Display this help message"
@@ -24,14 +27,14 @@ while getopts "hcb:" flag; do
 
       if [[ -z $diff_branch ]]; then
         echo "Branch name cannot be empty" >&2
-        exit 1
+        exit 2
       fi
       ;;
     *)
       # echo to add blank line between error message and help message
       echo
       usage
-      exit 1
+      exit 2
       ;;
   esac
 done
@@ -45,19 +48,26 @@ fi
 
 current_branch=$(git branch --show-current)
 
-
 case $diff_mode in
   previous_commit)
     echo "Diffing HEAD with HEAD^ on branch $current_branch"
     CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+
+    if [[ "$?" -ne 0 ]]; then
+      exit 2
+    fi
     ;;
   branch)
     echo "Diffing branch $current_branch against branch $diff_branch"
     CHANGED_FILES=$(git diff --name-only $diff_branch)
+
+    if [[ "$?" -ne 0 ]]; then
+      exit 2
+    fi
     ;;
   *)
     echo "Oops! The programmer made a mistake!" >&2
-    exit 1
+    exit 2
     ;;
 esac
 

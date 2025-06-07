@@ -1,47 +1,58 @@
-
 name: Enforce Versioning
 
 on:
   pull_request:
     branches:
       - main
+      - develop
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: anthonydickson/budgeteur
-
+  BRANCH: ${{ github.head_ref }}
 
 jobs:
   get-version:
     name: Get App Versions
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        branch: [develop, main]
-
     outputs:
-      semver-develop: ${{ steps.version.outputs.semver-develop }}
-      semver-main: ${{ steps.version.outputs.semver-main }}
+      semver-head: ${{ steps.head.outputs.semver }}
+      semver-main: ${{ steps.main.outputs.semver }}
     
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ matrix.branch }}
-
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: 3.12
 
-      - name: Read Version from Cargo.toml
-        id: version
+      - name: Checkout Main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout: Cargo.toml
+          sparse-checkout-cone-mode: false
+
+      - name: Read Version from Cargo.toml on Main
+        id: main
         run: |
           VERSION=$(python -c 'import tomllib; f = open("Cargo.toml", "rb"); print(tomllib.load(f)["package"]["version"])')
-          echo "semver-${{ matrix.branch }}=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "semver=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "${VERSION}"
 
+      - name: Checkout Head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BRANCH }}
+          sparse-checkout: Cargo.toml
+          sparse-checkout-cone-mode: false
+
+      - name: Read Version from Cargo.toml on Head
+        id: head
+        run: |
+          VERSION=$(python -c 'import tomllib; f = open("Cargo.toml", "rb"); print(tomllib.load(f)["package"]["version"])')
+          echo "semver=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "${VERSION}"
                     
   enforce-version-increment:
     name: Check if version must be incremented
@@ -51,32 +62,35 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BRANCH }}
+          # The checkout action will checkout as a detached head by default.
+          # Setting fetch depth to zero will fetch all branches.
+          fetch-depth: 0
 
       - name: Check version
         run: |
-          # Exits with code 1 if source has changed, 0 if no changes
-          ./scripts/check_source_changed.sh -b main
-
-          dev_version=${{ needs.get-version.outputs.semver-develop }}
+          head_version=${{ needs.get-version.outputs.semver-head }}
           main_version=${{ needs.get-version.outputs.semver-main }}
 
-          if [[ $? -eq 0 ]]; then
-            if [[ $dev_version == $main_version ]]; then
+          ./scripts/check_source_changed.sh -b origin/main || exit_code=$?
+         
+          if [[ -z $exit_code ]]; then
+            if [[ $head_version == $main_version ]]; then
               echo "Source has not changed and neither has the version, no action needed 😎👍."
               exit 0
             else
               echo "🚨 🖐️👮 Source has not changed, but the version has changed. Change the version back to $main_version! 🚨" >&2
               exit 1
             fi
-          else
-            if [[ $dev_version == $main_version ]]; then
+          elif [[ $exit_code -eq 1 ]]; then
+            if [[ $head_version == $main_version ]]; then
               echo "🚨 🖐️👮 Source has changed, but the version has not been updated. Increase the version! 🚨" >&2
               exit 1
             else
               echo "Source has changed and so has the version, no action needed 😎👍"
               exit 0
             fi
+          else
+            exit $exit_code
           fi
-
-
-
