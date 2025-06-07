@@ -22,3 +22,6 @@ target/
 # macOS files
 .DS_Store
 result
+
+# Tailwind CSS build outputs
+static/main.css
