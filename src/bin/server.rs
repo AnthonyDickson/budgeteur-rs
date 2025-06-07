@@ -44,13 +44,17 @@ struct Args {
     /// The port to serve the API from.
     #[arg(short, long, default_value_t = 3000)]
     port: u16,
+
+    /// File path to the application logs.
+    #[arg(short, long, default_value = "debug.log")]
+    log_path: String,
 }
 
 #[tokio::main]
 async fn main() {
-    setup_logging();
-
     let args = Args::parse();
+
+    setup_logging(&args.log_path);
 
     let Ok(address) = args.address.parse::<Ipv4Addr>() else {
         eprintln!(
@@ -105,13 +109,13 @@ async fn main() {
     }
 }
 
-fn setup_logging() {
+fn setup_logging(log_path: &str) {
     let stdout_log = tracing_subscriber::fmt::layer().pretty();
 
     let log_file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("debug.log")
+        .open(log_path)
         .expect("Could not create log file");
 
     let debug_log = tracing_subscriber::fmt::layer()
