@@ -53,6 +53,11 @@ where
 {
     let mut transactions = Vec::new();
     let mut balances = Vec::new();
+    let unexpected_error_response = ImportTransactionFormTemplate {
+        import_route: endpoints::IMPORT,
+        error_message: "An unexpected error occurred, please try again later.",
+    }
+    .into_response();
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         if field.content_type() != Some("text/csv") {
@@ -63,15 +68,22 @@ where
             .into_response();
         }
 
-        let file_name = field.file_name().unwrap().to_string();
-        let data = field.text().await.unwrap();
+        let file_name = match field.file_name() {
+            Some(file_name) => file_name.to_owned(),
+            None => {
+                tracing::error!("Could not get file name from multipart form field: {field:#?}");
+                return unexpected_error_response;
+            }
+        };
+        let data = match field.text().await {
+            Ok(data) => data,
+            Err(error) => {
+                tracing::error!("Could not read data from multipart form: {error}");
+                return unexpected_error_response;
+            }
+        };
 
-        tracing::debug!(
-            "Received file '{}' that is {} bytes: {}",
-            file_name,
-            data.len(),
-            data
-        );
+        tracing::debug!("Received file '{}' that is {} bytes", file_name, data.len());
 
         match parse_csv(&data) {
             Ok(parse_result) => {
@@ -94,12 +106,7 @@ where
 
     if let Err(error) = state.transaction_store.import(transactions) {
         tracing::error!("Failed to import transactions: {}", error);
-
-        return ImportTransactionFormTemplate {
-            import_route: endpoints::IMPORT,
-            error_message: "An unexpected error occurred, please try again later.",
-        }
-        .into_response();
+        return unexpected_error_response;
     }
 
     for balance in balances {
@@ -108,13 +115,8 @@ where
                 .balance_store
                 .upsert(&balance.account, balance.balance, &balance.date)
         {
-            tracing::error!("Failed to import account balances: {}", error);
-
-            return ImportTransactionFormTemplate {
-                import_route: endpoints::IMPORT,
-                error_message: "An unexpected error occurred, please try again later.",
-            }
-            .into_response();
+            tracing::error!("Failed to import account balances: {error:#?}");
+            return unexpected_error_response;
         }
     }
 
