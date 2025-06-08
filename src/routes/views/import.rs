@@ -83,12 +83,7 @@ where
             }
         };
 
-        tracing::debug!(
-            "Received file '{}' that is {} bytes: {}",
-            file_name,
-            data.len(),
-            data
-        );
+        tracing::debug!("Received file '{}' that is {} bytes", file_name, data.len());
 
         match parse_csv(&data) {
             Ok(parse_result) => {
