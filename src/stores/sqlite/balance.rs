@@ -79,15 +79,13 @@ impl BalanceStore for SQLiteBalanceStore {
                 ON CONFLICT(account) DO UPDATE SET
                     balance=excluded.balance,
                     date=excluded.date
-                WHERE excluded.date > b.date;",
+                WHERE excluded.date > b.date AND b.account = excluded.account;",
             (next_id, account, balance, date),
         )?;
 
-        let row_id = connection.last_insert_rowid();
-
         let balance = connection
-            .prepare("SELECT id, account, balance, date FROM balance WHERE id = :id;")?
-            .query_row(&[(":id", &row_id)], SQLiteBalanceStore::map_row)?;
+            .prepare("SELECT id, account, balance, date FROM balance WHERE account = :account;")?
+            .query_row(&[(":account", account)], SQLiteBalanceStore::map_row)?;
 
         Ok(balance)
     }
@@ -135,6 +133,65 @@ mod sqlite_balance_store_tests {
         let got = store
             .upsert(&want.account, want.balance, &want.date)
             .expect("Could not create account balance");
+
+        assert_eq!(want, got, "want balance {want:?}, got {got:?}");
+    }
+
+    /// This test detects a bug with upsert when the same CSV, and therefore the
+    /// same balances, are imported twice.
+    ///
+    /// When using the last inserted row id to fetch the balance row, if there
+    /// was a conflict which resulted in no rows being inserted/updated the row
+    /// id would either be zero if the database connection was reset, or the
+    /// last successfully inserted row otherwise. In the first case, this
+    /// resulted in an error 'NotFound: the requested resource could not be
+    /// found', and in the second case it would result in an unrelated balance
+    /// being returned.
+    #[tokio::test]
+    async fn upsert_balances_twice() {
+        let mut store = get_test_store();
+        let want = vec![
+            Balance {
+                id: 1,
+                account: "1234-5678-9101-012".to_owned(),
+                balance: 123.45,
+                date: date!(2025 - 05 - 31),
+            },
+            Balance {
+                id: 2,
+                account: "1234-5678-9101-013".to_owned(),
+                balance: 234.56,
+                date: date!(2025 - 05 - 31),
+            },
+            Balance {
+                id: 3,
+                account: "1234-5678-9101-014".to_owned(),
+                balance: 345.67,
+                date: date!(2025 - 05 - 27),
+            },
+            Balance {
+                id: 4,
+                account: "1234-5678-9101-015".to_owned(),
+                balance: 567.89,
+                date: date!(2025 - 06 - 06),
+            },
+        ];
+
+        for balance in &want {
+            let balance = store
+                .upsert(&balance.account, balance.balance, &balance.date)
+                .expect("Could not create account balance");
+            println!("{balance:#?}");
+        }
+
+        let mut got = Vec::new();
+        for balance in &want {
+            let got_balance = store
+                .upsert(&balance.account, balance.balance, &balance.date)
+                .expect("Could not create account balance");
+            println!("{got_balance:#?}");
+            got.push(got_balance);
+        }
 
         assert_eq!(want, got, "want balance {want:?}, got {got:?}");
     }
