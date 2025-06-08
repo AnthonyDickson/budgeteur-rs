@@ -24,6 +24,7 @@ RUN curl -sL https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.
 
 
 WORKDIR /build
+COPY tailwind.config.js ./tailwind.config.js
 COPY templates/ /build/templates
 RUN tailwindcss --input templates/source.css --output static/main.css --minify
 
