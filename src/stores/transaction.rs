@@ -37,6 +37,8 @@ pub struct TransactionQuery {
     pub date_range: Option<RangeInclusive<Date>>,
     /// Selects up to the first N (`limit`) transactions.
     pub limit: Option<u64>,
+    /// Ignore the first N transactions. Only has an effect if `limit` is not `None`.
+    pub offset: u64,
     /// Orders transactions by date in the order `sort_date`. None returns transactions in the
     /// order they are stored.
     pub sort_date: Option<SortOrder>,

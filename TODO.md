@@ -1,5 +1,8 @@
 # To Do
 
+- Group transactions by week, month, year.
+  - Add ISO week number to transaction
+  - Add year number
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
 - Move route handler code for views to routes/views module.

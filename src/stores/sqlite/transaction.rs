@@ -179,7 +179,7 @@ impl TransactionStore for SQLiteTransactionStore {
         }
 
         if let Some(limit) = filter.limit {
-            query_string_parts.push(format!("LIMIT {}", limit));
+            query_string_parts.push(format!("LIMIT {limit} OFFSET {}", filter.offset));
         }
 
         let query_string = query_string_parts.join(" ");
@@ -489,6 +489,35 @@ mod sqlite_transaction_store_tests {
             .unwrap();
 
         assert_eq!(got.len(), 5, "got {} transactions, want 5", got.len());
+    }
+
+    #[test]
+    fn get_transactions_with_offset() {
+        let mut state = get_app_state();
+        let offset = 10;
+        let limit = 5;
+        let mut want = Vec::new();
+        for i in 1..20 {
+            let transaction = state
+                .transaction_store
+                .create(i as f64)
+                .expect("Could not create transaction");
+
+            if i > offset && i <= offset + limit {
+                want.push(transaction);
+            }
+        }
+
+        let got = state
+            .transaction_store
+            .get_query(TransactionQuery {
+                offset,
+                limit: Some(limit),
+                ..Default::default()
+            })
+            .expect("Could not query store");
+
+        assert_eq!(want, got);
     }
 
     #[test]
