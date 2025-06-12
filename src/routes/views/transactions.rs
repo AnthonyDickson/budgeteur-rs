@@ -1,9 +1,10 @@
 use askama_axum::Template;
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::Uri,
     response::{IntoResponse, Response},
 };
+use serde::Deserialize;
 
 use crate::{
     routes::{
@@ -28,16 +29,32 @@ struct TransactionsTemplate<'a> {
     import_transaction_route: Uri,
 }
 
-// TODO: implement pagination
+#[derive(Deserialize)]
+pub struct Pagination {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+}
+
 /// Render an overview of the user's transactions.
-pub async fn get_transactions_page<T>(State(state): State<TransactionsViewState<T>>) -> Response
+pub async fn get_transactions_page<T>(
+    State(state): State<TransactionsViewState<T>>,
+    Query(query_params): Query<Pagination>,
+) -> Response
 where
     T: TransactionStore + Send + Sync,
 {
     let nav_bar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
 
+    let Pagination { page, per_page } = query_params;
+
+    let (limit, offset) = match (page, per_page) {
+        (Some(page), Some(per_page)) => (page * per_page, per_page),
+        _ => (20, 0),
+    };
+
     let transactions = state.transaction_store.get_query(TransactionQuery {
-        limit: Some(20),
+        limit: Some(limit),
+        offset,
         sort_date: Some(SortOrder::Descending),
         ..Default::default()
     });
@@ -63,12 +80,17 @@ where
 #[cfg(test)]
 mod transactions_route_tests {
     use askama::Result;
-    use axum::{extract::State, http::StatusCode, response::Response};
+    use axum::{
+        extract::{Query, State},
+        http::StatusCode,
+        response::Response,
+    };
     use scraper::Html;
 
     use crate::{
         Error,
         models::{DatabaseID, Transaction, TransactionBuilder},
+        routes::views::transactions::Pagination,
         state::TransactionsViewState,
         stores::{TransactionQuery, TransactionStore},
     };
@@ -103,8 +125,19 @@ mod transactions_route_tests {
             todo!()
         }
 
-        fn get_query(&self, _query: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            Ok(self.transactions.clone())
+        fn get_query(&self, query: TransactionQuery) -> Result<Vec<Transaction>, Error> {
+            if let Some(limit) = query.limit {
+                let offset = query.offset as usize;
+                let limit = limit as usize;
+
+                if offset > self.transactions.len() || offset + limit > self.transactions.len() {
+                    Ok(self.transactions.clone())
+                } else {
+                    Ok(self.transactions[offset..offset + limit].to_owned())
+                }
+            } else {
+                Ok(self.transactions.clone())
+            }
         }
     }
 
@@ -119,7 +152,14 @@ mod transactions_route_tests {
         };
         let state = TransactionsViewState { transaction_store };
 
-        let response = get_transactions_page(State(state)).await;
+        let response = get_transactions_page(
+            State(state),
+            Query(Pagination {
+                page: None,
+                per_page: None,
+            }),
+        )
+        .await;
 
         assert_eq!(response.status(), StatusCode::OK);
 
@@ -141,6 +181,41 @@ mod transactions_route_tests {
                 transactions_page_text
             );
         }
+    }
+
+    #[tokio::test]
+    async fn displays_paged_data() {
+        let mut transactions = Vec::new();
+        for i in 0..20 {
+            transactions.push(Transaction::build(i as f64).finalise(i));
+        }
+        let state = TransactionsViewState {
+            transaction_store: StubTransactionStore { transactions },
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(Pagination {
+                page: Some(2),
+                per_page: Some(4),
+            }),
+        )
+        .await;
+
+        // TODO: parse html
+        // TODO: check for table
+        // TODO: check for correct row count
+        // TODO: check correct transactions
+        // TODO: check for pagination indicator
+        // TODO: check that pagination indicator displays up ten pages
+        // TODO: check that pagination indicator displays current page in
+        //  numerical order if current page < max pages
+        // TODO: check that pagination indicator displays current page in
+        //  numerical order if current page > (page count - current page)
+        // TODO: check that pagination indicator displays current page in
+        //  middle if current page > max pages and current page <= (page count - max pages)
+        // TODO: check that previous page link is rendered if current page > 0
+        // TODO: check that next page link is rendered if current page < page count
     }
 
     async fn get_response_body_text(response: Response) -> String {
