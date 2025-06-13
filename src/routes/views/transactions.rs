@@ -51,7 +51,7 @@ where
     let Pagination { page, per_page } = query_params;
 
     let (limit, offset) = match (page, per_page) {
-        (Some(page), Some(per_page)) => ((page - 1) * per_page, per_page),
+        (Some(page), Some(per_page)) => (per_page, (page - 1) * per_page),
         _ => (20, 0),
     };
 
@@ -190,8 +190,8 @@ mod transactions_route_tests {
     async fn displays_paged_data() {
         let mut transactions = Vec::new();
         let mut want = Vec::new();
-        let page = 2;
-        let per_page = 4;
+        let page = 3;
+        let per_page = 2;
         for i in 0..20_u32 {
             let transaction = Transaction::build(i as f64).finalise(i as i64);
             transactions.push(transaction.clone());
