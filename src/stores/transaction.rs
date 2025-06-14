@@ -28,6 +28,9 @@ pub trait TransactionStore {
 
     /// Retrieve transactions from the store in the way defined by `query`.
     fn get_query(&self, query: TransactionQuery) -> Result<Vec<Transaction>, Error>;
+
+    /// Get the total number of transactions in the store.
+    fn count(&self) -> Result<usize, Error>;
 }
 
 /// Defines how transactions should be fetched from [TransactionStore::get_query].

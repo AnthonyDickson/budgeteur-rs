@@ -131,6 +131,10 @@ mod dashboard_route_tests {
                 .map(|transaction| Ok(transaction.to_owned()))
                 .collect()
         }
+
+        fn count(&self) -> Result<usize, Error> {
+            todo!()
+        }
     }
 
     #[tokio::test]

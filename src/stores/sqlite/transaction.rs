@@ -148,6 +148,10 @@ impl TransactionStore for SQLiteTransactionStore {
         Ok(transaction)
     }
 
+    /// Query for transactions in the database.
+    ///
+    /// # Errors
+    /// This function will return a [Error::SqlError] there is a SQL error.
     fn get_query(&self, filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
         let mut query_string_parts = vec![
             "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\""
@@ -192,6 +196,20 @@ impl TransactionStore for SQLiteTransactionStore {
             .query_map(params, Self::map_row)?
             .map(|maybe_category| maybe_category.map_err(Error::SqlError))
             .collect()
+    }
+
+    /// Get the total number of transactions in the database.
+    ///
+    /// # Errors
+    /// This function will return a [Error::SqlError] there is some SQL error.
+    fn count(&self) -> Result<usize, Error> {
+        self.connection
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(id) FROM \"transaction\";", [], |row| {
+                row.get(0)
+            })
+            .map_err(|error| error.into())
     }
 }
 
@@ -558,5 +576,24 @@ mod sqlite_transaction_store_tests {
             got, want,
             "got transactions that were not sorted in descending order."
         );
+    }
+
+    #[test]
+    fn get_count() {
+        let mut state = get_app_state();
+        let want_count = 20;
+        for i in 1..=want_count {
+            state
+                .transaction_store
+                .create(i as f64)
+                .expect("Could not create transaction");
+        }
+
+        let got_count = state
+            .transaction_store
+            .count()
+            .expect("Could not get count");
+
+        assert_eq!(want_count, got_count);
     }
 }

@@ -27,6 +27,14 @@ struct TransactionsTemplate<'a> {
     create_transaction_route: Uri,
     /// The route for importing transactions from CSV files.
     import_transaction_route: Uri,
+    /// The route to the transactions (current) page.
+    transactions_page_route: Uri,
+    /// The current page.
+    page: u32,
+    /// The maximum number of transactions to show per page.
+    per_page: u32,
+    /// The total number of pages.
+    page_count: u32,
 }
 
 /// Controls paginations of transactions table.
@@ -38,6 +46,11 @@ pub struct Pagination {
     pub per_page: Option<u32>,
 }
 
+/// The page number to default to when not specified in a request.
+const DEFAULT_PAGE: u32 = 1;
+/// The maximum transactions to display per page when not specified in a request.
+const DEFAULT_PAGE_SIZE: u32 = 20;
+
 /// Render an overview of the user's transactions.
 pub async fn get_transactions_page<T>(
     State(state): State<TransactionsViewState<T>>,
@@ -48,11 +61,14 @@ where
 {
     let nav_bar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
 
-    let Pagination { page, per_page } = query_params;
+    let page = query_params.page.unwrap_or(DEFAULT_PAGE);
+    let per_page = query_params.per_page.unwrap_or(DEFAULT_PAGE_SIZE);
 
-    let (limit, offset) = match (page, per_page) {
-        (Some(page), Some(per_page)) => (per_page, (page - 1) * per_page),
-        _ => (20, 0),
+    let limit = per_page;
+    let offset = (page - 1) * per_page;
+    let page_count = match state.transaction_store.count() {
+        Ok(transaction_count) => (transaction_count as f64 / per_page as f64).ceil() as u32,
+        Err(error) => return error.into_response(),
     };
 
     let transactions = state.transaction_store.get_query(TransactionQuery {
@@ -76,12 +92,17 @@ where
         transactions,
         create_transaction_route: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
         import_transaction_route: Uri::from_static(endpoints::IMPORT_VIEW),
+        transactions_page_route: Uri::from_static(endpoints::TRANSACTIONS_VIEW),
+        page,
+        per_page,
+        page_count,
     }
     .into_response()
 }
 
 #[cfg(test)]
 mod transactions_route_tests {
+
     use askama::Result;
     use axum::{
         extract::{Query, State},
@@ -93,7 +114,7 @@ mod transactions_route_tests {
     use crate::{
         Error,
         models::{DatabaseID, Transaction, TransactionBuilder},
-        routes::views::transactions::Pagination,
+        routes::{endpoints, views::transactions::Pagination},
         state::TransactionsViewState,
         stores::{TransactionQuery, TransactionStore},
     };
@@ -141,6 +162,10 @@ mod transactions_route_tests {
             } else {
                 Ok(self.transactions.clone())
             }
+        }
+
+        fn count(&self) -> std::result::Result<usize, Error> {
+            Ok(self.transactions.len())
         }
     }
 
@@ -200,6 +225,7 @@ mod transactions_route_tests {
                 want.push(transaction);
             }
         }
+        let total_pages = (transactions.len() as f64 / per_page as f64).ceil() as usize;
         let state = TransactionsViewState {
             transaction_store: StubTransactionStore {
                 transactions: transactions.clone(),
@@ -219,8 +245,8 @@ mod transactions_route_tests {
         assert_valid_html(&html);
         let table = must_get_table(&html);
         assert_table_has_transactions(table, &want);
-        // TODO: check for pagination indicator
-        // TODO: check that pagination indicator displays up ten pages
+        let pagination = must_get_pagination_indicator(&html);
+        assert_pagination_indicators(pagination, total_pages, page as usize, per_page);
         // TODO: check that pagination indicator displays current page in
         //  numerical order if current page < max pages
         // TODO: check that pagination indicator displays current page in
@@ -242,8 +268,17 @@ mod transactions_route_tests {
     }
 
     #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors: {:?}",
+            html.errors
+        );
+    }
+
+    #[track_caller]
     fn must_get_table(html: &Html) -> ElementRef {
-        html.select(&scraper::Selector::parse("table").unwrap())
+        html.select(&Selector::parse("table").unwrap())
             .next()
             .expect("No table found")
     }
@@ -271,18 +306,69 @@ mod transactions_route_tests {
         }
     }
 
+    #[track_caller]
+    fn must_get_pagination_indicator(html: &Html) -> ElementRef {
+        html.select(&Selector::parse("nav.pagination > ul.pagination").unwrap())
+            .next()
+            .expect("No pagination indicator found")
+    }
+
+    #[track_caller]
+    fn assert_pagination_indicators(
+        pagination_indicator: ElementRef,
+        want_page_count: usize,
+        want_page: usize,
+        want_per_page: u32,
+    ) {
+        let li_selector = Selector::parse("li").unwrap();
+        let list_items: Vec<ElementRef> = pagination_indicator.select(&li_selector).collect();
+        assert_eq!(list_items.len(), want_page_count);
+
+        let link_selector = Selector::parse("a").unwrap();
+
+        for (i, list_item) in (1..=want_page_count).zip(list_items) {
+            let link = list_item
+                .select(&link_selector)
+                .next()
+                .expect(&format!("Could not get link (<a> tag) for list item {i}"));
+            let link_text = {
+                let text = link.text().collect::<String>();
+                text.trim().to_owned()
+            };
+            let got_page_number = link_text.parse::<usize>().expect(&format!(
+                "Could not parse page number {link_text} for page {i} as usize"
+            ));
+
+            assert_eq!(i, got_page_number);
+
+            if i == want_page {
+                link.attr("aria-current").expect(&format!(
+                    "The current page, page {want_page}, did not have aria-current attribute."
+                ));
+            } else {
+                assert!(
+                    link.attr("aria-current").is_none(),
+                    "The current page, page {i}, should not have aria-current attribute."
+                );
+            }
+
+            let link_target = link
+                .attr("href")
+                .expect(&format!("Link for page {i} did not have href element"));
+            let want_target = format!(
+                "{}?page={i}&per_page={want_per_page}",
+                endpoints::TRANSACTIONS_VIEW
+            );
+            assert_eq!(
+                want_target, link_target,
+                "Got incorrect page link for page {i}"
+            );
+        }
+    }
+
     async fn get_response_body_text(response: Response) -> String {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
         String::from_utf8_lossy(&body).to_string()
-    }
-
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors: {:?}",
-            html.errors
-        );
     }
 }
