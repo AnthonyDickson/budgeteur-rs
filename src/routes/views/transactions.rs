@@ -30,26 +30,26 @@ struct TransactionsTemplate<'a> {
     /// The route to the transactions (current) page.
     transactions_page_route: Uri,
     /// The current page.
-    page: u32,
+    page: u64,
     /// The maximum number of transactions to show per page.
-    per_page: u32,
+    per_page: u64,
     /// The total number of pages.
-    page_count: u32,
+    page_count: u64,
 }
 
 /// Controls paginations of transactions table.
 #[derive(Deserialize)]
 pub struct Pagination {
     /// The page number to display. Starts from 1.
-    pub page: Option<u32>,
+    pub page: Option<u64>,
     /// The maximum number of transactions to display per page.
-    pub per_page: Option<u32>,
+    pub per_page: Option<u64>,
 }
 
 /// The page number to default to when not specified in a request.
-const DEFAULT_PAGE: u32 = 1;
+const DEFAULT_PAGE: u64 = 1;
 /// The maximum transactions to display per page when not specified in a request.
-const DEFAULT_PAGE_SIZE: u32 = 20;
+const DEFAULT_PAGE_SIZE: u64 = 20;
 
 /// Render an overview of the user's transactions.
 pub async fn get_transactions_page<T>(
@@ -67,7 +67,7 @@ where
     let limit = per_page;
     let offset = (page - 1) * per_page;
     let page_count = match state.transaction_store.count() {
-        Ok(transaction_count) => (transaction_count as f64 / per_page as f64).ceil() as u32,
+        Ok(transaction_count) => (transaction_count as f64 / per_page as f64).ceil() as u64,
         Err(error) => return error.into_response(),
     };
 
@@ -217,7 +217,7 @@ mod transactions_route_tests {
         let mut want = Vec::new();
         let page = 3;
         let per_page = 2;
-        for i in 0..20_u32 {
+        for i in 0..20 {
             let transaction = Transaction::build(i as f64).finalise(i as i64);
             transactions.push(transaction.clone());
 
@@ -225,7 +225,7 @@ mod transactions_route_tests {
                 want.push(transaction);
             }
         }
-        let total_pages = (transactions.len() as f64 / per_page as f64).ceil() as usize;
+        let total_pages = (transactions.len() as f64 / per_page as f64).ceil() as u64;
         let state = TransactionsViewState {
             transaction_store: StubTransactionStore {
                 transactions: transactions.clone(),
@@ -246,7 +246,7 @@ mod transactions_route_tests {
         let table = must_get_table(&html);
         assert_table_has_transactions(table, &want);
         let pagination = must_get_pagination_indicator(&html);
-        assert_pagination_indicators(pagination, total_pages, page as usize, per_page);
+        assert_pagination_indicators(pagination, total_pages, page, per_page);
         // TODO: check that pagination indicator displays current page in
         //  numerical order if current page < max pages
         // TODO: check that pagination indicator displays current page in
@@ -316,13 +316,13 @@ mod transactions_route_tests {
     #[track_caller]
     fn assert_pagination_indicators(
         pagination_indicator: ElementRef,
-        want_page_count: usize,
-        want_page: usize,
-        want_per_page: u32,
+        want_page_count: u64,
+        want_page: u64,
+        want_per_page: u64,
     ) {
         let li_selector = Selector::parse("li").unwrap();
         let list_items: Vec<ElementRef> = pagination_indicator.select(&li_selector).collect();
-        assert_eq!(list_items.len(), want_page_count);
+        assert_eq!(list_items.len(), want_page_count as usize);
 
         let link_selector = Selector::parse("a").unwrap();
 
@@ -335,7 +335,7 @@ mod transactions_route_tests {
                 let text = link.text().collect::<String>();
                 text.trim().to_owned()
             };
-            let got_page_number = link_text.parse::<usize>().expect(&format!(
+            let got_page_number = link_text.parse::<u64>().expect(&format!(
                 "Could not parse page number {link_text} for page {i} as usize"
             ));
 
