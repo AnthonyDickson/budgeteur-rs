@@ -52,14 +52,19 @@
     {% if !transactions.is_empty() %}
     <nav class="pagination">
       <ul class="pagination">
-        {% for i in 1..=page_count %}
+        {% for indicator in pagination %}
         <li>
-          <a
-            href="{{ transactions_page_route }}?page={{ i }}&per_page={{ per_page }}"
-            {% if i == page %}aria-current="page"{% endif %}
-          >
-            {{ i }}
-          </a>
+          {% match indicator %}
+            {% when PaginationIndicator::Page(page) %}
+              <a
+                href="{{ transactions_page_route }}?page={{ page }}&per_page={{ per_page }}"
+                {% if page == curr_page %}aria-current="page"{% endif %}
+              >
+                {{ page }}
+              </a>
+            {%- when PaginationIndicator::Ellipsis -%}
+              ...
+          {% endmatch %}
         </li>
         {% endfor %}
       </ul>

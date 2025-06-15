@@ -16,6 +16,11 @@ use crate::{
     stores::{SortOrder, TransactionQuery, TransactionStore},
 };
 
+enum PaginationIndicator {
+    Page(u64),
+    Ellipsis,
+}
+
 /// Renders the dashboard page.
 #[derive(Template)]
 #[template(path = "views/transactions.html")]
@@ -29,12 +34,12 @@ struct TransactionsTemplate<'a> {
     import_transaction_route: Uri,
     /// The route to the transactions (current) page.
     transactions_page_route: Uri,
-    /// The current page.
-    page: u64,
-    /// The maximum number of transactions to show per page.
+    pagination: &'a [PaginationIndicator],
     per_page: u64,
-    /// The total number of pages.
-    page_count: u64,
+    /// The currently select page.
+    curr_page: &'a u64,
+    // HACK: ^ Use reference for current page since (de)referencing doesn't work
+    // in asakama template as expected.
 }
 
 /// Controls paginations of transactions table.
@@ -63,11 +68,11 @@ where
 {
     let nav_bar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
 
-    let page = query_params.page.unwrap_or(DEFAULT_PAGE);
+    let curr_page = query_params.page.unwrap_or(DEFAULT_PAGE);
     let per_page = query_params.per_page.unwrap_or(DEFAULT_PAGE_SIZE);
 
     let limit = per_page;
-    let offset = (page - 1) * per_page;
+    let offset = (curr_page - 1) * per_page;
     let page_count = match state.transaction_store.count() {
         Ok(transaction_count) => (transaction_count as f64 / per_page as f64).ceil() as u64,
         Err(error) => return error.into_response(),
@@ -89,15 +94,27 @@ where
         .map(|transaction| TransactionRow { transaction })
         .collect();
 
+    let pagination_indicators = if page_count <= MAX_PAGES {
+        (1..=page_count)
+            .map(|page| PaginationIndicator::Page(page))
+            .collect::<Vec<_>>()
+    } else {
+        let mut indicators = (1..=MAX_PAGES)
+            .map(|page| PaginationIndicator::Page(page))
+            .collect::<Vec<_>>();
+        indicators.push(PaginationIndicator::Ellipsis);
+        indicators
+    };
+
     TransactionsTemplate {
         nav_bar,
         transactions,
         create_transaction_route: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
         import_transaction_route: Uri::from_static(endpoints::IMPORT_VIEW),
         transactions_page_route: Uri::from_static(endpoints::TRANSACTIONS_VIEW),
-        page,
+        pagination: &pagination_indicators,
         per_page,
-        page_count,
+        curr_page: &curr_page,
     }
     .into_response()
 }
@@ -219,9 +236,10 @@ mod transactions_route_tests {
     async fn displays_paged_data() {
         let mut transactions = Vec::new();
         let mut want = Vec::new();
-        let page = 3;
-        let per_page = 2;
-        for i in 1..=20 {
+        let page = MAX_PAGES / 2;
+        let per_page = 5;
+        let transaction_count = MAX_PAGES * per_page;
+        for i in 1..=transaction_count {
             let transaction = Transaction::build(i as f64).finalise(i as i64);
             transactions.push(transaction.clone());
 
@@ -296,7 +314,43 @@ mod transactions_route_tests {
     /// If total pages > MAX_PAGES and page <= MAX_PAGES, render links up to
     /// MAX_PAGES and then display a single list item with elipsis.
     #[tokio::test]
-    async fn pagination_indicator_shows_page_subset_on_left() {}
+    async fn pagination_indicator_shows_page_subset_on_left() {
+        let mut transactions = Vec::new();
+        let mut want = Vec::new();
+        let total_pages = 2 * MAX_PAGES;
+        let per_page = 1;
+        let transaction_count = total_pages * per_page;
+        let page = MAX_PAGES;
+        for i in 1..=transaction_count {
+            let transaction = Transaction::build(i as f64).finalise(i as i64);
+            transactions.push(transaction.clone());
+
+            if i > (page - 1) * per_page && i <= page * per_page {
+                want.push(transaction);
+            }
+        }
+        let state = TransactionsViewState {
+            transaction_store: StubTransactionStore {
+                transactions: transactions.clone(),
+            },
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(Pagination {
+                page: Some(page),
+                per_page: Some(per_page),
+            }),
+        )
+        .await;
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+        let table = must_get_table(&html);
+        assert_table_has_transactions(table, &want);
+        let pagination = must_get_pagination_indicator(&html);
+        assert_pagination_shows_ellipsis_rhs(pagination, page, per_page);
+    }
 
     /// If total pages > MAX_PAGES and page >= (total pages - MAX_PAGES), render
     /// links up to MAX_PAGES and then display a single list item with elipsis.
@@ -459,6 +513,72 @@ mod transactions_route_tests {
             assert_eq!(i, got_page_number);
 
             if i == want_page {
+                link.attr("aria-current").expect(&format!(
+                    "The current page, page {want_page}, did not have aria-current attribute."
+                ));
+            } else {
+                assert!(
+                    link.attr("aria-current").is_none(),
+                    "The current page, page {i}, should not have aria-current attribute."
+                );
+            }
+
+            let link_target = link
+                .attr("href")
+                .expect(&format!("Link for page {i} did not have href element"));
+            let want_target = format!(
+                "{}?page={i}&per_page={want_per_page}",
+                endpoints::TRANSACTIONS_VIEW
+            );
+            assert_eq!(
+                want_target, link_target,
+                "Got incorrect page link for page {i}"
+            );
+        }
+    }
+
+    #[track_caller]
+    fn assert_pagination_shows_ellipsis_rhs(
+        pagination_indicator: ElementRef,
+        want_page: u64,
+        want_per_page: u64,
+    ) {
+        let li_selector = Selector::parse("li").unwrap();
+        let list_items: Vec<ElementRef> = pagination_indicator.select(&li_selector).collect();
+        let list_len = list_items.len();
+        // add one for ellipsis indicator
+        let want_len = MAX_PAGES as usize + 1;
+        assert_eq!(list_len, want_len, "got {list_len} pages, want {want_len}");
+
+        let link_selector = Selector::parse("a").unwrap();
+
+        for (i, list_item) in (1..=list_len).zip(list_items) {
+            if i == list_len {
+                assert!(
+                    list_item.select(&link_selector).next().is_none(),
+                    "The last item should not contain a link tag (<a>)"
+                );
+                let got_text = list_item.text().collect::<String>();
+                let got_text = got_text.trim();
+                assert_eq!(got_text, "...");
+                continue;
+            }
+
+            let link = list_item
+                .select(&link_selector)
+                .next()
+                .expect(&format!("Could not get link (<a> tag) for list item {i}"));
+            let link_text = {
+                let text = link.text().collect::<String>();
+                text.trim().to_owned()
+            };
+            let got_page_number = link_text.parse::<u64>().expect(&format!(
+                "Could not parse page number {link_text} for page {i} as usize"
+            ));
+
+            assert_eq!(i as u64, got_page_number);
+
+            if i as u64 == want_page {
                 link.attr("aria-current").expect(&format!(
                     "The current page, page {want_page}, did not have aria-current attribute."
                 ));
