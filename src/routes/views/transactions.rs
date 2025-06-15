@@ -50,6 +50,8 @@ pub struct Pagination {
 const DEFAULT_PAGE: u64 = 1;
 /// The maximum transactions to display per page when not specified in a request.
 const DEFAULT_PAGE_SIZE: u64 = 20;
+/// The maximum number of pages to show in the pagination indicator.
+const MAX_PAGES: u64 = 5;
 
 /// Render an overview of the user's transactions.
 pub async fn get_transactions_page<T>(
@@ -102,7 +104,6 @@ where
 
 #[cfg(test)]
 mod transactions_route_tests {
-
     use askama::Result;
     use axum::{
         extract::{Query, State},
@@ -114,7 +115,10 @@ mod transactions_route_tests {
     use crate::{
         Error,
         models::{DatabaseID, Transaction, TransactionBuilder},
-        routes::{endpoints, views::transactions::Pagination},
+        routes::{
+            endpoints,
+            views::transactions::{MAX_PAGES, Pagination},
+        },
         state::TransactionsViewState,
         stores::{TransactionQuery, TransactionStore},
     };
@@ -217,11 +221,11 @@ mod transactions_route_tests {
         let mut want = Vec::new();
         let page = 3;
         let per_page = 2;
-        for i in 0..20 {
+        for i in 1..=20 {
             let transaction = Transaction::build(i as f64).finalise(i as i64);
             transactions.push(transaction.clone());
 
-            if i >= (page - 1) * per_page && i < page * per_page {
+            if i > (page - 1) * per_page && i <= page * per_page {
                 want.push(transaction);
             }
         }
@@ -246,16 +250,76 @@ mod transactions_route_tests {
         let table = must_get_table(&html);
         assert_table_has_transactions(table, &want);
         let pagination = must_get_pagination_indicator(&html);
-        assert_pagination_indicators(pagination, total_pages, page, per_page);
-        // TODO: check that pagination indicator displays current page in
-        //  numerical order if current page < max pages
-        // TODO: check that pagination indicator displays current page in
-        //  numerical order if current page > (page count - current page)
-        // TODO: check that pagination indicator displays current page in
-        //  middle if current page > max pages and current page <= (page count - max pages)
-        // TODO: check that previous page link is rendered if current page > 0
-        // TODO: check that next page link is rendered if current page < page count
+        assert_has_pagination_indicators(pagination, total_pages, page, per_page);
     }
+
+    /// If total pages <= MAX_PAGES, render links to all pages
+    #[tokio::test]
+    async fn pagination_indicator_shows_all_pages() {
+        let mut transactions = Vec::new();
+        let mut want = Vec::new();
+        let transaction_count = MAX_PAGES * MAX_PAGES;
+        let per_page = transaction_count / MAX_PAGES;
+        let total_pages = (transaction_count as f64 / per_page as f64).ceil() as u64;
+        let page = total_pages / 2;
+        for i in 1..=transaction_count {
+            let transaction = Transaction::build(i as f64).finalise(i as i64);
+            transactions.push(transaction.clone());
+
+            if i > (page - 1) * per_page && i <= page * per_page {
+                want.push(transaction);
+            }
+        }
+        let state = TransactionsViewState {
+            transaction_store: StubTransactionStore {
+                transactions: transactions.clone(),
+            },
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(Pagination {
+                page: Some(page),
+                per_page: Some(per_page),
+            }),
+        )
+        .await;
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+        let table = must_get_table(&html);
+        assert_table_has_transactions(table, &want);
+        let pagination = must_get_pagination_indicator(&html);
+        assert_pagination_shows_all_pages(pagination, total_pages, page, per_page);
+    }
+
+    /// If total pages > MAX_PAGES and page <= MAX_PAGES, render links up to
+    /// MAX_PAGES and then display a single list item with elipsis.
+    #[tokio::test]
+    async fn pagination_indicator_shows_page_subset_on_left() {}
+
+    /// If total pages > MAX_PAGES and page >= (total pages - MAX_PAGES), render
+    /// links up to MAX_PAGES and then display a single list item with elipsis.
+    #[tokio::test]
+    async fn pagination_indicator_shows_page_subset_on_right() {}
+
+    /// If total pages > MAX_PAGES and MAX_PAGES < page < (total pages - MAX_PAGES), render
+    /// links up to MAX_PAGES and then display a single list item with elipsis.
+    #[tokio::test]
+    async fn pagination_indicator_shows_page_subset_in_center() {}
+
+    /// If page < total pages, display button with text 'next' that links to page + 1.
+    #[tokio::test]
+    async fn pagination_indicator_shows_next_button() {}
+
+    /// If page > 1, display button with text 'back' that links to page - 1.
+    #[tokio::test]
+    async fn pagination_indicator_shows_back_button() {}
+
+    /// If 1 < page < total pages, display button with text 'next' that links
+    /// to page + 1 and a button with text 'back' that links to page - 1.
+    #[tokio::test]
+    async fn pagination_indicator_shows_next_and_back_buttons() {}
 
     async fn parse_html(response: Response) -> Html {
         let body = response.into_body();
@@ -314,7 +378,60 @@ mod transactions_route_tests {
     }
 
     #[track_caller]
-    fn assert_pagination_indicators(
+    fn assert_has_pagination_indicators(
+        pagination_indicator: ElementRef,
+        want_page_count: u64,
+        want_page: u64,
+        want_per_page: u64,
+    ) {
+        let li_selector = Selector::parse("li").unwrap();
+        let list_items: Vec<ElementRef> = pagination_indicator.select(&li_selector).collect();
+        assert_eq!(list_items.len(), want_page_count as usize);
+
+        let link_selector = Selector::parse("a").unwrap();
+
+        for (i, list_item) in (1..=want_page_count).zip(list_items) {
+            let link = list_item
+                .select(&link_selector)
+                .next()
+                .expect(&format!("Could not get link (<a> tag) for list item {i}"));
+            let link_text = {
+                let text = link.text().collect::<String>();
+                text.trim().to_owned()
+            };
+            let got_page_number = link_text.parse::<u64>().expect(&format!(
+                "Could not parse page number {link_text} for page {i} as usize"
+            ));
+
+            assert_eq!(i, got_page_number);
+
+            if i == want_page {
+                link.attr("aria-current").expect(&format!(
+                    "The current page, page {want_page}, did not have aria-current attribute."
+                ));
+            } else {
+                assert!(
+                    link.attr("aria-current").is_none(),
+                    "The current page, page {i}, should not have aria-current attribute."
+                );
+            }
+
+            let link_target = link
+                .attr("href")
+                .expect(&format!("Link for page {i} did not have href element"));
+            let want_target = format!(
+                "{}?page={i}&per_page={want_per_page}",
+                endpoints::TRANSACTIONS_VIEW
+            );
+            assert_eq!(
+                want_target, link_target,
+                "Got incorrect page link for page {i}"
+            );
+        }
+    }
+
+    #[track_caller]
+    fn assert_pagination_shows_all_pages(
         pagination_indicator: ElementRef,
         want_page_count: u64,
         want_page: u64,
