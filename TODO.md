@@ -1,5 +1,11 @@
 # To Do
 
+- Align transactions in /transactions to the right.
+- Group transactions by week, month, year.
+  - Add ISO week number to transaction
+  - Add year number
+- Config pagination (and other config) from toml file.
+- Add command to reset user email
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
 - Move route handler code for views to routes/views module.

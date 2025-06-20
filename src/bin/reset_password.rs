@@ -32,6 +32,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     validate_db_path(db_path);
 
     let user = get_user(db_path);
+    println!("Resetting password for {}", user.email());
+
     let password_hash = match get_new_password_hash() {
         Some(password_hash) => password_hash,
         None => return Ok(()),
