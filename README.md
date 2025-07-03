@@ -46,6 +46,21 @@ docker compose up
 > behind a reverse proxy such as Nginx to serve the application over HTTPS,
 > especially if hosting this app on the public internet.
 
+### First-Time Usage
+Navigate to `https://<published URL>/register` and create a user account.
+
+### Resetting Your Password
+The app is set up for a single user and the following instructions will reset
+the password for that sole user account.
+
+Run the following command:
+
+```shell
+docker compose -p budgeteur exec web reset_password --db-path /app/data/budgeteur.db
+```
+
+Refer to your `compose.yaml` for the host mount path, database filename and/or image tag.
+
 ## Set Up Development Environment
 
 These instructions are for people who want to compile from source and/or modify

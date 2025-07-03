@@ -1,6 +1,6 @@
 {% extends "base.html" %} {% block title %}Transactions{% endblock %} {% block content
 %} {{ nav_bar|safe }}
-<div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
+<div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-5 text-gray-900 dark:text-white">
   <div class="relative overflow-x-auto">
     <div class="flex justify-between flex-wrap items-end">
       <h1 class="text-xl font-bold">Transactions</h1>
@@ -10,45 +10,85 @@
       >
         Import Transactions
       </a>
-      <a 
-        href="{{ create_transaction_route }}" 
+      <a
+        href="{{ create_transaction_route }}"
         class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
       >
         Create Transaction
       </a>
     </div>
-    <table class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400">
-        <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
-            <tr>
-                <th scope="col" class="px-6 py-3">
-                  ID 
-                </th>
-                <th scope="col" class="px-6 py-3">
-                  Amount 
-                </th>
-                <th scope="col" class="px-6 py-3">
-                  Date   
-                </th>
-                <th scope="col" class="px-6 py-3">
-                  Description 
-                </th>
-                <th scope="col" class="px-6 py-3">
-                  Category 
-                </th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for transaction in transactions %}
-              {{ transaction|safe }}
-            {% endfor %}
+    <div class="dark:bg-gray-800">
+      <table class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400">
+          <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+              <tr>
+                  <th scope="col" class="px-6 py-3">
+                    ID
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    Amount
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    Date
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    Description
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    Category
+                  </th>
+              </tr>
+          </thead>
+          <tbody>
+              {% for transaction in transactions %}
+                {{ transaction|safe }}
+              {% endfor %}
 
-            {% if transactions.is_empty() %}
-            <tr>
-              <th>Nothing here yet.</th>
-            </tr> 
-            {% endif %}
-        </tbody>
-    </table>
+              {% if transactions.is_empty() %}
+              <tr>
+                <th>Nothing here yet.</th>
+              </tr>
+              {% endif %}
+          </tbody>
+      </table>
+      {% if !transactions.is_empty() %}
+      <nav class="pagination flex justify-center my-8">
+        <ul class="pagination flex list-none gap-2 p-0 m-0">
+          {% for indicator in pagination %}
+          <li class="flex items-center">
+            {% match indicator %}
+              {% when PaginationIndicator::Page(page) %}
+                <a
+                  href="{{ transactions_page_route }}?page={{ page }}&per_page={{ per_page }}"
+                  class="block px-3 py-2 rounded text-blue-600 hover:underline"
+                >
+                  {{ page }}
+                </a>
+              {% when PaginationIndicator::CurrPage(page) %}
+                <p aria-current="page"
+                   class="block px-3 py-2 rounded font-bold text-black dark:text-white">
+                  {{ page }}
+                </p>
+              {%- when PaginationIndicator::Ellipsis -%}
+                <span class="px-3 py-2 text-gray-400 select-none">...</span>
+              {%- when PaginationIndicator::BackButton(page) -%}
+                <a href="{{ transactions_page_route }}?page={{ page }}&per_page={{ per_page }}"
+                   role="button"
+                   class="block px-3 py-2 rounded text-blue-600 hover:underline">
+                  Back
+                </a>
+              {%- when PaginationIndicator::NextButton(page) -%}
+                <a href="{{ transactions_page_route }}?page={{ page }}&per_page={{ per_page }}"
+                   role="button"
+                   class="block px-3 py-2 rounded text-blue-600 hover:underline">
+                  Next
+                </a>
+            {% endmatch %}
+          </li>
+          {% endfor %}
+        </ul>
+      </nav>
+      {% endif %}
+    </div>
   </div>
 </div>
 {% endblock %}

@@ -9,6 +9,7 @@ use time::Duration;
 
 use crate::{
     auth::cookie::DEFAULT_COOKIE_DURATION,
+    pagination::PaginationConfig,
     stores::{BalanceStore, CategoryStore, TransactionStore, UserStore},
 };
 
@@ -25,6 +26,8 @@ where
     pub cookie_key: Key,
     /// The duration for which cookies used for authentication are valid.
     pub cookie_duration: Duration,
+    /// The config that controls how to display pages of data.
+    pub pagination_config: PaginationConfig,
     /// The store for managing user [balances](crate::models::Balance).
     pub balance_store: B,
     /// The store for managing user [categories](crate::models::Category).
@@ -45,6 +48,7 @@ where
     /// Create a new [AppState].
     pub fn new(
         cookie_secret: &str,
+        pagination_config: PaginationConfig,
         balance_store: B,
         category_store: C,
         transaction_store: T,
@@ -53,6 +57,7 @@ where
         Self {
             cookie_key: create_cookie_key(cookie_secret),
             cookie_duration: DEFAULT_COOKIE_DURATION,
+            pagination_config,
             balance_store,
             category_store,
             transaction_store,
@@ -274,6 +279,3 @@ where
 
 /// The state needed for the new transactions page.
 pub type NewTransactionState<C> = CategoryState<C>;
-
-/// The state needed for the transactions page.
-pub type TransactionsViewState<T> = TransactionState<T>;

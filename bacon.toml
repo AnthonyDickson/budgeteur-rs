@@ -77,7 +77,6 @@ command = [
   "templates/source.css",
   "-o",
   "static/main.css",
-  "--minify",
 ]
 need_stdout = true
 watch = ["templates/"]
@@ -90,7 +89,6 @@ command = [
   "templates/source.css",
   "-o",
   "static/main.css",
-  "--minify",
 ]
 need_stdout = true
 watch = ["templates/"]

@@ -37,8 +37,6 @@ pub const LOG_OUT: &str = "/api/log_out";
 pub const USERS: &str = "/api/users";
 /// The route to access categories.
 pub const CATEGORIES: &str = "/api/categories";
-/// The route to access a single category.
-pub const CATEGORY: &str = "/api/categories/:category_id";
 /// The route to access transactions.
 pub const TRANSACTIONS_API: &str = "/api/transactions";
 /// The route to access a single transaction.
@@ -57,15 +55,6 @@ pub const IMPORT: &str = "/api/import";
 ///
 /// If no parameter is found in `endpoint_path`, the function returns the
 /// the original `endpoint_path`.
-///
-/// # Examples
-///
-/// ```no_run
-/// use budgeteur_rs::routes::endpoints::format_endpoint;
-///
-/// assert_eq!(format_endpoint("/users/:user_id", 42), "/users/42");
-/// ```
-///
 pub fn format_endpoint(endpoint_path: &str, id: i64) -> String {
     let mut param_start = None;
     let mut param_end = None;
@@ -126,7 +115,6 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::LOG_OUT);
         assert_endpoint_is_valid_uri(endpoints::USERS);
         assert_endpoint_is_valid_uri(endpoints::CATEGORIES);
-        assert_endpoint_is_valid_uri(endpoints::CATEGORY);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTION);
         assert_endpoint_is_valid_uri(endpoints::IMPORT);

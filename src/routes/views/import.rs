@@ -1049,6 +1049,10 @@ mod import_transactions_tests {
         fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
             todo!()
         }
+
+        fn count(&self) -> Result<usize, Error> {
+            todo!()
+        }
     }
 
     #[derive(Clone)]
@@ -1079,6 +1083,10 @@ mod import_transactions_tests {
         }
 
         fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
+            todo!()
+        }
+
+        fn count(&self) -> Result<usize, Error> {
             todo!()
         }
     }
