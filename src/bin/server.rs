@@ -84,6 +84,7 @@ async fn main() {
     let conn = Arc::new(Mutex::new(conn));
     let app_config = AppState::new(
         &secret,
+        Default::default(),
         SQLiteBalanceStore::new(conn.clone()),
         SQLiteCategoryStore::new(conn.clone()),
         SQLiteTransactionStore::new(conn.clone()),

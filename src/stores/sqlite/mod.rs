@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 
-use crate::{AppState, Error, db::initialize};
+use crate::{AppState, Error, db::initialize, pagination::PaginationConfig};
 
 /// An alias for an [AppState] that uses SQLite for the backend.
 pub type SQLAppState =
@@ -28,6 +28,7 @@ pub type SQLAppState =
 pub fn create_app_state(
     db_connection: Connection,
     cookie_secret: &str,
+    pagination_config: PaginationConfig,
 ) -> Result<SQLAppState, Error> {
     initialize(&db_connection)?;
 
@@ -39,6 +40,7 @@ pub fn create_app_state(
 
     Ok(AppState::new(
         cookie_secret,
+        pagination_config,
         balance_store,
         category_store,
         transaction_store,

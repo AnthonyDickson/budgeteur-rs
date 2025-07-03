@@ -28,6 +28,9 @@ pub trait TransactionStore {
 
     /// Retrieve transactions from the store in the way defined by `query`.
     fn get_query(&self, query: TransactionQuery) -> Result<Vec<Transaction>, Error>;
+
+    /// Get the total number of transactions in the store.
+    fn count(&self) -> Result<usize, Error>;
 }
 
 /// Defines how transactions should be fetched from [TransactionStore::get_query].
@@ -37,6 +40,8 @@ pub struct TransactionQuery {
     pub date_range: Option<RangeInclusive<Date>>,
     /// Selects up to the first N (`limit`) transactions.
     pub limit: Option<u64>,
+    /// Ignore the first N transactions. Only has an effect if `limit` is not `None`.
+    pub offset: u64,
     /// Orders transactions by date in the order `sort_date`. None returns transactions in the
     /// order they are stored.
     pub sort_date: Option<SortOrder>,

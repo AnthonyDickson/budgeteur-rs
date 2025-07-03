@@ -2,14 +2,12 @@
 
 use askama_axum::Template;
 use axum::{
-    Extension,
     extract::State,
     response::{IntoResponse, Response},
 };
 use time::{Duration, OffsetDateTime};
 
 use crate::{
-    models::UserID,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
@@ -23,16 +21,12 @@ use crate::{
 #[template(path = "views/dashboard.html")]
 struct DashboardTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
-    user_id: UserID,
     /// How much over or under budget the user is for this week.
     balance: f64,
 }
 
 /// Display a page with an overview of the user's data.
-pub async fn get_dashboard_page<T>(
-    State(state): State<DashboardState<T>>,
-    Extension(user_id): Extension<UserID>,
-) -> Response
+pub async fn get_dashboard_page<T>(State(state): State<DashboardState<T>>) -> Response
 where
     T: TransactionStore + Send + Sync,
 {
@@ -63,18 +57,12 @@ where
         Err(error) => return error.into_response(),
     };
 
-    DashboardTemplate {
-        nav_bar,
-        user_id,
-        balance,
-    }
-    .into_response()
+    DashboardTemplate { nav_bar, balance }.into_response()
 }
 
 #[cfg(test)]
 mod dashboard_route_tests {
     use axum::{
-        Extension,
         body::Body,
         extract::State,
         http::{Response, StatusCode},
@@ -83,7 +71,7 @@ mod dashboard_route_tests {
 
     use crate::{
         Error,
-        models::{DatabaseID, Transaction, TransactionBuilder, UserID},
+        models::{DatabaseID, Transaction, TransactionBuilder},
         state::DashboardState,
         stores::{TransactionQuery, TransactionStore},
     };
@@ -143,11 +131,14 @@ mod dashboard_route_tests {
                 .map(|transaction| Ok(transaction.to_owned()))
                 .collect()
         }
+
+        fn count(&self) -> Result<usize, Error> {
+            todo!()
+        }
     }
 
     #[tokio::test]
     async fn dashboard_displays_correct_balance() {
-        let user_id = UserID::new(321);
         let transactions = vec![
             // Transactions before the current week should not be included in the balance.
             Transaction::build(12.3)
@@ -168,7 +159,7 @@ mod dashboard_route_tests {
             transaction_store: FakeTransactionStore { transactions },
         };
 
-        let response = get_dashboard_page(State(state), Extension(user_id)).await;
+        let response = get_dashboard_page(State(state)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_body_contains_amount(response, "$123").await;
@@ -176,13 +167,12 @@ mod dashboard_route_tests {
 
     #[tokio::test]
     async fn dashboard_displays_negative_balance_without_sign() {
-        let user_id = UserID::new(321);
         let transactions = vec![Transaction::build(-123.0).finalise(2)];
         let state = DashboardState {
             transaction_store: FakeTransactionStore { transactions },
         };
 
-        let response = get_dashboard_page(State(state), Extension(user_id)).await;
+        let response = get_dashboard_page(State(state)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_body_contains_amount(response, "$123").await;

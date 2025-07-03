@@ -148,6 +148,10 @@ impl TransactionStore for SQLiteTransactionStore {
         Ok(transaction)
     }
 
+    /// Query for transactions in the database.
+    ///
+    /// # Errors
+    /// This function will return a [Error::SqlError] there is a SQL error.
     fn get_query(&self, filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
         let mut query_string_parts = vec![
             "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\""
@@ -179,7 +183,7 @@ impl TransactionStore for SQLiteTransactionStore {
         }
 
         if let Some(limit) = filter.limit {
-            query_string_parts.push(format!("LIMIT {}", limit));
+            query_string_parts.push(format!("LIMIT {limit} OFFSET {}", filter.offset));
         }
 
         let query_string = query_string_parts.join(" ");
@@ -192,6 +196,20 @@ impl TransactionStore for SQLiteTransactionStore {
             .query_map(params, Self::map_row)?
             .map(|maybe_category| maybe_category.map_err(Error::SqlError))
             .collect()
+    }
+
+    /// Get the total number of transactions in the database.
+    ///
+    /// # Errors
+    /// This function will return a [Error::SqlError] there is some SQL error.
+    fn count(&self) -> Result<usize, Error> {
+        self.connection
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(id) FROM \"transaction\";", [], |row| {
+                row.get(0)
+            })
+            .map_err(|error| error.into())
     }
 }
 
@@ -252,7 +270,7 @@ mod sqlite_transaction_store_tests {
 
     fn get_app_state() -> SQLAppState {
         let conn = Connection::open_in_memory().unwrap();
-        create_app_state(conn, "stneaoetse").unwrap()
+        create_app_state(conn, "stneaoetse", Default::default()).unwrap()
     }
 
     #[test]
@@ -492,6 +510,35 @@ mod sqlite_transaction_store_tests {
     }
 
     #[test]
+    fn get_transactions_with_offset() {
+        let mut state = get_app_state();
+        let offset = 10;
+        let limit = 5;
+        let mut want = Vec::new();
+        for i in 1..20 {
+            let transaction = state
+                .transaction_store
+                .create(i as f64)
+                .expect("Could not create transaction");
+
+            if i > offset && i <= offset + limit {
+                want.push(transaction);
+            }
+        }
+
+        let got = state
+            .transaction_store
+            .get_query(TransactionQuery {
+                offset,
+                limit: Some(limit),
+                ..Default::default()
+            })
+            .expect("Could not query store");
+
+        assert_eq!(want, got);
+    }
+
+    #[test]
     fn get_transactions_descending_date() {
         let mut state = get_app_state();
 
@@ -529,5 +576,24 @@ mod sqlite_transaction_store_tests {
             got, want,
             "got transactions that were not sorted in descending order."
         );
+    }
+
+    #[test]
+    fn get_count() {
+        let mut state = get_app_state();
+        let want_count = 20;
+        for i in 1..=want_count {
+            state
+                .transaction_store
+                .create(i as f64)
+                .expect("Could not create transaction");
+        }
+
+        let got_count = state
+            .transaction_store
+            .count()
+            .expect("Could not get count");
+
+        assert_eq!(want_count, got_count);
     }
 }

@@ -19,13 +19,14 @@ use axum::{
 use axum_server::Handle;
 use tokio::signal;
 
-pub mod auth;
-pub mod csv;
+mod auth;
+mod csv;
 pub mod db;
-pub mod logging;
+mod logging;
 pub mod models;
-pub mod routes;
-pub mod state;
+mod pagination;
+mod routes;
+mod state;
 pub mod stores;
 
 pub use logging::logging_middleware;
