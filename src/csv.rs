@@ -67,6 +67,17 @@ pub fn parse_csv(text: &str) -> Result<ParseCSVResult, Error> {
         }
     }
 
+    let parse_result = parse_kiwibank_bank_simple_csv(text);
+
+    match parse_result {
+        Ok(_) => {
+            return parse_result;
+        }
+        Err(error) => {
+            tracing::debug!("Could not parse Kiwibank simple bank statement: {error}");
+        }
+    }
+
     Err(Error::InvalidCSV(
         "Could not parse CSV data from ASB or Kiwibank".to_owned(),
     ))
@@ -409,7 +420,7 @@ fn parse_kiwibank_bank_csv(text: &str) -> Result<ParseCSVResult, Error> {
                 balance = parts[BALANCE_COLUMN].parse().map_err(|error| {
                     Error::InvalidCSV(format!(
                         "Could not parse '{}' as amount on line {line_number}: {error}",
-                        parts[AMOUNT_COLUMN]
+                        parts[BALANCE_COLUMN]
                     ))
                 })?;
                 // TODO: Does this get moved by transaction builder?
@@ -456,6 +467,104 @@ fn parse_kiwibank_bank_csv(text: &str) -> Result<ParseCSVResult, Error> {
     })
 }
 
+/// Parses simple Kiwibank account CSV exported from form ib.kiwibank.co.nz.
+///
+/// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
+///
+/// Returns a `ParseCSVResult` which consists of the transactions and account
+/// balances found in the CSV data.
+/// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
+fn parse_kiwibank_bank_simple_csv(text: &str) -> Result<ParseCSVResult, Error> {
+    const DATE_COLUMN: usize = 0;
+    const MEMO_COLUMN: usize = 1;
+    const DESCRIPTION_COLUMN: usize = 2;
+    const AMOUNT_COLUMN: usize = 3;
+    const BALANCE_COLUMN: usize = 4;
+    const DATE_FORMAT: &[BorrowedFormatItem] =
+        format_description!("[day] [month repr:short] [year]");
+
+    // Parse the header to get the account number
+    let lines = text.lines().collect::<Vec<_>>();
+
+    if lines.is_empty() {
+        return Err(Error::InvalidCSV("empty CSV file".to_owned()));
+    }
+
+    let mut transactions = Vec::new();
+    let mut account_number = String::new();
+    let mut balance = 0.0;
+    let mut date = OffsetDateTime::now_utc().date();
+
+    for (line_number, line) in text.lines().enumerate() {
+        let parts: Vec<&str> = line.split(',').collect();
+
+        if parts.len() < 5 {
+            return Err(Error::InvalidCSV(
+                "malformed CSV: expected 5 columns".to_string(),
+            ));
+        }
+
+        match line_number {
+            // 47-8115-1482616-00,,,,
+            0 => {
+                account_number = parts[0].to_owned();
+            }
+            // 22 Jan 2025,POS W/D LOBSTER SEAFOO-19:47 ;,,-32.00,168.00
+            _ if line_number > 0 => {
+                date = Date::parse(parts[DATE_COLUMN], &DATE_FORMAT).map_err(|error| {
+                    Error::InvalidCSV(format!(
+                        "Could not parse '{}' as date on line {line_number}: {error}",
+                        parts[DATE_COLUMN]
+                    ))
+                })?;
+
+                let description = format!(
+                    "{} {}",
+                    parts[MEMO_COLUMN].trim().trim_end_matches(" ;"),
+                    parts[DESCRIPTION_COLUMN].trim().trim_end_matches(" ;"),
+                );
+
+                let amount: f64 = parts[AMOUNT_COLUMN].parse().map_err(|error| {
+                    Error::InvalidCSV(format!(
+                        "Could not parse '{}' as amount on line {line_number}: {error}",
+                        parts[AMOUNT_COLUMN]
+                    ))
+                })?;
+
+                balance = parts[BALANCE_COLUMN].parse().map_err(|error| {
+                    Error::InvalidCSV(format!(
+                        "Could not parse '{}' as amount on line {line_number}: {error}",
+                        parts[BALANCE_COLUMN]
+                    ))
+                })?;
+
+                let transaction = TransactionBuilder::new(amount)
+                    .date(date)
+                    .map_err(|error| {
+                        Error::InvalidCSV(format!(
+                            "Date '{}' on line {line_number} is invalid: {error}",
+                            parts[DATE_COLUMN]
+                        ))
+                    })?
+                    .description(&description)
+                    .import_id(Some(create_import_id(line)));
+
+                transactions.push(transaction);
+            }
+            _ => {}
+        }
+    }
+
+    Ok(ParseCSVResult {
+        transactions,
+        balance: Some(ImportBalance {
+            account: account_number,
+            balance,
+            date,
+        }),
+    })
+}
+
 /// Creates a hash for a transaction based on the account number, date, description, and amount.
 ///
 /// Not sure how likely collisions are, should be fine ¯\_(ツ)_/¯
@@ -473,7 +582,7 @@ mod parse_csv_tests {
     use crate::{
         csv::{
             ImportBalance, ParseCSVResult, create_import_id, parse_asb_bank_csv,
-            parse_kiwibank_bank_csv,
+            parse_kiwibank_bank_csv, parse_kiwibank_bank_simple_csv,
         },
         models::TransactionBuilder,
     };
@@ -514,6 +623,14 @@ mod parse_csv_tests {
         38-1234-0123456-01,28-02-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.33\n\
         38-1234-0123456-01,31-03-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.55\n\
         38-1234-0123456-01,31-03-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.53";
+
+    const KIWIBANK_BANK_STATEMENT_SIMPLE_CSV: &str = "47-8115-1482616-00,,,,\n\
+            22 Jan 2025,TRANSFER TO A R DICKSON - 01 ;,,-353.46,200.00\n\
+            22 Jan 2025,POS W/D LOBSTER SEAFOO-19:47 ;,,-32.00,168.00\n\
+            22 Jan 2025,TRANSFER FROM A R DICKSON - 01 ;,,32.00,200.00\n\
+            26 Jan 2025,POS W/D BEAUTY CHINA -14:02 ;,,-18.00,182.00\n\
+            26 Jan 2025,POS W/D LEE HONG BBQ -14:20 ;,,-60.00,122.00\n\
+            26 Jan 2025,TRANSFER FROM A R DICKSON - 01 ;,,78.00,200.00";
 
     #[test]
     fn create_import_id_matching_inputs() {
@@ -662,6 +779,79 @@ mod parse_csv_tests {
             want_transactions.len(),
             got_transactions.len()
         );
+        assert_eq!(want_transactions, got_transactions);
+        assert_eq!(want_balance, got_balance);
+    }
+
+    #[test]
+    fn can_parse_kiwibank_simple_bank_statement() {
+        let want_transactions = vec![
+            TransactionBuilder::new(-353.46)
+                .date(date!(2025 - 01 - 22))
+                .expect("Could not parse date")
+                .description("TRANSFER TO A R DICKSON - 01 ")
+                .import_id(Some(create_import_id(
+                    "22 Jan 2025,TRANSFER TO A R DICKSON - 01 ;,,-353.46,200.00",
+                ))),
+            TransactionBuilder::new(-32.00)
+                .date(date!(2025 - 01 - 22))
+                .expect("Could not parse date")
+                .description("POS W/D LOBSTER SEAFOO-19:47 ")
+                .import_id(Some(create_import_id(
+                    "22 Jan 2025,POS W/D LOBSTER SEAFOO-19:47 ;,,-32.00,168.00",
+                ))),
+            TransactionBuilder::new(32.00)
+                .date(date!(2025 - 01 - 22))
+                .expect("Could not parse date")
+                .description("TRANSFER FROM A R DICKSON - 01 ")
+                .import_id(Some(create_import_id(
+                    "22 Jan 2025,TRANSFER FROM A R DICKSON - 01 ;,,32.00,200.00",
+                ))),
+            TransactionBuilder::new(-18.00)
+                .date(date!(2025 - 01 - 26))
+                .expect("Could not parse date")
+                .description("POS W/D BEAUTY CHINA -14:02 ")
+                .import_id(Some(create_import_id(
+                    "26 Jan 2025,POS W/D BEAUTY CHINA -14:02 ;,,-18.00,182.00",
+                ))),
+            TransactionBuilder::new(-60.00)
+                .date(date!(2025 - 01 - 26))
+                .expect("Could not parse date")
+                .description("POS W/D LEE HONG BBQ -14:20 ")
+                .import_id(Some(create_import_id(
+                    "26 Jan 2025,POS W/D LEE HONG BBQ -14:20 ;,,-60.00,122.00",
+                ))),
+            TransactionBuilder::new(78.00)
+                .date(date!(2025 - 01 - 26))
+                .expect("Could not parse date")
+                .description("TRANSFER FROM A R DICKSON - 01 ")
+                .import_id(Some(create_import_id(
+                    "26 Jan 2025,TRANSFER FROM A R DICKSON - 01 ;,,78.00,200.00",
+                ))),
+        ];
+
+        let want_balance = Some(ImportBalance {
+            account: "47-8115-1482616-00".to_owned(),
+            balance: 200.00,
+            date: date!(2025 - 01 - 26),
+        });
+
+        let ParseCSVResult {
+            transactions: got_transactions,
+            balance: got_balance,
+        } = parse_kiwibank_bank_simple_csv(KIWIBANK_BANK_STATEMENT_SIMPLE_CSV)
+            .expect("Could not parse CSV");
+
+        assert_eq!(
+            want_transactions.len(),
+            got_transactions.len(),
+            "want {} transactions, got {}",
+            want_transactions.len(),
+            got_transactions.len()
+        );
+        for (want, got) in want_transactions.iter().zip(&got_transactions) {
+            assert_eq!(want, got);
+        }
         assert_eq!(want_transactions, got_transactions);
         assert_eq!(want_balance, got_balance);
     }
