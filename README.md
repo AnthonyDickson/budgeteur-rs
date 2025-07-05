@@ -14,6 +14,8 @@ The application consists of a single server that renders and serves HTML directl
 <!--toc:start-->
 - [Budgeteur-rs](#budgeteur-rs)
   - [Installation and Usage](#installation-and-usage)
+    - [First-Time Usage](#first-time-usage)
+    - [Resetting Your Password](#resetting-your-password)
   - [Set Up Development Environment](#set-up-development-environment)
     - [Nix Flake](#nix-flake)
     - [First Time Setup](#first-time-setup)
@@ -132,14 +134,14 @@ This will build the documentation and open it in your default browser.
 Run:
 
 ```shell
-./build_image.sh
+./scripts/build_image.sh
 ```
 
-This will create an image with the tag `anthonydickson/budgeteur:dev`.
+This will create an image with the tag `ghcr.io/anthonydickson/budgeteur:dev`.
 Run the server with:
 
 ```shell
-docker run --rm -p 3000:3000 -e SECRET=<YOUR-SECRET> -it anthonydickson/budgeteur:dev
+docker run --rm -p 8080:8080 -e SECRET=<YOUR-SECRET> -it ghcr.io/anthonydickson/budgeteur:dev
 ```
 
 > [!NOTE]

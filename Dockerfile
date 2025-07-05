@@ -5,10 +5,10 @@ RUN apk add --no-cache musl-dev
 
 WORKDIR /build
 
-COPY Cargo.toml ./Cargo.toml 
-COPY Cargo.lock ./Cargo.lock
-COPY templates ./templates 
-COPY src/ ./src
+COPY Cargo.toml /build/Cargo.toml
+COPY Cargo.lock /build/Cargo.lock
+COPY templates/ /build/templates/
+COPY src/ /build/src/
 
 RUN cargo build --verbose --release --bin server --bin reset_password
 
@@ -34,7 +34,6 @@ FROM alpine:3.21 AS deploy
 
 WORKDIR /app
 
-COPY templates ./templates 
 COPY static/ ./static
 COPY --from=tailwind /build/static/main.css /app/static/main.css
 COPY --from=build /build/target/release/server /usr/local/bin/server
