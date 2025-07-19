@@ -1,8 +1,16 @@
 # To Do
 
+- Rework AppState to replace stores with rusqlite Connection
+  - Code using stores can be replaced with functions that use the connection directly
+  - Queries can be optimised to just what's needed
+  - Functions using the connection can be mocked by using function pointers
+  - Tests can define functions that are injected into the tested code
+  - Tests should use in-memory database for integration tests and ensure all tests
+    are initialised with the same schema
 - Update dashboard
-  - Add trailing 12 month net income
-  - Add net balance
+  - Add trailing 1 month summary (income, expenses, net income)
+  - Add trailing 12 month summary (income, expenses, net income)
+  - Add net balance from account balances
 - Add Buttons to navigate to first/last pages
   - Place below page numbers?
 - Ensure that simple and full csv imports from Kiwibank do not create duplicate
