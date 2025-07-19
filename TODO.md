@@ -11,8 +11,6 @@
   - Add trailing 1 month summary (income, expenses, net income)
   - Add trailing 12 month summary (income, expenses, net income)
   - Add net balance from account balances
-- Add Buttons to navigate to first/last pages
-  - Place below page numbers?
 - Ensure that simple and full csv imports from Kiwibank do not create duplicate
   transactions.
 - Align transactions in /transactions to the right.

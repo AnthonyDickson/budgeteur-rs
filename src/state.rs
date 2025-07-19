@@ -1,9 +1,13 @@
 //! Implements a struct that holds the state of the REST server.
 
-use std::marker::{Send, Sync};
+use std::{
+    marker::{Send, Sync},
+    sync::{Arc, Mutex},
+};
 
 use axum::extract::FromRef;
 use axum_extra::extract::cookie::Key;
+use rusqlite::Connection;
 use sha2::{Digest, Sha512};
 use time::Duration;
 
@@ -28,6 +32,8 @@ where
     pub cookie_duration: Duration,
     /// The config that controls how to display pages of data.
     pub pagination_config: PaginationConfig,
+    /// The database connection
+    pub db_connection: Arc<Mutex<Connection>>,
     /// The store for managing user [balances](crate::models::Balance).
     pub balance_store: B,
     /// The store for managing user [categories](crate::models::Category).
@@ -49,6 +55,7 @@ where
     pub fn new(
         cookie_secret: &str,
         pagination_config: PaginationConfig,
+        db_connection: Arc<Mutex<Connection>>,
         balance_store: B,
         category_store: C,
         transaction_store: T,
@@ -58,6 +65,7 @@ where
             cookie_key: create_cookie_key(cookie_secret),
             cookie_duration: DEFAULT_COOKIE_DURATION,
             pagination_config,
+            db_connection,
             balance_store,
             category_store,
             transaction_store,

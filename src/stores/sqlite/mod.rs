@@ -41,6 +41,7 @@ pub fn create_app_state(
     Ok(AppState::new(
         cookie_secret,
         pagination_config,
+        connection,
         balance_store,
         category_store,
         transaction_store,

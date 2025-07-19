@@ -85,6 +85,7 @@ async fn main() {
     let app_config = AppState::new(
         &secret,
         Default::default(),
+        conn.clone(),
         SQLiteBalanceStore::new(conn.clone()),
         SQLiteCategoryStore::new(conn.clone()),
         SQLiteTransactionStore::new(conn.clone()),
