@@ -59,11 +59,13 @@ pub fn create_pagination_indicators(
 
     if page_count > max_pages {
         if curr_page > (max_pages / 2) + 1 {
-            indicators.insert(0, PaginationIndicator::Ellipsis);
+            indicators.insert(0, PaginationIndicator::Page(1));
+            indicators.insert(1, PaginationIndicator::Ellipsis);
         }
 
         if curr_page < (page_count - max_pages / 2) {
             indicators.push(PaginationIndicator::Ellipsis);
+            indicators.push(PaginationIndicator::Page(page_count));
         }
     }
 
@@ -113,6 +115,7 @@ mod tests {
             PaginationIndicator::Page(4),
             PaginationIndicator::Page(5),
             PaginationIndicator::Ellipsis,
+            PaginationIndicator::Page(10),
             PaginationIndicator::NextButton(2),
         ];
 
@@ -134,6 +137,7 @@ mod tests {
             PaginationIndicator::Page(4),
             PaginationIndicator::Page(5),
             PaginationIndicator::Ellipsis,
+            PaginationIndicator::Page(10),
             PaginationIndicator::NextButton(4),
         ];
 
@@ -149,6 +153,7 @@ mod tests {
         let curr_page = 10;
         let want = [
             PaginationIndicator::BackButton(9),
+            PaginationIndicator::Page(1),
             PaginationIndicator::Ellipsis,
             PaginationIndicator::Page(6),
             PaginationIndicator::Page(7),
@@ -169,6 +174,7 @@ mod tests {
         let curr_page = 8;
         let want = [
             PaginationIndicator::BackButton(7),
+            PaginationIndicator::Page(1),
             PaginationIndicator::Ellipsis,
             PaginationIndicator::Page(6),
             PaginationIndicator::Page(7),
@@ -190,6 +196,7 @@ mod tests {
         let curr_page = 5;
         let want = [
             PaginationIndicator::BackButton(4),
+            PaginationIndicator::Page(1),
             PaginationIndicator::Ellipsis,
             PaginationIndicator::Page(3),
             PaginationIndicator::Page(4),
@@ -197,6 +204,7 @@ mod tests {
             PaginationIndicator::Page(6),
             PaginationIndicator::Page(7),
             PaginationIndicator::Ellipsis,
+            PaginationIndicator::Page(10),
             PaginationIndicator::NextButton(6),
         ];
 

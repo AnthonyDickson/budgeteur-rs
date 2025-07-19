@@ -249,6 +249,7 @@ mod tests {
         ];
         let want_indicators = [
             PaginationIndicator::BackButton(4),
+            PaginationIndicator::Page(1),
             PaginationIndicator::Ellipsis,
             PaginationIndicator::Page(3),
             PaginationIndicator::Page(4),
@@ -256,6 +257,7 @@ mod tests {
             PaginationIndicator::Page(6),
             PaginationIndicator::Page(7),
             PaginationIndicator::Ellipsis,
+            PaginationIndicator::Page(10),
             PaginationIndicator::NextButton(6),
         ];
 
