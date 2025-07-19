@@ -1,5 +1,12 @@
 # To Do
 
+- Update dashboard
+  - Add trailing 12 month net income
+  - Add net balance
+- Add Buttons to navigate to first/last pages
+  - Place below page numbers?
+- Ensure that simple and full csv imports from Kiwibank do not create duplicate
+  transactions.
 - Align transactions in /transactions to the right.
 - Group transactions by week, month, year.
   - Add ISO week number to transaction
