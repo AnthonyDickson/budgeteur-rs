@@ -230,30 +230,6 @@ where
     }
 }
 
-/// The state needed for creating account balances.
-#[derive(Debug, Clone)]
-pub struct BalanceState<B>
-where
-    B: BalanceStore + Send + Sync,
-{
-    /// The store for managing user [balances](crate::models::Balance).
-    pub balance_store: B,
-}
-
-impl<B, C, T, U> FromRef<AppState<B, C, T, U>> for BalanceState<B>
-where
-    B: BalanceStore + Clone + Send + Sync,
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
-{
-    fn from_ref(state: &AppState<B, C, T, U>) -> Self {
-        Self {
-            balance_store: state.balance_store.clone(),
-        }
-    }
-}
-
 /// The state needed for displaying the dashboard page.
 pub type DashboardState<T> = TransactionState<T>;
 

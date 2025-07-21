@@ -20,6 +20,7 @@ use axum_server::Handle;
 use tokio::signal;
 
 mod auth;
+mod balances;
 mod csv;
 pub mod db;
 mod logging;

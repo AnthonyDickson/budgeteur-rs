@@ -15,7 +15,7 @@ mod category;
 pub mod endpoints;
 mod log_in;
 mod log_out;
-mod navigation;
+pub mod navigation;
 mod templates;
 mod transaction;
 mod user;
@@ -27,7 +27,6 @@ use log_out::get_log_out;
 use transaction::{create_transaction, get_transaction};
 use user::create_user;
 use views::{
-    balances::get_balances_page,
     dashboard::get_dashboard_page,
     forgot_password::get_forgot_password_page,
     import::{get_import_page, import_transactions},
@@ -40,6 +39,7 @@ use views::{
 
 use crate::{
     auth::middleware::{auth_guard, auth_guard_hx},
+    balances::get_balances_page,
     stores::sqlite::SQLAppState,
 };
 
