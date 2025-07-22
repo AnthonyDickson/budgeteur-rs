@@ -233,33 +233,5 @@ where
 /// The state needed for displaying the dashboard page.
 pub type DashboardState<T> = TransactionState<T>;
 
-/// The state needed for importing transactions.
-#[derive(Debug, Clone)]
-pub struct ImportState<B, T>
-where
-    B: BalanceStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-{
-    /// The store for managing user [balances](crate::models::Balance).
-    pub balance_store: B,
-    /// The store for managing user [transactions](crate::models::Transaction).
-    pub transaction_store: T,
-}
-
-impl<B, C, T, U> FromRef<AppState<B, C, T, U>> for ImportState<B, T>
-where
-    B: BalanceStore + Clone + Send + Sync,
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Clone + Send + Sync,
-    U: UserStore + Send + Sync,
-{
-    fn from_ref(state: &AppState<B, C, T, U>) -> Self {
-        Self {
-            balance_store: state.balance_store.clone(),
-            transaction_store: state.transaction_store.clone(),
-        }
-    }
-}
-
 /// The state needed for the new transactions page.
 pub type NewTransactionState<C> = CategoryState<C>;
