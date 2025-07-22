@@ -24,9 +24,7 @@ use budgeteur_rs::{
     AppState, build_router,
     db::initialize,
     graceful_shutdown, logging_middleware,
-    stores::sqlite::{
-        SQLiteBalanceStore, SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore,
-    },
+    stores::sqlite::{SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore},
 };
 
 /// The REST API server for budgeteur_rs.
@@ -86,7 +84,6 @@ async fn main() {
         &secret,
         Default::default(),
         conn.clone(),
-        SQLiteBalanceStore::new(conn.clone()),
         SQLiteCategoryStore::new(conn.clone()),
         SQLiteTransactionStore::new(conn.clone()),
         SQLiteUserStore::new(conn.clone()),

@@ -14,14 +14,13 @@ use time::Duration;
 use crate::{
     auth::cookie::DEFAULT_COOKIE_DURATION,
     pagination::PaginationConfig,
-    stores::{BalanceStore, CategoryStore, TransactionStore, UserStore},
+    stores::{CategoryStore, TransactionStore, UserStore},
 };
 
 /// The state of the REST server.
 #[derive(Debug, Clone)]
-pub struct AppState<B, C, T, U>
+pub struct AppState<C, T, U>
 where
-    B: BalanceStore + Send + Sync,
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
@@ -34,8 +33,6 @@ where
     pub pagination_config: PaginationConfig,
     /// The database connection
     pub db_connection: Arc<Mutex<Connection>>,
-    /// The store for managing user [balances](crate::models::Balance).
-    pub balance_store: B,
     /// The store for managing user [categories](crate::models::Category).
     pub category_store: C,
     /// The store for managing user [transactions](crate::models::Transaction).
@@ -44,9 +41,8 @@ where
     pub user_store: U,
 }
 
-impl<B, C, T, U> AppState<B, C, T, U>
+impl<C, T, U> AppState<C, T, U>
 where
-    B: BalanceStore + Send + Sync,
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
@@ -56,7 +52,6 @@ where
         cookie_secret: &str,
         pagination_config: PaginationConfig,
         db_connection: Arc<Mutex<Connection>>,
-        balance_store: B,
         category_store: C,
         transaction_store: T,
         user_store: U,
@@ -66,7 +61,6 @@ where
             cookie_duration: DEFAULT_COOKIE_DURATION,
             pagination_config,
             db_connection,
-            balance_store,
             category_store,
             transaction_store,
             user_store,
@@ -75,14 +69,13 @@ where
 }
 
 // this impl tells `PrivateCookieJar` how to access the key from our state
-impl<B, C, T, U> FromRef<AppState<B, C, T, U>> for Key
+impl<C, T, U> FromRef<AppState<C, T, U>> for Key
 where
-    B: BalanceStore + Send + Sync,
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<B, C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T, U>) -> Self {
         state.cookie_key.clone()
     }
 }
@@ -103,14 +96,13 @@ pub struct AuthState {
     pub cookie_duration: Duration,
 }
 
-impl<B, C, T, U> FromRef<AppState<B, C, T, U>> for AuthState
+impl<C, T, U> FromRef<AppState<C, T, U>> for AuthState
 where
-    B: BalanceStore + Send + Sync,
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<B, C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T, U>) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
@@ -153,14 +145,13 @@ where
     }
 }
 
-impl<B, C, T, U> FromRef<AppState<B, C, T, U>> for LoginState<U>
+impl<C, T, U> FromRef<AppState<C, T, U>> for LoginState<U>
 where
-    B: BalanceStore + Send + Sync,
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
     U: UserStore + Clone + Send + Sync,
 {
-    fn from_ref(state: &AppState<B, C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T, U>) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
@@ -192,14 +183,13 @@ where
     pub transaction_store: T,
 }
 
-impl<B, C, T, U> FromRef<AppState<B, C, T, U>> for TransactionState<T>
+impl<C, T, U> FromRef<AppState<C, T, U>> for TransactionState<T>
 where
-    B: BalanceStore + Send + Sync,
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Clone + Send + Sync,
     U: UserStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<B, C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T, U>) -> Self {
         Self {
             transaction_store: state.transaction_store.clone(),
         }
@@ -216,14 +206,13 @@ where
     pub category_store: C,
 }
 
-impl<B, C, T, U> FromRef<AppState<B, C, T, U>> for CategoryState<C>
+impl<C, T, U> FromRef<AppState<C, T, U>> for CategoryState<C>
 where
-    B: BalanceStore + Send + Sync,
     C: CategoryStore + Clone + Send + Sync,
     T: TransactionStore + Send + Sync,
     U: UserStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<B, C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T, U>) -> Self {
         Self {
             category_store: state.category_store.clone(),
         }

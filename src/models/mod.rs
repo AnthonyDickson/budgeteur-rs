@@ -1,12 +1,10 @@
 //! This module defines the domain data types.
 
-pub use balance::Balance;
 pub use category::{Category, CategoryName};
 pub use password::{PasswordHash, ValidatedPassword};
 pub use transaction::{Transaction, TransactionBuilder};
 pub use user::{User, UserID};
 
-mod balance;
 mod category;
 mod password;
 mod transaction;
