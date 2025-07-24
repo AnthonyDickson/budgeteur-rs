@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use askama_axum::Template;
 use axum::{
-    extract::{FromRef, Multipart, State},
+    extract::{FromRef, Multipart, State, multipart::Field},
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
 };
@@ -88,32 +88,21 @@ where
     .into_response();
 
     while let Some(field) = multipart.next_field().await.unwrap() {
-        if field.content_type() != Some("text/csv") {
-            return ImportTransactionFormTemplate {
-                import_route: endpoints::IMPORT,
-                error_message: "File type must be CSV.",
-            }
-            .into_response();
-        }
-
-        let file_name = match field.file_name() {
-            Some(file_name) => file_name.to_owned(),
-            None => {
-                tracing::error!("Could not get file name from multipart form field: {field:#?}");
-                return unexpected_error_response;
-            }
-        };
-        let data = match field.text().await {
+        let csv_data = match parse_multipart_field(field).await {
             Ok(data) => data,
-            Err(error) => {
-                tracing::error!("Could not read data from multipart form: {error}");
+            Err(Error::NotCSV) => {
+                return ImportTransactionFormTemplate {
+                    import_route: endpoints::IMPORT,
+                    error_message: "File type must be CSV.",
+                }
+                .into_response();
+            }
+            Err(_) => {
                 return unexpected_error_response;
             }
         };
 
-        tracing::debug!("Received file '{}' that is {} bytes", file_name, data.len());
-
-        match parse_csv(&data) {
+        match parse_csv(&csv_data) {
             Ok(parse_result) => {
                 transactions.extend(parse_result.transactions);
 
@@ -149,6 +138,35 @@ where
         StatusCode::SEE_OTHER,
     )
         .into_response()
+}
+
+async fn parse_multipart_field(field: Field<'_>) -> Result<String, Error> {
+    if field.content_type() != Some("text/csv") {
+        return Err(Error::NotCSV);
+    }
+
+    let file_name = match field.file_name() {
+        Some(file_name) => file_name.to_owned(),
+        None => {
+            tracing::error!("Could not get file name from multipart form field: {field:#?}");
+            return Err(Error::MultipartError(
+                "Could not get file name from multipart form field".to_owned(),
+            ));
+        }
+    };
+    let data = match field.text().await {
+        Ok(data) => data.to_owned(),
+        Err(error) => {
+            tracing::error!("Could not read data from multipart form field: {error}");
+            return Err(Error::MultipartError(
+                "Could not read data from multipart form field.".to_owned(),
+            ));
+        }
+    };
+
+    tracing::debug!("Received file '{}' that is {} bytes", file_name, data.len());
+
+    Ok(data)
 }
 
 fn upsert_balance(

@@ -130,6 +130,14 @@ pub enum Error {
     #[error("the import ID already exists in the database")]
     DuplicateImportId,
 
+    /// The multipart form could not be parsed as a list of CSV files.
+    #[error("Could not parse multipart form: {0}")]
+    MultipartError(String),
+
+    /// The multipart form did not contain a CSV file.
+    #[error("File is not a CSV")]
+    NotCSV,
+
     /// The CSV had issues that prevented it from being parsed.
     #[error("Could not parse the CSV file: {0}")]
     InvalidCSV(String),
