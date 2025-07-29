@@ -1,7 +1,12 @@
 # To Do
 
 - Rework AppState to replace stores with rusqlite Connection
-  - Refactor code that uses balances related code
+  - Refactor log in code in `src/log_in.rs`.
+    1. Minimise use of stores, move to start/end of high-level functions.
+       For example, in the `verify_credentials` function, separate out the code
+       that accesses the store to check whether a user with a given email exists.
+    1. Replace store methods with plain functions that take in DB connection
+    1. Update LogInState to only depend on DB connection and cookie related fields.
   - Code using stores can be replaced with functions that use the connection directly
   - Queries can be optimised to just what's needed
   - Functions using the connection can be mocked by using function pointers

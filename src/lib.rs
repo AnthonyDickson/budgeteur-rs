@@ -23,6 +23,7 @@ mod auth;
 mod balances;
 mod csv;
 pub mod db;
+mod log_in;
 mod logging;
 pub mod models;
 mod pagination;

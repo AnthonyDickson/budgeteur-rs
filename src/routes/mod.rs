@@ -13,16 +13,14 @@ use tower_http::services::ServeDir;
 
 mod category;
 pub mod endpoints;
-mod log_in;
 mod log_out;
 pub mod navigation;
-mod templates;
+pub mod templates;
 mod transaction;
 mod user;
 mod views;
 
 use category::create_category;
-use log_in::post_log_in;
 use log_out::get_log_out;
 use transaction::{create_transaction, get_transaction};
 use user::create_user;
@@ -30,7 +28,6 @@ use views::{
     dashboard::get_dashboard_page,
     forgot_password::get_forgot_password_page,
     import::{get_import_page, import_transactions},
-    log_in::get_log_in_page,
     new_category::get_new_category_page,
     new_transaction::get_new_transaction_page,
     register::get_register_page,
@@ -40,6 +37,7 @@ use views::{
 use crate::{
     auth::middleware::{auth_guard, auth_guard_hx},
     balances::get_balances_page,
+    log_in::{get_log_in_page, post_log_in},
     stores::sqlite::SQLAppState,
 };
 

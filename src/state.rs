@@ -117,9 +117,9 @@ impl FromRef<AuthState> for Key {
     }
 }
 
-/// The state needed to perform a login.
+/// The state needed for creating a new user.
 #[derive(Debug, Clone)]
-pub struct LoginState<U>
+pub struct RegistrationState<U>
 where
     U: UserStore + Send + Sync,
 {
@@ -131,7 +131,7 @@ where
     pub user_store: U,
 }
 
-impl<U> LoginState<U>
+impl<U> RegistrationState<U>
 where
     U: UserStore + Clone + Send + Sync,
 {
@@ -145,7 +145,7 @@ where
     }
 }
 
-impl<C, T, U> FromRef<AppState<C, T, U>> for LoginState<U>
+impl<C, T, U> FromRef<AppState<C, T, U>> for RegistrationState<U>
 where
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
@@ -161,17 +161,14 @@ where
 }
 
 // this impl tells `PrivateCookieJar` how to access the key from our state
-impl<U> FromRef<LoginState<U>> for Key
+impl<U> FromRef<RegistrationState<U>> for Key
 where
     U: UserStore + Clone + Send + Sync,
 {
-    fn from_ref(state: &LoginState<U>) -> Self {
+    fn from_ref(state: &RegistrationState<U>) -> Self {
         state.cookie_key.clone()
     }
 }
-
-/// The state needed for creating a new user.
-pub type RegistrationState<U> = LoginState<U>;
 
 /// The state needed to get or create a transaction.
 #[derive(Debug, Clone)]
