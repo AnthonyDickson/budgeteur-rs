@@ -4,9 +4,9 @@
 
 use std::fmt::Display;
 
-use bcrypt::{hash, verify, BcryptError};
+use bcrypt::{BcryptError, hash, verify};
 use serde::{Deserialize, Serialize};
-use zxcvbn::{feedback::Feedback, zxcvbn, Score};
+use zxcvbn::{Score, feedback::Feedback, zxcvbn};
 
 use crate::Error;
 
@@ -87,7 +87,8 @@ impl PasswordHash {
 
     /// Try to create a password hash from a raw password string.
     ///
-    /// This is a convenience function that skips the intermediate `ValidatedPassword` type.
+    /// This is a convenience function that removes the need to manually create
+    /// the intermediate `ValidatedPassword` type.
     ///
     /// This function is used instead of `From<String>` or `FromStr` to make it a bit clearer that
     /// we are not parsing an existing password hash.
@@ -110,7 +111,7 @@ impl Display for PasswordHash {
 
 #[cfg(test)]
 mod validated_password_tests {
-    use crate::{models::ValidatedPassword, Error};
+    use crate::{Error, models::ValidatedPassword};
 
     #[test]
     fn new_fails_on_empty() {

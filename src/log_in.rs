@@ -1,5 +1,7 @@
-//! This file defines the high-level log-in route logic.
+//! This file defines the routes for displaying the log-in page and handling log-in requests.
 //! The auth module handles the lower level authentication and cookie auth logic.
+
+use std::sync::{Arc, Mutex};
 
 use askama_axum::Template;
 use axum::{
@@ -11,13 +13,14 @@ use axum::{
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
 use email_address::EmailAddress;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::Duration;
 
 use crate::{
     AppState, Error,
     auth::cookie::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
-    models::User,
+    models::{PasswordHash, User, UserID},
     routes::{
         endpoints,
         templates::{EmailInputTemplate, LogInFormTemplate, PasswordInputTemplate},
@@ -39,37 +42,30 @@ pub async fn get_log_in_page() -> Response {
 }
 
 /// How long the auth cookie should last if the user selects "remember me" at log-in.
-pub const REMEMBER_ME_COOKIE_DURATION: Duration = Duration::days(7);
+const REMEMBER_ME_COOKIE_DURATION: Duration = Duration::days(7);
 
 /// The state needed to perform a login.
 #[derive(Debug, Clone)]
-pub struct LoginState<U>
-where
-    U: UserStore + Send + Sync,
-{
+pub struct LoginState {
     /// The key to be used for signing and encrypting private cookies.
     pub cookie_key: Key,
     /// The duration for which cookies used for authentication are valid.
     pub cookie_duration: Duration,
-    /// The store for managing [users](crate::models::User).
-    pub user_store: U,
+    pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl<U> LoginState<U>
-where
-    U: UserStore + Clone + Send + Sync,
-{
+impl LoginState {
     /// Create the cookie key from a string and set the default cookie duration.
-    pub fn new(cookie_secret: &str, user_store: U) -> Self {
+    pub fn new(cookie_secret: &str, db_connection: Arc<Mutex<Connection>>) -> Self {
         Self {
             cookie_key: create_cookie_key(cookie_secret),
             cookie_duration: DEFAULT_COOKIE_DURATION,
-            user_store,
+            db_connection: db_connection.clone(),
         }
     }
 }
 
-impl<C, T, U> FromRef<AppState<C, T, U>> for LoginState<U>
+impl<C, T, U> FromRef<AppState<C, T, U>> for LoginState
 where
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
@@ -79,17 +75,14 @@ where
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
-            user_store: state.user_store.clone(),
+            db_connection: state.db_connection.clone(),
         }
     }
 }
 
 // this impl tells `PrivateCookieJar` how to access the key from our state
-impl<U> FromRef<LoginState<U>> for Key
-where
-    U: UserStore + Clone + Send + Sync,
-{
-    fn from_ref(state: &LoginState<U>) -> Self {
+impl FromRef<LoginState> for Key {
+    fn from_ref(state: &LoginState) -> Self {
         state.cookie_key.clone()
     }
 }
@@ -109,58 +102,91 @@ where
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn post_log_in<U>(
-    State(state): State<LoginState<U>>,
+pub async fn post_log_in(
+    State(state): State<LoginState>,
     jar: PrivateCookieJar,
     Form(user_data): Form<LogInData>,
-) -> Response
-where
-    U: UserStore + Clone + Send + Sync,
-{
-    verify_credentials(user_data.clone(), &state.user_store)
-        .map(|user| {
-            let cookie_duration = if user_data.remember_me.is_some() {
-                REMEMBER_ME_COOKIE_DURATION
-            } else {
-                state.cookie_duration
-            };
+) -> Response {
+    let email = &user_data.email;
+    let user: User = match get_user(
+        email,
+        &state
+            .db_connection
+            .lock()
+            .expect("Could acquire lock to database connection"),
+    ) {
+        Ok(user) => user,
+        Err(Error::NotFound) => {
+            return create_log_in_error_response(email, INVALID_CREDENTIALS_ERROR_MSG)
+                .into_response();
+        }
+        Err(error) => {
+            tracing::error!("Unhandled error while verifying credentials: {error}");
+            return create_log_in_error_response(
+                email,
+                "An internal error occurred. Please try again later.",
+            )
+            .into_response();
+        }
+    };
 
-            set_auth_cookie(jar.clone(), user.id(), cookie_duration)
-                .map(|updated_jar| {
-                    (
-                        StatusCode::SEE_OTHER,
-                        HxRedirect(Uri::from_static(endpoints::DASHBOARD_VIEW)),
-                        updated_jar,
-                    )
-                })
-                .map_err(|err| {
-                    tracing::error!("Error setting auth cookie: {err}");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR_VIEW)),
-                        invalidate_auth_cookie(jar),
-                    )
-                })
+    let is_password_valid = match user.password_hash().verify(&user_data.password) {
+        Ok(is_password_valid) => is_password_valid,
+        Err(error) => {
+            tracing::error!("Unhandled error while verifying credentials: {error}");
+            return create_log_in_error_response(
+                email,
+                "An internal error occurred. Please try again later.",
+            )
+            .into_response();
+        }
+    };
+
+    if !is_password_valid {
+        return create_log_in_error_response(email, INVALID_CREDENTIALS_ERROR_MSG).into_response();
+    }
+
+    let cookie_duration = if user_data.remember_me.is_some() {
+        REMEMBER_ME_COOKIE_DURATION
+    } else {
+        state.cookie_duration
+    };
+
+    set_auth_cookie(jar.clone(), user.id(), cookie_duration)
+        .map(|updated_jar| {
+            (
+                StatusCode::SEE_OTHER,
+                HxRedirect(Uri::from_static(endpoints::DASHBOARD_VIEW)),
+                updated_jar,
+            )
         })
-        .map_err(|e| LogInFormTemplate {
-            email_input: EmailInputTemplate {
-                value: &user_data.email,
-                error_message: "",
-            },
-            password_input: PasswordInputTemplate {
-                value: "",
-                min_length: 0,
-                error_message: match e {
-                    Error::InvalidCredentials => INVALID_CREDENTIALS_ERROR_MSG,
-                    error => {
-                        tracing::error!("Unhandled error while verifying credentials: {error}");
-                        "An internal error occurred. Please try again later."
-                    }
-                },
-            },
-            ..Default::default()
+        .map_err(|err| {
+            tracing::error!("Error setting auth cookie: {err}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR_VIEW)),
+                invalidate_auth_cookie(jar),
+            )
         })
         .into_response()
+}
+
+fn create_log_in_error_response<'a>(
+    email_input: &'a str,
+    error_message: &'a str,
+) -> LogInFormTemplate<'a> {
+    LogInFormTemplate {
+        email_input: EmailInputTemplate {
+            value: &email_input,
+            error_message: "",
+        },
+        password_input: PasswordInputTemplate {
+            value: "",
+            min_length: 0,
+            error_message: error_message,
+        },
+        ..Default::default()
+    }
 }
 
 pub const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect email or password.";
@@ -184,39 +210,43 @@ pub struct LogInData {
     pub remember_me: Option<String>,
 }
 
-/// Verify the user `credentials` against the data in the database `connection`.
+/// Check that the `email` address is a vaild email belonging to an existing user.
+/// Returns the user's hashed password for further verification.
 ///
 /// # Errors
 ///
-/// This function will return an error in a few situations.
-/// - The email does not belong to a registered user.
-/// - The password is not correct.
-/// - An internal error occurred when verifying the password.
-pub fn verify_credentials(credentials: LogInData, store: &impl UserStore) -> Result<User, Error> {
-    let email: EmailAddress = credentials
-        .email
-        .parse()
-        .map_err(|_| Error::InvalidCredentials)?;
+/// This function will return an error if:
+/// - the email is not a valid email address.
+/// - the email does not belong to a registered user.
+/// - there was an error trying to access the store.
+fn get_user(email: &str, db_connection: &Connection) -> Result<User, Error> {
+    db_connection
+        .prepare("SELECT id, email, password FROM user WHERE email = :email")?
+        .query_row(&[(":email", email)], |row| {
+            let raw_id = row.get(0)?;
+            let raw_email: String = row.get(1)?;
+            let raw_password_hash: String = row.get(2)?;
 
-    let user = store.get_by_email(&email).map_err(|e| match e {
-        Error::NotFound => Error::InvalidCredentials,
-        error => error,
-    })?;
+            let id = UserID::new(raw_id);
+            let email = EmailAddress::new_unchecked(raw_email);
+            let password_hash = PasswordHash::new_unchecked(&raw_password_hash);
 
-    let is_password_correct = user
-        .password_hash()
-        .verify(&credentials.password)
-        .map_err(|e| Error::InternalError(e.to_string()))?;
-
-    match is_password_correct {
-        true => Ok(user),
-        false => Err(Error::InvalidCredentials),
-    }
+            Ok(User {
+                id,
+                email,
+                password_hash,
+            })
+        })
+        .map_err(|error| error.into())
 }
 
 #[cfg(test)]
 mod log_in_page_tests {
-    use std::{collections::HashMap, iter::zip};
+    use std::{
+        collections::HashMap,
+        iter::zip,
+        sync::{Arc, Mutex},
+    };
 
     use axum::{
         Form,
@@ -224,62 +254,16 @@ mod log_in_page_tests {
         http::{StatusCode, header::CONTENT_TYPE},
     };
     use axum_extra::extract::PrivateCookieJar;
-    use email_address::EmailAddress;
+    use rusqlite::Connection;
     use scraper::Html;
 
     use crate::{
-        Error,
-        models::{PasswordHash, User, UserID, ValidatedPassword},
-        routes::endpoints,
-        stores::UserStore,
+        db::CreateTable, models::User, routes::endpoints, stores::sqlite::SQLiteUserStore,
     };
 
     use super::{
         INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, get_log_in_page, post_log_in,
     };
-
-    #[derive(Clone)]
-    struct StubUserStore {
-        users: Vec<User>,
-    }
-
-    impl UserStore for StubUserStore {
-        fn create(
-            &mut self,
-            email: email_address::EmailAddress,
-            password_hash: PasswordHash,
-        ) -> Result<User, Error> {
-            let next_id = match self.users.last() {
-                Some(user) => UserID::new(user.id().as_i64() + 1),
-                _ => UserID::new(0),
-            };
-
-            let user = User::new(next_id, email, password_hash);
-            self.users.push(user.clone());
-
-            Ok(user)
-        }
-
-        fn get(&self, id: UserID) -> Result<User, Error> {
-            self.users
-                .iter()
-                .find(|user| user.id() == id)
-                .ok_or(Error::NotFound)
-                .map(|user| user.to_owned())
-        }
-
-        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, Error> {
-            self.users
-                .iter()
-                .find(|user| user.email() == email)
-                .ok_or(Error::NotFound)
-                .map(|user| user.to_owned())
-        }
-
-        fn count(&self) -> Result<usize, Error> {
-            todo!()
-        }
-    }
 
     #[tokio::test]
     async fn log_in_page_displays_form() {
@@ -351,7 +335,7 @@ mod log_in_page_tests {
 
     #[tokio::test]
     async fn log_in_page_displays_error_message() {
-        let state = get_test_app_config();
+        let state = get_test_app_config(None);
         let jar = PrivateCookieJar::new(state.cookie_key.clone());
         let form = LogInData {
             email: "foo@bar.baz".to_string(),
@@ -400,18 +384,25 @@ mod log_in_page_tests {
         );
     }
 
-    fn get_test_app_config() -> LoginState<StubUserStore> {
-        let mut state = LoginState::new("42", StubUserStore { users: vec![] });
+    fn get_test_app_config(test_user: Option<&User>) -> LoginState {
+        let connection =
+            Connection::open_in_memory().expect("Could not open in-memory SQLite database");
+        SQLiteUserStore::create_table(&connection).expect("Could not create user table");
 
-        state
-            .user_store
-            .create(
-                EmailAddress::new_unchecked("test@test.com"),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test"), 4).unwrap(),
-            )
-            .unwrap();
+        if let Some(test_user) = test_user {
+            connection
+                .execute(
+                    "INSERT INTO user (id, email, password) VALUES (?1, ?2, ?3)",
+                    (
+                        test_user.id.as_i64(),
+                        test_user.email.as_str(),
+                        &test_user.password_hash.to_string(),
+                    ),
+                )
+                .expect("Could not create test user");
+        }
 
-        state
+        LoginState::new("foobar", Arc::new(Mutex::new(connection)))
     }
 
     #[track_caller]
@@ -427,7 +418,10 @@ mod log_in_page_tests {
 
 #[cfg(test)]
 mod log_in_tests {
-    use std::collections::HashSet;
+    use std::{
+        collections::HashSet,
+        sync::{Arc, Mutex},
+    };
 
     use axum::{
         Form, Router,
@@ -439,15 +433,16 @@ mod log_in_tests {
     use axum_extra::extract::{PrivateCookieJar, cookie::Cookie};
     use axum_htmx::HX_REDIRECT;
     use axum_test::TestServer;
-    use email_address::EmailAddress;
+
+    use rusqlite::Connection;
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        Error,
         auth::cookie::{COOKIE_EXPIRY, COOKIE_USER_ID},
+        db::CreateTable,
         models::{PasswordHash, User, UserID, ValidatedPassword},
         routes::endpoints,
-        stores::UserStore,
+        stores::sqlite::SQLiteUserStore,
     };
 
     use super::{
@@ -455,56 +450,26 @@ mod log_in_tests {
         post_log_in,
     };
 
-    #[derive(Clone)]
-    struct StubUserStore {
-        users: Vec<User>,
-    }
-
-    impl UserStore for StubUserStore {
-        fn create(
-            &mut self,
-            email: email_address::EmailAddress,
-            password_hash: PasswordHash,
-        ) -> Result<User, Error> {
-            let next_id = match self.users.last() {
-                Some(user) => UserID::new(user.id().as_i64() + 1),
-                _ => UserID::new(0),
-            };
-
-            let user = User::new(next_id, email, password_hash);
-            self.users.push(user.clone());
-
-            Ok(user)
-        }
-
-        fn get(&self, id: UserID) -> Result<User, Error> {
-            self.users
-                .iter()
-                .find(|user| user.id() == id)
-                .ok_or(Error::NotFound)
-                .map(|user| user.to_owned())
-        }
-
-        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, Error> {
-            self.users
-                .iter()
-                .find(|user| user.email() == email)
-                .ok_or(Error::NotFound)
-                .map(|user| user.to_owned())
-        }
-
-        fn count(&self) -> Result<usize, Error> {
-            todo!()
-        }
-    }
-
     #[tokio::test]
     async fn log_in_succeeds_with_valid_credentials() {
-        let response = new_log_in_request(LogInData {
-            email: "test@test.com".to_string(),
-            password: "test".to_string(),
-            remember_me: None,
-        })
+        let state = get_test_app_config(Some(&User {
+            id: UserID::new(1),
+            email: "test@test.com".parse().expect("Could not parse test email"),
+            password_hash: PasswordHash::new(
+                ValidatedPassword::new_unchecked("test"),
+                PasswordHash::DEFAULT_COST,
+            )
+            .expect("Could not create test user"),
+        }));
+
+        let response = new_log_in_request(
+            state,
+            LogInData {
+                email: "test@test.com".to_string(),
+                password: "test".to_string(),
+                remember_me: None,
+            },
+        )
         .await;
 
         assert_hx_redirect(&response, endpoints::DASHBOARD_VIEW);
@@ -528,9 +493,10 @@ mod log_in_tests {
 
     #[tokio::test]
     async fn log_in_fails_with_missing_credentials() {
+        let state = get_test_app_config(None);
         let app = Router::new()
             .route(endpoints::LOG_IN_API, post(post_log_in))
-            .with_state(get_test_app_config());
+            .with_state(state);
 
         let server = TestServer::new(app).expect("Could not create test server.");
 
@@ -543,9 +509,10 @@ mod log_in_tests {
 
     #[tokio::test]
     async fn form_deserialises() {
+        let state = get_test_app_config(None);
         let app = Router::new()
             .route(endpoints::LOG_IN_API, post(post_log_in))
-            .with_state(get_test_app_config());
+            .with_state(state);
         let server = TestServer::new(app).expect("Could not create test server.");
         let form = [
             ("email", "test@test.com"),
@@ -560,9 +527,18 @@ mod log_in_tests {
 
     #[tokio::test]
     async fn remember_me_extends_auth_cookie_through_form() {
+        let state = get_test_app_config(Some(&User {
+            id: UserID::new(1),
+            email: "test@test.com".parse().expect("Could not parse test email"),
+            password_hash: PasswordHash::new(
+                ValidatedPassword::new_unchecked("test"),
+                PasswordHash::DEFAULT_COST,
+            )
+            .expect("Could not create test user"),
+        }));
         let app = Router::new()
             .route(endpoints::LOG_IN_API, post(post_log_in))
-            .with_state(get_test_app_config());
+            .with_state(state);
         let server = TestServer::new(app).expect("Could not create test server.");
         let form = [
             ("email", "test@test.com"),
@@ -583,9 +559,10 @@ mod log_in_tests {
 
     #[tokio::test]
     async fn form_deserialises_without_remember_me() {
+        let state = get_test_app_config(None);
         let app = Router::new()
             .route(endpoints::LOG_IN_API, post(post_log_in))
-            .with_state(get_test_app_config());
+            .with_state(state);
         let server = TestServer::new(app).expect("Could not create test server.");
         let form = [("email", "test@test.com"), ("password", "test")];
 
@@ -596,11 +573,16 @@ mod log_in_tests {
 
     #[tokio::test]
     async fn log_in_fails_with_incorrect_email() {
-        let response = new_log_in_request(LogInData {
-            email: "wrong@email.com".to_string(),
-            password: "test".to_string(),
-            remember_me: None,
-        })
+        let state = get_test_app_config(None);
+
+        let response = new_log_in_request(
+            state,
+            LogInData {
+                email: "wrong@email.com".to_string(),
+                password: "test".to_string(),
+                remember_me: None,
+            },
+        )
         .await;
 
         assert_eq!(response.status(), StatusCode::OK);
@@ -609,33 +591,53 @@ mod log_in_tests {
 
     #[tokio::test]
     async fn log_in_fails_with_incorrect_password() {
-        let response = new_log_in_request(LogInData {
-            email: "test@test.com".to_string(),
-            password: "wrongpassword".to_string(),
-            remember_me: None,
-        })
+        let state = get_test_app_config(Some(&User {
+            id: UserID::new(1),
+            email: "test@test.com".parse().expect("Could not parse test email"),
+            password_hash: PasswordHash::new(
+                ValidatedPassword::new_unchecked("test"),
+                PasswordHash::DEFAULT_COST,
+            )
+            .expect("Could not create test user"),
+        }));
+
+        let response = new_log_in_request(
+            state,
+            LogInData {
+                email: "test@test.com".to_string(),
+                password: "wrongpassword".to_string(),
+                remember_me: None,
+            },
+        )
         .await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_body_contains_message(response, INVALID_CREDENTIALS_ERROR_MSG).await;
     }
 
-    fn get_test_app_config() -> LoginState<StubUserStore> {
-        let mut state = LoginState::new("foobar", StubUserStore { users: vec![] });
+    fn get_test_app_config(test_user: Option<&User>) -> LoginState {
+        let connection =
+            Connection::open_in_memory().expect("Could not open in-memory SQLite database");
 
-        state
-            .user_store
-            .create(
-                EmailAddress::new_unchecked("test@test.com"),
-                PasswordHash::new(ValidatedPassword::new_unchecked("test"), 4).unwrap(),
-            )
-            .unwrap();
+        SQLiteUserStore::create_table(&connection).expect("Could not create user table");
 
-        state
+        if let Some(test_user) = test_user {
+            connection
+                .execute(
+                    "INSERT INTO user (id, email, password) VALUES (?1, ?2, ?3)",
+                    (
+                        test_user.id.as_i64(),
+                        test_user.email.as_str(),
+                        &test_user.password_hash.to_string(),
+                    ),
+                )
+                .expect("Could not create test user");
+        }
+
+        LoginState::new("foobar", Arc::new(Mutex::new(connection)))
     }
 
-    async fn new_log_in_request(log_in_form: LogInData) -> Response<Body> {
-        let state = get_test_app_config();
+    async fn new_log_in_request(state: LoginState, log_in_form: LogInData) -> Response<Body> {
         let jar = PrivateCookieJar::new(state.cookie_key.clone());
 
         post_log_in(State(state), jar, Form(log_in_form)).await
@@ -693,82 +695,5 @@ mod log_in_tests {
             message,
             text
         );
-    }
-}
-
-#[cfg(test)]
-mod verify_credential_tests {
-    use email_address::EmailAddress;
-
-    use crate::{
-        Error,
-        log_in::{LogInData, verify_credentials},
-        models::{PasswordHash, User, UserID},
-        stores::UserStore,
-    };
-
-    #[derive(Clone)]
-    struct StubUserStore {
-        users: Vec<User>,
-    }
-
-    impl UserStore for StubUserStore {
-        fn create(
-            &mut self,
-            _email: email_address::EmailAddress,
-            _password_hash: PasswordHash,
-        ) -> Result<User, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: UserID) -> Result<User, Error> {
-            todo!()
-        }
-
-        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, Error> {
-            self.users
-                .iter()
-                .find(|user| user.email() == email)
-                .ok_or(Error::NotFound)
-                .map(|user| user.to_owned())
-        }
-
-        fn count(&self) -> Result<usize, Error> {
-            todo!()
-        }
-    }
-
-    #[tokio::test]
-    async fn log_in_succeeds_with_valid_credentials() {
-        let email: EmailAddress = "foo@bar.baz".parse().expect("Could not parse email");
-        let password = "averysafeandsecurepassword";
-        let password_hash =
-            PasswordHash::from_raw_password(password, 4).expect("Failed to create password hash");
-
-        let store = StubUserStore {
-            users: vec![User::new(UserID::new(0), email.clone(), password_hash)],
-        };
-
-        let user_data = LogInData {
-            email: email.to_string(),
-            password: password.to_string(),
-            remember_me: None,
-        };
-
-        assert!(verify_credentials(user_data, &store).is_ok());
-    }
-
-    #[tokio::test]
-    async fn log_in_fails_with_invalid_credentials() {
-        let store = StubUserStore { users: vec![] };
-        let user_data = LogInData {
-            email: "wrongemail@gmail.com".to_string(),
-            password: "definitelyNotTheCorrectPassword".to_string(),
-            remember_me: None,
-        };
-
-        let result = verify_credentials(user_data, &store);
-
-        assert!(matches!(result, Err(Error::InvalidCredentials)));
     }
 }

@@ -41,7 +41,6 @@ pub async fn get_balances_page(State(state): State<BalanceState>) -> Response {
 /// The state needed for the [get_balances_page](crate::balances::get_balances_page) route handler.
 #[derive(Debug, Clone)]
 pub struct BalanceState {
-    /// The store for managing user [balances](crate::models::Balance).
     pub db_connection: Arc<Mutex<Connection>>,
 }
 

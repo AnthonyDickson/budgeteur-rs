@@ -33,11 +33,16 @@ impl Display for UserID {
 }
 
 /// A user of the application.
+///
+/// The caller should ensure that `id` is unique.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
-    id: UserID,
-    email: EmailAddress,
-    password_hash: PasswordHash,
+    /// The user's ID in the application database.
+    pub id: UserID,
+    /// The email address associated with the user.
+    pub email: EmailAddress,
+    /// The user's password hash.
+    pub password_hash: PasswordHash,
 }
 
 impl User {
