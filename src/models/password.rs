@@ -109,6 +109,12 @@ impl Display for PasswordHash {
     }
 }
 
+impl AsRef<str> for PasswordHash {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 #[cfg(test)]
 mod validated_password_tests {
     use crate::{Error, models::ValidatedPassword};

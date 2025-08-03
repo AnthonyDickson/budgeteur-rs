@@ -30,6 +30,7 @@ mod pagination;
 mod routes;
 mod state;
 pub mod stores;
+pub mod user;
 
 pub use logging::logging_middleware;
 pub use routes::build_router;

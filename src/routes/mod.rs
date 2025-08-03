@@ -23,7 +23,7 @@ mod views;
 use category::create_category;
 use log_out::get_log_out;
 use transaction::{create_transaction, get_transaction};
-use user::create_user;
+use user::register_user;
 use views::{
     dashboard::get_dashboard_page,
     forgot_password::get_forgot_password_page,
@@ -53,7 +53,7 @@ pub fn build_router(state: SQLAppState) -> Router {
             endpoints::FORGOT_PASSWORD_VIEW,
             get(get_forgot_password_page),
         )
-        .route(endpoints::USERS, post(create_user))
+        .route(endpoints::USERS, post(register_user))
         .route(
             endpoints::INTERNAL_ERROR_VIEW,
             get(get_internal_server_error_page),

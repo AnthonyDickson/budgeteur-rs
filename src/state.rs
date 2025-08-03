@@ -14,16 +14,15 @@ use time::Duration;
 use crate::{
     auth::cookie::DEFAULT_COOKIE_DURATION,
     pagination::PaginationConfig,
-    stores::{CategoryStore, TransactionStore, UserStore},
+    stores::{CategoryStore, TransactionStore},
 };
 
 /// The state of the REST server.
 #[derive(Debug, Clone)]
-pub struct AppState<C, T, U>
+pub struct AppState<C, T>
 where
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
     /// The key to be used for signing and encrypting private cookies.
     pub cookie_key: Key,
@@ -37,15 +36,12 @@ where
     pub category_store: C,
     /// The store for managing user [transactions](crate::models::Transaction).
     pub transaction_store: T,
-    /// The store for managing [users](crate::models::User).
-    pub user_store: U,
 }
 
-impl<C, T, U> AppState<C, T, U>
+impl<C, T> AppState<C, T>
 where
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
     /// Create a new [AppState].
     pub fn new(
@@ -54,7 +50,6 @@ where
         db_connection: Arc<Mutex<Connection>>,
         category_store: C,
         transaction_store: T,
-        user_store: U,
     ) -> Self {
         Self {
             cookie_key: create_cookie_key(cookie_secret),
@@ -63,19 +58,17 @@ where
             db_connection,
             category_store,
             transaction_store,
-            user_store,
         }
     }
 }
 
 // this impl tells `PrivateCookieJar` how to access the key from our state
-impl<C, T, U> FromRef<AppState<C, T, U>> for Key
+impl<C, T> FromRef<AppState<C, T>> for Key
 where
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T>) -> Self {
         state.cookie_key.clone()
     }
 }
@@ -96,13 +89,12 @@ pub struct AuthState {
     pub cookie_duration: Duration,
 }
 
-impl<C, T, U> FromRef<AppState<C, T, U>> for AuthState
+impl<C, T> FromRef<AppState<C, T>> for AuthState
 where
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T>) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
@@ -119,53 +111,42 @@ impl FromRef<AuthState> for Key {
 
 /// The state needed for creating a new user.
 #[derive(Debug, Clone)]
-pub struct RegistrationState<U>
-where
-    U: UserStore + Send + Sync,
-{
+pub struct RegistrationState {
     /// The key to be used for signing and encrypting private cookies.
     pub cookie_key: Key,
     /// The duration for which cookies used for authentication are valid.
     pub cookie_duration: Duration,
-    /// The store for managing [users](crate::models::User).
-    pub user_store: U,
+    pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl<U> RegistrationState<U>
-where
-    U: UserStore + Clone + Send + Sync,
-{
+impl RegistrationState {
     /// Create the cookie key from a string and set the default cookie duration.
-    pub fn new(cookie_secret: &str, user_store: U) -> Self {
+    pub fn new(cookie_secret: &str, db_connection: Arc<Mutex<Connection>>) -> Self {
         Self {
             cookie_key: create_cookie_key(cookie_secret),
             cookie_duration: DEFAULT_COOKIE_DURATION,
-            user_store,
+            db_connection: db_connection.clone(),
         }
     }
 }
 
-impl<C, T, U> FromRef<AppState<C, T, U>> for RegistrationState<U>
+impl<C, T> FromRef<AppState<C, T>> for RegistrationState
 where
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Clone + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T>) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
-            user_store: state.user_store.clone(),
+            db_connection: state.db_connection.clone(),
         }
     }
 }
 
 // this impl tells `PrivateCookieJar` how to access the key from our state
-impl<U> FromRef<RegistrationState<U>> for Key
-where
-    U: UserStore + Clone + Send + Sync,
-{
-    fn from_ref(state: &RegistrationState<U>) -> Self {
+impl FromRef<RegistrationState> for Key {
+    fn from_ref(state: &RegistrationState) -> Self {
         state.cookie_key.clone()
     }
 }
@@ -180,13 +161,12 @@ where
     pub transaction_store: T,
 }
 
-impl<C, T, U> FromRef<AppState<C, T, U>> for TransactionState<T>
+impl<C, T> FromRef<AppState<C, T>> for TransactionState<T>
 where
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Clone + Send + Sync,
-    U: UserStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T>) -> Self {
         Self {
             transaction_store: state.transaction_store.clone(),
         }
@@ -203,13 +183,12 @@ where
     pub category_store: C,
 }
 
-impl<C, T, U> FromRef<AppState<C, T, U>> for CategoryState<C>
+impl<C, T> FromRef<AppState<C, T>> for CategoryState<C>
 where
     C: CategoryStore + Clone + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T>) -> Self {
         Self {
             category_store: state.category_store.clone(),
         }

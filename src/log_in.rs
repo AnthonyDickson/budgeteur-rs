@@ -12,7 +12,6 @@ use axum::{
 };
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
-use email_address::EmailAddress;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::Duration;
@@ -20,13 +19,14 @@ use time::Duration;
 use crate::{
     AppState, Error,
     auth::cookie::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
-    models::{PasswordHash, User, UserID},
+    models::User,
     routes::{
         endpoints,
         templates::{EmailInputTemplate, LogInFormTemplate, PasswordInputTemplate},
     },
     state::create_cookie_key,
-    stores::{CategoryStore, TransactionStore, UserStore},
+    stores::{CategoryStore, TransactionStore},
+    user::get_user_by_email,
 };
 
 ///  Renders the full log-in page.
@@ -65,13 +65,12 @@ impl LoginState {
     }
 }
 
-impl<C, T, U> FromRef<AppState<C, T, U>> for LoginState
+impl<C, T> FromRef<AppState<C, T>> for LoginState
 where
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
-    U: UserStore + Clone + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T>) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
@@ -108,7 +107,7 @@ pub async fn post_log_in(
     Form(user_data): Form<LogInData>,
 ) -> Response {
     let email = &user_data.email;
-    let user: User = match get_user(
+    let user: User = match get_user_by_email(
         email,
         &state
             .db_connection
@@ -210,36 +209,6 @@ pub struct LogInData {
     pub remember_me: Option<String>,
 }
 
-/// Check that the `email` address is a vaild email belonging to an existing user.
-/// Returns the user's hashed password for further verification.
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - the email is not a valid email address.
-/// - the email does not belong to a registered user.
-/// - there was an error trying to access the store.
-fn get_user(email: &str, db_connection: &Connection) -> Result<User, Error> {
-    db_connection
-        .prepare("SELECT id, email, password FROM user WHERE email = :email")?
-        .query_row(&[(":email", email)], |row| {
-            let raw_id = row.get(0)?;
-            let raw_email: String = row.get(1)?;
-            let raw_password_hash: String = row.get(2)?;
-
-            let id = UserID::new(raw_id);
-            let email = EmailAddress::new_unchecked(raw_email);
-            let password_hash = PasswordHash::new_unchecked(&raw_password_hash);
-
-            Ok(User {
-                id,
-                email,
-                password_hash,
-            })
-        })
-        .map_err(|error| error.into())
-}
-
 #[cfg(test)]
 mod log_in_page_tests {
     use std::{
@@ -257,9 +226,7 @@ mod log_in_page_tests {
     use rusqlite::Connection;
     use scraper::Html;
 
-    use crate::{
-        db::CreateTable, models::User, routes::endpoints, stores::sqlite::SQLiteUserStore,
-    };
+    use crate::{models::User, routes::endpoints, user::create_user_table};
 
     use super::{
         INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, get_log_in_page, post_log_in,
@@ -387,7 +354,7 @@ mod log_in_page_tests {
     fn get_test_app_config(test_user: Option<&User>) -> LoginState {
         let connection =
             Connection::open_in_memory().expect("Could not open in-memory SQLite database");
-        SQLiteUserStore::create_table(&connection).expect("Could not create user table");
+        create_user_table(&connection).expect("Could not create user table");
 
         if let Some(test_user) = test_user {
             connection
@@ -439,10 +406,9 @@ mod log_in_tests {
 
     use crate::{
         auth::cookie::{COOKIE_EXPIRY, COOKIE_USER_ID},
-        db::CreateTable,
         models::{PasswordHash, User, UserID, ValidatedPassword},
         routes::endpoints,
-        stores::sqlite::SQLiteUserStore,
+        user::create_user_table,
     };
 
     use super::{
@@ -619,7 +585,7 @@ mod log_in_tests {
         let connection =
             Connection::open_in_memory().expect("Could not open in-memory SQLite database");
 
-        SQLiteUserStore::create_table(&connection).expect("Could not create user table");
+        create_user_table(&connection).expect("Could not create user table");
 
         if let Some(test_user) = test_user {
             connection

@@ -3,13 +3,12 @@ use std::{
     io::{self},
     path::Path,
     process::exit,
-    sync::{Arc, Mutex},
 };
 
 use bcrypt::DEFAULT_COST;
 use budgeteur_rs::{
     models::{User, UserID},
-    stores::{UserStore, sqlite::SQLiteUserStore},
+    user::get_user_by_id,
 };
 use clap::Parser;
 use rusqlite::Connection;
@@ -48,23 +47,8 @@ fn get_user(db_path: &Path) -> User {
 
     let conn =
         Connection::open(db_path).expect(&format!("Could not open the database at {db_path:?}"));
-    let conn = Arc::new(Mutex::new(conn));
-    let store = SQLiteUserStore::new(conn);
 
-    let user_count = store
-        .count()
-        .expect(&format!("Could not get count of users in {db_path:?}"));
-
-    if user_count != 1 {
-        print_error(format!(
-            "Expected one user in {db_path:#?}, found {user_count}."
-        ));
-        exit(1);
-    }
-
-    store
-        .get(UserID::new(1))
-        .expect("Could not get user with ID=1 in {db_path}.")
+    get_user_by_id(UserID::new(1), &conn).expect("Could not get user with ID=1 in {db_path}.")
 }
 
 fn validate_db_path(db_path: &Path) {

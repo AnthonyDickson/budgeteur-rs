@@ -18,7 +18,7 @@ use crate::{
     models::{PasswordHash, ValidatedPassword},
     routes::get_internal_server_error_redirect,
     state::RegistrationState,
-    stores::UserStore,
+    user::{count_users, create_user, get_user_by_email},
 };
 
 use super::{
@@ -39,15 +39,17 @@ pub struct RegisterForm {
     pub confirm_password: String,
 }
 
-pub async fn create_user<U>(
-    State(mut state): State<RegistrationState<U>>,
+pub async fn register_user(
+    State(state): State<RegistrationState>,
     jar: PrivateCookieJar,
     Form(user_data): Form<RegisterForm>,
-) -> Response
-where
-    U: UserStore + Clone + Send + Sync,
-{
-    match state.user_store.count() {
+) -> Response {
+    match count_users(
+        &state
+            .db_connection
+            .lock()
+            .expect("Could not acquire database lock"),
+    ) {
         Ok(count) if count >= 1 => {
             return RegisterFormTemplate {
                 confirm_password_input: ConfirmPasswordInputTemplate {
@@ -87,7 +89,15 @@ where
         }
     };
 
-    if state.user_store.get_by_email(&email).is_ok() {
+    if get_user_by_email(
+        email.as_ref(),
+        &state
+            .db_connection
+            .lock()
+            .expect("Could not acquire database lock"),
+    )
+    .is_ok()
+    {
         return RegisterFormTemplate {
             email_input: EmailInputTemplate {
                 value: &user_data.email,
@@ -136,47 +146,54 @@ where
         }
     };
 
-    state
-        .user_store
-        .create(email, password_hash)
-        .map(|user| {
-            let jar = set_auth_cookie(jar, user.id(), state.cookie_duration);
+    create_user(
+        email,
+        password_hash,
+        &state
+            .db_connection
+            .lock()
+            .expect("Could not acquire database lock"),
+    )
+    .map(|user| {
+        let jar = set_auth_cookie(jar, user.id(), state.cookie_duration);
 
-            match jar {
-                Ok(jar) => (
-                    StatusCode::SEE_OTHER,
-                    HxRedirect(Uri::from_static(endpoints::LOG_IN_VIEW)),
-                    jar,
-                )
-                    .into_response(),
-                Err(e) => {
-                    tracing::error!("An error occurred while setting the auth cookie: {e}");
-
-                    get_internal_server_error_redirect()
-                }
-            }
-        })
-        .map_err(|e| match e {
-            Error::DuplicateEmail => RegisterFormTemplate {
-                email_input: EmailInputTemplate {
-                    value: &user_data.email,
-                    error_message: "The email address is already in use",
-                },
-                password_input,
-                ..Default::default()
-            }
-            .into_response(),
-            e => {
-                tracing::error!("An unhandled error occurred while inserting a new user: {e}");
+        match jar {
+            Ok(jar) => (
+                StatusCode::SEE_OTHER,
+                HxRedirect(Uri::from_static(endpoints::LOG_IN_VIEW)),
+                jar,
+            )
+                .into_response(),
+            Err(e) => {
+                tracing::error!("An error occurred while setting the auth cookie: {e}");
 
                 get_internal_server_error_redirect()
             }
-        })
-        .into_response()
+        }
+    })
+    .map_err(|e| match e {
+        Error::DuplicateEmail => RegisterFormTemplate {
+            email_input: EmailInputTemplate {
+                value: &user_data.email,
+                error_message: "The email address is already in use",
+            },
+            password_input,
+            ..Default::default()
+        }
+        .into_response(),
+        e => {
+            tracing::error!("An unhandled error occurred while inserting a new user: {e}");
+
+            get_internal_server_error_redirect()
+        }
+    })
+    .into_response()
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use askama_axum::IntoResponse;
     use axum::{
         Form, Router,
@@ -187,66 +204,25 @@ mod tests {
     };
     use axum_extra::extract::PrivateCookieJar;
     use axum_test::TestServer;
+    use rusqlite::Connection;
     use serde::{Deserialize, Serialize};
 
     use crate::{
-        Error,
-        models::{PasswordHash, User, UserID},
+        models::PasswordHash,
         routes::{
             endpoints,
-            user::{RegisterForm, create_user},
+            user::{RegisterForm, register_user},
         },
         state::RegistrationState,
-        stores::UserStore,
+        user::{create_user, create_user_table},
     };
 
-    #[derive(Clone)]
-    struct StubUserStore {
-        users: Vec<User>,
-    }
+    fn get_test_app_config() -> RegistrationState {
+        let connection =
+            Connection::open_in_memory().expect("Could not open in-memory SQLite database");
+        create_user_table(&connection).expect("Could not create user table");
 
-    impl UserStore for StubUserStore {
-        fn create(
-            &mut self,
-            email: email_address::EmailAddress,
-            password_hash: PasswordHash,
-        ) -> Result<User, Error> {
-            let next_id = match self.users.last() {
-                Some(user) => UserID::new(user.id().as_i64() + 1),
-                _ => UserID::new(0),
-            };
-
-            let user = User::new(next_id, email, password_hash);
-            self.users.push(user.clone());
-
-            Ok(user)
-        }
-
-        fn get(&self, id: UserID) -> Result<User, Error> {
-            self.users
-                .iter()
-                .find(|user| user.id() == id)
-                .ok_or(Error::NotFound)
-                .map(|user| user.to_owned())
-        }
-
-        fn get_by_email(&self, email: &email_address::EmailAddress) -> Result<User, Error> {
-            self.users
-                .iter()
-                .find(|user| user.email() == email)
-                .ok_or(Error::NotFound)
-                .map(|user| user.to_owned())
-        }
-
-        fn count(&self) -> Result<usize, Error> {
-            Ok(self.users.len())
-        }
-    }
-
-    fn get_test_app_config() -> RegistrationState<StubUserStore> {
-        let user_store = StubUserStore { users: vec![] };
-
-        RegistrationState::new("42", user_store)
+        RegistrationState::new("42", Arc::new(Mutex::new(connection)))
     }
 
     #[derive(Serialize, Deserialize)]
@@ -257,7 +233,7 @@ mod tests {
     #[tokio::test]
     async fn create_user_succeeds() {
         let app = Router::new()
-            .route(endpoints::USERS, post(create_user))
+            .route(endpoints::USERS, post(register_user))
             .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
@@ -275,16 +251,18 @@ mod tests {
 
     #[tokio::test]
     async fn create_user_fails_with_existing_user() {
-        let mut state = get_test_app_config();
-        state
-            .user_store
-            .create(
-                "test@test.com".parse().unwrap(),
-                PasswordHash::from_raw_password("foobarbazquxgobbledygook", 4).unwrap(),
-            )
-            .expect("Could not create test user");
+        let state = get_test_app_config();
+        create_user(
+            "test@test.com".parse().unwrap(),
+            PasswordHash::from_raw_password("foobarbazquxgobbledygook", 4).unwrap(),
+            &state
+                .db_connection
+                .lock()
+                .expect("Could not acquire database connection"),
+        )
+        .expect("Could not create test user");
 
-        let response = create_user(
+        let response = register_user(
             State(state.clone()),
             PrivateCookieJar::new(state.cookie_key),
             Form(RegisterForm {
@@ -311,7 +289,7 @@ mod tests {
     #[tokio::test]
     async fn create_user_fails_with_invalid_email() {
         let state = get_test_app_config();
-        let response = create_user(
+        let response = register_user(
             State(state.clone()),
             PrivateCookieJar::new(state.cookie_key),
             Form(RegisterForm {
@@ -340,7 +318,7 @@ mod tests {
     #[tokio::test]
     async fn create_user_fails_when_password_is_empty() {
         let app = Router::new()
-            .route(endpoints::USERS, post(create_user))
+            .route(endpoints::USERS, post(register_user))
             .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
@@ -371,7 +349,7 @@ mod tests {
     #[tokio::test]
     async fn create_user_fails_when_password_is_weak() {
         let app = Router::new()
-            .route(endpoints::USERS, post(create_user))
+            .route(endpoints::USERS, post(register_user))
             .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");
@@ -402,7 +380,7 @@ mod tests {
     #[tokio::test]
     async fn create_user_fails_when_passwords_do_not_match() {
         let app = Router::new()
-            .route(endpoints::USERS, post(create_user))
+            .route(endpoints::USERS, post(register_user))
             .with_state(get_test_app_config());
 
         let server = TestServer::new(app).expect("Could not create test server.");

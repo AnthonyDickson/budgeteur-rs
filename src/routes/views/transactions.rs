@@ -14,7 +14,7 @@ use crate::{
         navigation::{NavbarTemplate, get_nav_bar},
         templates::TransactionRow,
     },
-    stores::{CategoryStore, SortOrder, TransactionQuery, TransactionStore, UserStore},
+    stores::{CategoryStore, SortOrder, TransactionQuery, TransactionStore},
 };
 
 /// Render an overview of the user's transactions.
@@ -83,13 +83,12 @@ where
     pub pagination_config: PaginationConfig,
 }
 
-impl<C, T, U> FromRef<AppState<C, T, U>> for TransactionsViewState<T>
+impl<C, T> FromRef<AppState<C, T>> for TransactionsViewState<T>
 where
     C: CategoryStore + Send + Sync,
     T: TransactionStore + Clone + Send + Sync,
-    U: UserStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T, U>) -> Self {
+    fn from_ref(state: &AppState<C, T>) -> Self {
         Self {
             transaction_store: state.transaction_store.clone(),
             pagination_config: state.pagination_config.clone(),
