@@ -6,10 +6,7 @@ use std::{
 };
 
 use bcrypt::DEFAULT_COST;
-use budgeteur_rs::{
-    models::{User, UserID},
-    user::get_user_by_id,
-};
+use budgeteur_rs::user::{User, UserID, get_user_by_id};
 use clap::Parser;
 use rusqlite::Connection;
 

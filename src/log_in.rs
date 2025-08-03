@@ -19,14 +19,13 @@ use time::Duration;
 use crate::{
     AppState, Error,
     auth::cookie::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
-    models::User,
     routes::{
         endpoints,
         templates::{EmailInputTemplate, LogInFormTemplate, PasswordInputTemplate},
     },
     state::create_cookie_key,
     stores::{CategoryStore, TransactionStore},
-    user::get_user_by_email,
+    user::{User, get_user_by_email},
 };
 
 ///  Renders the full log-in page.
@@ -226,10 +225,10 @@ mod log_in_page_tests {
     use rusqlite::Connection;
     use scraper::Html;
 
-    use crate::{models::User, routes::endpoints, user::create_user_table};
+    use crate::{routes::endpoints, user::create_user_table};
 
     use super::{
-        INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, get_log_in_page, post_log_in,
+        INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, User, get_log_in_page, post_log_in,
     };
 
     #[tokio::test]
@@ -406,9 +405,9 @@ mod log_in_tests {
 
     use crate::{
         auth::cookie::{COOKIE_EXPIRY, COOKIE_USER_ID},
-        models::{PasswordHash, User, UserID, ValidatedPassword},
+        models::{PasswordHash, ValidatedPassword},
         routes::endpoints,
-        user::create_user_table,
+        user::{User, UserID, create_user_table},
     };
 
     use super::{

@@ -122,9 +122,9 @@ mod auth_guard_tests {
             cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
             middleware::auth_guard,
         },
-        models::UserID,
         routes::endpoints::{self, format_endpoint},
         state::AuthState,
+        user::UserID,
     };
 
     async fn test_handler() -> Html<&'static str> {

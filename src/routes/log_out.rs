@@ -32,8 +32,8 @@ mod log_out_tests {
 
     use crate::{
         auth::cookie::{COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
-        models::UserID,
         routes::{endpoints, log_out::get_log_out},
+        user::UserID,
     };
 
     #[tokio::test]

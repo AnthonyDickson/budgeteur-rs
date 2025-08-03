@@ -10,7 +10,7 @@ use time::{
     Duration, OffsetDateTime, format_description::BorrowedFormatItem, macros::format_description,
 };
 
-use crate::{Error, models::UserID};
+use crate::{Error, user::UserID};
 
 pub(crate) const COOKIE_USER_ID: &str = "user_id";
 pub(crate) const COOKIE_EXPIRY: &str = "expiry";
@@ -200,7 +200,7 @@ mod cookie_tests {
             COOKIE_EXPIRY, COOKIE_USER_ID, DATE_TIME_FORMAT, DEFAULT_COOKIE_DURATION,
             extract_date_time, extract_user_id, get_user_id_from_auth_cookie,
         },
-        models::UserID,
+        user::UserID,
     };
 
     use super::{

@@ -1,6 +1,8 @@
 # To Do
 
 - Rework AppState to replace stores with rusqlite Connection
+  - Merge registration endpoint code (`src/routes/views/register.rs`, `src/routes/user.rs`)
+    into single module (`src/register.rs`).
   - Code using stores can be replaced with functions that use the connection directly
   - Queries can be optimised to just what's needed
   - Functions using the connection can be mocked by using function pointers
