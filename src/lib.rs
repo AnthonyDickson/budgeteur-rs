@@ -27,6 +27,7 @@ mod log_in;
 mod logging;
 pub mod models;
 mod pagination;
+mod register_user;
 mod routes;
 mod state;
 pub mod stores;

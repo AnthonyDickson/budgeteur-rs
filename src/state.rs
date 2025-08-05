@@ -109,48 +109,6 @@ impl FromRef<AuthState> for Key {
     }
 }
 
-/// The state needed for creating a new user.
-#[derive(Debug, Clone)]
-pub struct RegistrationState {
-    /// The key to be used for signing and encrypting private cookies.
-    pub cookie_key: Key,
-    /// The duration for which cookies used for authentication are valid.
-    pub cookie_duration: Duration,
-    pub db_connection: Arc<Mutex<Connection>>,
-}
-
-impl RegistrationState {
-    /// Create the cookie key from a string and set the default cookie duration.
-    pub fn new(cookie_secret: &str, db_connection: Arc<Mutex<Connection>>) -> Self {
-        Self {
-            cookie_key: create_cookie_key(cookie_secret),
-            cookie_duration: DEFAULT_COOKIE_DURATION,
-            db_connection: db_connection.clone(),
-        }
-    }
-}
-
-impl<C, T> FromRef<AppState<C, T>> for RegistrationState
-where
-    C: CategoryStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-{
-    fn from_ref(state: &AppState<C, T>) -> Self {
-        Self {
-            cookie_key: state.cookie_key.clone(),
-            cookie_duration: state.cookie_duration,
-            db_connection: state.db_connection.clone(),
-        }
-    }
-}
-
-// this impl tells `PrivateCookieJar` how to access the key from our state
-impl FromRef<RegistrationState> for Key {
-    fn from_ref(state: &RegistrationState) -> Self {
-        state.cookie_key.clone()
-    }
-}
-
 /// The state needed to get or create a transaction.
 #[derive(Debug, Clone)]
 pub struct TransactionState<T>

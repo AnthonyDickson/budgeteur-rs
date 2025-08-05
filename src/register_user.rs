@@ -1,36 +1,103 @@
 //! The registration page for creating a new user account.
-use std::str::FromStr;
+use std::{
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 
+use askama::Template;
 use axum::{
     Form,
-    extract::State,
+    extract::{FromRef, State},
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
 };
-use axum_extra::extract::PrivateCookieJar;
+use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
 use email_address::EmailAddress;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use time::Duration;
 
 use crate::{
-    Error,
-    auth::cookie::set_auth_cookie,
+    AppState, Error,
+    auth::cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
     models::{PasswordHash, ValidatedPassword},
-    routes::get_internal_server_error_redirect,
-    state::RegistrationState,
-    user::{count_users, create_user, get_user_by_email},
-};
-
-use super::{
-    endpoints,
-    templates::{
-        ConfirmPasswordInputTemplate, EmailInputTemplate, PasswordInputTemplate,
-        RegisterFormTemplate,
+    routes::{
+        endpoints, get_internal_server_error_redirect,
+        templates::{
+            ConfirmPasswordInputTemplate, EmailInputTemplate, PasswordInputTemplate,
+            RegisterFormTemplate,
+        },
     },
+    state::create_cookie_key,
+    stores::{CategoryStore, TransactionStore},
+    user::{count_users, create_user, get_user_by_email},
 };
 
 /// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).
 const PASSWORD_INPUT_MIN_LENGTH: usize = 14;
+
+#[derive(Template)]
+#[template(path = "views/register.html")]
+struct RegisterPageTemplate<'a> {
+    register_form: RegisterFormTemplate<'a>,
+}
+
+/// Display the registration page.
+pub async fn get_register_page() -> Response {
+    RegisterPageTemplate {
+        register_form: RegisterFormTemplate {
+            password_input: PasswordInputTemplate {
+                min_length: PASSWORD_INPUT_MIN_LENGTH,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    }
+    .into_response()
+}
+
+/// The state needed for creating a new user.
+#[derive(Debug, Clone)]
+pub struct RegistrationState {
+    /// The key to be used for signing and encrypting private cookies.
+    pub cookie_key: Key,
+    /// The duration for which cookies used for authentication are valid.
+    pub cookie_duration: Duration,
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl RegistrationState {
+    /// Create the cookie key from a string and set the default cookie duration.
+    pub fn new(cookie_secret: &str, db_connection: Arc<Mutex<Connection>>) -> Self {
+        Self {
+            cookie_key: create_cookie_key(cookie_secret),
+            cookie_duration: DEFAULT_COOKIE_DURATION,
+            db_connection: db_connection.clone(),
+        }
+    }
+}
+
+impl<C, T> FromRef<AppState<C, T>> for RegistrationState
+where
+    C: CategoryStore + Send + Sync,
+    T: TransactionStore + Send + Sync,
+{
+    fn from_ref(state: &AppState<C, T>) -> Self {
+        Self {
+            cookie_key: state.cookie_key.clone(),
+            cookie_duration: state.cookie_duration,
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
+
+// this impl tells `PrivateCookieJar` how to access the key from our state
+impl FromRef<RegistrationState> for Key {
+    fn from_ref(state: &RegistrationState) -> Self {
+        state.cookie_key.clone()
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct RegisterForm {
@@ -191,7 +258,134 @@ pub async fn register_user(
 }
 
 #[cfg(test)]
-mod tests {
+mod get_register_page_tests {
+    use axum::{
+        body::Body,
+        http::{Response, StatusCode, header::CONTENT_TYPE},
+    };
+    use scraper::Html;
+    use serde::{Deserialize, Serialize};
+
+    use crate::{register_user::get_register_page, routes::endpoints};
+
+    #[derive(Serialize, Deserialize)]
+    struct Foo {
+        bar: String,
+    }
+
+    #[tokio::test]
+    async fn render_register_page() {
+        let response = get_register_page().await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        assert!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("text/html")
+        );
+
+        let document = parse_html(response).await;
+        assert_valid_html(&document);
+
+        let h1_selector = scraper::Selector::parse("h1").unwrap();
+        let titles = document.select(&h1_selector).collect::<Vec<_>>();
+        assert_eq!(titles.len(), 1, "want 1 h1, got {}", titles.len());
+        let title = titles.first().unwrap();
+        let title_text = title.text().collect::<String>().to_lowercase();
+        let title_text = title_text.trim();
+        let want_title = "create account";
+        assert_eq!(
+            title_text, want_title,
+            "want {}, got {:?}",
+            want_title, title_text
+        );
+
+        let form_selector = scraper::Selector::parse("form").unwrap();
+        let forms = document.select(&form_selector).collect::<Vec<_>>();
+        assert_eq!(forms.len(), 1, "want 1 form, got {}", forms.len());
+        let form = forms.first().unwrap();
+        let hx_post = form.value().attr("hx-post");
+        assert_eq!(
+            hx_post,
+            Some(endpoints::USERS),
+            "want form with attribute hx-post=\"{}\", got {:?}",
+            endpoints::USERS,
+            hx_post
+        );
+
+        struct FormInput {
+            tag: &'static str,
+            type_: &'static str,
+            id: &'static str,
+        }
+
+        let want_form_inputs: Vec<FormInput> = vec![
+            FormInput {
+                tag: "input",
+                type_: "email",
+                id: "email",
+            },
+            FormInput {
+                tag: "input",
+                type_: "password",
+                id: "password",
+            },
+            FormInput {
+                tag: "input",
+                type_: "password",
+                id: "confirm-password",
+            },
+        ];
+
+        for FormInput { tag, type_, id } in want_form_inputs {
+            let selector_string = format!("{tag}[type={type_}]#{id}");
+            let input_selector = scraper::Selector::parse(&selector_string).unwrap();
+            let inputs = form.select(&input_selector).collect::<Vec<_>>();
+            assert_eq!(
+                inputs.len(),
+                1,
+                "want 1 {type_} {tag}, got {}",
+                inputs.len()
+            );
+        }
+
+        let log_in_link_selector = scraper::Selector::parse("a[href]").unwrap();
+        let links = form.select(&log_in_link_selector).collect::<Vec<_>>();
+        assert_eq!(links.len(), 1, "want 1 link, got {}", links.len());
+        let link = links.first().unwrap();
+        assert_eq!(
+            link.value().attr("href"),
+            Some(endpoints::LOG_IN_VIEW),
+            "want link to {}, got {:?}",
+            endpoints::LOG_IN_VIEW,
+            link.value().attr("href")
+        );
+    }
+
+    async fn parse_html(response: Response<Body>) -> scraper::Html {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+
+        scraper::Html::parse_document(&text)
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors: {:?}",
+            html.errors
+        );
+    }
+}
+
+#[cfg(test)]
+mod register_user_tests {
     use std::sync::{Arc, Mutex};
 
     use askama_axum::IntoResponse;
@@ -209,13 +403,12 @@ mod tests {
 
     use crate::{
         models::PasswordHash,
-        routes::{
-            endpoints,
-            user::{RegisterForm, register_user},
-        },
-        state::RegistrationState,
+        register_user::{RegisterForm, register_user},
+        routes::endpoints,
         user::{create_user, create_user_table},
     };
+
+    use super::RegistrationState;
 
     fn get_test_app_config() -> RegistrationState {
         let connection =
