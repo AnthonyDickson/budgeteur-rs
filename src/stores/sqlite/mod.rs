@@ -1,10 +1,8 @@
 //! Contains convenience type alias and function for [AppState] that uses
 //! the SQLite backend.
 
-pub mod category;
 pub mod transaction;
 
-pub use category::SQLiteCategoryStore;
 pub use transaction::SQLiteTransactionStore;
 
 use std::sync::{Arc, Mutex};
@@ -14,7 +12,7 @@ use rusqlite::Connection;
 use crate::{AppState, Error, db::initialize, pagination::PaginationConfig};
 
 /// An alias for an [AppState] that uses SQLite for the backend.
-pub type SQLAppState = AppState<SQLiteCategoryStore, SQLiteTransactionStore>;
+pub type SQLAppState = AppState<SQLiteTransactionStore>;
 
 /// Creates an [AppState] instance that uses SQLite for the backend.
 ///
@@ -28,14 +26,12 @@ pub fn create_app_state(
     initialize(&db_connection)?;
 
     let connection = Arc::new(Mutex::new(db_connection));
-    let category_store = SQLiteCategoryStore::new(connection.clone());
     let transaction_store = SQLiteTransactionStore::new(connection.clone());
 
     Ok(AppState::new(
         cookie_secret,
         pagination_config,
         connection,
-        category_store,
         transaction_store,
     ))
 }

@@ -30,7 +30,7 @@ use crate::{
         },
     },
     state::create_cookie_key,
-    stores::{CategoryStore, TransactionStore},
+    stores::TransactionStore,
     user::{count_users, create_user, get_user_by_email},
 };
 
@@ -78,12 +78,11 @@ impl RegistrationState {
     }
 }
 
-impl<C, T> FromRef<AppState<C, T>> for RegistrationState
+impl<T> FromRef<AppState<T>> for RegistrationState
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T>) -> Self {
+    fn from_ref(state: &AppState<T>) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,

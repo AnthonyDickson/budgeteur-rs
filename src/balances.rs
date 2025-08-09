@@ -6,7 +6,7 @@ use crate::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
     },
-    stores::{CategoryStore, TransactionStore},
+    stores::TransactionStore,
 };
 use askama::Template;
 use askama_axum::IntoResponse;
@@ -44,12 +44,11 @@ pub struct BalanceState {
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl<C, T> FromRef<AppState<C, T>> for BalanceState
+impl<T> FromRef<AppState<T>> for BalanceState
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T>) -> Self {
+    fn from_ref(state: &AppState<T>) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
         }

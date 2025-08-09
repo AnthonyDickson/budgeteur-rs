@@ -1,25 +1,32 @@
 //! This files defines the API routes for the category type.
 
+use std::sync::{Arc, Mutex};
+
 use askama_axum::Template;
 use axum::{
     Form,
-    extract::State,
+    extract::{FromRef, State},
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
+use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    models::CategoryName,
+    AppState, Error,
+    models::{Category, CategoryName},
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
         templates::NewCategoryFormTemplate,
     },
-    state::CategoryState,
-    stores::CategoryStore,
+    stores::TransactionStore,
 };
+
+// TODO: Remove build config attribute once get_category function is used elsewhere.
+#[cfg(test)]
+use crate::models::DatabaseID;
 
 /// Renders the new Category page.
 #[derive(Template)]
@@ -40,6 +47,23 @@ pub async fn get_new_category_page() -> Response {
     .into_response()
 }
 
+/// The state needed for creating a category.
+#[derive(Debug, Clone)]
+pub struct CategoryState {
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl<T> FromRef<AppState<T>> for CategoryState
+where
+    T: TransactionStore + Send + Sync,
+{
+    fn from_ref(state: &AppState<T>) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CategoryData {
     pub name: String,
@@ -50,13 +74,10 @@ pub struct CategoryData {
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn create_category<C>(
-    State(state): State<CategoryState<C>>,
+pub async fn create_category_endpoint(
+    State(state): State<CategoryState>,
     Form(new_category): Form<CategoryData>,
-) -> impl IntoResponse
-where
-    C: CategoryStore + Send + Sync,
-{
+) -> impl IntoResponse {
     let name = match CategoryName::new(&new_category.name) {
         Ok(name) => name,
         Err(error) => {
@@ -71,31 +92,162 @@ where
         }
     };
 
-    state
-        .category_store
-        .create(name)
-        .map(|_category| {
-            (
-                HxRedirect(Uri::from_static(endpoints::NEW_TRANSACTION_VIEW)),
-                StatusCode::SEE_OTHER,
-            )
-        })
-        .map_err(|error| {
-            tracing::error!("An unexpected error occurred while creating a category: {error}");
+    create_category(
+        name,
+        &state
+            .db_connection
+            .lock()
+            .expect("Could not acquire database lock"),
+    )
+    .map(|_category| {
+        (
+            HxRedirect(Uri::from_static(endpoints::NEW_TRANSACTION_VIEW)),
+            StatusCode::SEE_OTHER,
+        )
+    })
+    .map_err(|error| {
+        tracing::error!("An unexpected error occurred while creating a category: {error}");
 
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                NewCategoryFormTemplate {
-                    category_route: endpoints::CATEGORIES,
-                    error_message: "An unexpected error occurred. Please try again.",
-                },
-            )
-        })
-        .into_response()
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            NewCategoryFormTemplate {
+                category_route: endpoints::CATEGORIES,
+                error_message: "An unexpected error occurred. Please try again.",
+            },
+        )
+    })
+    .into_response()
+}
+
+/// Create a category in the database.
+///
+/// # Errors
+/// This function will return an error if there is an SQL error.
+pub fn create_category(name: CategoryName, connection: &Connection) -> Result<Category, Error> {
+    connection.execute("INSERT INTO category (name) VALUES (?1);", (name.as_ref(),))?;
+
+    let id = connection.last_insert_rowid();
+
+    Ok(Category { id, name })
+}
+
+/// Retrieve categories in the database for the category with `category_id`.
+///
+/// # Errors
+/// This function will return an error if there is an SQL error.
+// TODO: Remove build config attribute once get_category function is used elsewhere.
+#[cfg(test)]
+fn get_category(category_id: DatabaseID, connection: &Connection) -> Result<Category, Error> {
+    connection
+        .prepare("SELECT id, name FROM category WHERE id = :id;")?
+        .query_row(&[(":id", &category_id)], map_row)
+        .map_err(|error| error.into())
+}
+
+/// Retrieve categories in the database.
+///
+/// # Errors
+/// This function will return an error if there is an SQL error.
+pub fn get_all_categories(connection: &Connection) -> Result<Vec<Category>, Error> {
+    connection
+        .prepare("SELECT id, name FROM category;")?
+        .query_map([], map_row)?
+        .map(|maybe_category| maybe_category.map_err(|error| error.into()))
+        .collect()
+}
+
+pub fn create_category_table(connection: &Connection) -> Result<(), rusqlite::Error> {
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS category (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE
+            );",
+        (),
+    )?;
+
+    Ok(())
+}
+
+fn map_row(row: &Row) -> Result<Category, rusqlite::Error> {
+    let id = row.get(0)?;
+    let raw_name: String = row.get(1)?;
+    let name = CategoryName::new_unchecked(&raw_name);
+
+    Ok(Category { id, name })
 }
 
 #[cfg(test)]
-mod new_category_tests {
+mod category_query_tests {
+    use std::collections::HashSet;
+
+    use rusqlite::Connection;
+
+    use crate::category::{create_category, get_all_categories, get_category};
+    use crate::{Error, models::CategoryName};
+
+    use super::create_category_table;
+
+    fn get_test_db_connection() -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        create_category_table(&connection).expect("Could not create category table");
+        connection
+    }
+
+    #[test]
+    fn create_category_succeeds() {
+        let connection = get_test_db_connection();
+        let name = CategoryName::new("Categorically a category").unwrap();
+
+        let category = create_category(name.clone(), &connection);
+
+        let category = category.expect("Could not create category");
+        assert!(category.id > 0);
+        assert_eq!(category.name, name);
+    }
+
+    #[test]
+    fn get_category_succeeds() {
+        let connection = get_test_db_connection();
+        let name = CategoryName::new_unchecked("Foo");
+        let inserted_category =
+            create_category(name, &connection).expect("Could not create test category");
+
+        let selected_category = get_category(inserted_category.id, &connection);
+
+        assert_eq!(Ok(inserted_category), selected_category);
+    }
+
+    #[test]
+    fn get_category_with_invalid_id_returns_not_found() {
+        let connection = get_test_db_connection();
+        let inserted_category = create_category(CategoryName::new_unchecked("Foo"), &connection)
+            .expect("Could not create test category");
+
+        let selected_category = get_category(inserted_category.id + 123, &connection);
+
+        assert_eq!(selected_category, Err(Error::NotFound));
+    }
+
+    #[test]
+    fn test_get_all_categories() {
+        let store = get_test_db_connection();
+
+        let inserted_categories = HashSet::from([
+            create_category(CategoryName::new_unchecked("Foo"), &store)
+                .expect("Could not create test category"),
+            create_category(CategoryName::new_unchecked("Bar"), &store)
+                .expect("Could not create test category"),
+        ]);
+
+        let selected_categories = get_all_categories(&store).expect("Could not get all categories");
+        let selected_categories = HashSet::from_iter(selected_categories);
+
+        assert_eq!(inserted_categories, selected_categories);
+    }
+}
+
+#[cfg(test)]
+mod new_category_page_tests {
     use axum::{http::StatusCode, response::Response};
     use scraper::{ElementRef, Html};
 
@@ -202,7 +354,7 @@ mod new_category_tests {
     }
 }
 #[cfg(test)]
-mod category_tests {
+mod create_category_endpoint_tests {
     use std::sync::{Arc, Mutex};
 
     use askama_axum::IntoResponse;
@@ -212,113 +364,59 @@ mod category_tests {
         http::{StatusCode, header::CONTENT_TYPE},
         response::Response,
     };
+    use rusqlite::Connection;
     use scraper::{ElementRef, Html};
 
     use crate::{
-        Error,
-        category::create_category,
-        models::{Category, CategoryName, DatabaseID},
+        category::{create_category_endpoint, get_category},
+        models::{Category, CategoryName},
         routes::endpoints,
-        state::CategoryState,
-        stores::CategoryStore,
     };
 
-    use super::CategoryData;
+    use super::{CategoryData, CategoryState, create_category_table};
 
-    #[derive(Debug, Clone, PartialEq)]
-    struct CreateCategoryCall {
-        name: CategoryName,
-    }
+    fn get_category_state() -> CategoryState {
+        let connection =
+            Connection::open_in_memory().expect("Could not open in-memory SQLite database");
+        create_category_table(&connection).expect("Could not create category table");
 
-    #[derive(Debug, Clone, PartialEq)]
-    struct GetCategoryCall {
-        category_id: DatabaseID,
-    }
-
-    #[derive(Clone)]
-    struct SpyCategoryStore {
-        // Use Arc Mutex so that clones of the store share state and can be passed into async route
-        // handlers.
-        create_calls: Arc<Mutex<Vec<CreateCategoryCall>>>,
-        get_calls: Arc<Mutex<Vec<GetCategoryCall>>>,
-        categories: Arc<Mutex<Vec<Category>>>,
-    }
-
-    impl CategoryStore for SpyCategoryStore {
-        fn create(&self, name: CategoryName) -> Result<Category, Error> {
-            self.create_calls
-                .lock()
-                .unwrap()
-                .push(CreateCategoryCall { name: name.clone() });
-
-            let category = Category { id: 0, name };
-            self.categories.lock().unwrap().push(category.clone());
-
-            Ok(category)
+        CategoryState {
+            db_connection: Arc::new(Mutex::new(connection)),
         }
-
-        fn get(&self, category_id: DatabaseID) -> Result<Category, Error> {
-            self.get_calls
-                .lock()
-                .unwrap()
-                .push(GetCategoryCall { category_id });
-
-            self.categories
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|category| category.id == category_id)
-                .ok_or(Error::NotFound)
-                .map(|category| category.to_owned())
-        }
-
-        fn get_all(&self) -> Result<Vec<Category>, Error> {
-            todo!()
-        }
-    }
-
-    fn get_test_app_config() -> (CategoryState<SpyCategoryStore>, SpyCategoryStore) {
-        let store = SpyCategoryStore {
-            create_calls: Arc::new(Mutex::new(vec![])),
-            get_calls: Arc::new(Mutex::new(vec![])),
-            categories: Arc::new(Mutex::new(vec![])),
-        };
-
-        let state = CategoryState {
-            category_store: store.clone(),
-        };
-
-        (state, store)
     }
 
     #[tokio::test]
     async fn can_create_category() {
-        let (state, store) = get_test_app_config();
-        let want = CreateCategoryCall {
-            name: CategoryName::new_unchecked("Foo"),
+        let state = get_category_state();
+        let name = CategoryName::new_unchecked("Foo");
+        let want = Category {
+            id: 1,
+            name: name.clone(),
         };
-
         let form = CategoryData {
-            name: want.name.to_string(),
+            name: name.to_string(),
         };
 
-        let response = create_category(State(state), Form(form))
+        let response = create_category_endpoint(State(state.clone()), Form(form))
             .await
             .into_response();
 
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
         assert_hx_redirect(&response, endpoints::NEW_TRANSACTION_VIEW);
-        assert_create_calls(&store, &want);
+        assert_eq!(
+            Ok(want),
+            get_category(1, &state.db_connection.lock().unwrap())
+        );
     }
 
     #[tokio::test]
     async fn create_category_fails_on_empty_name() {
-        let (state, _store) = get_test_app_config();
+        let state = get_category_state();
         let form = CategoryData {
             name: "".to_string(),
         };
 
-        let response = create_category(State(state), Form(form))
+        let response = create_category_endpoint(State(state), Form(form))
             .await
             .into_response();
 
@@ -327,28 +425,10 @@ mod category_tests {
             get_header(&response, CONTENT_TYPE.as_str()),
             "text/html; charset=utf-8"
         );
-
         let html = parse_html(response).await;
         assert_valid_html(&html);
         let form = must_get_form(&html);
         assert_error_message(&form, "Error: Category name cannot be empty");
-    }
-
-    #[track_caller]
-    fn assert_create_calls(store: &SpyCategoryStore, want: &CreateCategoryCall) {
-        let create_calls = store.create_calls.lock().unwrap().clone();
-        assert!(
-            create_calls.len() == 1,
-            "got {} calls to route handler 'create_category', want 1",
-            create_calls.len()
-        );
-
-        let got = create_calls.first().unwrap();
-        assert_eq!(
-            got, want,
-            "got call to CategoryStore.create {:?}, want {:?}",
-            got, want
-        );
     }
 
     #[track_caller]

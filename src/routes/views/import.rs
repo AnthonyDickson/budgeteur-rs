@@ -17,7 +17,7 @@ use crate::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
     },
-    stores::{CategoryStore, TransactionStore},
+    stores::TransactionStore,
 };
 
 /// The state needed for importing transactions.
@@ -31,12 +31,11 @@ where
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl<C, T> FromRef<AppState<C, T>> for ImportState<T>
+impl<T> FromRef<AppState<T>> for ImportState<T>
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Clone + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T>) -> Self {
+    fn from_ref(state: &AppState<T>) -> Self {
         Self {
             transaction_store: state.transaction_store.clone(),
             db_connection: state.db_connection.clone(),

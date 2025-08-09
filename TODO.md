@@ -9,6 +9,7 @@
   - Tests should use in-memory database for integration tests and ensure all tests
     are initialised with the same schema
 - Remove accessors from `User` struct in `src/models/user.rs`.
+- Add proper error handling for new transaction page handler in `src/routes/views/new_transaction.rs`
 - Update dashboard
   - Add trailing 1 month summary (income, expenses, net income)
   - Add trailing 12 month summary (income, expenses, net income)

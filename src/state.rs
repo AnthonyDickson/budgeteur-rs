@@ -12,16 +12,13 @@ use sha2::{Digest, Sha512};
 use time::Duration;
 
 use crate::{
-    auth::cookie::DEFAULT_COOKIE_DURATION,
-    pagination::PaginationConfig,
-    stores::{CategoryStore, TransactionStore},
+    auth::cookie::DEFAULT_COOKIE_DURATION, pagination::PaginationConfig, stores::TransactionStore,
 };
 
 /// The state of the REST server.
 #[derive(Debug, Clone)]
-pub struct AppState<C, T>
+pub struct AppState<T>
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
 {
     /// The key to be used for signing and encrypting private cookies.
@@ -32,15 +29,12 @@ where
     pub pagination_config: PaginationConfig,
     /// The database connection
     pub db_connection: Arc<Mutex<Connection>>,
-    /// The store for managing user [categories](crate::models::Category).
-    pub category_store: C,
     /// The store for managing user [transactions](crate::models::Transaction).
     pub transaction_store: T,
 }
 
-impl<C, T> AppState<C, T>
+impl<T> AppState<T>
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
 {
     /// Create a new [AppState].
@@ -48,7 +42,6 @@ where
         cookie_secret: &str,
         pagination_config: PaginationConfig,
         db_connection: Arc<Mutex<Connection>>,
-        category_store: C,
         transaction_store: T,
     ) -> Self {
         Self {
@@ -56,19 +49,17 @@ where
             cookie_duration: DEFAULT_COOKIE_DURATION,
             pagination_config,
             db_connection,
-            category_store,
             transaction_store,
         }
     }
 }
 
 // this impl tells `PrivateCookieJar` how to access the key from our state
-impl<C, T> FromRef<AppState<C, T>> for Key
+impl<T> FromRef<AppState<T>> for Key
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T>) -> Self {
+    fn from_ref(state: &AppState<T>) -> Self {
         state.cookie_key.clone()
     }
 }
@@ -89,12 +80,11 @@ pub struct AuthState {
     pub cookie_duration: Duration,
 }
 
-impl<C, T> FromRef<AppState<C, T>> for AuthState
+impl<T> FromRef<AppState<T>> for AuthState
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T>) -> Self {
+    fn from_ref(state: &AppState<T>) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
@@ -119,36 +109,13 @@ where
     pub transaction_store: T,
 }
 
-impl<C, T> FromRef<AppState<C, T>> for TransactionState<T>
+impl<T> FromRef<AppState<T>> for TransactionState<T>
 where
-    C: CategoryStore + Send + Sync,
     T: TransactionStore + Clone + Send + Sync,
 {
-    fn from_ref(state: &AppState<C, T>) -> Self {
+    fn from_ref(state: &AppState<T>) -> Self {
         Self {
             transaction_store: state.transaction_store.clone(),
-        }
-    }
-}
-
-/// The state needed for creating a category.
-#[derive(Debug, Clone)]
-pub struct CategoryState<C>
-where
-    C: CategoryStore + Send + Sync,
-{
-    /// The store for managing user [categories](crate::models::Category).
-    pub category_store: C,
-}
-
-impl<C, T> FromRef<AppState<C, T>> for CategoryState<C>
-where
-    C: CategoryStore + Clone + Send + Sync,
-    T: TransactionStore + Send + Sync,
-{
-    fn from_ref(state: &AppState<C, T>) -> Self {
-        Self {
-            category_store: state.category_store.clone(),
         }
     }
 }
@@ -157,4 +124,18 @@ where
 pub type DashboardState<T> = TransactionState<T>;
 
 /// The state needed for the new transactions page.
-pub type NewTransactionState<C> = CategoryState<C>;
+#[derive(Debug, Clone)]
+pub struct NewTransactionState {
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl<T> FromRef<AppState<T>> for NewTransactionState
+where
+    T: TransactionStore + Send + Sync,
+{
+    fn from_ref(state: &AppState<T>) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}

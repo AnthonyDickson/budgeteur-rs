@@ -21,10 +21,8 @@ use tower_livereload::LiveReloadLayer;
 use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use budgeteur_rs::{
-    AppState, build_router,
-    db::initialize,
-    graceful_shutdown, logging_middleware,
-    stores::sqlite::{SQLiteCategoryStore, SQLiteTransactionStore},
+    AppState, build_router, db::initialize, graceful_shutdown, logging_middleware,
+    stores::sqlite::SQLiteTransactionStore,
 };
 
 /// The REST API server for budgeteur_rs.
@@ -84,7 +82,6 @@ async fn main() {
         &secret,
         Default::default(),
         conn.clone(),
-        SQLiteCategoryStore::new(conn.clone()),
         SQLiteTransactionStore::new(conn.clone()),
     );
 

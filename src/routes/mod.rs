@@ -31,7 +31,7 @@ use views::{
 use crate::{
     auth::middleware::{auth_guard, auth_guard_hx},
     balances::get_balances_page,
-    category::{create_category, get_new_category_page},
+    category::{create_category_endpoint, get_new_category_page},
     log_in::{get_log_in_page, post_log_in},
     register_user::{get_register_page, register_user},
     stores::sqlite::SQLAppState,
@@ -74,7 +74,7 @@ pub fn build_router(state: SQLAppState) -> Router {
     let protected_routes = protected_routes.merge(
         Router::new()
             .route(endpoints::TRANSACTIONS_API, post(create_transaction))
-            .route(endpoints::CATEGORIES, post(create_category))
+            .route(endpoints::CATEGORIES, post(create_category_endpoint))
             .route(endpoints::IMPORT, post(import_transactions))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),
     );
