@@ -21,6 +21,7 @@ use tokio::signal;
 
 mod auth;
 mod balances;
+mod category;
 mod csv;
 pub mod db;
 mod log_in;

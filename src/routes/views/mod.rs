@@ -3,6 +3,5 @@
 pub mod dashboard;
 pub mod forgot_password;
 pub mod import;
-pub mod new_category;
 pub mod new_transaction;
 pub mod transactions;

@@ -11,7 +11,6 @@ use axum::{
 use axum_htmx::HxRedirect;
 use tower_http::services::ServeDir;
 
-mod category;
 pub mod endpoints;
 mod log_out;
 pub mod navigation;
@@ -19,14 +18,12 @@ pub mod templates;
 mod transaction;
 mod views;
 
-use category::create_category;
 use log_out::get_log_out;
 use transaction::{create_transaction, get_transaction};
 use views::{
     dashboard::get_dashboard_page,
     forgot_password::get_forgot_password_page,
     import::{get_import_page, import_transactions},
-    new_category::get_new_category_page,
     new_transaction::get_new_transaction_page,
     transactions::get_transactions_page,
 };
@@ -34,6 +31,7 @@ use views::{
 use crate::{
     auth::middleware::{auth_guard, auth_guard_hx},
     balances::get_balances_page,
+    category::{create_category, get_new_category_page},
     log_in::{get_log_in_page, post_log_in},
     register_user::{get_register_page, register_user},
     stores::sqlite::SQLAppState,
