@@ -1,9 +1,12 @@
+use std::sync::{Arc, Mutex};
+
 use askama_axum::Template;
 use axum::{
     extract::{FromRef, Query, State},
     http::Uri,
     response::{IntoResponse, Response},
 };
+use rusqlite::Connection;
 use serde::Deserialize;
 
 use crate::{
@@ -14,17 +17,14 @@ use crate::{
         navigation::{NavbarTemplate, get_nav_bar},
         templates::TransactionRow,
     },
-    stores::{SortOrder, TransactionQuery, TransactionStore},
+    transaction::{SortOrder, TransactionQuery, count_transactions, query_transactions},
 };
 
 /// Render an overview of the user's transactions.
-pub async fn get_transactions_page<T>(
-    State(state): State<TransactionsViewState<T>>,
+pub async fn get_transactions_page(
+    State(state): State<TransactionsViewState>,
     Query(query_params): Query<Pagination>,
-) -> Response
-where
-    T: TransactionStore + Send + Sync,
-{
+) -> Response {
     let nav_bar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
 
     let curr_page = query_params
@@ -36,17 +36,21 @@ where
 
     let limit = per_page;
     let offset = (curr_page - 1) * per_page;
-    let page_count = match state.transaction_store.count() {
+    let connection = state.db_connection.lock().unwrap();
+    let page_count = match count_transactions(&connection) {
         Ok(transaction_count) => (transaction_count as f64 / per_page as f64).ceil() as u64,
         Err(error) => return error.into_response(),
     };
 
-    let transactions = state.transaction_store.get_query(TransactionQuery {
-        limit: Some(limit),
-        offset,
-        sort_date: Some(SortOrder::Descending),
-        ..Default::default()
-    });
+    let transactions = query_transactions(
+        TransactionQuery {
+            limit: Some(limit),
+            offset,
+            sort_date: Some(SortOrder::Descending),
+            ..Default::default()
+        },
+        &connection,
+    );
     let transactions = match transactions {
         Ok(transactions) => transactions,
         Err(error) => return error.into_response(),
@@ -74,22 +78,16 @@ where
 
 /// The state needed for the transactions page.
 #[derive(Debug, Clone)]
-pub struct TransactionsViewState<T>
-where
-    T: TransactionStore + Send + Sync,
-{
-    /// The store for managing user [transactions](crate::models::Transaction).
-    pub transaction_store: T,
+pub struct TransactionsViewState {
+    /// The database connection for managing transactions.
+    pub db_connection: Arc<Mutex<Connection>>,
     pub pagination_config: PaginationConfig,
 }
 
-impl<T> FromRef<AppState<T>> for TransactionsViewState<T>
-where
-    T: TransactionStore + Clone + Send + Sync,
-{
-    fn from_ref(state: &AppState<T>) -> Self {
+impl FromRef<AppState> for TransactionsViewState {
+    fn from_ref(state: &AppState) -> Self {
         Self {
-            transaction_store: state.transaction_store.clone(),
+            db_connection: state.db_connection.clone(),
             pagination_config: state.pagination_config.clone(),
         }
     }
@@ -125,7 +123,6 @@ struct TransactionsTemplate<'a> {
 
 #[cfg(test)]
 mod tests {
-    use askama::Result;
     use axum::{
         extract::{Query, State},
         response::Response,
@@ -133,103 +130,37 @@ mod tests {
     use scraper::{ElementRef, Html, Selector, selectable::Selectable};
 
     use crate::{
-        Error,
-        models::{DatabaseID, Transaction, TransactionBuilder},
+        db::initialize,
+        models::{Transaction, TransactionBuilder},
         pagination::PaginationConfig,
         routes::{
             endpoints,
             views::transactions::{Pagination, PaginationIndicator, TransactionsViewState},
         },
-        stores::{TransactionQuery, TransactionStore},
+        transaction::create_transaction,
     };
+    use rusqlite::Connection;
+    use std::sync::{Arc, Mutex};
 
     use super::get_transactions_page;
 
-    #[derive(Debug, Clone)]
-    struct StubTransactionStore {
-        transactions: Vec<Transaction>,
-    }
-
-    impl TransactionStore for StubTransactionStore {
-        fn create(&mut self, _amount: f64) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn import(
-            &mut self,
-            _builders: Vec<TransactionBuilder>,
-        ) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_query(&self, query: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            if let Some(limit) = query.limit {
-                let offset = query.offset as usize;
-                let limit = limit as usize;
-
-                if offset > self.transactions.len() || offset + limit > self.transactions.len() {
-                    Ok(self.transactions.clone())
-                } else {
-                    Ok(self.transactions[offset..offset + limit].to_owned())
-                }
-            } else {
-                Ok(self.transactions.clone())
-            }
-        }
-
-        fn count(&self) -> std::result::Result<usize, Error> {
-            Ok(self.transactions.len())
-        }
+    fn get_test_connection() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
     }
 
     #[tokio::test]
     async fn displays_paged_data() {
+        let conn = get_test_connection();
+
+        // Create 30 transactions in the database
+        for i in 1..=30 {
+            create_transaction(TransactionBuilder::new(i as f64), &conn).unwrap();
+        }
+
         let state = TransactionsViewState {
-            transaction_store: StubTransactionStore {
-                transactions: vec![
-                    TransactionBuilder::new(1.0).finalise(1),
-                    TransactionBuilder::new(1.0).finalise(2),
-                    TransactionBuilder::new(1.0).finalise(3),
-                    TransactionBuilder::new(1.0).finalise(4),
-                    TransactionBuilder::new(1.0).finalise(5),
-                    TransactionBuilder::new(1.0).finalise(6),
-                    TransactionBuilder::new(1.0).finalise(7),
-                    TransactionBuilder::new(1.0).finalise(8),
-                    TransactionBuilder::new(1.0).finalise(9),
-                    TransactionBuilder::new(1.0).finalise(10),
-                    TransactionBuilder::new(1.0).finalise(11),
-                    TransactionBuilder::new(1.0).finalise(12),
-                    TransactionBuilder::new(1.0).finalise(13),
-                    TransactionBuilder::new(1.0).finalise(14),
-                    TransactionBuilder::new(1.0).finalise(15),
-                    TransactionBuilder::new(1.0).finalise(16),
-                    TransactionBuilder::new(1.0).finalise(17),
-                    TransactionBuilder::new(1.0).finalise(18),
-                    TransactionBuilder::new(1.0).finalise(19),
-                    TransactionBuilder::new(1.0).finalise(20),
-                    TransactionBuilder::new(1.0).finalise(21),
-                    TransactionBuilder::new(1.0).finalise(22),
-                    TransactionBuilder::new(1.0).finalise(23),
-                    TransactionBuilder::new(1.0).finalise(24),
-                    TransactionBuilder::new(1.0).finalise(25),
-                    TransactionBuilder::new(1.0).finalise(26),
-                    TransactionBuilder::new(1.0).finalise(27),
-                    TransactionBuilder::new(1.0).finalise(28),
-                    TransactionBuilder::new(1.0).finalise(29),
-                    TransactionBuilder::new(1.0).finalise(30),
-                ],
-            },
+            db_connection: Arc::new(Mutex::new(conn)),
             pagination_config: PaginationConfig {
                 max_pages: 5,
                 ..Default::default()

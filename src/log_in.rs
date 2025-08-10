@@ -24,7 +24,6 @@ use crate::{
         templates::{EmailInputTemplate, LogInFormTemplate, PasswordInputTemplate},
     },
     state::create_cookie_key,
-    stores::TransactionStore,
     user::{User, get_user_by_email},
 };
 
@@ -64,11 +63,8 @@ impl LoginState {
     }
 }
 
-impl<T> FromRef<AppState<T>> for LoginState
-where
-    T: TransactionStore + Send + Sync,
-{
-    fn from_ref(state: &AppState<T>) -> Self {
+impl FromRef<AppState> for LoginState {
+    fn from_ref(state: &AppState) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,

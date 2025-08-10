@@ -23,7 +23,6 @@ use crate::{
         navigation::{NavbarTemplate, get_nav_bar},
         templates::NewCategoryFormTemplate,
     },
-    stores::TransactionStore,
 };
 
 /// The name of a category.
@@ -101,11 +100,8 @@ pub struct CategoryState {
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl<T> FromRef<AppState<T>> for CategoryState
-where
-    T: TransactionStore + Send + Sync,
-{
-    fn from_ref(state: &AppState<T>) -> Self {
+impl FromRef<AppState> for CategoryState {
+    fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
         }

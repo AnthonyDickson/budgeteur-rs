@@ -19,7 +19,7 @@ mod transaction;
 mod views;
 
 use log_out::get_log_out;
-use transaction::{create_transaction, get_transaction};
+use transaction::{create_transaction, get_transaction_endpoint};
 use views::{
     dashboard::get_dashboard_page,
     forgot_password::get_forgot_password_page,
@@ -29,16 +29,16 @@ use views::{
 };
 
 use crate::{
+    AppState,
     auth::middleware::{auth_guard, auth_guard_hx},
     balances::get_balances_page,
     category::{create_category_endpoint, get_new_category_page},
     log_in::{get_log_in_page, post_log_in},
     register_user::{get_register_page, register_user},
-    stores::sqlite::SQLAppState,
 };
 
 /// Return a router with all the app's routes.
-pub fn build_router(state: SQLAppState) -> Router {
+pub fn build_router(state: AppState) -> Router {
     let unprotected_routes = Router::new()
         .route(endpoints::COFFEE, get(get_coffee))
         .route(endpoints::LOG_IN_VIEW, get(get_log_in_page))
@@ -58,7 +58,7 @@ pub fn build_router(state: SQLAppState) -> Router {
     let protected_routes = Router::new()
         .route(endpoints::ROOT, get(get_index_page))
         .route(endpoints::DASHBOARD_VIEW, get(get_dashboard_page))
-        .route(endpoints::TRANSACTION, get(get_transaction))
+        .route(endpoints::TRANSACTION, get(get_transaction_endpoint))
         .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
         .route(
             endpoints::NEW_TRANSACTION_VIEW,

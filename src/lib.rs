@@ -31,7 +31,7 @@ mod pagination;
 mod register_user;
 mod routes;
 mod state;
-pub mod stores;
+mod transaction;
 pub mod user;
 
 pub use logging::logging_middleware;

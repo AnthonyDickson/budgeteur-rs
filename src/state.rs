@@ -1,9 +1,6 @@
 //! Implements a struct that holds the state of the REST server.
 
-use std::{
-    marker::{Send, Sync},
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use axum::extract::FromRef;
 use axum_extra::extract::cookie::Key;
@@ -12,15 +9,12 @@ use sha2::{Digest, Sha512};
 use time::Duration;
 
 use crate::{
-    auth::cookie::DEFAULT_COOKIE_DURATION, pagination::PaginationConfig, stores::TransactionStore,
+    Error, auth::cookie::DEFAULT_COOKIE_DURATION, db::initialize, pagination::PaginationConfig,
 };
 
 /// The state of the REST server.
 #[derive(Debug, Clone)]
-pub struct AppState<T>
-where
-    T: TransactionStore + Send + Sync,
-{
+pub struct AppState {
     /// The key to be used for signing and encrypting private cookies.
     pub cookie_key: Key,
     /// The duration for which cookies used for authentication are valid.
@@ -29,37 +23,36 @@ where
     pub pagination_config: PaginationConfig,
     /// The database connection
     pub db_connection: Arc<Mutex<Connection>>,
-    /// The store for managing user [transactions](crate::models::Transaction).
-    pub transaction_store: T,
 }
 
-impl<T> AppState<T>
-where
-    T: TransactionStore + Send + Sync,
-{
-    /// Create a new [AppState].
+impl AppState {
+    /// Create a new [AppState] with a SQLite database connection.
+    ///
+    /// This function will initialize the database by adding the tables for the domain models.
+    ///
+    /// # Errors
+    /// Returns an error if the database cannot be initialized.
     pub fn new(
+        db_connection: Connection,
         cookie_secret: &str,
         pagination_config: PaginationConfig,
-        db_connection: Arc<Mutex<Connection>>,
-        transaction_store: T,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, Error> {
+        initialize(&db_connection)?;
+
+        let connection = Arc::new(Mutex::new(db_connection));
+
+        Ok(Self {
             cookie_key: create_cookie_key(cookie_secret),
             cookie_duration: DEFAULT_COOKIE_DURATION,
             pagination_config,
-            db_connection,
-            transaction_store,
-        }
+            db_connection: connection,
+        })
     }
 }
 
 // this impl tells `PrivateCookieJar` how to access the key from our state
-impl<T> FromRef<AppState<T>> for Key
-where
-    T: TransactionStore + Send + Sync,
-{
-    fn from_ref(state: &AppState<T>) -> Self {
+impl FromRef<AppState> for Key {
+    fn from_ref(state: &AppState) -> Self {
         state.cookie_key.clone()
     }
 }
@@ -80,11 +73,8 @@ pub struct AuthState {
     pub cookie_duration: Duration,
 }
 
-impl<T> FromRef<AppState<T>> for AuthState
-where
-    T: TransactionStore + Send + Sync,
-{
-    fn from_ref(state: &AppState<T>) -> Self {
+impl FromRef<AppState> for AuthState {
+    fn from_ref(state: &AppState) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
@@ -101,27 +91,21 @@ impl FromRef<AuthState> for Key {
 
 /// The state needed to get or create a transaction.
 #[derive(Debug, Clone)]
-pub struct TransactionState<T>
-where
-    T: TransactionStore + Send + Sync,
-{
-    /// The store for managing user [transactions](crate::models::Transaction).
-    pub transaction_store: T,
+pub struct TransactionState {
+    /// The database connection for managing transactions.
+    pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl<T> FromRef<AppState<T>> for TransactionState<T>
-where
-    T: TransactionStore + Clone + Send + Sync,
-{
-    fn from_ref(state: &AppState<T>) -> Self {
+impl FromRef<AppState> for TransactionState {
+    fn from_ref(state: &AppState) -> Self {
         Self {
-            transaction_store: state.transaction_store.clone(),
+            db_connection: state.db_connection.clone(),
         }
     }
 }
 
 /// The state needed for displaying the dashboard page.
-pub type DashboardState<T> = TransactionState<T>;
+pub type DashboardState = TransactionState;
 
 /// The state needed for the new transactions page.
 #[derive(Debug, Clone)]
@@ -129,11 +113,8 @@ pub struct NewTransactionState {
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl<T> FromRef<AppState<T>> for NewTransactionState
-where
-    T: TransactionStore + Send + Sync,
-{
-    fn from_ref(state: &AppState<T>) -> Self {
+impl FromRef<AppState> for NewTransactionState {
+    fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
         }

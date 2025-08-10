@@ -17,27 +17,19 @@ use crate::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
     },
-    stores::TransactionStore,
+    transaction::import_transactions as import_transaction_list,
 };
 
 /// The state needed for importing transactions.
 #[derive(Debug, Clone)]
-pub struct ImportState<T>
-where
-    T: TransactionStore + Send + Sync,
-{
-    /// The store for managing user [transactions](crate::models::Transaction).
-    pub transaction_store: T,
+pub struct ImportState {
+    /// The database connection for managing transactions.
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl<T> FromRef<AppState<T>> for ImportState<T>
-where
-    T: TransactionStore + Clone + Send + Sync,
-{
-    fn from_ref(state: &AppState<T>) -> Self {
+impl FromRef<AppState> for ImportState {
+    fn from_ref(state: &AppState) -> Self {
         Self {
-            transaction_store: state.transaction_store.clone(),
             db_connection: state.db_connection.clone(),
         }
     }
@@ -70,13 +62,10 @@ pub async fn get_import_page() -> Response {
     .into_response()
 }
 
-pub async fn import_transactions<T>(
-    State(mut state): State<ImportState<T>>,
+pub async fn import_transactions(
+    State(state): State<ImportState>,
     mut multipart: Multipart,
-) -> Response
-where
-    T: TransactionStore + Send + Sync,
-{
+) -> Response {
     let mut transactions = Vec::new();
     let mut balances = Vec::new();
     let unexpected_error_response = ImportTransactionFormTemplate {
@@ -119,13 +108,14 @@ where
         }
     }
 
-    if let Err(error) = state.transaction_store.import(transactions) {
+    let connection = state.db_connection.lock().unwrap();
+    if let Err(error) = import_transaction_list(transactions, &connection) {
         tracing::error!("Failed to import transactions: {}", error);
         return unexpected_error_response;
     }
 
     for balance in balances {
-        if let Err(error) = upsert_balance(&balance, &state.db_connection.lock().unwrap()) {
+        if let Err(error) = upsert_balance(&balance, &connection) {
             tracing::error!("Failed to import account balances: {error:#?}");
             return unexpected_error_response;
         }
@@ -451,16 +441,22 @@ mod import_transactions_tests {
 
     use crate::{
         Error,
-        balances::{Balance, create_balance_table},
-        models::{DatabaseID, Transaction, TransactionBuilder},
+        balances::Balance,
+        db::initialize,
         routes::{
             endpoints,
             views::import::{ImportState, get_import_page, import_transactions},
         },
-        stores::{TransactionQuery, TransactionStore},
+        transaction::count_transactions,
     };
 
     use super::map_row_to_balance;
+
+    fn get_test_connection() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
 
     const ASB_BANK_STATEMENT_CSV: &str = "Created date / time : 12 April 2025 / 11:10:19\n\
         Bank 12; Branch 3405; Account 0123456-50 (Streamline)\n\
@@ -530,12 +526,9 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn post_multiple_bank_csv() {
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
+        let conn = get_test_connection();
         let state = ImportState {
-            db_connection: Arc::new(Mutex::new(connection)),
-            transaction_store: FakeTransactionStore::new(),
+            db_connection: Arc::new(Mutex::new(conn)),
         };
         let want_transaction_count = 23;
 
@@ -552,35 +545,24 @@ mod import_transactions_tests {
         .await;
 
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap();
-        assert_eq!(
-            1,
-            create_transaction_calls.len(),
-            "want 1 call to import, got {}",
-            create_transaction_calls.len()
-        );
 
-        // Only check number of transactions imported, the tests for the csv module
-        // already checks the contents of imported transactions.
-        let got = state.transaction_store.transactions.lock().unwrap().clone();
+        // Check the number of transactions imported by querying the database
+        let connection = state.db_connection.lock().unwrap();
+        let transaction_count =
+            count_transactions(&connection).expect("Could not count transactions");
         assert_eq!(
-            want_transaction_count,
-            got.len(),
-            "want {want_transaction_count} transactions imported, {}",
-            got.len()
+            want_transaction_count, transaction_count,
+            "want {want_transaction_count} transactions imported, got {transaction_count}"
         );
         assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
     #[tokio::test]
     async fn extracts_accounts_and_balances_asb_bank_account() {
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-        let connection = Arc::new(Mutex::new(connection));
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            transaction_store: FakeTransactionStore::new(),
         };
         let want_account = "12-3405-0123456-50 (Streamline)";
         let want_balance = 20.00;
@@ -617,13 +599,10 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn does_not_extract_accounts_and_balances_asb_cc_account() {
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-        let connection = Arc::new(Mutex::new(connection));
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            transaction_store: FakeTransactionStore::new(),
         };
 
         let response = import_transactions(
@@ -644,13 +623,10 @@ mod import_transactions_tests {
     }
     #[tokio::test]
     async fn extracts_accounts_and_balances_kiwibank_bank_account() {
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-        let connection = Arc::new(Mutex::new(connection));
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            transaction_store: FakeTransactionStore::new(),
         };
         let want_account = "38-1234-0123456-01";
         let want_balance = 71.53;
@@ -679,24 +655,24 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn invalid_csv_renders_error_message() {
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-        let connection = Arc::new(Mutex::new(connection));
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            transaction_store: FakeTransactionStore::new(),
         };
         let response =
             import_transactions(State(state.clone()), must_make_multipart_csv(&[""]).await).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
-        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap().len();
+
+        // Check that no transactions were created
+        let connection = state.db_connection.lock().unwrap();
+        let transaction_count =
+            count_transactions(&connection).expect("Could not count transactions");
         assert_eq!(
-            create_transaction_calls, 0,
-            "want {} transaction created, got {create_transaction_calls}",
-            0
+            transaction_count, 0,
+            "want 0 transactions created, got {transaction_count}"
         );
 
         let html = parse_html(response, HTMLParsingMode::Fragment).await;
@@ -710,12 +686,9 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn invalid_file_type_renders_error_message() {
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
+        let conn = get_test_connection();
         let state = ImportState {
-            db_connection: Arc::new(Mutex::new(connection)),
-            transaction_store: FakeTransactionStore::new(),
+            db_connection: Arc::new(Mutex::new(conn)),
         };
         let response = import_transactions(
             State(state.clone()),
@@ -725,11 +698,14 @@ mod import_transactions_tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
-        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap().len();
+
+        // Check that no transactions were created
+        let connection = state.db_connection.lock().unwrap();
+        let transaction_count =
+            count_transactions(&connection).expect("Could not count transactions");
         assert_eq!(
-            create_transaction_calls, 0,
-            "want {} transaction created, got {create_transaction_calls}",
-            0
+            transaction_count, 0,
+            "want 0 transactions created, got {transaction_count}"
         );
 
         let html = parse_html(response, HTMLParsingMode::Fragment).await;
@@ -740,13 +716,11 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn sql_error_renders_error_message() {
-        let connection =
+        // Create a connection without initializing the database tables to trigger SQL errors
+        let conn =
             Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        // Not creating the balances table will create a SQLite error
-        // create_balance_table(&connection).expect("Could not create balances table");
         let state = ImportState {
-            db_connection: Arc::new(Mutex::new(connection)),
-            transaction_store: FakeTransactionStore::new(),
+            db_connection: Arc::new(Mutex::new(conn)),
         };
 
         let response = import_transactions(
@@ -978,67 +952,5 @@ mod import_transactions_tests {
             "submit",
             "want submit button with type=\"submit\""
         );
-    }
-
-    #[derive(Clone)]
-    struct FakeTransactionStore {
-        transactions: Arc<Mutex<Vec<Transaction>>>,
-        import_calls: Arc<Mutex<Vec<Vec<TransactionBuilder>>>>,
-    }
-
-    impl FakeTransactionStore {
-        fn new() -> Self {
-            Self {
-                transactions: Arc::new(Mutex::new(Vec::new())),
-                import_calls: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-    }
-
-    impl TransactionStore for FakeTransactionStore {
-        fn create(&mut self, amount: f64) -> Result<Transaction, Error> {
-            self.create_from_builder(TransactionBuilder::new(amount))
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn import(&mut self, builders: Vec<TransactionBuilder>) -> Result<Vec<Transaction>, Error> {
-            self.import_calls.lock().unwrap().push(builders.clone());
-
-            let next_id = match self.transactions.lock().unwrap().last() {
-                Some(transaction) => transaction.id() + 1,
-                None => 0,
-            };
-
-            let transactions: Vec<Transaction> = builders
-                .into_iter()
-                .enumerate()
-                .map(|(i, builder)| builder.finalise(next_id + i as i64))
-                .collect();
-
-            self.transactions
-                .lock()
-                .unwrap()
-                .extend(transactions.clone());
-
-            Ok(transactions)
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn count(&self) -> Result<usize, Error> {
-            todo!()
-        }
     }
 }

@@ -1,12 +1,6 @@
 # To Do
 
-- Rework AppState to replace stores with rusqlite Connection
-  - Code using stores can be replaced with functions that use the connection directly
-  - Queries can be optimised to just what's needed
-  - Functions using the connection can be mocked by using function pointers
-  - Tests can define functions that are injected into the tested code
-  - Tests should use in-memory database for integration tests and ensure all tests
-    are initialised with the same schema
+- Merge transaction views and models into `src/transaction.rs`.
 - Remove accessors from `User` struct in `src/models/user.rs`.
 - Add proper error handling for new transaction page handler in `src/routes/views/new_transaction.rs`
 - Update dashboard

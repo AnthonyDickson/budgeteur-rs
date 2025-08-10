@@ -13,7 +13,7 @@ use time::Date;
 use crate::{
     models::{DatabaseID, Transaction},
     state::TransactionState,
-    stores::TransactionStore,
+    transaction::{create_transaction as create_transaction_db, get_transaction},
 };
 
 use super::endpoints;
@@ -38,13 +38,10 @@ pub struct TransactionForm {
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn create_transaction<T>(
-    State(mut state): State<TransactionState<T>>,
+pub async fn create_transaction(
+    State(state): State<TransactionState>,
     Form(data): Form<TransactionForm>,
-) -> impl IntoResponse
-where
-    T: TransactionStore + Send + Sync,
-{
+) -> impl IntoResponse {
     // HACK: Zero is used as a sentinel value for None. Currently, options do not work with empty
     // form values. For example, the URL encoded form "num=" will return an error.
     let category = match data.category_id {
@@ -62,7 +59,8 @@ where
         Err(e) => return e.into_response(),
     };
 
-    match state.transaction_store.create_from_builder(transaction) {
+    let connection = state.db_connection.lock().unwrap();
+    match create_transaction_db(transaction, &connection) {
         Ok(_) => {}
         Err(e) => return e.into_response(),
     }
@@ -81,16 +79,12 @@ where
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn get_transaction<T>(
-    State(state): State<TransactionState<T>>,
+pub async fn get_transaction_endpoint(
+    State(state): State<TransactionState>,
     Path(transaction_id): Path<DatabaseID>,
-) -> impl IntoResponse
-where
-    T: TransactionStore + Send + Sync,
-{
-    state
-        .transaction_store
-        .get(transaction_id)
+) -> impl IntoResponse {
+    let connection = state.db_connection.lock().unwrap();
+    get_transaction(transaction_id, &connection)
         .map(|transaction| (StatusCode::OK, Json(transaction)))
 }
 
@@ -108,117 +102,67 @@ mod transaction_tests {
     use axum_htmx::HX_REDIRECT;
     use time::OffsetDateTime;
 
-    use crate::{Error, stores::TransactionStore};
     use crate::{
-        models::{DatabaseID, Transaction, TransactionBuilder},
-        routes::transaction::{TransactionForm, create_transaction, get_transaction},
+        db::initialize,
+        models::{Transaction, TransactionBuilder},
+        routes::transaction::{TransactionForm, create_transaction, get_transaction_endpoint},
         state::TransactionState,
-        stores::TransactionQuery,
+        transaction::{create_transaction as create_transaction_db, get_transaction},
     };
+    use rusqlite::Connection;
 
-    #[derive(Clone)]
-    struct FakeTransactionStore {
-        transactions: Vec<Transaction>,
-        create_calls: Arc<Mutex<Vec<Transaction>>>,
-    }
-
-    impl FakeTransactionStore {
-        fn new() -> Self {
-            Self {
-                transactions: Vec::new(),
-                create_calls: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-    }
-
-    impl TransactionStore for FakeTransactionStore {
-        fn create(&mut self, amount: f64) -> Result<Transaction, Error> {
-            self.create_from_builder(TransactionBuilder::new(amount))
-        }
-
-        fn create_from_builder(
-            &mut self,
-            builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            let next_id = match self.transactions.last() {
-                Some(transaction) => transaction.id() + 1,
-                None => 0,
-            };
-
-            let transaction = builder.finalise(next_id);
-
-            self.transactions.push(transaction.clone());
-            self.create_calls.lock().unwrap().push(transaction.clone());
-
-            Ok(transaction)
-        }
-
-        fn import(
-            &mut self,
-            _builders: Vec<TransactionBuilder>,
-        ) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn get(&self, id: DatabaseID) -> Result<Transaction, Error> {
-            self.transactions
-                .iter()
-                .find(|transaction| transaction.id() == id)
-                .ok_or(Error::NotFound)
-                .map(|transaction| transaction.to_owned())
-        }
-
-        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn count(&self) -> Result<usize, Error> {
-            todo!()
-        }
+    fn get_test_connection() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
     }
 
     #[tokio::test]
     async fn can_create_transaction() {
+        let conn = get_test_connection();
         let state = TransactionState {
-            transaction_store: FakeTransactionStore::new(),
+            db_connection: Arc::new(Mutex::new(conn)),
         };
-        let want = Transaction::build(12.3)
-            .date(OffsetDateTime::now_utc().date())
-            .unwrap()
-            .description("aaaaaaaaaaaaa")
-            .category(Some(1))
-            .finalise(0);
 
         let form = TransactionForm {
-            description: want.description().to_string(),
-            amount: want.amount(),
-            date: want.date().to_owned(),
-            category_id: want.category_id().unwrap(),
+            description: "test transaction".to_string(),
+            amount: 12.3,
+            date: OffsetDateTime::now_utc().date(),
+            category_id: 0, // 0 means no category
         };
 
         let response = create_transaction(State(state.clone()), Form(form))
             .await
             .into_response();
 
-        assert_create_calls(state, want.clone());
         assert_redirects_to_transactions_view(response);
+
+        // Verify the transaction was actually created by getting it by ID
+        // We know the first transaction will have ID 1
+        let connection = state.db_connection.lock().unwrap();
+        let transaction = get_transaction(1, &connection).unwrap();
+        assert_eq!(transaction.amount(), 12.3);
+        assert_eq!(transaction.description(), "test transaction");
     }
 
     #[tokio::test]
     async fn can_get_transaction() {
-        let mut state = TransactionState {
-            transaction_store: FakeTransactionStore::new(),
+        let conn = get_test_connection();
+        let state = TransactionState {
+            db_connection: Arc::new(Mutex::new(conn)),
         };
-        let transaction = state
-            .transaction_store
-            .create_from_builder(
-                TransactionBuilder::new(13.34)
-                    .category(Some(24))
-                    .description("foobar"),
-            )
-            .unwrap();
 
-        let response = get_transaction(State(state), Path(transaction.id()))
+        // Create a transaction first
+        let transaction = {
+            let connection = state.db_connection.lock().unwrap();
+            create_transaction_db(
+                TransactionBuilder::new(13.34).description("foobar"),
+                &connection,
+            )
+            .unwrap()
+        };
+
+        let response = get_transaction_endpoint(State(state), Path(transaction.id()))
             .await
             .into_response();
 
@@ -232,21 +176,6 @@ mod transaction_tests {
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
 
         serde_json::from_slice(&body).unwrap()
-    }
-
-    #[track_caller]
-    fn assert_create_calls(state: TransactionState<FakeTransactionStore>, want: Transaction) {
-        let create_calls = state.transaction_store.create_calls.lock().unwrap().clone();
-
-        assert_eq!(
-            create_calls.len(),
-            1,
-            "got {} calls to create transaction, want 1",
-            create_calls.len()
-        );
-
-        let got = &create_calls[0];
-        assert_eq!(got, &want, "got transaction {:#?} want {:#?}", got, want);
     }
 
     #[track_caller]

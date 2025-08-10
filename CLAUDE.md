@@ -36,9 +36,9 @@ cargo run --bin create_test_db -- --output-path test.db
 
 **Key Architectural Patterns:**
 
-1. **Store Pattern Transition**: The codebase is actively refactoring away from abstract store traits to direct database connections. Prefer using `Arc<Mutex<Connection>>` directly rather than the `TransactionStore` trait for new code.
+1. **Direct Database Access**: The codebase uses direct database connections via `Arc<Mutex<Connection>>` rather than abstract store patterns. All database operations use functions that take `rusqlite::Connection` as a parameter (typically as the last argument).
 
-2. **State Management**: The `AppState<T>` struct holds shared application state including database connections, cookie keys, and pagination config. Route handlers extract specific state slices using `FromRef` implementations.
+2. **State Management**: The `AppState` struct holds shared application state including database connections, cookie keys, and pagination config. Route handlers extract specific state slices using `FromRef` implementations.
 
 3. **Authentication**: Cookie-based authentication using private encrypted cookies. The `auth::middleware` module provides guards for protected routes.
 
@@ -56,9 +56,9 @@ cargo run --bin create_test_db -- --output-path test.db
 - Direct SQL queries preferred over ORM abstractions
 
 **Key Modules:**
-- `src/state.rs` - Application state and dependency injection
+- `src/state.rs` - Application state and dependency injection with SQLite initialization
 - `src/routes/mod.rs` - Route definitions and middleware
-- `src/stores/sqlite/` - SQLite-specific database implementations
+- `src/transaction.rs` - Transaction database operations and queries
 - `src/auth/` - Authentication middleware and cookie handling
 - `src/models/` - Domain models (User, Transaction, etc.)
 
@@ -67,5 +67,18 @@ cargo run --bin create_test_db -- --output-path test.db
 - Route testing with `axum-test` crate
 - HTML parsing tests should use document tree parsing rather than string matching
 
-**Current Refactoring Focus:**
-The codebase is actively removing the store pattern abstraction layer in favor of direct database access. When working with database operations, prefer injecting `Arc<Mutex<Connection>>` directly rather than using store traits.
+**Database Function Conventions:**
+When working with database operations, follow these patterns:
+- Database functions typically take connection as the last parameter: `fn operation(params, connection: &Connection)`
+- Use `Arc<Mutex<Connection>>` for shared database access in route handlers
+- All tests use in-memory databases with the `get_test_connection()` helper function
+- Import database functions directly rather than using qualified imports
+- Create `AppState` with `AppState::new(connection, cookie_secret, pagination_config)` - it handles database initialization automatically
+
+## Recent Changes
+
+- **Store Pattern Removal (2025-08)**: The codebase previously used abstract
+   `TransactionStore` and `SQLiteTransactionStore` patterns. These have been
+   removed in favor of direct database function calls to modularise the codebase
+   so that changes in one feature are isolated and do not affect other features.
+   All functionality remains the same but with cleaner architecture.
