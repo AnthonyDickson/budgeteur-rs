@@ -171,35 +171,38 @@ fn upsert_balance(
     imported_balance: &ImportBalance,
     connection: &Connection,
 ) -> Result<Balance, Error> {
-    let next_id: i64 =
-        connection.query_row("SELECT COALESCE(MAX(id), 0) FROM balance;", [], |row| {
-            row.get(0)
-        })?;
-    let next_id = next_id + 1;
-
-    connection.execute(
-        "INSERT INTO balance AS b (id, account, balance, date)
-            VALUES (?1, ?2, ?3, ?4)
-            ON CONFLICT(account) DO UPDATE SET
-                balance=excluded.balance,
-                date=excluded.date
-            WHERE excluded.date > b.date AND b.account = excluded.account;",
-        (
-            next_id,
-            &imported_balance.account,
-            imported_balance.balance,
-            imported_balance.date,
-        ),
-    )?;
-
-    let balance = connection
-        .prepare("SELECT id, account, balance, date FROM balance WHERE account = :account;")?
+    // First, try the upsert with RETURNING
+    let maybe_balance = connection
+        .prepare(
+            "INSERT INTO balance (account, balance, date)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(account) DO UPDATE SET
+                 balance = excluded.balance,
+                 date = excluded.date
+             WHERE excluded.date > balance.date
+             RETURNING id, account, balance, date",
+        )?
         .query_row(
-            &[(":account", &imported_balance.account)],
+            (
+                &imported_balance.account,
+                imported_balance.balance,
+                imported_balance.date,
+            ),
             map_row_to_balance,
-        )?;
+        );
 
-    Ok(balance)
+    match maybe_balance {
+        Ok(balance) => Ok(balance),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            // No rows returned means the WHERE condition wasn't met
+            // (trying to insert older data), so fetch the existing record
+            connection
+                .prepare("SELECT id, account, balance, date FROM balance WHERE account = ?1")?
+                .query_row([&imported_balance.account], map_row_to_balance)
+                .map_err(Error::from)
+        }
+        Err(error) => Err(Error::from(error)),
+    }
 }
 
 fn map_row_to_balance(row: &rusqlite::Row) -> Result<Balance, rusqlite::Error> {

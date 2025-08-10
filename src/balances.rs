@@ -18,7 +18,7 @@ use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
 use time::Date;
 
-/// Renders the page for creating a transaction.
+/// Renders the balances page showing all account balances.
 pub async fn get_balances_page(State(state): State<BalanceState>) -> Response {
     let connection = &state
         .db_connection

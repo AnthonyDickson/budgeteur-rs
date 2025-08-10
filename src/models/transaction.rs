@@ -85,16 +85,99 @@ impl Transaction {
     }
 }
 
-/// Builder for creating a new [Transaction].
+/// A builder for creating [Transaction] instances.
 ///
-/// The function for finalizing the builder is [TransactionBuilder::finalise].
-#[derive(Debug, Clone, PartialEq)]
+/// This builder allows you to construct transactions step by step, providing
+/// sensible defaults for optional fields. Once all required fields are set,
+/// call `finalise()` to create the actual [Transaction].
+///
+/// # Examples
+///
+/// ```rust
+/// use time::macros::date;
+///
+/// use budgeteur_rs::models::Transaction;
+///
+/// // Simple transaction with just an amount
+/// let transaction = Transaction::build(150.00)
+///     .finalise(1);
+///
+/// // Transaction with full details
+/// let transaction = Transaction::build(-45.99)
+///     .date(date!(2025-01-15))
+///     .unwrap()
+///     .description("Coffee shop purchase")
+///     .category(Some(5))
+///     .import_id(Some(987654321))
+///     .finalise(2);
+/// ```
+#[derive(Debug, PartialEq, Clone)]
 pub struct TransactionBuilder {
-    amount: f64,
-    date: Date,
-    description: String,
-    category_id: Option<DatabaseID>,
-    import_id: Option<i64>,
+    /// The monetary amount of the transaction.
+    ///
+    /// Positive values represent income/credits, negative values represent
+    /// expenses/debits. This follows standard accounting conventions where
+    /// money flowing into your account is positive.
+    ///
+    /// # Examples
+    /// - `150.00` - Salary deposit
+    /// - `-45.99` - Coffee shop purchase
+    /// - `-1200.00` - Rent payment
+    pub amount: f64,
+
+    /// The date when the transaction occurred.
+    ///
+    /// Defaults to today's date if not specified. The date must not be in the
+    /// future - transactions cannot be dated later than the current date.
+    ///
+    /// This represents the actual transaction date (when money moved), not
+    /// when it was recorded in your system.
+    pub date: Date,
+
+    /// A human-readable description of the transaction.
+    ///
+    /// Defaults to "Transaction" if not specified. This field is used to help
+    /// identify and categorize transactions. For imported transactions, this
+    /// typically comes from the bank's description field.
+    ///
+    /// # Examples
+    /// - `"Salary - January 2025"`
+    /// - `"Starbucks #1234 - Downtown"`
+    /// - `"TRANSFER TO A R DICKSON - 01"`
+    /// - `"POS W/D LOBSTER SEAFOO-19:47"`
+    pub description: String,
+
+    /// Optional reference to a category for organizing transactions.
+    ///
+    /// If `Some(id)`, the transaction will be associated with the category
+    /// having that database ID. If `None`, the transaction remains uncategorized.
+    ///
+    /// Categories help with budgeting and expense tracking by grouping similar
+    /// transactions together (e.g., "Food & Dining", "Transportation", "Utilities").
+    ///
+    /// # Database Constraint
+    /// If specified, the category ID must exist in the categories table,
+    /// otherwise transaction creation will fail with [Error::InvalidCategory].
+    pub category_id: Option<DatabaseID>,
+
+    /// Optional unique identifier for imported transactions.
+    ///
+    /// This field is used to prevent duplicate imports when processing CSV files
+    /// from banks. Each imported transaction gets a unique hash based on its
+    /// content (date, amount, description, etc.).
+    ///
+    /// - `Some(id)` - Transaction was imported from a CSV file
+    /// - `None` - Transaction was created manually by the user
+    ///
+    /// # Duplicate Prevention
+    /// The database enforces uniqueness on this field. Attempting to import
+    /// a transaction with a duplicate `import_id` will fail gracefully, allowing
+    /// the same CSV file to be imported multiple times safely.
+    ///
+    /// # Implementation Note
+    /// The import ID is typically generated using [crate::csv::create_import_id]
+    /// which creates a hash from the raw CSV line content.
+    pub import_id: Option<i64>,
 }
 
 impl TransactionBuilder {

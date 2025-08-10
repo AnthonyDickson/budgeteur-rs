@@ -59,28 +59,34 @@ impl TransactionStore for SQLiteTransactionStore {
     fn create_from_builder(&mut self, builder: TransactionBuilder) -> Result<Transaction, Error> {
         let connection = self.connection.lock().unwrap();
 
-        let next_id: i64 = connection.query_row(
-            "SELECT COALESCE(MAX(id), 0) FROM \"transaction\"",
-            [],
-            |row| row.get(0),
-        )?;
-        let next_id = next_id + 1;
-
-        let transaction = builder.finalise(next_id);
-
-        connection
-                .execute(
-                    "INSERT INTO \"transaction\" (id, amount, date, description, category_id, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    (transaction.id(), transaction.amount(), transaction.date(), transaction.description(), transaction.category_id(), transaction.import_id()),
-                ).map_err(|error| match error
-                {
-                    // Code 787 occurs when a FOREIGN KEY constraint failed.
-                    // The client tried to add a transaction for a non-existent category.
-                    rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
-                        Error::InvalidCategory
-                    }
-                    error => error.into()
-                })?;
+        let transaction = connection
+            .prepare(
+                "INSERT INTO \"transaction\" (amount, date, description, category_id, import_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 RETURNING id, amount, date, description, category_id, import_id",
+            )?
+            .query_row(
+                (
+                    builder.amount,
+                    builder.date,
+                    builder.description,
+                    builder.category_id,
+                    builder.import_id,
+                ),
+                Self::map_row,
+            )
+            .map_err(|error| match error {
+                // Code 787 occurs when a FOREIGN KEY constraint failed.
+                // The client tried to add a transaction for a non-existent category.
+                rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
+                    Error::InvalidCategory
+                }
+                // Handle duplicate import_id constraint violation
+                rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 2067 => {
+                    Error::DuplicateImportId
+                }
+                error => error.into(),
+            })?;
 
         Ok(transaction)
     }
@@ -93,45 +99,41 @@ impl TransactionStore for SQLiteTransactionStore {
     /// Returns an [Error::SqlError] if there is an unexpected SQL error.
     fn import(&mut self, builders: Vec<TransactionBuilder>) -> Result<Vec<Transaction>, Error> {
         let connection = self.connection.lock().unwrap();
-        let next_id: i64 = connection.query_row(
-            "SELECT COALESCE(MAX(id), 0) FROM \"transaction\"",
-            [],
-            |row| row.get(0),
+
+        let tx = connection.unchecked_transaction()?;
+        let mut imported_transactions = Vec::new();
+
+        // Prepare the insert statement once for reuse
+        let mut stmt = tx.prepare(
+            "INSERT INTO \"transaction\" (amount, date, description, category_id, import_id)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(import_id) DO NOTHING
+         RETURNING id, amount, date, description, category_id, import_id",
         )?;
 
-        let transactions = builders
-            .into_iter()
-            .enumerate()
-            .map(|(i, builder)| builder.finalise(next_id + 1 + i as i64))
-            .collect::<Vec<_>>();
+        for builder in builders {
+            // Try to insert and get the result
+            let maybe_transaction = stmt.query_row(
+                (
+                    builder.amount,
+                    builder.date,
+                    builder.description,
+                    builder.category_id,
+                    builder.import_id,
+                ),
+                Self::map_row,
+            );
 
-        let mut statements = vec!["BEGIN".to_string()];
-        for transaction in transactions.iter() {
-            statements.push(format!(
-                r#"INSERT INTO "transaction" (id, amount, date, description, category_id, import_id)
-                   VALUES ({}, {}, '{}', '{}', {}, {}) ON CONFLICT(import_id) DO NOTHING"#,
-                transaction.id(),
-                transaction.amount(),
-                transaction.date(),
-                // SQLite uses a single quote for strings, so we need to escape single quotes in
-                // the description with double single quotes.
-                transaction.description().replace("'", "''"),
-                transaction
-                    .category_id()
-                    .map(|id| id.to_string())
-                    .unwrap_or("NULL".to_string()),
-                transaction
-                    .import_id()
-                    .map(|id| id.to_string())
-                    .unwrap_or("NULL".to_string()),
-            ));
+            // Only collect successfully inserted transactions (not conflicts)
+            if let Ok(transaction) = maybe_transaction {
+                imported_transactions.push(transaction);
+            }
         }
-        statements.push("COMMIT;".to_string());
 
-        let query = statements.join(";\n");
-        connection.execute_batch(&query)?;
+        drop(stmt);
 
-        Ok(transactions)
+        tx.commit()?;
+        Ok(imported_transactions)
     }
 
     /// Retrieve a transaction in the database by its `id`.
@@ -218,7 +220,7 @@ impl CreateTable for SQLiteTransactionStore {
         connection
                 .execute(
                     "CREATE TABLE IF NOT EXISTS \"transaction\" (
-                            id INTEGER PRIMARY KEY,
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
                             amount REAL NOT NULL,
                             date TEXT NOT NULL,
                             description TEXT NOT NULL,
@@ -228,6 +230,12 @@ impl CreateTable for SQLiteTransactionStore {
                             )",
                     (),
                 )?;
+
+        // Ensure the sequence starts at 1
+        connection.execute(
+            "INSERT OR IGNORE INTO sqlite_sequence (name, seq) VALUES ('transaction', 0)",
+            (),
+        )?;
 
         Ok(())
     }
@@ -356,22 +364,35 @@ mod sqlite_transaction_store_tests {
 
         let duplicate_transactions = store
             .import(vec![Transaction::build(123.45).import_id(import_id)])
-            .expect("Could not create transaction");
+            .expect("Could not import transactions");
 
+        // The import should return 0 transactions since the import_id already exists
         assert_eq!(
             duplicate_transactions.len(),
-            1,
-            "import should ignore transactions with duplicate import IDs: want 1 transaction, got {}",
+            0,
+            "import should ignore transactions with duplicate import IDs: want 0 transactions, got {}",
             duplicate_transactions.len()
         );
 
-        let got = &duplicate_transactions[0];
-        let error_message = format!("want transaction {want:?}, got {got:?}");
-        assert_eq!(want.amount(), got.amount(), "{error_message}");
-        assert_eq!(want.date(), got.date(), "{error_message}");
-        assert_eq!(want.description(), got.description(), "{error_message}");
-        assert_eq!(want.category_id(), got.category_id(), "{error_message}");
-        assert_eq!(want.import_id(), got.import_id(), "{error_message}");
+        // Verify that only the original transaction exists in the database
+        let all_transactions = store
+            .get_query(TransactionQuery::default())
+            .expect("Could not query transactions");
+
+        assert_eq!(
+            all_transactions.len(),
+            1,
+            "Expected exactly 1 transaction in database after duplicate import attempt, got {}",
+            all_transactions.len()
+        );
+
+        // Verify the original transaction is unchanged
+        let stored_transaction = &all_transactions[0];
+        assert_eq!(stored_transaction.amount(), want.amount());
+        assert_eq!(stored_transaction.date(), want.date());
+        assert_eq!(stored_transaction.description(), want.description());
+        assert_eq!(stored_transaction.category_id(), want.category_id());
+        assert_eq!(stored_transaction.import_id(), want.import_id());
     }
 
     #[tokio::test]
