@@ -6,8 +6,7 @@ use axum::{
 use time::Date;
 
 use crate::{
-    category::get_all_categories,
-    models::Category,
+    category::{Category, get_all_categories},
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
@@ -66,8 +65,7 @@ mod new_transaction_route_tests {
     use time::OffsetDateTime;
 
     use crate::{
-        category::{create_category, create_category_table},
-        models::{Category, CategoryName},
+        category::{Category, CategoryName, create_category, create_category_table},
         routes::endpoints,
         state::NewTransactionState,
     };

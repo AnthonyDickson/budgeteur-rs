@@ -1,7 +1,6 @@
 # To Do
 
 - Rework AppState to replace stores with rusqlite Connection
-  - Replace usage of `CategoryStore` and `SQLiteCategoryStore` with functions that take database connection
   - Code using stores can be replaced with functions that use the connection directly
   - Queries can be optimised to just what's needed
   - Functions using the connection can be mocked by using function pointers
