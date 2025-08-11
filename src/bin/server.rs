@@ -66,10 +66,8 @@ async fn main() {
     };
 
     let addr = SocketAddr::from((address, args.port));
-    let conn = Connection::open(&args.db_path).expect(&format!(
-        "Could not open database file at {}: ",
-        args.db_path
-    ));
+    let conn = Connection::open(&args.db_path)
+        .unwrap_or_else(|_| panic!("Could not open database file at {}: ", args.db_path));
     let app_config = match AppState::new(conn, &secret, Default::default()) {
         Ok(config) => config,
         Err(error) => {

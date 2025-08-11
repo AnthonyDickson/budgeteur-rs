@@ -170,13 +170,13 @@ fn create_log_in_error_response<'a>(
 ) -> LogInFormTemplate<'a> {
     LogInFormTemplate {
         email_input: EmailInputTemplate {
-            value: &email_input,
+            value: email_input,
             error_message: "",
         },
         password_input: PasswordInputTemplate {
             value: "",
             min_length: 0,
-            error_message: error_message,
+            error_message,
         },
         ..Default::default()
     }

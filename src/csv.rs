@@ -4,7 +4,7 @@ use time::{
     Date, OffsetDateTime, format_description::BorrowedFormatItem, macros::format_description,
 };
 
-use crate::{Error, models::TransactionBuilder};
+use crate::{Error, transaction::TransactionBuilder};
 
 /// An account and balance imported from a CSV.
 #[derive(Debug, PartialEq)]
@@ -584,7 +584,7 @@ mod parse_csv_tests {
             ImportBalance, ParseCSVResult, create_import_id, parse_asb_bank_csv,
             parse_kiwibank_bank_csv, parse_kiwibank_bank_simple_csv,
         },
-        models::TransactionBuilder,
+        transaction::TransactionBuilder,
     };
 
     use super::parse_asb_cc_csv;

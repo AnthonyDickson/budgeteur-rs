@@ -2,7 +2,7 @@
 
 use askama::Template;
 
-use crate::models::Transaction;
+use crate::transaction::Transaction;
 
 use super::endpoints;
 

@@ -15,17 +15,13 @@ pub mod endpoints;
 mod log_out;
 pub mod navigation;
 pub mod templates;
-mod transaction;
 mod views;
 
 use log_out::get_log_out;
-use transaction::{create_transaction, get_transaction_endpoint};
 use views::{
     dashboard::get_dashboard_page,
     forgot_password::get_forgot_password_page,
     import::{get_import_page, import_transactions},
-    new_transaction::get_new_transaction_page,
-    transactions::get_transactions_page,
 };
 
 use crate::{
@@ -35,6 +31,10 @@ use crate::{
     category::{create_category_endpoint, get_new_category_page},
     log_in::{get_log_in_page, post_log_in},
     register_user::{get_register_page, register_user},
+    transaction::{
+        create_transaction_endpoint, get_new_transaction_page, get_transaction_endpoint,
+        get_transactions_page,
+    },
 };
 
 /// Return a router with all the app's routes.
@@ -73,7 +73,10 @@ pub fn build_router(state: AppState) -> Router {
     // HTMX requests.
     let protected_routes = protected_routes.merge(
         Router::new()
-            .route(endpoints::TRANSACTIONS_API, post(create_transaction))
+            .route(
+                endpoints::TRANSACTIONS_API,
+                post(create_transaction_endpoint),
+            )
             .route(endpoints::CATEGORIES, post(create_category_endpoint))
             .route(endpoints::IMPORT, post(import_transactions))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),

@@ -1,6 +1,6 @@
 # To Do
 
-- Merge transaction views and models into `src/transaction.rs`.
+- Merge this branch into `release/v0.5.0` branch, use Claude to generate PR title/description
 - Remove accessors from `User` struct in `src/models/user.rs`.
 - Add proper error handling for new transaction page handler in `src/routes/views/new_transaction.rs`
 - Update dashboard

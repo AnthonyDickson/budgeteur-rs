@@ -71,7 +71,9 @@ mod dashboard_route_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        db::initialize, models::Transaction, state::DashboardState, transaction::create_transaction,
+        db::initialize,
+        state::DashboardState,
+        transaction::{Transaction, create_transaction},
     };
     use rusqlite::Connection;
     use std::sync::{Arc, Mutex};

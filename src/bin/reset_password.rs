@@ -42,8 +42,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn get_user(db_path: &Path) -> User {
     println!("Loading user from from {db_path:#?}");
 
-    let conn =
-        Connection::open(db_path).expect(&format!("Could not open the database at {db_path:?}"));
+    let conn = Connection::open(db_path)
+        .unwrap_or_else(|_| panic!("Could not open the database at {db_path:?}"));
 
     get_user_by_id(UserID::new(1), &conn).expect("Could not get user with ID=1 in {db_path}.")
 }
@@ -69,7 +69,7 @@ fn validate_db_path(db_path: &Path) {
 
 fn get_new_password_hash() -> Option<PasswordHash> {
     loop {
-        println!("");
+        println!();
 
         let first_password = match rpassword::prompt_password("Enter a new password: ") {
             Ok(string) => string,
