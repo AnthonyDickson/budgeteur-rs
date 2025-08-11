@@ -58,9 +58,10 @@ cargo run --bin create_test_db -- --output-path test.db
 **Key Modules:**
 - `src/state.rs` - Application state and dependency injection with SQLite initialization
 - `src/routes/mod.rs` - Route definitions and middleware
-- `src/transaction.rs` - Transaction database operations and queries
+- `src/transaction.rs` - Transaction database operations, queries, and route handlers
 - `src/auth/` - Authentication middleware and cookie handling
 - `src/models/` - Domain models (User, Transaction, etc.)
+- `src/*.rs` - Individual feature modules (balances, category, user, etc.) containing database operations and business logic
 
 **Testing Strategy:**
 - Integration tests use in-memory SQLite databases
@@ -82,3 +83,10 @@ When working with database operations, follow these patterns:
    removed in favor of direct database function calls to modularise the codebase
    so that changes in one feature are isolated and do not affect other features.
    All functionality remains the same but with cleaner architecture.
+
+- **Route Handler Consolidation (2025-08)**: Transaction route handlers have been
+   merged into `src/transaction.rs` for better code organization and feature isolation.
+
+- **Model Organization (2025-08)**: All remaining models have been moved to the
+   `src/` directory as individual feature modules, improving code organization
+   and making features more self-contained.
