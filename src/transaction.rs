@@ -26,7 +26,7 @@ use time::{Date, OffsetDateTime};
 use crate::{
     AppState, Error,
     category::{Category, get_all_categories},
-    models::DatabaseID,
+    database_id::DatabaseID,
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     routes::{
         endpoints,

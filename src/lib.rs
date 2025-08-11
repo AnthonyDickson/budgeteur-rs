@@ -23,11 +23,12 @@ mod auth;
 mod balances;
 mod category;
 mod csv;
+mod database_id;
 pub mod db;
 mod log_in;
 mod logging;
-pub mod models;
 mod pagination;
+mod password;
 mod register_user;
 mod routes;
 mod state;
@@ -35,6 +36,7 @@ pub mod transaction;
 pub mod user;
 
 pub use logging::logging_middleware;
+pub use password::{PasswordHash, ValidatedPassword};
 pub use routes::build_router;
 pub use state::AppState;
 

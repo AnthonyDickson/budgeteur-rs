@@ -1,7 +1,7 @@
 //! Displays accounts and their balances.
 use crate::{
     AppState, Error,
-    models::DatabaseID,
+    database_id::DatabaseID,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},

@@ -21,7 +21,7 @@ use time::Duration;
 use crate::{
     AppState, Error,
     auth::cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
-    models::{PasswordHash, ValidatedPassword},
+    PasswordHash, ValidatedPassword,
     routes::{
         endpoints, get_internal_server_error_redirect,
         templates::{
@@ -397,7 +397,7 @@ mod register_user_tests {
     use serde::{Deserialize, Serialize};
 
     use crate::{
-        models::PasswordHash,
+        PasswordHash,
         register_user::{RegisterForm, register_user},
         routes::endpoints,
         user::{create_user, create_user_table},

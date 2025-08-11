@@ -10,7 +10,7 @@ use budgeteur_rs::user::{User, UserID, get_user_by_id};
 use clap::Parser;
 use rusqlite::Connection;
 
-use budgeteur_rs::models::{PasswordHash, ValidatedPassword};
+use budgeteur_rs::{PasswordHash, ValidatedPassword};
 
 /// A utility for changing the password for a registered user.
 #[derive(Parser, Debug)]

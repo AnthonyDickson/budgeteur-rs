@@ -3,7 +3,7 @@
 use email_address::EmailAddress;
 use rusqlite::Connection;
 
-use crate::{Error, models::PasswordHash};
+use crate::{Error, PasswordHash};
 use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
@@ -187,7 +187,7 @@ mod user_tests {
     use rusqlite::Connection;
 
     use crate::{
-        models::PasswordHash,
+        PasswordHash,
         user::{UserID, count_users, create_user, get_user_by_email, get_user_by_id},
     };
 

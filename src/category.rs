@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AppState, Error,
-    models::DatabaseID,
+    database_id::DatabaseID,
     routes::{
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},

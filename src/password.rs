@@ -117,7 +117,7 @@ impl AsRef<str> for PasswordHash {
 
 #[cfg(test)]
 mod validated_password_tests {
-    use crate::{Error, models::ValidatedPassword};
+    use crate::{Error, ValidatedPassword};
 
     #[test]
     fn new_fails_on_empty() {
@@ -143,7 +143,7 @@ mod validated_password_tests {
 
 #[cfg(test)]
 mod password_hash_tests {
-    use crate::models::{PasswordHash, ValidatedPassword};
+    use crate::{PasswordHash, ValidatedPassword};
 
     #[test]
     fn verify_password_succeeds_for_valid_password() {

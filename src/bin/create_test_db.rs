@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 use budgeteur_rs::{
     db::initialize,
-    models::{PasswordHash, ValidatedPassword},
+    PasswordHash, ValidatedPassword,
 };
 
 /// A utility for creating a test database for the REST API server of budgeteur_rs.

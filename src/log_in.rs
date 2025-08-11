@@ -400,7 +400,7 @@ mod log_in_tests {
 
     use crate::{
         auth::cookie::{COOKIE_EXPIRY, COOKIE_USER_ID},
-        models::{PasswordHash, ValidatedPassword},
+        PasswordHash, ValidatedPassword,
         routes::endpoints,
         user::{User, UserID, create_user_table},
     };
