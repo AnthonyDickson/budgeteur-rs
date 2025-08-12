@@ -8,10 +8,8 @@ use axum::{
 use time::{Duration, OffsetDateTime};
 
 use crate::{
-    routes::{
-        endpoints,
-        navigation::{NavbarTemplate, get_nav_bar},
-    },
+    endpoints,
+    navigation::{NavbarTemplate, get_nav_bar},
     state::DashboardState,
     transaction::{TransactionQuery, query_transactions},
 };

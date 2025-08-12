@@ -19,15 +19,13 @@ use serde::{Deserialize, Serialize};
 use time::Duration;
 
 use crate::{
-    AppState, Error,
-    auth::cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
-    PasswordHash, ValidatedPassword,
-    routes::{
-        endpoints, get_internal_server_error_redirect,
-        templates::{
-            ConfirmPasswordInputTemplate, EmailInputTemplate, PasswordInputTemplate,
-            RegisterFormTemplate,
-        },
+    AppState, Error, PasswordHash, ValidatedPassword,
+    auth_cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
+    endpoints,
+    routing::get_internal_server_error_redirect,
+    shared_templates::{
+        ConfirmPasswordInputTemplate, EmailInputTemplate, PasswordInputTemplate,
+        RegisterFormTemplate,
     },
     state::create_cookie_key,
     user::{count_users, create_user, get_user_by_email},
@@ -261,7 +259,7 @@ mod get_register_page_tests {
     use scraper::Html;
     use serde::{Deserialize, Serialize};
 
-    use crate::{register_user::get_register_page, routes::endpoints};
+    use crate::{endpoints, register_user::get_register_page};
 
     #[derive(Serialize, Deserialize)]
     struct Foo {
@@ -397,9 +395,8 @@ mod register_user_tests {
     use serde::{Deserialize, Serialize};
 
     use crate::{
-        PasswordHash,
+        PasswordHash, endpoints,
         register_user::{RegisterForm, register_user},
-        routes::endpoints,
         user::{create_user, create_user_table},
     };
 

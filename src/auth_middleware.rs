@@ -1,4 +1,4 @@
-//! Defines middleware for checking if a user is authenticated.
+//! Authentication middleware that validates cookies, extends sessions, and handles redirects.
 
 use axum::{
     extract::{FromRequestParts, Request, State},
@@ -10,9 +10,11 @@ use axum_extra::extract::PrivateCookieJar;
 use axum_htmx::HxRedirect;
 use time::Duration;
 
-use crate::{routes::endpoints, state::AuthState};
-
-use super::cookie::{extend_auth_cookie_duration_if_needed, get_user_id_from_auth_cookie};
+use crate::{
+    auth_cookie::{extend_auth_cookie_duration_if_needed, get_user_id_from_auth_cookie},
+    endpoints,
+    state::AuthState,
+};
 
 /// Middleware function that checks for a valid authorization cookie.
 /// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the log-in page is returned using `get_redirect`.
@@ -118,11 +120,9 @@ mod auth_guard_tests {
 
     use crate::{
         Error,
-        auth::{
-            cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
-            middleware::auth_guard,
-        },
-        routes::endpoints::{self, format_endpoint},
+        auth_cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
+        auth_middleware::auth_guard,
+        endpoints::{self, format_endpoint},
         state::AuthState,
         user::UserID,
     };

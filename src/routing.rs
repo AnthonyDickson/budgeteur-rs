@@ -1,4 +1,4 @@
-//! This module defines the REST API's routes and their handlers.
+//! Application router configuration with protected and unprotected route definitions.
 
 use askama_axum::Template;
 use axum::{
@@ -11,25 +11,17 @@ use axum::{
 use axum_htmx::HxRedirect;
 use tower_http::services::ServeDir;
 
-pub mod endpoints;
-mod log_out;
-pub mod navigation;
-pub mod templates;
-mod views;
-
-use log_out::get_log_out;
-use views::{
-    dashboard::get_dashboard_page,
-    forgot_password::get_forgot_password_page,
-    import::{get_import_page, import_transactions},
-};
-
 use crate::{
     AppState,
-    auth::middleware::{auth_guard, auth_guard_hx},
+    auth_middleware::{auth_guard, auth_guard_hx},
     balances::get_balances_page,
     category::{create_category_endpoint, get_new_category_page},
+    dashboard::get_dashboard_page,
+    endpoints,
+    forgot_password::get_forgot_password_page,
+    import::{get_import_page, import_transactions},
     log_in::{get_log_in_page, post_log_in},
+    log_out::get_log_out,
     register_user::{get_register_page, register_user},
     transaction::{
         create_transaction_endpoint, get_new_transaction_page, get_transaction_endpoint,
@@ -132,7 +124,7 @@ mod root_route_tests {
     use askama_axum::IntoResponse;
     use axum::http::StatusCode;
 
-    use crate::routes::{endpoints, get_index_page};
+    use crate::{endpoints, routing::get_index_page};
 
     #[tokio::test]
     async fn root_redirects_to_dashboard() {

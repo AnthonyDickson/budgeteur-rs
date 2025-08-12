@@ -18,11 +18,9 @@ use time::Duration;
 
 use crate::{
     AppState, Error,
-    auth::cookie::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
-    routes::{
-        endpoints,
-        templates::{EmailInputTemplate, LogInFormTemplate, PasswordInputTemplate},
-    },
+    auth_cookie::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
+    endpoints,
+    shared_templates::{EmailInputTemplate, LogInFormTemplate, PasswordInputTemplate},
     state::create_cookie_key,
     user::{User, get_user_by_email},
 };
@@ -220,7 +218,7 @@ mod log_in_page_tests {
     use rusqlite::Connection;
     use scraper::Html;
 
-    use crate::{routes::endpoints, user::create_user_table};
+    use crate::{endpoints, user::create_user_table};
 
     use super::{
         INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, User, get_log_in_page, post_log_in,
@@ -399,9 +397,9 @@ mod log_in_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::cookie::{COOKIE_EXPIRY, COOKIE_USER_ID},
         PasswordHash, ValidatedPassword,
-        routes::endpoints,
+        auth_cookie::{COOKIE_EXPIRY, COOKIE_USER_ID},
+        endpoints,
         user::{User, UserID, create_user_table},
     };
 

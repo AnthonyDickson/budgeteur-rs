@@ -28,12 +28,12 @@ use crate::{
     category::{Category, get_all_categories},
     database_id::DatabaseID,
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
-    routes::{
+    state::{NewTransactionState, TransactionState},
+    {
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
-        templates::TransactionRow,
+        shared_templates::TransactionRow,
     },
-    state::{NewTransactionState, TransactionState},
 };
 
 // ============================================================================
@@ -1156,8 +1156,8 @@ mod view_tests {
     use crate::{
         category::{Category, CategoryName, create_category, create_category_table},
         db::initialize,
+        endpoints,
         pagination::PaginationConfig,
-        routes::endpoints,
         state::NewTransactionState,
     };
 

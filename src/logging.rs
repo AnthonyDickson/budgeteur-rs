@@ -2,7 +2,7 @@
 
 use axum::{extract::Request, http::header::CONTENT_TYPE, middleware::Next, response::Response};
 
-use crate::routes::endpoints;
+use crate::endpoints;
 
 /// Log the request and response for each request.
 ///

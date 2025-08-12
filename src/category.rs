@@ -18,11 +18,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     AppState, Error,
     database_id::DatabaseID,
-    routes::{
-        endpoints,
-        navigation::{NavbarTemplate, get_nav_bar},
-        templates::NewCategoryFormTemplate,
-    },
+    endpoints,
+    navigation::{NavbarTemplate, get_nav_bar},
+    shared_templates::NewCategoryFormTemplate,
 };
 
 /// The name of a category.
@@ -314,7 +312,7 @@ mod new_category_page_tests {
     use axum::{http::StatusCode, response::Response};
     use scraper::{ElementRef, Html};
 
-    use crate::{category::get_new_category_page, routes::endpoints};
+    use crate::{category::get_new_category_page, endpoints};
 
     #[tokio::test]
     async fn render_page() {
@@ -432,7 +430,7 @@ mod create_category_endpoint_tests {
 
     use crate::{
         category::{Category, CategoryName, create_category_endpoint, get_category},
-        routes::endpoints,
+        endpoints,
     };
 
     use super::{CategoryData, CategoryState, create_category_table};

@@ -89,7 +89,7 @@ pub fn format_endpoint(endpoint_path: &str, id: i64) -> String {
 mod endpoints_tests {
     use axum::http::Uri;
 
-    use crate::routes::endpoints;
+    use crate::endpoints;
 
     use super::format_endpoint;
 

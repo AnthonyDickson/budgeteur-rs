@@ -4,7 +4,7 @@ use askama::Template;
 
 use crate::transaction::Transaction;
 
-use super::endpoints;
+use crate::endpoints;
 
 #[derive(Template, Default)]
 #[template(path = "partials/register/inputs/email.html")]

@@ -19,25 +19,33 @@ use axum::{
 use axum_server::Handle;
 use tokio::signal;
 
-mod auth;
+mod auth_cookie;
+mod auth_middleware;
 mod balances;
 mod category;
 mod csv;
+mod dashboard;
 mod database_id;
 pub mod db;
+mod endpoints;
+mod forgot_password;
+mod import;
 mod log_in;
+mod log_out;
 mod logging;
+mod navigation;
 mod pagination;
 mod password;
 mod register_user;
-mod routes;
+mod routing;
+mod shared_templates;
 mod state;
 pub mod transaction;
 pub mod user;
 
 pub use logging::logging_middleware;
 pub use password::{PasswordHash, ValidatedPassword};
-pub use routes::build_router;
+pub use routing::build_router;
 pub use state::AppState;
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and

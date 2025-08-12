@@ -13,10 +13,8 @@ use crate::{
     AppState, Error,
     balances::Balance,
     csv::{ImportBalance, parse_csv},
-    routes::{
-        endpoints,
-        navigation::{NavbarTemplate, get_nav_bar},
-    },
+    endpoints,
+    navigation::{NavbarTemplate, get_nav_bar},
     transaction::import_transactions as import_transaction_list,
 };
 
@@ -217,7 +215,7 @@ mod upsert_balance_tests {
     use crate::{
         balances::{Balance, create_balance_table},
         csv::ImportBalance,
-        routes::views::import::upsert_balance,
+        import::upsert_balance,
     };
 
     #[tokio::test]
@@ -443,10 +441,8 @@ mod import_transactions_tests {
         Error,
         balances::Balance,
         db::initialize,
-        routes::{
-            endpoints,
-            views::import::{ImportState, get_import_page, import_transactions},
-        },
+        endpoints,
+        import::{ImportState, get_import_page, import_transactions},
         transaction::count_transactions,
     };
 

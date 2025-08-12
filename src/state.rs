@@ -9,7 +9,7 @@ use sha2::{Digest, Sha512};
 use time::Duration;
 
 use crate::{
-    Error, auth::cookie::DEFAULT_COOKIE_DURATION, db::initialize, pagination::PaginationConfig,
+    Error, auth_cookie::DEFAULT_COOKIE_DURATION, db::initialize, pagination::PaginationConfig,
 };
 
 /// The state of the REST server.

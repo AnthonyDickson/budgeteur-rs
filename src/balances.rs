@@ -2,7 +2,7 @@
 use crate::{
     AppState, Error,
     database_id::DatabaseID,
-    routes::{
+    {
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
     },
@@ -196,7 +196,7 @@ mod balances_template_tests {
 
     use crate::{
         balances::{Balance, BalancesTemplate},
-        routes::{endpoints, navigation::get_nav_bar},
+        {endpoints, navigation::get_nav_bar},
     };
 
     #[tokio::test]

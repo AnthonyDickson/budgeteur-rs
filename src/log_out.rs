@@ -1,12 +1,9 @@
-//! This file defines the high-level log-out route logic.
-//! The underlying auth logic is handled by the auth module.
+//! Log-out route handler that invalidates authentication cookies and redirects users.
 
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::PrivateCookieJar;
 
-use crate::auth::cookie::invalidate_auth_cookie;
-
-use super::endpoints;
+use crate::{auth_cookie::invalidate_auth_cookie, endpoints};
 
 /// Invalidate the auth cookie and redirect the client to the log-in page.
 pub async fn get_log_out(jar: PrivateCookieJar) -> Response {
@@ -31,8 +28,9 @@ mod log_out_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::cookie::{COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
-        routes::{endpoints, log_out::get_log_out},
+        auth_cookie::{COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
+        endpoints,
+        log_out::get_log_out,
         user::UserID,
     };
 
