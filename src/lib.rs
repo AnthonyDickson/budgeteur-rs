@@ -207,7 +207,7 @@ impl IntoResponse for Error {
             }
             // Any errors that are not handled above are not intended to be shown to the client.
             error => {
-                println!("An unexpected error occurred: {}", error);
+                tracing::error!("An unexpected error occurred: {}", error);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
             }
         }

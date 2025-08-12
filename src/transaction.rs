@@ -51,7 +51,6 @@ pub struct Transaction {
     description: String,
     category_id: Option<DatabaseID>,
     import_id: Option<i64>,
-    // TODO: Make all fields pub and remove the accessor methods.
 }
 
 impl Transaction {
@@ -1489,12 +1488,12 @@ mod view_tests {
             let th = row
                 .select(&th_selector)
                 .next()
-                .expect(&format!("Could not find th element in table row {i}"));
+                .unwrap_or_else(|| panic!("Could not find th element in table row {i}"));
 
             let id_str = th.text().collect::<String>();
-            let got_id: i64 = id_str.trim().parse().expect(&format!(
-                "Could not parse ID {id_str} on table row {i} as integer"
-            ));
+            let got_id: i64 = id_str.trim().parse().unwrap_or_else(|_| {
+                panic!("Could not parse ID {id_str} on table row {i} as integer")
+            });
 
             assert_eq!(
                 got_id,
@@ -1548,10 +1547,12 @@ mod view_tests {
                         text.trim().to_owned()
                     };
 
-                    let got_page_number: u64 = text.parse().expect(&format!(
-                        "Could not parse \"{text}\" as a u64 for list item {i} in {}",
-                        list_item.html()
-                    ));
+                    let got_page_number: u64 = text.parse().unwrap_or_else(|_| {
+                        panic!(
+                            "Could not parse \"{text}\" as a u64 for list item {i} in {}",
+                            list_item.html()
+                        )
+                    });
 
                     assert_eq!(
                         want_page,
@@ -1561,17 +1562,18 @@ mod view_tests {
                     );
                 }
                 PaginationIndicator::Page(want_page) => {
-                    let link = list_item
-                        .select(&link_selector)
-                        .next()
-                        .expect(&format!("Could not get link (<a> tag) for list item {i}"));
+                    let link = list_item.select(&link_selector).next().unwrap_or_else(|| {
+                        panic!("Could not get link (<a> tag) for list item {i}")
+                    });
                     let link_text = {
                         let text = link.text().collect::<String>();
                         text.trim().to_owned()
                     };
-                    let got_page_number = link_text.parse::<u64>().expect(&format!(
-                        "Could not parse page number {link_text} for page {want_page} as usize"
-                    ));
+                    let got_page_number = link_text.parse::<u64>().unwrap_or_else(|_| {
+                        panic!(
+                            "Could not parse page number {link_text} for page {want_page} as usize"
+                        )
+                    });
 
                     assert_eq!(
                         want_page,
@@ -1580,9 +1582,9 @@ mod view_tests {
                         pagination_indicator.html()
                     );
 
-                    let link_target = link.attr("href").expect(&format!(
-                        "Link for page {want_page} did not have href element"
-                    ));
+                    let link_target = link.attr("href").unwrap_or_else(|| {
+                        panic!("Link for page {want_page} did not have href element")
+                    });
                     let want_target = format!(
                         "{}?page={want_page}&per_page={want_per_page}",
                         endpoints::TRANSACTIONS_VIEW
@@ -1603,10 +1605,9 @@ mod view_tests {
                     assert_eq!(got_text, "...");
                 }
                 PaginationIndicator::NextButton(want_page) => {
-                    let link = list_item
-                        .select(&link_selector)
-                        .next()
-                        .expect(&format!("Could not get link (<a> tag) for list item {i}"));
+                    let link = list_item.select(&link_selector).next().unwrap_or_else(|| {
+                        panic!("Could not get link (<a> tag) for list item {i}")
+                    });
                     let link_text = {
                         let text = link.text().collect::<String>();
                         text.trim().to_owned()
@@ -1618,7 +1619,7 @@ mod view_tests {
 
                     let role = link
                         .attr("role")
-                        .expect(&format!("The next button did not have \"role\" attribute."));
+                        .expect("The next button did not have \"role\" attribute.");
                     assert_eq!(
                         role, "button",
                         "The next page anchor tag should be marked as a button."
@@ -1626,7 +1627,7 @@ mod view_tests {
 
                     let link_target = link
                         .attr("href")
-                        .expect(&format!("Link for next button did not have href element"));
+                        .expect("Link for next button did not have href element");
                     let want_target = format!(
                         "{}?page={want_page}&per_page={want_per_page}",
                         endpoints::TRANSACTIONS_VIEW
@@ -1637,10 +1638,9 @@ mod view_tests {
                     );
                 }
                 PaginationIndicator::BackButton(want_page) => {
-                    let link = list_item
-                        .select(&link_selector)
-                        .next()
-                        .expect(&format!("Could not get link (<a> tag) for list item {i}"));
+                    let link = list_item.select(&link_selector).next().unwrap_or_else(|| {
+                        panic!("Could not get link (<a> tag) for list item {i}")
+                    });
                     let link_text = {
                         let text = link.text().collect::<String>();
                         text.trim().to_owned()
@@ -1652,7 +1652,7 @@ mod view_tests {
 
                     let role = link
                         .attr("role")
-                        .expect(&format!("The back button did not have \"role\" attribute."));
+                        .expect("The back button did not have \"role\" attribute.");
                     assert_eq!(
                         role, "button",
                         "The back button's anchor tag should be marked as a button."
@@ -1660,7 +1660,7 @@ mod view_tests {
 
                     let link_target = link
                         .attr("href")
-                        .expect(&format!("Link for back button did not have href element"));
+                        .expect("Link for back button did not have href element");
                     let want_target = format!(
                         "{}?page={want_page}&per_page={want_per_page}",
                         endpoints::TRANSACTIONS_VIEW

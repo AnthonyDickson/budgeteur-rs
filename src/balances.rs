@@ -1,12 +1,7 @@
 //! Displays accounts and their balances.
-use crate::{
-    AppState, Error,
-    database_id::DatabaseID,
-    {
-        endpoints,
-        navigation::{NavbarTemplate, get_nav_bar},
-    },
-};
+
+use std::sync::{Arc, Mutex};
+
 use askama::Template;
 use askama_axum::IntoResponse;
 use axum::{
@@ -14,8 +9,14 @@ use axum::{
     response::Response,
 };
 use rusqlite::Connection;
-use std::sync::{Arc, Mutex};
 use time::Date;
+
+use crate::{
+    AppState, Error,
+    database_id::DatabaseID,
+    endpoints,
+    navigation::{NavbarTemplate, get_nav_bar},
+};
 
 /// Renders the balances page showing all account balances.
 pub async fn get_balances_page(State(state): State<BalanceState>) -> Response {
@@ -163,9 +164,9 @@ mod get_all_balances_tests {
                         balance.date.to_string(),
                     ),
                 )
-                .expect(&format!(
-                    "Could not insert balance {balance:?} into the database"
-                ));
+                .unwrap_or_else(|_| {
+                    panic!("Could not insert balance {balance:?} into the database")
+                });
         });
 
         let balances = get_all_balances(&connection);
@@ -276,9 +277,7 @@ mod balances_template_tests {
             let got_account: String = table_row
                 .select(&row_header_selector)
                 .next()
-                .expect(&format!(
-                    "Could not find table header <th> in table row {row}."
-                ))
+                .unwrap_or_else(|| panic!("Could not find table header <th> in table row {row}."))
                 .text()
                 .collect();
             let columns: Vec<ElementRef<'_>> = table_row.select(&row_cell_selector).collect();
@@ -447,9 +446,7 @@ mod get_balances_page_tests {
             let got_account: String = table_row
                 .select(&row_header_selector)
                 .next()
-                .expect(&format!(
-                    "Could not find table header <th> in table row {row}."
-                ))
+                .unwrap_or_else(|| panic!("Could not find table header <th> in table row {row}."))
                 .text()
                 .collect();
             let columns: Vec<ElementRef<'_>> = table_row.select(&row_cell_selector).collect();

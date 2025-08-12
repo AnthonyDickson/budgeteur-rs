@@ -1,12 +1,12 @@
 //! Code for creating the user table and fetching users from the database.
 
-use email_address::EmailAddress;
-use rusqlite::Connection;
-
-use crate::{Error, PasswordHash};
 use std::fmt::Display;
 
+use email_address::EmailAddress;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+
+use crate::{Error, PasswordHash};
 
 /// A newtype wrapper for integer user IDs.
 ///

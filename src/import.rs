@@ -286,7 +286,7 @@ mod upsert_balance_tests {
         create_balance_table(&connection).expect("Could not create balances table");
 
         for balance in &want {
-            let balance = upsert_balance(
+            upsert_balance(
                 &ImportBalance {
                     account: balance.account.clone(),
                     balance: balance.balance,
@@ -295,7 +295,6 @@ mod upsert_balance_tests {
                 &connection,
             )
             .expect("Could not create account balance");
-            println!("{balance:#?}");
         }
 
         let mut got = Vec::new();
@@ -309,7 +308,6 @@ mod upsert_balance_tests {
                 &connection,
             )
             .expect("Could not create account balance");
-            println!("{got_balance:#?}");
             got.push(got_balance);
         }
 
@@ -663,9 +661,10 @@ mod import_transactions_tests {
         assert_content_type(&response, "text/html; charset=utf-8");
 
         // Check that no transactions were created
-        let connection = state.db_connection.lock().unwrap();
-        let transaction_count =
-            count_transactions(&connection).expect("Could not count transactions");
+        let transaction_count = {
+            let connection = state.db_connection.lock().unwrap();
+            count_transactions(&connection).expect("Could not count transactions")
+        };
         assert_eq!(
             transaction_count, 0,
             "want 0 transactions created, got {transaction_count}"
@@ -696,9 +695,10 @@ mod import_transactions_tests {
         assert_content_type(&response, "text/html; charset=utf-8");
 
         // Check that no transactions were created
-        let connection = state.db_connection.lock().unwrap();
-        let transaction_count =
-            count_transactions(&connection).expect("Could not count transactions");
+        let transaction_count = {
+            let connection = state.db_connection.lock().unwrap();
+            count_transactions(&connection).expect("Could not count transactions")
+        };
         assert_eq!(
             transaction_count, 0,
             "want 0 transactions created, got {transaction_count}"

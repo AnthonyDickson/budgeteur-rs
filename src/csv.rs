@@ -423,7 +423,6 @@ fn parse_kiwibank_bank_csv(text: &str) -> Result<ParseCSVResult, Error> {
                         parts[BALANCE_COLUMN]
                     ))
                 })?;
-                // TODO: Does this get moved by transaction builder?
                 date = Date::parse(parts[DATE_COLUMN], &DATE_FORMAT).map_err(|error| {
                     Error::InvalidCSV(format!(
                         "Could not parse '{}' as date on line {line_number}: {error}",
