@@ -1,7 +1,5 @@
 # To Do
 
-- Consolidate tests? At least collect common/repeated functions and patterns.
-- Merge this branch into `release/v0.5.0` branch, use Claude to generate PR title/description
 - Remove accessors from `User` struct in `src/models/user.rs`.
 - Add proper error handling for new transaction page handler in `src/routes/views/new_transaction.rs`
 - Update dashboard

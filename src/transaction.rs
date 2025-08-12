@@ -527,6 +527,64 @@ pub fn query_transactions(
         .collect()
 }
 
+/// Get transactions within a specific date range.
+///
+/// # Arguments
+/// * `date_range` - Date range (inclusive) to filter transactions
+/// * `connection` - Database connection reference
+///
+/// # Errors
+/// Returns [Error::SqlError] if:
+/// - Database connection fails
+/// - SQL query execution fails
+/// - Transaction row mapping fails
+pub fn get_transactions_in_date_range(
+    date_range: RangeInclusive<Date>,
+    connection: &Connection,
+) -> Result<Vec<Transaction>, Error> {
+    connection
+        .prepare("SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" WHERE date BETWEEN ?1 AND ?2")?
+        .query_map([Value::Text(date_range.start().to_string()), Value::Text(date_range.end().to_string())], map_transaction_row)?
+        .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
+        .collect()
+}
+
+/// Get transactions with pagination and sorting by date.
+///
+/// # Arguments
+/// * `limit` - Maximum number of transactions to return
+/// * `offset` - Number of transactions to skip
+/// * `sort_order` - Sort direction for date field
+/// * `connection` - Database connection reference
+///
+/// # Errors
+/// Returns [Error::SqlError] if:
+/// - Database connection fails
+/// - SQL query preparation or execution fails
+/// - Transaction row mapping fails
+pub fn get_transactions_paginated(
+    limit: u64,
+    offset: u64,
+    sort_order: SortOrder,
+    connection: &Connection,
+) -> Result<Vec<Transaction>, Error> {
+    let order_clause = match sort_order {
+        SortOrder::Ascending => "ORDER BY date ASC",
+        SortOrder::Descending => "ORDER BY date DESC",
+    };
+
+    let query = format!(
+        "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" {} LIMIT {} OFFSET {}",
+        order_clause, limit, offset
+    );
+
+    connection
+        .prepare(&query)?
+        .query_map([], map_transaction_row)?
+        .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
+        .collect()
+}
+
 /// Get the total number of transactions in the database.
 ///
 /// # Errors
@@ -648,15 +706,8 @@ pub async fn get_transactions_page(
         Err(error) => return error.into_response(),
     };
 
-    let transactions = query_transactions(
-        TransactionQuery {
-            limit: Some(limit),
-            offset,
-            sort_date: Some(SortOrder::Descending),
-            ..Default::default()
-        },
-        &connection,
-    );
+    let transactions =
+        get_transactions_paginated(limit, offset, SortOrder::Descending, &connection);
     let transactions = match transactions {
         Ok(transactions) => transactions,
         Err(error) => return error.into_response(),
@@ -907,7 +958,15 @@ mod database_tests {
         );
 
         // Verify that only the original transaction exists in the database
-        let all_transactions = query_transactions(TransactionQuery::default(), &conn)
+        let all_transactions = conn
+            .prepare(
+                "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\"",
+            )
+            .unwrap()
+            .query_map([], map_transaction_row)
+            .unwrap()
+            .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
+            .collect::<Result<Vec<Transaction>, Error>>()
             .expect("Could not query transactions");
 
         assert_eq!(
@@ -1016,14 +1075,7 @@ mod database_tests {
             create_transaction(TransactionBuilder::new(999.99).date(date).unwrap(), &conn).unwrap();
         }
 
-        let got = query_transactions(
-            TransactionQuery {
-                date_range: Some(start_date..=end_date),
-                ..Default::default()
-            },
-            &conn,
-        )
-        .unwrap();
+        let got = get_transactions_in_date_range(start_date..=end_date, &conn).unwrap();
 
         assert_eq!(got, want, "got transactions {:?}, want {:?}", got, want);
     }
@@ -1043,14 +1095,7 @@ mod database_tests {
             create_transaction(transaction_builder, &conn).unwrap();
         }
 
-        let got = query_transactions(
-            TransactionQuery {
-                limit: Some(5),
-                ..Default::default()
-            },
-            &conn,
-        )
-        .unwrap();
+        let got = get_transactions_paginated(5, 0, SortOrder::Ascending, &conn).unwrap();
 
         assert_eq!(got.len(), 5, "got {} transactions, want 5", got.len());
     }
@@ -1070,15 +1115,8 @@ mod database_tests {
             }
         }
 
-        let got = query_transactions(
-            TransactionQuery {
-                offset,
-                limit: Some(limit),
-                ..Default::default()
-            },
-            &conn,
-        )
-        .expect("Could not query transactions");
+        let got = get_transactions_paginated(limit, offset, SortOrder::Ascending, &conn)
+            .expect("Could not query transactions");
 
         assert_eq!(want, got);
     }
@@ -1105,13 +1143,11 @@ mod database_tests {
 
         want.sort_by(|a, b| b.date().cmp(a.date()));
 
-        let got = query_transactions(
-            TransactionQuery {
-                sort_date: Some(SortOrder::Descending),
-                ..Default::default()
-            },
-            &conn,
-        )
+        let got = conn
+            .prepare("SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" ORDER BY date DESC").unwrap()
+            .query_map([], map_transaction_row).unwrap()
+            .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
+            .collect::<Result<Vec<Transaction>, Error>>()
         .unwrap();
 
         assert_eq!(

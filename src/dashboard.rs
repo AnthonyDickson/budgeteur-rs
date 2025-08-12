@@ -11,7 +11,7 @@ use crate::{
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
     state::DashboardState,
-    transaction::{TransactionQuery, query_transactions},
+    transaction::get_transactions_in_date_range,
 };
 
 /// Renders the dashboard page.
@@ -40,13 +40,7 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
     };
 
     let connection = state.db_connection.lock().unwrap();
-    let transactions = query_transactions(
-        TransactionQuery {
-            date_range: Some(one_week_ago..=today),
-            ..Default::default()
-        },
-        &connection,
-    );
+    let transactions = get_transactions_in_date_range(one_week_ago..=today, &connection);
 
     let balance = match transactions {
         Ok(transactions) => transactions
