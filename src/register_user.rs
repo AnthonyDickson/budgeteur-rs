@@ -215,7 +215,7 @@ pub async fn register_user(
             .expect("Could not acquire database lock"),
     )
     .map(|user| {
-        let jar = set_auth_cookie(jar, user.id(), state.cookie_duration);
+        let jar = set_auth_cookie(jar, user.id, state.cookie_duration);
 
         match jar {
             Ok(jar) => (

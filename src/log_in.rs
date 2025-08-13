@@ -121,7 +121,7 @@ pub async fn post_log_in(
         }
     };
 
-    let is_password_valid = match user.password_hash().verify(&user_data.password) {
+    let is_password_valid = match user.password_hash.verify(&user_data.password) {
         Ok(is_password_valid) => is_password_valid,
         Err(error) => {
             tracing::error!("Unhandled error while verifying credentials: {error}");
@@ -143,7 +143,7 @@ pub async fn post_log_in(
         state.cookie_duration
     };
 
-    set_auth_cookie(jar.clone(), user.id(), cookie_duration)
+    set_auth_cookie(jar.clone(), user.id, cookie_duration)
         .map(|updated_jar| {
             (
                 StatusCode::SEE_OTHER,
