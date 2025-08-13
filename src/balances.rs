@@ -120,12 +120,10 @@ fn map_row(row: &rusqlite::Row) -> Result<Balance, rusqlite::Error> {
 /// - Database connection fails
 /// - SQL query preparation or execution fails
 pub fn get_total_account_balance(connection: &Connection) -> Result<f64, Error> {
-    let mut stmt = connection.prepare(
-        "SELECT COALESCE(SUM(balance), 0) FROM balance"
-    )?;
+    let mut stmt = connection.prepare("SELECT COALESCE(SUM(balance), 0) FROM balance")?;
 
     let total: f64 = stmt.query_row([], |row| row.get(0))?;
-    
+
     Ok(total)
 }
 
@@ -315,9 +313,9 @@ mod balances_template_tests {
                 want.account
             );
             assert_eq!(
-                format!("${}", want.balance),
+                format!("${:.0}", want.balance),
                 got_balance,
-                "want balance ${}, got {got_balance}.",
+                "want balance ${:.0}, got {got_balance}.",
                 want.balance
             );
             assert_eq!(
@@ -484,9 +482,9 @@ mod get_balances_page_tests {
                 want.account
             );
             assert_eq!(
-                format!("${}", want.balance),
+                format!("${:.0}", want.balance),
                 got_balance,
-                "want balance ${}, got {got_balance}.",
+                "want balance ${:.0}, got {got_balance}.",
                 want.balance
             );
             assert_eq!(
@@ -541,25 +539,28 @@ mod get_total_account_balance_tests {
     #[test]
     fn returns_sum_of_all_balances() {
         let conn = get_test_connection();
-        
+
         // Insert test balances
         conn.execute(
             "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
             (1, "Account 1", 100.50, date!(2024 - 01 - 01).to_string()),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         conn.execute(
             "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
             (2, "Account 2", 250.75, date!(2024 - 01 - 01).to_string()),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         conn.execute(
             "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
             (3, "Account 3", -50.25, date!(2024 - 01 - 01).to_string()),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = get_total_account_balance(&conn).unwrap();
-        
+
         assert_eq!(result, 301.0);
     }
 
@@ -568,27 +569,29 @@ mod get_total_account_balance_tests {
         let conn = get_test_connection();
 
         let result = get_total_account_balance(&conn).unwrap();
-        
+
         assert_eq!(result, 0.0);
     }
 
     #[test]
     fn handles_negative_balances() {
         let conn = get_test_connection();
-        
+
         // Insert test balances with negative total
         conn.execute(
             "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
             (1, "Account 1", -200.0, date!(2024 - 01 - 01).to_string()),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         conn.execute(
             "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
             (2, "Account 2", 100.0, date!(2024 - 01 - 01).to_string()),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = get_total_account_balance(&conn).unwrap();
-        
+
         assert_eq!(result, -100.0);
     }
 }

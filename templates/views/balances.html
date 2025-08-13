@@ -16,7 +16,7 @@
         {% for balance in balances %}
         <tr>
           <th scope="row">{{ balance.account }}</th>
-          <td>${{ balance.balance }}</td>
+          <td>${{ "{:.0}"|format(balance.balance) }}</td>
           <td>{{ balance.date }}</td>
         </tr>
         {% endfor %}

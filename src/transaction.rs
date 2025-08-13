@@ -538,7 +538,6 @@ pub fn query_transactions(
         .collect()
 }
 
-
 /// Get a summary of transactions (income, expenses, net income) within a date range.
 ///
 /// # Arguments
@@ -558,14 +557,15 @@ pub fn get_transaction_summary(
             COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) as income,
             COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) as expenses
         FROM \"transaction\" 
-        WHERE date BETWEEN ?1 AND ?2"
+        WHERE date BETWEEN ?1 AND ?2",
     )?;
 
     let (income, expenses): (f64, f64) = stmt.query_row(
-        [&date_range.start().to_string(), &date_range.end().to_string()],
-        |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        }
+        [
+            &date_range.start().to_string(),
+            &date_range.end().to_string(),
+        ],
+        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
 
     Ok(TransactionSummary {
@@ -1063,7 +1063,6 @@ mod database_tests {
 
         assert_eq!(maybe_transaction, Err(Error::NotFound));
     }
-
 
     #[test]
     fn get_transactions_with_limit() {
@@ -1814,11 +1813,11 @@ mod route_handler_tests {
 
 #[cfg(test)]
 mod get_transaction_summary_tests {
-    use time::macros::date;
     use rusqlite::Connection;
+    use time::macros::date;
 
+    use super::{Transaction, TransactionSummary, create_transaction, get_transaction_summary};
     use crate::db::initialize;
-    use super::{TransactionSummary, create_transaction, get_transaction_summary, Transaction};
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1834,9 +1833,21 @@ mod get_transaction_summary_tests {
 
         // Create test transactions
         create_transaction(Transaction::build(100.0).date(start_date).unwrap(), &conn).unwrap();
-        create_transaction(Transaction::build(-50.0).date(date!(2024 - 01 - 15)).unwrap(), &conn).unwrap();
+        create_transaction(
+            Transaction::build(-50.0)
+                .date(date!(2024 - 01 - 15))
+                .unwrap(),
+            &conn,
+        )
+        .unwrap();
         create_transaction(Transaction::build(75.0).date(end_date).unwrap(), &conn).unwrap();
-        create_transaction(Transaction::build(-25.0).date(date!(2024 - 01 - 20)).unwrap(), &conn).unwrap();
+        create_transaction(
+            Transaction::build(-25.0)
+                .date(date!(2024 - 01 - 20))
+                .unwrap(),
+            &conn,
+        )
+        .unwrap();
 
         let result = get_transaction_summary(start_date..=end_date, &conn).unwrap();
 
@@ -1873,8 +1884,20 @@ mod get_transaction_summary_tests {
         create_transaction(Transaction::build(-50.0).date(end_date).unwrap(), &conn).unwrap();
 
         // Transactions outside range
-        create_transaction(Transaction::build(200.0).date(date!(2023 - 12 - 31)).unwrap(), &conn).unwrap();
-        create_transaction(Transaction::build(-100.0).date(date!(2024 - 02 - 01)).unwrap(), &conn).unwrap();
+        create_transaction(
+            Transaction::build(200.0)
+                .date(date!(2023 - 12 - 31))
+                .unwrap(),
+            &conn,
+        )
+        .unwrap();
+        create_transaction(
+            Transaction::build(-100.0)
+                .date(date!(2024 - 02 - 01))
+                .unwrap(),
+            &conn,
+        )
+        .unwrap();
 
         let result = get_transaction_summary(start_date..=end_date, &conn).unwrap();
 

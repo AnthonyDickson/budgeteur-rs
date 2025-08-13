@@ -1,9 +1,8 @@
 # To Do
 
-- Update dashboard
-  - Add trailing 1 month summary (income, expenses, net income)
-  - Add trailing 12 month summary (income, expenses, net income)
-  - Add net balance from account balances
+- Figure out how to separate out internal money movements from dashboard summaries.
+- Add thousands separator to monetary amounts by implementing custom currency filter for Askama
+- Split up `src/transaction.rs` into module `src/transaction/*.rs`
 - Ensure that simple and full csv imports from Kiwibank do not create duplicate
   transactions.
 - Align transactions in /transactions to the right.

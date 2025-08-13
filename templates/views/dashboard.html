@@ -10,18 +10,18 @@
     <div class="grid grid-cols-3 gap-4">
       <div class="text-center">
         <p class="text-green-600 dark:text-green-400 text-lg font-medium">Income</p>
-        <p class="text-2xl">${{ monthly_summary.income }}</p>
+        <p class="text-2xl">${{ "{:.0}"|format(monthly_summary.income) }}</p>
       </div>
       <div class="text-center">
         <p class="text-red-600 dark:text-red-400 text-lg font-medium">Expenses</p>
-        <p class="text-2xl">${{ monthly_summary.expenses }}</p>
+        <p class="text-2xl">${{ "{:.0}"|format(monthly_summary.expenses) }}</p>
       </div>
       <div class="text-center">
         <p class="text-lg font-medium">Net Income</p>
         {% if monthly_summary.net_income >= 0.0 %}
-          <p class="text-2xl text-green-600 dark:text-green-400">${{ monthly_summary.net_income }}</p>
+          <p class="text-2xl text-green-600 dark:text-green-400">${{ "{:.0}"|format(monthly_summary.net_income) }}</p>
         {% else %}
-          <p class="text-2xl text-red-600 dark:text-red-400">${{ -1.0 * monthly_summary.net_income }}</p>
+          <p class="text-2xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-1.0 * monthly_summary.net_income) }}</p>
         {% endif %}
       </div>
     </div>
@@ -33,18 +33,18 @@
     <div class="grid grid-cols-3 gap-4">
       <div class="text-center">
         <p class="text-green-600 dark:text-green-400 text-lg font-medium">Income</p>
-        <p class="text-2xl">${{ yearly_summary.income }}</p>
+        <p class="text-2xl">${{ "{:.0}"|format(yearly_summary.income) }}</p>
       </div>
       <div class="text-center">
         <p class="text-red-600 dark:text-red-400 text-lg font-medium">Expenses</p>
-        <p class="text-2xl">${{ yearly_summary.expenses }}</p>
+        <p class="text-2xl">${{ "{:.0}"|format(yearly_summary.expenses) }}</p>
       </div>
       <div class="text-center">
         <p class="text-lg font-medium">Net Income</p>
         {% if yearly_summary.net_income >= 0.0 %}
-          <p class="text-2xl text-green-600 dark:text-green-400">${{ yearly_summary.net_income }}</p>
+          <p class="text-2xl text-green-600 dark:text-green-400">${{ "{:.0}"|format(yearly_summary.net_income) }}</p>
         {% else %}
-          <p class="text-2xl text-red-600 dark:text-red-400">${{ -1.0 * yearly_summary.net_income }}</p>
+          <p class="text-2xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-1.0 * yearly_summary.net_income) }}</p>
         {% endif %}
       </div>
     </div>
@@ -55,9 +55,9 @@
     <h3 class="text-xl font-semibold mb-4">Total Account Balance</h3>
     <div class="text-center">
       {% if total_account_balance >= 0.0 %}
-        <p class="text-3xl text-green-600 dark:text-green-400">${{ total_account_balance }}</p>
+        <p class="text-3xl text-green-600 dark:text-green-400">${{ "{:.0}"|format(total_account_balance) }}</p>
       {% else %}
-        <p class="text-3xl text-red-600 dark:text-red-400">${{ -1.0 * total_account_balance }}</p>
+        <p class="text-3xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-1.0 * total_account_balance) }}</p>
       {% endif %}
     </div>
   </div>

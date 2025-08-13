@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `bacon clippy` - Lint with file watching
 - `cargo test` - Run tests
 - `cargo clippy -- -D warnings` - Lint (warnings as errors)
+- `cargo fmt` - Format code (run after verifying code works)
 
 **Maintenance:**
 - `sed -i 's/old/new/g' src/*.rs` - Batch string replacement

@@ -55,12 +55,13 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
         Err(error) => return error.into_response(),
     };
 
-    DashboardTemplate { 
-        nav_bar, 
+    DashboardTemplate {
+        nav_bar,
         monthly_summary,
         yearly_summary,
         total_account_balance,
-    }.into_response()
+    }
+    .into_response()
 }
 
 #[cfg(test)]
@@ -96,21 +97,41 @@ mod dashboard_route_tests {
 
         // Create transactions for monthly summary (within last 30 days)
         create_transaction(Transaction::build(100.0).date(today).unwrap(), &conn).unwrap();
-        create_transaction(Transaction::build(-50.0).date(today - Duration::days(15)).unwrap(), &conn).unwrap();
-        
+        create_transaction(
+            Transaction::build(-50.0)
+                .date(today - Duration::days(15))
+                .unwrap(),
+            &conn,
+        )
+        .unwrap();
+
         // Create transactions for yearly summary (within last 365 days but outside monthly range)
-        create_transaction(Transaction::build(200.0).date(today - Duration::days(60)).unwrap(), &conn).unwrap();
-        create_transaction(Transaction::build(-100.0).date(today - Duration::days(180)).unwrap(), &conn).unwrap();
+        create_transaction(
+            Transaction::build(200.0)
+                .date(today - Duration::days(60))
+                .unwrap(),
+            &conn,
+        )
+        .unwrap();
+        create_transaction(
+            Transaction::build(-100.0)
+                .date(today - Duration::days(180))
+                .unwrap(),
+            &conn,
+        )
+        .unwrap();
 
         // Create account balances
         conn.execute(
             "INSERT INTO balance (account, balance, date) VALUES (?1, ?2, ?3)",
             ("Account 1", 500.0, today.to_string()),
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO balance (account, balance, date) VALUES (?1, ?2, ?3)",
             ("Account 2", 250.0, today.to_string()),
-        ).unwrap();
+        )
+        .unwrap();
 
         let state = DashboardState {
             db_connection: Arc::new(Mutex::new(conn)),
@@ -119,7 +140,7 @@ mod dashboard_route_tests {
         let response = get_dashboard_page(State(state)).await;
 
         assert_eq!(response.status(), StatusCode::OK);
-        
+
         let html = parse_html(response).await;
         assert_valid_html(&html);
 
@@ -156,7 +177,7 @@ mod dashboard_route_tests {
     #[track_caller]
     fn get_section_by_heading<'a>(html: &'a Html, heading_text: &str) -> scraper::ElementRef<'a> {
         let heading_selector = Selector::parse("h3").unwrap();
-        
+
         for heading in html.select(&heading_selector) {
             let text: String = heading.text().collect();
             if text.trim() == heading_text {
