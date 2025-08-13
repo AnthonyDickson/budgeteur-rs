@@ -1,7 +1,14 @@
 # To Do
 
-- Figure out how to separate out internal money movements from dashboard summaries.
+- Add rules-based auto-tagger (new branch, merge back w/ PR):
+  - Separate category from transaction type and table, and create a separate table that will allow for 1-N mapping of transactions to categories
+  - Rename categories to tags
+  - Add a user-configurable rules-based (text patterns) auto-tagging feature
+  - Use rules-based tagger for automatically tagging imports
+  - Add UI for manually trigger tagger on either all transactions or all untagged transactions
+- Use rules-based tagger to mark internal transfers
 - Add thousands separator to monetary amounts by implementing custom currency filter for Askama
+- Align dashboard elements nicely
 - Split up `src/transaction.rs` into module `src/transaction/*.rs`
 - Ensure that simple and full csv imports from Kiwibank do not create duplicate
   transactions.
