@@ -55,6 +55,7 @@ pub const IMPORT: &str = "/api/import";
 ///
 /// If no parameter is found in `endpoint_path`, the function returns the
 /// the original `endpoint_path`.
+#[cfg(test)]
 pub fn format_endpoint(endpoint_path: &str, id: i64) -> String {
     let mut param_start = None;
     let mut param_end = None;
@@ -88,7 +89,7 @@ pub fn format_endpoint(endpoint_path: &str, id: i64) -> String {
 mod endpoints_tests {
     use axum::http::Uri;
 
-    use crate::routes::endpoints;
+    use crate::endpoints;
 
     use super::format_endpoint;
 

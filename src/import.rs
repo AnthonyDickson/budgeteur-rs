@@ -1,20 +1,37 @@
+use std::sync::{Arc, Mutex};
+
 use askama_axum::Template;
 use axum::{
-    extract::{Multipart, State},
+    extract::{FromRef, Multipart, State, multipart::Field},
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
+use rusqlite::Connection;
 
 use crate::{
-    csv::parse_csv,
-    routes::{
-        endpoints,
-        navigation::{NavbarTemplate, get_nav_bar},
-    },
-    state::ImportState,
-    stores::{BalanceStore, TransactionStore},
+    AppState, Error,
+    balances::Balance,
+    csv::{ImportBalance, parse_csv},
+    endpoints,
+    navigation::{NavbarTemplate, get_nav_bar},
+    transaction::import_transactions as import_transaction_list,
 };
+
+/// The state needed for importing transactions.
+#[derive(Debug, Clone)]
+pub struct ImportState {
+    /// The database connection for managing transactions.
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for ImportState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
 
 /// Renders the form for creating a category.
 #[derive(Template)]
@@ -43,14 +60,10 @@ pub async fn get_import_page() -> Response {
     .into_response()
 }
 
-pub async fn import_transactions<B, T>(
-    State(mut state): State<ImportState<B, T>>,
+pub async fn import_transactions(
+    State(state): State<ImportState>,
     mut multipart: Multipart,
-) -> Response
-where
-    B: BalanceStore + Send + Sync,
-    T: TransactionStore + Send + Sync,
-{
+) -> Response {
     let mut transactions = Vec::new();
     let mut balances = Vec::new();
     let unexpected_error_response = ImportTransactionFormTemplate {
@@ -60,32 +73,21 @@ where
     .into_response();
 
     while let Some(field) = multipart.next_field().await.unwrap() {
-        if field.content_type() != Some("text/csv") {
-            return ImportTransactionFormTemplate {
-                import_route: endpoints::IMPORT,
-                error_message: "File type must be CSV.",
-            }
-            .into_response();
-        }
-
-        let file_name = match field.file_name() {
-            Some(file_name) => file_name.to_owned(),
-            None => {
-                tracing::error!("Could not get file name from multipart form field: {field:#?}");
-                return unexpected_error_response;
-            }
-        };
-        let data = match field.text().await {
+        let csv_data = match parse_multipart_field(field).await {
             Ok(data) => data,
-            Err(error) => {
-                tracing::error!("Could not read data from multipart form: {error}");
+            Err(Error::NotCSV) => {
+                return ImportTransactionFormTemplate {
+                    import_route: endpoints::IMPORT,
+                    error_message: "File type must be CSV.",
+                }
+                .into_response();
+            }
+            Err(_) => {
                 return unexpected_error_response;
             }
         };
 
-        tracing::debug!("Received file '{}' that is {} bytes", file_name, data.len());
-
-        match parse_csv(&data) {
+        match parse_csv(&csv_data) {
             Ok(parse_result) => {
                 transactions.extend(parse_result.transactions);
 
@@ -104,17 +106,14 @@ where
         }
     }
 
-    if let Err(error) = state.transaction_store.import(transactions) {
+    let connection = state.db_connection.lock().unwrap();
+    if let Err(error) = import_transaction_list(transactions, &connection) {
         tracing::error!("Failed to import transactions: {}", error);
         return unexpected_error_response;
     }
 
     for balance in balances {
-        if let Err(error) =
-            state
-                .balance_store
-                .upsert(&balance.account, balance.balance, &balance.date)
-        {
+        if let Err(error) = upsert_balance(&balance, &connection) {
             tracing::error!("Failed to import account balances: {error:#?}");
             return unexpected_error_response;
         }
@@ -127,6 +126,302 @@ where
         .into_response()
 }
 
+async fn parse_multipart_field(field: Field<'_>) -> Result<String, Error> {
+    if field.content_type() != Some("text/csv") {
+        return Err(Error::NotCSV);
+    }
+
+    let file_name = match field.file_name() {
+        Some(file_name) => file_name.to_owned(),
+        None => {
+            tracing::error!("Could not get file name from multipart form field: {field:#?}");
+            return Err(Error::MultipartError(
+                "Could not get file name from multipart form field".to_owned(),
+            ));
+        }
+    };
+    let data = match field.text().await {
+        Ok(data) => data.to_owned(),
+        Err(error) => {
+            tracing::error!("Could not read data from multipart form field: {error}");
+            return Err(Error::MultipartError(
+                "Could not read data from multipart form field.".to_owned(),
+            ));
+        }
+    };
+
+    tracing::debug!("Received file '{}' that is {} bytes", file_name, data.len());
+
+    Ok(data)
+}
+
+fn upsert_balance(
+    imported_balance: &ImportBalance,
+    connection: &Connection,
+) -> Result<Balance, Error> {
+    // First, try the upsert with RETURNING
+    let maybe_balance = connection
+        .prepare(
+            "INSERT INTO balance (account, balance, date)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(account) DO UPDATE SET
+                 balance = excluded.balance,
+                 date = excluded.date
+             WHERE excluded.date > balance.date
+             RETURNING id, account, balance, date",
+        )?
+        .query_row(
+            (
+                &imported_balance.account,
+                imported_balance.balance,
+                imported_balance.date,
+            ),
+            map_row_to_balance,
+        );
+
+    match maybe_balance {
+        Ok(balance) => Ok(balance),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            // No rows returned means the WHERE condition wasn't met
+            // (trying to insert older data), so fetch the existing record
+            connection
+                .prepare("SELECT id, account, balance, date FROM balance WHERE account = ?1")?
+                .query_row([&imported_balance.account], map_row_to_balance)
+                .map_err(Error::from)
+        }
+        Err(error) => Err(Error::from(error)),
+    }
+}
+
+fn map_row_to_balance(row: &rusqlite::Row) -> Result<Balance, rusqlite::Error> {
+    let id = row.get(0)?;
+    let account = row.get(1)?;
+    let balance = row.get(2)?;
+    let date = row.get(3)?;
+
+    Ok(Balance {
+        id,
+        account,
+        balance,
+        date,
+    })
+}
+
+#[cfg(test)]
+mod upsert_balance_tests {
+    use rusqlite::Connection;
+    use time::macros::date;
+
+    use crate::{
+        balances::{Balance, create_balance_table},
+        csv::ImportBalance,
+        import::upsert_balance,
+    };
+
+    #[tokio::test]
+    async fn can_upsert_balance() {
+        let connection =
+            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
+        create_balance_table(&connection).expect("Could not create balances table");
+        let want = Balance {
+            id: 1,
+            account: "1234-5678-9101-012".to_owned(),
+            balance: 37_337_252_784.63,
+            date: date!(2025 - 05 - 31),
+        };
+
+        let got = upsert_balance(
+            &ImportBalance {
+                account: want.account.clone(),
+                balance: want.balance,
+                date: want.date,
+            },
+            &connection,
+        )
+        .expect("Could not create account balance");
+
+        assert_eq!(want, got, "want balance {want:?}, got {got:?}");
+    }
+
+    /// This test detects a bug with upsert when the same CSV, and therefore the
+    /// same balances, are imported twice.
+    ///
+    /// When using the last inserted row id to fetch the balance row, if there
+    /// was a conflict which resulted in no rows being inserted/updated the row
+    /// id would either be zero if the database connection was reset, or the
+    /// last successfully inserted row otherwise. In the first case, this
+    /// resulted in an error 'NotFound: the requested resource could not be
+    /// found', and in the second case it would result in an unrelated balance
+    /// being returned.
+    #[tokio::test]
+    async fn upsert_balances_twice() {
+        let want = vec![
+            Balance {
+                id: 1,
+                account: "1234-5678-9101-012".to_owned(),
+                balance: 123.45,
+                date: date!(2025 - 05 - 31),
+            },
+            Balance {
+                id: 2,
+                account: "1234-5678-9101-013".to_owned(),
+                balance: 234.56,
+                date: date!(2025 - 05 - 31),
+            },
+            Balance {
+                id: 3,
+                account: "1234-5678-9101-014".to_owned(),
+                balance: 345.67,
+                date: date!(2025 - 05 - 27),
+            },
+            Balance {
+                id: 4,
+                account: "1234-5678-9101-015".to_owned(),
+                balance: 567.89,
+                date: date!(2025 - 06 - 06),
+            },
+        ];
+        let connection =
+            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
+        create_balance_table(&connection).expect("Could not create balances table");
+
+        for balance in &want {
+            upsert_balance(
+                &ImportBalance {
+                    account: balance.account.clone(),
+                    balance: balance.balance,
+                    date: balance.date,
+                },
+                &connection,
+            )
+            .expect("Could not create account balance");
+        }
+
+        let mut got = Vec::new();
+        for balance in &want {
+            let got_balance = upsert_balance(
+                &ImportBalance {
+                    account: balance.account.clone(),
+                    balance: balance.balance,
+                    date: balance.date,
+                },
+                &connection,
+            )
+            .expect("Could not create account balance");
+            got.push(got_balance);
+        }
+
+        assert_eq!(want, got, "want balance {want:?}, got {got:?}");
+    }
+
+    #[tokio::test]
+    async fn upsert_balance_increments_id() {
+        let want = vec![
+            Balance {
+                id: 1,
+                account: "1234-5678-9101-012".to_owned(),
+                balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
+            },
+            Balance {
+                id: 2,
+                account: "2345-6789-1011-123".to_owned(),
+                balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
+            },
+        ];
+        let connection =
+            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
+        create_balance_table(&connection).expect("Could not create balances table");
+
+        let mut got = Vec::new();
+
+        for balance in &want {
+            let got_balance = upsert_balance(
+                &ImportBalance {
+                    account: balance.account.clone(),
+                    balance: balance.balance,
+                    date: balance.date,
+                },
+                &connection,
+            )
+            .expect("Could not create account balance");
+            got.push(got_balance);
+        }
+
+        assert_eq!(want, got, "want balance {want:?}, got {got:?}");
+    }
+
+    #[tokio::test]
+    async fn upsert_takes_balance_with_latest_date() {
+        let connection =
+            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
+        create_balance_table(&connection).expect("Could not create balances table");
+        let account = "1234-5678-9101-112";
+        let test_balances = vec![
+            // This entry should be accepted in the first upsert
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 73_254.89,
+                date: date!(2025 - 05 - 30),
+            },
+            // This entry should overwrite the balance from the first upsert
+            // because it is newer
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
+            },
+            // This entry should be ignored because it is older.
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 2_727_843.43,
+                date: date!(2025 - 05 - 29),
+            },
+        ];
+        let want = vec![
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 73_254.89,
+                date: date!(2025 - 05 - 30),
+            },
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
+            },
+            Balance {
+                id: 1,
+                account: account.to_owned(),
+                balance: 37_337_252_784.63,
+                date: date!(2025 - 05 - 31),
+            },
+        ];
+
+        let mut got = Vec::new();
+
+        for balance in test_balances {
+            let got_balance = upsert_balance(
+                &ImportBalance {
+                    account: balance.account.clone(),
+                    balance: balance.balance,
+                    date: balance.date,
+                },
+                &connection,
+            )
+            .expect("Could not create account balance");
+            got.push(got_balance);
+        }
+
+        assert_eq!(want, got, "want left");
+    }
+}
+
 #[cfg(test)]
 mod import_transactions_tests {
     use std::sync::{Arc, Mutex};
@@ -136,19 +431,26 @@ mod import_transactions_tests {
         http::{Request, StatusCode},
         response::Response,
     };
+    use rusqlite::Connection;
     use scraper::{ElementRef, Html};
-    use time::{Date, macros::date};
+    use time::macros::date;
 
     use crate::{
         Error,
-        models::{Balance, DatabaseID, Transaction, TransactionBuilder},
-        routes::{
-            endpoints,
-            views::import::{get_import_page, import_transactions},
-        },
-        state::ImportState,
-        stores::{BalanceStore, TransactionQuery, TransactionStore},
+        balances::Balance,
+        db::initialize,
+        endpoints,
+        import::{ImportState, get_import_page, import_transactions},
+        transaction::count_transactions,
     };
+
+    use super::map_row_to_balance;
+
+    fn get_test_connection() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
 
     const ASB_BANK_STATEMENT_CSV: &str = "Created date / time : 12 April 2025 / 11:10:19\n\
         Bank 12; Branch 3405; Account 0123456-50 (Streamline)\n\
@@ -218,9 +520,9 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn post_multiple_bank_csv() {
+        let conn = get_test_connection();
         let state = ImportState {
-            balance_store: DummyBalanceStore,
-            transaction_store: FakeTransactionStore::new(),
+            db_connection: Arc::new(Mutex::new(conn)),
         };
         let want_transaction_count = 23;
 
@@ -237,31 +539,24 @@ mod import_transactions_tests {
         .await;
 
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap();
-        assert_eq!(
-            1,
-            create_transaction_calls.len(),
-            "want 1 call to import, got {}",
-            create_transaction_calls.len()
-        );
 
-        // Only check number of transactions imported, the tests for the csv module
-        // already checks the contents of imported transactions.
-        let got = state.transaction_store.transactions.lock().unwrap().clone();
+        // Check the number of transactions imported by querying the database
+        let connection = state.db_connection.lock().unwrap();
+        let transaction_count =
+            count_transactions(&connection).expect("Could not count transactions");
         assert_eq!(
-            want_transaction_count,
-            got.len(),
-            "want {want_transaction_count} transactions imported, {}",
-            got.len()
+            want_transaction_count, transaction_count,
+            "want {want_transaction_count} transactions imported, got {transaction_count}"
         );
         assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
     }
 
     #[tokio::test]
     async fn extracts_accounts_and_balances_asb_bank_account() {
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
-            balance_store: FakeBalanceStore::new(),
-            transaction_store: FakeTransactionStore::new(),
+            db_connection: connection.clone(),
         };
         let want_account = "12-3405-0123456-50 (Streamline)";
         let want_balance = 20.00;
@@ -273,7 +568,8 @@ mod import_transactions_tests {
         )
         .await;
 
-        let balances = state.balance_store.balances.lock().unwrap().clone();
+        let balances =
+            get_all_balances(&connection.lock().unwrap()).expect("Could not get balances");
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
         assert_eq!(
             balances.len(),
@@ -287,11 +583,20 @@ mod import_transactions_tests {
         assert_eq!(want_date, got.date);
     }
 
+    fn get_all_balances(connection: &Connection) -> Result<Vec<Balance>, Error> {
+        connection
+            .prepare("SELECT id, account, balance, date FROM balance;")?
+            .query_map([], map_row_to_balance)?
+            .map(|maybe_balance| maybe_balance.map_err(|error| error.into()))
+            .collect()
+    }
+
     #[tokio::test]
     async fn does_not_extract_accounts_and_balances_asb_cc_account() {
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
-            balance_store: FakeBalanceStore::new(),
-            transaction_store: FakeTransactionStore::new(),
+            db_connection: connection.clone(),
         };
 
         let response = import_transactions(
@@ -300,7 +605,8 @@ mod import_transactions_tests {
         )
         .await;
 
-        let balances = state.balance_store.balances.lock().unwrap().clone();
+        let balances =
+            get_all_balances(&connection.lock().unwrap()).expect("Could not get balances");
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
         assert_eq!(
             balances.len(),
@@ -311,9 +617,10 @@ mod import_transactions_tests {
     }
     #[tokio::test]
     async fn extracts_accounts_and_balances_kiwibank_bank_account() {
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
-            balance_store: FakeBalanceStore::new(),
-            transaction_store: FakeTransactionStore::new(),
+            db_connection: connection.clone(),
         };
         let want_account = "38-1234-0123456-01";
         let want_balance = 71.53;
@@ -325,7 +632,8 @@ mod import_transactions_tests {
         )
         .await;
 
-        let balances = state.balance_store.balances.lock().unwrap().clone();
+        let balances =
+            get_all_balances(&connection.lock().unwrap()).expect("Could not get balances");
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
         assert_eq!(
             balances.len(),
@@ -341,20 +649,25 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn invalid_csv_renders_error_message() {
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
-            balance_store: DummyBalanceStore,
-            transaction_store: FakeTransactionStore::new(),
+            db_connection: connection.clone(),
         };
         let response =
             import_transactions(State(state.clone()), must_make_multipart_csv(&[""]).await).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
-        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap().len();
+
+        // Check that no transactions were created
+        let transaction_count = {
+            let connection = state.db_connection.lock().unwrap();
+            count_transactions(&connection).expect("Could not count transactions")
+        };
         assert_eq!(
-            create_transaction_calls, 0,
-            "want {} transaction created, got {create_transaction_calls}",
-            0
+            transaction_count, 0,
+            "want 0 transactions created, got {transaction_count}"
         );
 
         let html = parse_html(response, HTMLParsingMode::Fragment).await;
@@ -368,9 +681,9 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn invalid_file_type_renders_error_message() {
+        let conn = get_test_connection();
         let state = ImportState {
-            balance_store: DummyBalanceStore,
-            transaction_store: FakeTransactionStore::new(),
+            db_connection: Arc::new(Mutex::new(conn)),
         };
         let response = import_transactions(
             State(state.clone()),
@@ -380,11 +693,15 @@ mod import_transactions_tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
-        let create_transaction_calls = state.transaction_store.import_calls.lock().unwrap().len();
+
+        // Check that no transactions were created
+        let transaction_count = {
+            let connection = state.db_connection.lock().unwrap();
+            count_transactions(&connection).expect("Could not count transactions")
+        };
         assert_eq!(
-            create_transaction_calls, 0,
-            "want {} transaction created, got {create_transaction_calls}",
-            0
+            transaction_count, 0,
+            "want 0 transactions created, got {transaction_count}"
         );
 
         let html = parse_html(response, HTMLParsingMode::Fragment).await;
@@ -395,9 +712,11 @@ mod import_transactions_tests {
 
     #[tokio::test]
     async fn sql_error_renders_error_message() {
+        // Create a connection without initializing the database tables to trigger SQL errors
+        let conn =
+            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
         let state = ImportState {
-            balance_store: DummyBalanceStore,
-            transaction_store: SQLErrorTransactionStore,
+            db_connection: Arc::new(Mutex::new(conn)),
         };
 
         let response = import_transactions(
@@ -629,158 +948,5 @@ mod import_transactions_tests {
             "submit",
             "want submit button with type=\"submit\""
         );
-    }
-
-    #[derive(Clone)]
-    struct DummyBalanceStore;
-
-    impl BalanceStore for DummyBalanceStore {
-        fn upsert(
-            &mut self,
-            _account: &str,
-            _balance: f64,
-            _date: &Date,
-        ) -> Result<Balance, Error> {
-            Ok(Balance {
-                id: -1,
-                account: "".to_owned(),
-                balance: 0.0,
-                date: date!(2025 - 05 - 31),
-            })
-        }
-
-        fn get_all(&self) -> Result<Vec<Balance>, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct FakeBalanceStore {
-        balances: Arc<Mutex<Vec<Balance>>>,
-    }
-
-    impl FakeBalanceStore {
-        fn new() -> Self {
-            Self {
-                balances: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-    }
-
-    impl BalanceStore for FakeBalanceStore {
-        fn upsert(&mut self, account: &str, balance: f64, date: &Date) -> Result<Balance, Error> {
-            let balance = Balance {
-                id: 0,
-                account: account.to_owned(),
-                balance,
-                date: date.to_owned(),
-            };
-
-            self.balances.lock().unwrap().push(balance.clone());
-
-            Ok(balance)
-        }
-
-        fn get_all(&self) -> Result<Vec<Balance>, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct FakeTransactionStore {
-        transactions: Arc<Mutex<Vec<Transaction>>>,
-        import_calls: Arc<Mutex<Vec<Vec<TransactionBuilder>>>>,
-    }
-
-    impl FakeTransactionStore {
-        fn new() -> Self {
-            Self {
-                transactions: Arc::new(Mutex::new(Vec::new())),
-                import_calls: Arc::new(Mutex::new(Vec::new())),
-            }
-        }
-    }
-
-    impl TransactionStore for FakeTransactionStore {
-        fn create(&mut self, amount: f64) -> Result<Transaction, Error> {
-            self.create_from_builder(TransactionBuilder::new(amount))
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn import(&mut self, builders: Vec<TransactionBuilder>) -> Result<Vec<Transaction>, Error> {
-            self.import_calls.lock().unwrap().push(builders.clone());
-
-            let next_id = match self.transactions.lock().unwrap().last() {
-                Some(transaction) => transaction.id() + 1,
-                None => 0,
-            };
-
-            let transactions: Vec<Transaction> = builders
-                .into_iter()
-                .enumerate()
-                .map(|(i, builder)| builder.finalise(next_id + i as i64))
-                .collect();
-
-            self.transactions
-                .lock()
-                .unwrap()
-                .extend(transactions.clone());
-
-            Ok(transactions)
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn count(&self) -> Result<usize, Error> {
-            todo!()
-        }
-    }
-
-    #[derive(Clone)]
-    struct SQLErrorTransactionStore;
-
-    impl TransactionStore for SQLErrorTransactionStore {
-        fn create(&mut self, _amount: f64) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn create_from_builder(
-            &mut self,
-            _builder: TransactionBuilder,
-        ) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn import(
-            &mut self,
-            _builders: Vec<TransactionBuilder>,
-        ) -> Result<Vec<Transaction>, Error> {
-            // The exact error does not matter.
-            Err(Error::SqlError(rusqlite::Error::ExecuteReturnedResults))
-        }
-
-        fn get(&self, _id: DatabaseID) -> Result<Transaction, Error> {
-            todo!()
-        }
-
-        fn get_query(&self, _filter: TransactionQuery) -> Result<Vec<Transaction>, Error> {
-            todo!()
-        }
-
-        fn count(&self) -> Result<usize, Error> {
-            todo!()
-        }
     }
 }

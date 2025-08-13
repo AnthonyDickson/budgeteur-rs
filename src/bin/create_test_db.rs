@@ -5,10 +5,7 @@ use std::process::exit;
 use clap::Parser;
 use rusqlite::Connection;
 
-use budgeteur_rs::{
-    db::initialize,
-    models::{PasswordHash, ValidatedPassword},
-};
+use budgeteur_rs::{PasswordHash, ValidatedPassword, db::initialize};
 
 /// A utility for creating a test database for the REST API server of budgeteur_rs.
 #[derive(Parser, Debug)]

@@ -3,7 +3,7 @@ use std::{
     fs::OpenOptions,
     net::{Ipv4Addr, SocketAddr},
     process::exit,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use axum::{
@@ -20,14 +20,7 @@ use tower_livereload::LiveReloadLayer;
 
 use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberInitExt};
 
-use budgeteur_rs::{
-    AppState, build_router,
-    db::initialize,
-    graceful_shutdown, logging_middleware,
-    stores::sqlite::{
-        SQLiteBalanceStore, SQLiteCategoryStore, SQLiteTransactionStore, SQLiteUserStore,
-    },
-};
+use budgeteur_rs::{AppState, build_router, graceful_shutdown, logging_middleware};
 
 /// The REST API server for budgeteur_rs.
 #[derive(Parser, Debug)]
@@ -73,23 +66,15 @@ async fn main() {
     };
 
     let addr = SocketAddr::from((address, args.port));
-    let conn = Connection::open(&args.db_path).expect(&format!(
-        "Could not open database file at {}: ",
-        args.db_path
-    ));
-    if let Err(error) = initialize(&conn) {
-        eprintln!("Could not initialize database: {error}");
-        exit(1);
-    }
-    let conn = Arc::new(Mutex::new(conn));
-    let app_config = AppState::new(
-        &secret,
-        Default::default(),
-        SQLiteBalanceStore::new(conn.clone()),
-        SQLiteCategoryStore::new(conn.clone()),
-        SQLiteTransactionStore::new(conn.clone()),
-        SQLiteUserStore::new(conn.clone()),
-    );
+    let conn = Connection::open(&args.db_path)
+        .unwrap_or_else(|_| panic!("Could not open database file at {}: ", args.db_path));
+    let app_config = match AppState::new(conn, &secret, Default::default()) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("Could not initialize database: {error}");
+            exit(1);
+        }
+    };
 
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));

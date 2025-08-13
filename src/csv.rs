@@ -4,7 +4,7 @@ use time::{
     Date, OffsetDateTime, format_description::BorrowedFormatItem, macros::format_description,
 };
 
-use crate::{Error, models::TransactionBuilder};
+use crate::{Error, transaction::TransactionBuilder};
 
 /// An account and balance imported from a CSV.
 #[derive(Debug, PartialEq)]
@@ -423,7 +423,6 @@ fn parse_kiwibank_bank_csv(text: &str) -> Result<ParseCSVResult, Error> {
                         parts[BALANCE_COLUMN]
                     ))
                 })?;
-                // TODO: Does this get moved by transaction builder?
                 date = Date::parse(parts[DATE_COLUMN], &DATE_FORMAT).map_err(|error| {
                     Error::InvalidCSV(format!(
                         "Could not parse '{}' as date on line {line_number}: {error}",
@@ -584,7 +583,7 @@ mod parse_csv_tests {
             ImportBalance, ParseCSVResult, create_import_id, parse_asb_bank_csv,
             parse_kiwibank_bank_csv, parse_kiwibank_bank_simple_csv,
         },
-        models::TransactionBuilder,
+        transaction::TransactionBuilder,
     };
 
     use super::parse_asb_cc_csv;

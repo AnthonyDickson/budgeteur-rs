@@ -3,18 +3,14 @@ use std::{
     io::{self},
     path::Path,
     process::exit,
-    sync::{Arc, Mutex},
 };
 
 use bcrypt::DEFAULT_COST;
-use budgeteur_rs::{
-    models::{User, UserID},
-    stores::{UserStore, sqlite::SQLiteUserStore},
-};
+use budgeteur_rs::user::{User, UserID, get_user_by_id};
 use clap::Parser;
 use rusqlite::Connection;
 
-use budgeteur_rs::models::{PasswordHash, ValidatedPassword};
+use budgeteur_rs::{PasswordHash, ValidatedPassword};
 
 /// A utility for changing the password for a registered user.
 #[derive(Parser, Debug)]
@@ -46,25 +42,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn get_user(db_path: &Path) -> User {
     println!("Loading user from from {db_path:#?}");
 
-    let conn =
-        Connection::open(db_path).expect(&format!("Could not open the database at {db_path:?}"));
-    let conn = Arc::new(Mutex::new(conn));
-    let store = SQLiteUserStore::new(conn);
+    let conn = Connection::open(db_path)
+        .unwrap_or_else(|_| panic!("Could not open the database at {db_path:?}"));
 
-    let user_count = store
-        .count()
-        .expect(&format!("Could not get count of users in {db_path:?}"));
-
-    if user_count != 1 {
-        print_error(format!(
-            "Expected one user in {db_path:#?}, found {user_count}."
-        ));
-        exit(1);
-    }
-
-    store
-        .get(UserID::new(1))
-        .expect("Could not get user with ID=1 in {db_path}.")
+    get_user_by_id(UserID::new(1), &conn).expect("Could not get user with ID=1 in {db_path}.")
 }
 
 fn validate_db_path(db_path: &Path) {
@@ -88,7 +69,7 @@ fn validate_db_path(db_path: &Path) {
 
 fn get_new_password_hash() -> Option<PasswordHash> {
     loop {
-        println!("");
+        println!();
 
         let first_password = match rpassword::prompt_password("Enter a new password: ") {
             Ok(string) => string,

@@ -1,18 +1,13 @@
-//! This file defines the high-level log-out route logic.
-//! The underlying auth logic is handled by the auth module.
+//! Log-out route handler that invalidates authentication cookies and redirects users.
 
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::PrivateCookieJar;
 
-use crate::auth::cookie::invalidate_auth_cookie;
-
-use super::endpoints;
+use crate::{auth_cookie::invalidate_auth_cookie, endpoints};
 
 /// Invalidate the auth cookie and redirect the client to the log-in page.
 pub async fn get_log_out(jar: PrivateCookieJar) -> Response {
     let jar = invalidate_auth_cookie(jar);
-
-    println!("{jar:#?}");
 
     (jar, Redirect::to(endpoints::LOG_IN_VIEW)).into_response()
 }
@@ -31,9 +26,10 @@ mod log_out_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        auth::cookie::{COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
-        models::UserID,
-        routes::{endpoints, log_out::get_log_out},
+        auth_cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
+        endpoints,
+        log_out::get_log_out,
+        user::UserID,
     };
 
     #[tokio::test]
@@ -64,7 +60,7 @@ mod log_out_tests {
             let cookie_string = cookie_header.to_str().unwrap();
             let cookie = Cookie::parse(cookie_string).unwrap();
 
-            if cookie.name() != COOKIE_USER_ID || cookie.name() != COOKIE_USER_ID {
+            if cookie.name() != COOKIE_USER_ID && cookie.name() != COOKIE_EXPIRY {
                 continue;
             }
 

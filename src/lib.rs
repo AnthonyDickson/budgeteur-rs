@@ -19,18 +19,33 @@ use axum::{
 use axum_server::Handle;
 use tokio::signal;
 
-mod auth;
+mod auth_cookie;
+mod auth_middleware;
+mod balances;
+mod category;
 mod csv;
+mod dashboard;
+mod database_id;
 pub mod db;
+mod endpoints;
+mod forgot_password;
+mod import;
+mod log_in;
+mod log_out;
 mod logging;
-pub mod models;
+mod navigation;
 mod pagination;
-mod routes;
+mod password;
+mod register_user;
+mod routing;
+mod shared_templates;
 mod state;
-pub mod stores;
+pub mod transaction;
+pub mod user;
 
 pub use logging::logging_middleware;
-pub use routes::build_router;
+pub use password::{PasswordHash, ValidatedPassword};
+pub use routing::build_router;
 pub use state::AppState;
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
@@ -129,6 +144,14 @@ pub enum Error {
     #[error("the import ID already exists in the database")]
     DuplicateImportId,
 
+    /// The multipart form could not be parsed as a list of CSV files.
+    #[error("Could not parse multipart form: {0}")]
+    MultipartError(String),
+
+    /// The multipart form did not contain a CSV file.
+    #[error("File is not a CSV")]
+    NotCSV,
+
     /// The CSV had issues that prevented it from being parsed.
     #[error("Could not parse the CSV file: {0}")]
     InvalidCSV(String),
@@ -184,7 +207,7 @@ impl IntoResponse for Error {
             }
             // Any errors that are not handled above are not intended to be shown to the client.
             error => {
-                println!("An unexpected error occurred: {}", error);
+                tracing::error!("An unexpected error occurred: {}", error);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
             }
         }

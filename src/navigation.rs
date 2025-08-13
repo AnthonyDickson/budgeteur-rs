@@ -1,7 +1,7 @@
 //! This file defines the templates and a convenience function for creating the navigation bar.
 use askama::Template;
 
-use crate::routes::endpoints;
+use crate::endpoints;
 
 /// Template for a link in the navigation bar.
 ///
@@ -57,7 +57,7 @@ pub fn get_nav_bar(active_endpoint: &str) -> NavbarTemplate {
 mod nav_bar_tests {
     use std::collections::HashMap;
 
-    use crate::routes::endpoints;
+    use crate::endpoints;
 
     use super::get_nav_bar;
 
