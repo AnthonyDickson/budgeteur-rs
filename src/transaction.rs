@@ -53,6 +53,17 @@ pub struct Transaction {
     import_id: Option<i64>,
 }
 
+/// A summary of transaction amounts over a period, with income, expenses, and net income.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransactionSummary {
+    /// Total positive transaction amounts (income)
+    pub income: f64,
+    /// Total negative transaction amounts (expenses, as absolute value)
+    pub expenses: f64,
+    /// Net income (income - expenses)
+    pub net_income: f64,
+}
+
 impl Transaction {
     /// Create a new transaction without checking invariants such as a valid date.
     ///
@@ -527,26 +538,41 @@ pub fn query_transactions(
         .collect()
 }
 
-/// Get transactions within a specific date range.
+
+/// Get a summary of transactions (income, expenses, net income) within a date range.
 ///
 /// # Arguments
-/// * `date_range` - Date range (inclusive) to filter transactions
+/// * `date_range` - The inclusive date range to summarize transactions for
 /// * `connection` - Database connection reference
 ///
 /// # Errors
 /// Returns [Error::SqlError] if:
 /// - Database connection fails
-/// - SQL query execution fails
-/// - Transaction row mapping fails
-pub fn get_transactions_in_date_range(
+/// - SQL query preparation or execution fails
+pub fn get_transaction_summary(
     date_range: RangeInclusive<Date>,
     connection: &Connection,
-) -> Result<Vec<Transaction>, Error> {
-    connection
-        .prepare("SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" WHERE date BETWEEN ?1 AND ?2")?
-        .query_map([Value::Text(date_range.start().to_string()), Value::Text(date_range.end().to_string())], map_transaction_row)?
-        .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
-        .collect()
+) -> Result<TransactionSummary, Error> {
+    let mut stmt = connection.prepare(
+        "SELECT 
+            COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) as income,
+            COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) as expenses
+        FROM \"transaction\" 
+        WHERE date BETWEEN ?1 AND ?2"
+    )?;
+
+    let (income, expenses): (f64, f64) = stmt.query_row(
+        [&date_range.start().to_string(), &date_range.end().to_string()],
+        |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        }
+    )?;
+
+    Ok(TransactionSummary {
+        income,
+        expenses,
+        net_income: income - expenses,
+    })
 }
 
 /// Get transactions with pagination and sorting by date.
@@ -1038,47 +1064,6 @@ mod database_tests {
         assert_eq!(maybe_transaction, Err(Error::NotFound));
     }
 
-    #[test]
-    fn get_transactions_by_date_range() {
-        let conn = get_test_connection();
-
-        let end_date = OffsetDateTime::now_utc()
-            .date()
-            .checked_sub(Duration::weeks(1))
-            .unwrap();
-        let start_date = end_date.checked_sub(Duration::weeks(1)).unwrap();
-
-        let want = [
-            create_transaction(
-                TransactionBuilder::new(12.3).date(start_date).unwrap(),
-                &conn,
-            )
-            .unwrap(),
-            create_transaction(
-                TransactionBuilder::new(23.4)
-                    .date(start_date.checked_add(Duration::days(3)).unwrap())
-                    .unwrap(),
-                &conn,
-            )
-            .unwrap(),
-            create_transaction(TransactionBuilder::new(34.5).date(end_date).unwrap(), &conn)
-                .unwrap(),
-        ];
-
-        // The below transactions should NOT be returned by the query.
-        let cases = [
-            start_date.checked_sub(Duration::days(1)).unwrap(),
-            end_date.checked_add(Duration::days(1)).unwrap(),
-        ];
-
-        for date in cases {
-            create_transaction(TransactionBuilder::new(999.99).date(date).unwrap(), &conn).unwrap();
-        }
-
-        let got = get_transactions_in_date_range(start_date..=end_date, &conn).unwrap();
-
-        assert_eq!(got, want, "got transactions {:?}, want {:?}", got, want);
-    }
 
     #[test]
     fn get_transactions_with_limit() {
@@ -1824,5 +1809,77 @@ mod route_handler_tests {
             location, "/transactions",
             "got redirect to {location:?}, want redirect to /transactions"
         );
+    }
+}
+
+#[cfg(test)]
+mod get_transaction_summary_tests {
+    use time::macros::date;
+    use rusqlite::Connection;
+
+    use crate::db::initialize;
+    use super::{TransactionSummary, create_transaction, get_transaction_summary, Transaction};
+
+    fn get_test_connection() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn returns_summary_with_income_and_expenses() {
+        let conn = get_test_connection();
+        let start_date = date!(2024 - 01 - 01);
+        let end_date = date!(2024 - 01 - 31);
+
+        // Create test transactions
+        create_transaction(Transaction::build(100.0).date(start_date).unwrap(), &conn).unwrap();
+        create_transaction(Transaction::build(-50.0).date(date!(2024 - 01 - 15)).unwrap(), &conn).unwrap();
+        create_transaction(Transaction::build(75.0).date(end_date).unwrap(), &conn).unwrap();
+        create_transaction(Transaction::build(-25.0).date(date!(2024 - 01 - 20)).unwrap(), &conn).unwrap();
+
+        let result = get_transaction_summary(start_date..=end_date, &conn).unwrap();
+
+        assert_eq!(result.income, 175.0);
+        assert_eq!(result.expenses, 75.0);
+        assert_eq!(result.net_income, 100.0);
+    }
+
+    #[test]
+    fn returns_zero_summary_for_no_transactions() {
+        let conn = get_test_connection();
+        let start_date = date!(2024 - 01 - 01);
+        let end_date = date!(2024 - 01 - 31);
+
+        let result = get_transaction_summary(start_date..=end_date, &conn).unwrap();
+
+        let expected = TransactionSummary {
+            income: 0.0,
+            expenses: 0.0,
+            net_income: 0.0,
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn excludes_transactions_outside_date_range() {
+        let conn = get_test_connection();
+        let start_date = date!(2024 - 01 - 01);
+        let end_date = date!(2024 - 01 - 31);
+
+        // Transactions within range
+        create_transaction(Transaction::build(100.0).date(start_date).unwrap(), &conn).unwrap();
+        create_transaction(Transaction::build(-50.0).date(end_date).unwrap(), &conn).unwrap();
+
+        // Transactions outside range
+        create_transaction(Transaction::build(200.0).date(date!(2023 - 12 - 31)).unwrap(), &conn).unwrap();
+        create_transaction(Transaction::build(-100.0).date(date!(2024 - 02 - 01)).unwrap(), &conn).unwrap();
+
+        let result = get_transaction_summary(start_date..=end_date, &conn).unwrap();
+
+        assert_eq!(result.income, 100.0);
+        assert_eq!(result.expenses, 50.0);
+        assert_eq!(result.net_income, 50.0);
     }
 }
