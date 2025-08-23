@@ -41,21 +41,6 @@
         <input name="description" id="description" type="text" placeholder="Description" class="{% include "styles/forms/input.html" %}" />
       </div>
 
-      <div>
-        <label for="category_id" class="{% include "styles/forms/label.html" %}">Category</label>
-        <select name="category_id" id="category_id" class="{% include "styles/forms/input.html" %}">
-          {% for category in categories %}
-            <option value="{{ category.id }}">{{ category.name }}</option>
-          {% endfor %}
-
-          <option value="0">None</option>
-        </select>
-        <a href="{{ new_category_route }}"
-          class="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
-        >
-          Create Category
-        </a>
-      </div>
 
       <button type="submit" id="submit-button" tabindex="0" class="{% include "styles/forms/button.html" %}" >
         <span id="indicator" class="inline htmx-indicator">
