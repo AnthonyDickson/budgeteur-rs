@@ -49,7 +49,6 @@ pub struct Transaction {
     amount: f64,
     date: Date,
     description: String,
-    category_id: Option<DatabaseID>,
     import_id: Option<i64>,
 }
 
@@ -78,7 +77,6 @@ impl Transaction {
         amount: f64,
         date: Date,
         description: String,
-        category_id: Option<DatabaseID>,
         import_id: Option<i64>,
     ) -> Self {
         Self {
@@ -86,7 +84,6 @@ impl Transaction {
             amount,
             date,
             description,
-            category_id,
             import_id,
         }
     }
@@ -118,10 +115,6 @@ impl Transaction {
         &self.description
     }
 
-    /// A user-defined category that describes the type of the transaction.
-    pub fn category_id(&self) -> Option<DatabaseID> {
-        self.category_id
-    }
 
     /// The ID of the import that this transaction belongs to.
     pub fn import_id(&self) -> Option<i64> {
@@ -151,7 +144,6 @@ impl Transaction {
 ///     .date(date!(2025-01-15))
 ///     .unwrap()
 ///     .description("Coffee shop purchase")
-///     .category(Some(5))
 ///     .import_id(Some(987654321))
 ///     .finalise(2);
 /// ```
@@ -191,18 +183,6 @@ pub struct TransactionBuilder {
     /// - `"POS W/D LOBSTER SEAFOO-19:47"`
     pub description: String,
 
-    /// Optional reference to a category for organizing transactions.
-    ///
-    /// If `Some(id)`, the transaction will be associated with the category
-    /// having that database ID. If `None`, the transaction remains uncategorized.
-    ///
-    /// Categories help with budgeting and expense tracking by grouping similar
-    /// transactions together (e.g., "Food & Dining", "Transportation", "Utilities").
-    ///
-    /// # Database Constraint
-    /// If specified, the category ID must exist in the categories table,
-    /// otherwise transaction creation will fail with [Error::InvalidCategory].
-    pub category_id: Option<DatabaseID>,
 
     /// Optional unique identifier for imported transactions.
     ///
@@ -233,7 +213,6 @@ impl TransactionBuilder {
             amount,
             date: OffsetDateTime::now_utc().date(),
             description: String::new(),
-            category_id: None,
             import_id: None,
         }
     }
@@ -245,7 +224,6 @@ impl TransactionBuilder {
             amount: self.amount,
             date: self.date,
             description: self.description,
-            category_id: self.category_id,
             import_id: self.import_id,
         }
     }
@@ -269,11 +247,6 @@ impl TransactionBuilder {
         self
     }
 
-    /// Set the category for the transaction.
-    pub fn category(mut self, category_id: Option<DatabaseID>) -> Self {
-        self.category_id = category_id;
-        self
-    }
 
     /// Set the import ID for the transaction.
     pub fn import_id(mut self, import_id: Option<i64>) -> Self {
@@ -295,10 +268,6 @@ pub struct TransactionForm {
     pub date: Date,
     /// Text detailing the transaction.
     pub description: String,
-    /// The ID of the category to assign the transaction to.
-    ///
-    /// Zero should be interpreted as `None`.
-    pub category_id: DatabaseID,
 }
 
 /// A route handler for creating a new transaction, returns [TransactionRow] as a [Response] on success.
@@ -310,16 +279,8 @@ pub async fn create_transaction_endpoint(
     State(state): State<TransactionState>,
     Form(data): Form<TransactionForm>,
 ) -> impl IntoResponse {
-    // HACK: Zero is used as a sentinel value for None. Currently, options do not work with empty
-    // form values. For example, the URL encoded form "num=" will return an error.
-    let category = match data.category_id {
-        0 => None,
-        id => Some(id),
-    };
-
     let transaction = Transaction::build(data.amount)
         .description(&data.description)
-        .category(category)
         .date(data.date);
 
     let transaction = match transaction {
@@ -366,7 +327,6 @@ pub async fn get_transaction_endpoint(
 ///
 /// # Errors
 /// This function will return a:
-/// - [Error::InvalidCategory] if `category_id` does not refer to a valid category,
 /// - [Error::SqlError] if there is some other SQL error,
 /// - or [Error::InternalError] if there was an unexpected error.
 pub fn create_transaction(
@@ -375,26 +335,20 @@ pub fn create_transaction(
 ) -> Result<Transaction, Error> {
     let transaction = connection
         .prepare(
-            "INSERT INTO \"transaction\" (amount, date, description, category_id, import_id)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             RETURNING id, amount, date, description, category_id, import_id",
+            "INSERT INTO \"transaction\" (amount, date, description, import_id)
+             VALUES (?1, ?2, ?3, ?4)
+             RETURNING id, amount, date, description, import_id",
         )?
         .query_row(
             (
                 builder.amount,
                 builder.date,
                 builder.description,
-                builder.category_id,
                 builder.import_id,
             ),
             map_transaction_row,
         )
         .map_err(|error| match error {
-            // Code 787 occurs when a FOREIGN KEY constraint failed.
-            // The client tried to add a transaction for a non-existent category.
-            rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
-                Error::InvalidCategory
-            }
             // Handle duplicate import_id constraint violation
             rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 2067 => {
                 Error::DuplicateImportId
@@ -420,10 +374,10 @@ pub fn import_transactions(
 
     // Prepare the insert statement once for reuse
     let mut stmt = tx.prepare(
-        "INSERT INTO \"transaction\" (amount, date, description, category_id, import_id)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO \"transaction\" (amount, date, description, import_id)
+         VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(import_id) DO NOTHING
-         RETURNING id, amount, date, description, category_id, import_id",
+         RETURNING id, amount, date, description, import_id",
     )?;
 
     for builder in builders {
@@ -433,7 +387,6 @@ pub fn import_transactions(
                 builder.amount,
                 builder.date,
                 builder.description,
-                builder.category_id,
                 builder.import_id,
             ),
             map_transaction_row,
@@ -459,7 +412,7 @@ pub fn import_transactions(
 /// - or [Error::SqlError] there is some other SQL error.
 pub fn get_transaction(id: DatabaseID, connection: &Connection) -> Result<Transaction, Error> {
     let transaction = connection
-        .prepare("SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" WHERE id = :id")?
+        .prepare("SELECT id, amount, date, description, import_id FROM \"transaction\" WHERE id = :id")?
         .query_row(&[(":id", &id)], map_transaction_row)?;
 
     Ok(transaction)
@@ -498,7 +451,7 @@ pub fn query_transactions(
     connection: &Connection,
 ) -> Result<Vec<Transaction>, Error> {
     let mut query_string_parts = vec![
-        "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\""
+        "SELECT id, amount, date, description, import_id FROM \"transaction\""
             .to_string(),
     ];
     let mut where_clause_parts = vec![];
@@ -600,7 +553,7 @@ pub fn get_transactions_paginated(
     };
 
     let query = format!(
-        "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" {} LIMIT {} OFFSET {}",
+        "SELECT id, amount, date, description, import_id FROM \"transaction\" {} LIMIT {} OFFSET {}",
         order_clause, limit, offset
     );
 
@@ -635,9 +588,7 @@ pub fn create_transaction_table(connection: &Connection) -> Result<(), rusqlite:
                 amount REAL NOT NULL,
                 date TEXT NOT NULL,
                 description TEXT NOT NULL,
-                category_id INTEGER,
-                import_id INTEGER UNIQUE,
-                FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE SET NULL
+                import_id INTEGER UNIQUE
                 )",
             (),
         )?;
@@ -651,17 +602,149 @@ pub fn create_transaction_table(connection: &Connection) -> Result<(), rusqlite:
     Ok(())
 }
 
+/// Create the transaction_category junction table in the database.
+///
+/// # Errors
+/// Returns an error if the table cannot be created or if there is an SQL error.
+pub fn create_transaction_category_table(connection: &Connection) -> Result<(), rusqlite::Error> {
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS transaction_category (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id INTEGER NOT NULL,
+            category_id INTEGER NOT NULL,
+            FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON DELETE CASCADE,
+            FOREIGN KEY(category_id) REFERENCES category(id) ON DELETE CASCADE,
+            UNIQUE(transaction_id, category_id)
+        )",
+        (),
+    )?;
+    
+    // Ensure the sequence starts at 1
+    connection.execute(
+        "INSERT OR IGNORE INTO sqlite_sequence (name, seq) VALUES ('transaction_category', 0)",
+        (),
+    )?;
+    
+    Ok(())
+}
+
+/// Add a category to a transaction.
+///
+/// # Errors
+/// This function will return a:
+/// - [Error::InvalidCategory] if `category_id` does not refer to a valid category,
+/// - [Error::SqlError] if there is some other SQL error.
+pub fn add_category_to_transaction(
+    transaction_id: DatabaseID,
+    category_id: DatabaseID,
+    connection: &Connection,
+) -> Result<(), Error> {
+    connection
+        .execute(
+            "INSERT INTO transaction_category (transaction_id, category_id) VALUES (?1, ?2)",
+            (transaction_id, category_id),
+        )
+        .map_err(|error| match error {
+            // Code 787 occurs when a FOREIGN KEY constraint failed.
+            rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
+                Error::InvalidCategory
+            }
+            error => error.into(),
+        })?;
+    Ok(())
+}
+
+/// Remove a category from a transaction.
+///
+/// # Errors
+/// This function will return a [Error::SqlError] if there is a SQL error.
+pub fn remove_category_from_transaction(
+    transaction_id: DatabaseID,
+    category_id: DatabaseID,
+    connection: &Connection,
+) -> Result<(), Error> {
+    connection.execute(
+        "DELETE FROM transaction_category WHERE transaction_id = ?1 AND category_id = ?2",
+        (transaction_id, category_id),
+    )?;
+    Ok(())
+}
+
+/// Get all categories for a transaction.
+///
+/// # Errors
+/// This function will return a [Error::SqlError] if there is a SQL error.
+pub fn get_transaction_categories(
+    transaction_id: DatabaseID,
+    connection: &Connection,
+) -> Result<Vec<crate::category::Category>, Error> {
+    connection
+        .prepare(
+            "SELECT c.id, c.name 
+             FROM category c
+             INNER JOIN transaction_category tc ON c.id = tc.category_id 
+             WHERE tc.transaction_id = ?1
+             ORDER BY c.name",
+        )?
+        .query_map([transaction_id], |row| {
+            let id = row.get(0)?;
+            let raw_name: String = row.get(1)?;
+            let name = crate::category::CategoryName::new_unchecked(&raw_name);
+            Ok(crate::category::Category { id, name })
+        })?
+        .map(|maybe_category| maybe_category.map_err(Error::SqlError))
+        .collect()
+}
+
+/// Set categories for a transaction, replacing any existing categories.
+///
+/// # Errors
+/// This function will return a:
+/// - [Error::InvalidCategory] if any `category_id` does not refer to a valid category,
+/// - [Error::SqlError] if there is some other SQL error.
+pub fn set_transaction_categories(
+    transaction_id: DatabaseID,
+    category_ids: &[DatabaseID],
+    connection: &Connection,
+) -> Result<(), Error> {
+    let tx = connection.unchecked_transaction()?;
+    
+    // Remove existing categories
+    tx.execute(
+        "DELETE FROM transaction_category WHERE transaction_id = ?1",
+        [transaction_id],
+    )?;
+    
+    // Add new categories
+    let mut stmt = tx.prepare(
+        "INSERT INTO transaction_category (transaction_id, category_id) VALUES (?1, ?2)",
+    )?;
+    
+    for &category_id in category_ids {
+        stmt.execute((transaction_id, category_id))
+            .map_err(|error| match error {
+                // Code 787 occurs when a FOREIGN KEY constraint failed.
+                rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
+                    Error::InvalidCategory
+                }
+                error => error.into(),
+            })?;
+    }
+    
+    drop(stmt);
+    tx.commit()?;
+    Ok(())
+}
+
 /// Map a database row to a Transaction.
 fn map_transaction_row(row: &Row) -> Result<Transaction, rusqlite::Error> {
     let id = row.get(0)?;
     let amount = row.get(1)?;
     let date = row.get(2)?;
     let description = row.get(3)?;
-    let category_id = row.get(4)?;
-    let import_id = row.get(5)?;
+    let import_id = row.get(4)?;
 
-    let transaction =
-        Transaction::new_unchecked(id, amount, date, description, category_id, import_id);
+    let transaction = Transaction::new_unchecked(id, amount, date, description, import_id);
     Ok(transaction)
 }
 
@@ -861,11 +944,9 @@ mod transaction_builder_tests {
         let amount = PI;
         let date = OffsetDateTime::now_utc().date();
         let description = "Rust Pie".to_string();
-        let category_id = Some(42);
         let import_id = Some(123456789);
 
         let transaction = Transaction::build(amount)
-            .category(category_id)
             .description(&description)
             .date(date)
             .unwrap()
@@ -876,8 +957,7 @@ mod transaction_builder_tests {
         assert_eq!(transaction.amount(), amount);
         assert_eq!(transaction.date(), &date);
         assert_eq!(transaction.description(), description);
-        assert_eq!(transaction.category_id(), category_id);
-        assert_eq!(transaction.import_id, import_id);
+        assert_eq!(transaction.import_id(), import_id);
     }
 }
 
@@ -910,14 +990,6 @@ mod database_tests {
         assert_eq!(transaction.amount(), amount);
     }
 
-    #[test]
-    fn create_fails_on_invalid_category_id() {
-        let conn = get_test_connection();
-
-        let transaction = create_transaction(Transaction::build(PI).category(Some(999)), &conn);
-
-        assert_eq!(transaction, Err(Error::InvalidCategory));
-    }
 
     #[test]
     fn create_fails_on_duplicate_import_id() {
@@ -959,7 +1031,6 @@ mod database_tests {
                 assert_eq!(want.amount(), got.amount(), "{error_message}");
                 assert_eq!(want.date(), got.date(), "{error_message}");
                 assert_eq!(want.description(), got.description(), "{error_message}");
-                assert_eq!(want.category_id(), got.category_id(), "{error_message}");
                 assert_eq!(want.import_id(), got.import_id(), "{error_message}");
             });
     }
@@ -986,7 +1057,7 @@ mod database_tests {
         // Verify that only the original transaction exists in the database
         let all_transactions = conn
             .prepare(
-                "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\"",
+                "SELECT id, amount, date, description, import_id FROM \"transaction\"",
             )
             .unwrap()
             .query_map([], map_transaction_row)
@@ -1007,7 +1078,6 @@ mod database_tests {
         assert_eq!(stored_transaction.amount(), want.amount());
         assert_eq!(stored_transaction.date(), want.date());
         assert_eq!(stored_transaction.description(), want.description());
-        assert_eq!(stored_transaction.category_id(), want.category_id());
         assert_eq!(stored_transaction.import_id(), want.import_id());
     }
 
@@ -1039,7 +1109,6 @@ mod database_tests {
                 assert_eq!(want.amount(), got.amount(), "{error_message}");
                 assert_eq!(want.date(), got.date(), "{error_message}");
                 assert_eq!(want.description(), got.description(), "{error_message}");
-                assert_eq!(want.category_id(), got.category_id(), "{error_message}");
                 assert_eq!(want.import_id(), got.import_id(), "{error_message}");
             });
     }
@@ -1128,7 +1197,7 @@ mod database_tests {
         want.sort_by(|a, b| b.date().cmp(a.date()));
 
         let got = conn
-            .prepare("SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" ORDER BY date DESC").unwrap()
+            .prepare("SELECT id, amount, date, description, import_id FROM \"transaction\" ORDER BY date DESC").unwrap()
             .query_map([], map_transaction_row).unwrap()
             .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
             .collect::<Result<Vec<Transaction>, Error>>()
@@ -1748,7 +1817,6 @@ mod route_handler_tests {
             description: "test transaction".to_string(),
             amount: 12.3,
             date: OffsetDateTime::now_utc().date(),
-            category_id: 0, // 0 means no category
         };
 
         let response = create_transaction_endpoint(State(state.clone()), Form(form))
