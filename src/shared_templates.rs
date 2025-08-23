@@ -79,10 +79,10 @@ pub struct ConfirmPasswordInputTemplate<'a> {
     pub error_message: &'a str,
 }
 
-/// Renders the form for creating a category.
+/// Renders the form for creating a tag.
 #[derive(Template)]
-#[template(path = "partials/new_category_form.html")]
-pub struct NewCategoryFormTemplate<'a> {
-    pub category_route: &'a str,
+#[template(path = "partials/new_tag_form.html")]
+pub struct NewTagFormTemplate<'a> {
+    pub create_tag_endpoint: &'a str,
     pub error_message: &'a str,
 }

@@ -70,7 +70,7 @@ mod nav_bar_tests {
 
         cases.insert(endpoints::ROOT, false);
         cases.insert(endpoints::COFFEE, false);
-        cases.insert(endpoints::CATEGORIES, false);
+        cases.insert(endpoints::POST_TAG, false);
         cases.insert(endpoints::INTERNAL_ERROR_VIEW, false);
         cases.insert(endpoints::LOG_IN_API, false);
         cases.insert(endpoints::LOG_IN_VIEW, false);

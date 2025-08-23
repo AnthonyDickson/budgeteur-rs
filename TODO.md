@@ -1,7 +1,6 @@
 # To Do
 
 - Add rules-based auto-tagger (new branch, merge back w/ PR):
-  - Rename categories to tags
   - Add a user-configurable rules-based (text patterns) auto-tagging feature
   - Use rules-based tagger for automatically tagging imports
   - Add UI for manually trigger tagger on either all transactions or all untagged transactions

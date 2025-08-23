@@ -1,0 +1,999 @@
+//! This file defines the `Tag` type, the types needed to create a tag and the API routes for the tag type.
+//! A tag is used for categorising and grouping transactions.
+
+use std::fmt::Display;
+use std::sync::{Arc, Mutex};
+
+use askama_axum::Template;
+use axum::{
+    Form,
+    extract::{FromRef, State},
+    http::{StatusCode, Uri},
+    response::{IntoResponse, Response},
+};
+use axum_htmx::HxRedirect;
+use rusqlite::Connection;
+#[cfg(test)]
+use rusqlite::Row;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    AppState, Error,
+    database_id::DatabaseID,
+    endpoints,
+    navigation::{NavbarTemplate, get_nav_bar},
+    shared_templates::NewTagFormTemplate,
+};
+
+/// The name of a tag.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub struct TagName(String);
+
+impl TagName {
+    /// Create a tag name.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if `name` is an empty string.
+    pub fn new(name: &str) -> Result<Self, Error> {
+        if name.is_empty() {
+            Err(Error::EmptyTagName)
+        } else {
+            Ok(Self(name.to_string()))
+        }
+    }
+
+    /// Create a tag name without validation.
+    ///
+    /// The caller should ensure that the string is not empty.
+    ///
+    /// This function has `_unchecked` in the name but is not `unsafe`, because if the non-empty invariant is violated it will cause incorrect behaviour but not affect memory safety.
+    // TODO: Remove build config attribute once new_unchecked function is used elsewhere.
+    #[cfg(test)]
+    pub fn new_unchecked(name: &str) -> Self {
+        Self(name.to_string())
+    }
+}
+
+impl AsRef<str> for TagName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for TagName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// A tag for grouping expenses and income, e.g., 'Groceries', 'Eating Out', 'Wages'.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub struct Tag {
+    /// The ID of the tag.
+    pub id: DatabaseID,
+
+    /// The name of the tag.
+    pub name: TagName,
+}
+
+/// Renders the new tag page.
+#[derive(Template)]
+#[template(path = "views/new_tag.html")]
+struct NewTagTemplate<'a> {
+    nav_bar: NavbarTemplate<'a>,
+    form: NewTagFormTemplate<'a>,
+}
+
+pub async fn get_new_tag_page() -> Response {
+    NewTagTemplate {
+        nav_bar: get_nav_bar(endpoints::NEW_TAG_VIEW),
+        form: NewTagFormTemplate {
+            create_tag_endpoint: endpoints::POST_TAG,
+            error_message: "",
+        },
+    }
+    .into_response()
+}
+
+/// The state needed for creating a tag.
+#[derive(Debug, Clone)]
+pub struct CreateTagEndpointState {
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for CreateTagEndpointState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TagFormData {
+    pub name: String,
+}
+
+/// A route handler for creating a new tag.
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+pub async fn create_tag_endpoint(
+    State(state): State<CreateTagEndpointState>,
+    Form(new_tag): Form<TagFormData>,
+) -> impl IntoResponse {
+    let name = match TagName::new(&new_tag.name) {
+        Ok(name) => name,
+        Err(error) => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                NewTagFormTemplate {
+                    create_tag_endpoint: endpoints::POST_TAG,
+                    error_message: &format!("Error: {error}"),
+                },
+            )
+                .into_response();
+        }
+    };
+
+    create_tag(
+        name,
+        &state
+            .db_connection
+            .lock()
+            .expect("Could not acquire database lock"),
+    )
+    .map(|_tag| {
+        (
+            HxRedirect(Uri::from_static(endpoints::NEW_TRANSACTION_VIEW)),
+            StatusCode::SEE_OTHER,
+        )
+    })
+    .map_err(|error| {
+        tracing::error!("An unexpected error occurred while creating a tag: {error}");
+
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            NewTagFormTemplate {
+                create_tag_endpoint: endpoints::POST_TAG,
+                error_message: "An unexpected error occurred. Please try again.",
+            },
+        )
+    })
+    .into_response()
+}
+
+/// Create a tag in the database.
+///
+/// # Errors
+/// This function will return an error if there is an SQL error.
+pub fn create_tag(name: TagName, connection: &Connection) -> Result<Tag, Error> {
+    connection.execute("INSERT INTO tag (name) VALUES (?1);", (name.as_ref(),))?;
+
+    let id = connection.last_insert_rowid();
+
+    Ok(Tag { id, name })
+}
+
+/// Retrieve tags in the database for the tag with `tag_id`.
+///
+/// # Errors
+/// This function will return an error if there is an SQL error.
+// TODO: Remove build config attribute once get_tag function is used elsewhere.
+#[cfg(test)]
+fn get_tag(tag_id: DatabaseID, connection: &Connection) -> Result<Tag, Error> {
+    connection
+        .prepare("SELECT id, name FROM tag WHERE id = :id;")?
+        .query_row(&[(":id", &tag_id)], map_row)
+        .map_err(|error| error.into())
+}
+
+/// Retrieve tags in the database.
+///
+/// # Errors
+/// This function will return an error if there is an SQL error.
+// TODO: Remove build config attribute once get_all_tags function is used elsewhere.
+#[cfg(test)]
+pub fn get_all_tags(connection: &Connection) -> Result<Vec<Tag>, Error> {
+    connection
+        .prepare("SELECT id, name FROM tag;")?
+        .query_map([], map_row)?
+        .map(|maybe_tag| maybe_tag.map_err(|error| error.into()))
+        .collect()
+}
+
+pub fn create_tag_table(connection: &Connection) -> Result<(), rusqlite::Error> {
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS tag (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE
+            );",
+        (),
+    )?;
+
+    Ok(())
+}
+
+// TODO: Remove build config attribute once map_row function is used elsewhere.
+#[cfg(test)]
+fn map_row(row: &Row) -> Result<Tag, rusqlite::Error> {
+    let id = row.get(0)?;
+    let raw_name: String = row.get(1)?;
+    let name = TagName::new_unchecked(&raw_name);
+
+    Ok(Tag { id, name })
+}
+
+/// Create the transaction_tag junction table in the database.
+///
+/// # Errors
+/// Returns an error if the table cannot be created or if there is an SQL error.
+pub fn create_transaction_tag_table(connection: &Connection) -> Result<(), rusqlite::Error> {
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS transaction_tag (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id INTEGER NOT NULL,
+            tag_id INTEGER NOT NULL,
+            FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON DELETE CASCADE,
+            FOREIGN KEY(tag_id) REFERENCES tag(id) ON DELETE CASCADE,
+            UNIQUE(transaction_id, tag_id)
+        )",
+        (),
+    )?;
+
+    // Ensure the sequence starts at 1
+    connection.execute(
+        "INSERT OR IGNORE INTO sqlite_sequence (name, seq) VALUES ('transaction_tag', 0)",
+        (),
+    )?;
+
+    Ok(())
+}
+
+/// Add a tag to a transaction.
+///
+/// # Errors
+/// This function will return a:
+/// - [Error::InvalidTag] if `tag_id` does not refer to a valid tag,
+/// - [Error::SqlError] if there is some other SQL error.
+// TODO: Remove build config attribute once add_tag_to_transaction function is used elsewhere.
+#[cfg(test)]
+pub fn add_tag_to_transaction(
+    transaction_id: DatabaseID,
+    tag_id: DatabaseID,
+    connection: &Connection,
+) -> Result<(), Error> {
+    connection
+        .execute(
+            "INSERT INTO transaction_tag (transaction_id, tag_id) VALUES (?1, ?2)",
+            (transaction_id, tag_id),
+        )
+        .map_err(|error| match error {
+            // Code 787 occurs when a FOREIGN KEY constraint failed.
+            rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
+                Error::InvalidTag
+            }
+            error => error.into(),
+        })?;
+    Ok(())
+}
+
+/// Remove a tag from a transaction.
+///
+/// # Errors
+/// This function will return a [Error::SqlError] if there is a SQL error.
+// TODO: Remove build config attribute once remove_tag_from_transaction function is used elsewhere.
+#[cfg(test)]
+pub fn remove_tag_from_transaction(
+    transaction_id: DatabaseID,
+    tag_id: DatabaseID,
+    connection: &Connection,
+) -> Result<(), Error> {
+    connection.execute(
+        "DELETE FROM transaction_tag WHERE transaction_id = ?1 AND tag_id = ?2",
+        (transaction_id, tag_id),
+    )?;
+    Ok(())
+}
+
+/// Get all tags for a transaction.
+///
+/// # Errors
+/// This function will return a [Error::SqlError] if there is a SQL error.
+// TODO: Remove build config attribute once get_transaction_tags function is used elsewhere.
+#[cfg(test)]
+pub fn get_transaction_tags(
+    transaction_id: DatabaseID,
+    connection: &Connection,
+) -> Result<Vec<Tag>, Error> {
+    connection
+        .prepare(
+            "SELECT t.id, t.name 
+             FROM tag t
+             INNER JOIN transaction_tag tt ON t.id = tt.tag_id 
+             WHERE tt.transaction_id = ?1
+             ORDER BY t.name",
+        )?
+        .query_map([transaction_id], |row| {
+            let id = row.get(0)?;
+            let raw_name: String = row.get(1)?;
+            let name = TagName::new_unchecked(&raw_name);
+            Ok(Tag { id, name })
+        })?
+        .map(|maybe_tag| maybe_tag.map_err(Error::SqlError))
+        .collect()
+}
+
+/// Set tags for a transaction, replacing any existing tags.
+///
+/// # Errors
+/// This function will return a:
+/// - [Error::InvalidTag] if any `tag_id` does not refer to a valid tag,
+/// - [Error::SqlError] if there is some other SQL error.
+// TODO: Remove build config attribute once set_transaction_tag function is used elsewhere.
+#[cfg(test)]
+pub fn set_transaction_tags(
+    transaction_id: DatabaseID,
+    tag_ids: &[DatabaseID],
+    connection: &Connection,
+) -> Result<(), Error> {
+    let tx = connection.unchecked_transaction()?;
+
+    // Remove existing tags
+    tx.execute(
+        "DELETE FROM transaction_tag WHERE transaction_id = ?1",
+        [transaction_id],
+    )?;
+
+    // Add new tags
+    let mut stmt =
+        tx.prepare("INSERT INTO transaction_tag (transaction_id, tag_id) VALUES (?1, ?2)")?;
+
+    for &tag_id in tag_ids {
+        stmt.execute((transaction_id, tag_id))
+            .map_err(|error| match error {
+                // Code 787 occurs when a FOREIGN KEY constraint failed.
+                rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
+                    Error::InvalidTag
+                }
+                error => error.into(),
+            })?;
+    }
+
+    drop(stmt);
+    tx.commit()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tag_name_tests {
+    use crate::{Error, tag::TagName};
+
+    #[test]
+    fn new_fails_on_empty_string() {
+        let tag_name = TagName::new("");
+
+        assert_eq!(tag_name, Err(Error::EmptyTagName));
+    }
+
+    #[test]
+    fn new_succeeds_on_non_empty_string() {
+        let tag_name = TagName::new("🔥");
+
+        assert!(tag_name.is_ok())
+    }
+}
+
+#[cfg(test)]
+mod tag_query_tests {
+    use std::collections::HashSet;
+
+    use rusqlite::Connection;
+
+    use crate::tag::{create_tag, get_all_tags, get_tag};
+    use crate::{Error, tag::TagName};
+
+    use super::create_tag_table;
+
+    fn get_test_db_connection() -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        create_tag_table(&connection).expect("Could not create tag table");
+        connection
+    }
+
+    #[test]
+    fn create_tag_succeeds() {
+        let connection = get_test_db_connection();
+        let name = TagName::new("Terrifically a tag").unwrap();
+
+        let tag = create_tag(name.clone(), &connection);
+
+        let got_tag = tag.expect("Could not create tag");
+        assert!(got_tag.id > 0);
+        assert_eq!(got_tag.name, name);
+    }
+
+    #[test]
+    fn get_tag_succeeds() {
+        let connection = get_test_db_connection();
+        let name = TagName::new_unchecked("Foo");
+        let inserted_tag = create_tag(name, &connection).expect("Could not create test tag");
+
+        let selected_tag = get_tag(inserted_tag.id, &connection);
+
+        assert_eq!(Ok(inserted_tag), selected_tag);
+    }
+
+    #[test]
+    fn get_tag_with_invalid_id_returns_not_found() {
+        let connection = get_test_db_connection();
+        let inserted_tag = create_tag(TagName::new_unchecked("Foo"), &connection)
+            .expect("Could not create test tag");
+
+        let selected_tag = get_tag(inserted_tag.id + 123, &connection);
+
+        assert_eq!(selected_tag, Err(Error::NotFound));
+    }
+
+    #[test]
+    fn test_get_all_tag() {
+        let store = get_test_db_connection();
+
+        let inserted_tags = HashSet::from([
+            create_tag(TagName::new_unchecked("Foo"), &store).expect("Could not create test tag"),
+            create_tag(TagName::new_unchecked("Bar"), &store).expect("Could not create test tag"),
+        ]);
+
+        let selected_tags = get_all_tags(&store).expect("Could not get all tags");
+        let selected_tags = HashSet::from_iter(selected_tags);
+
+        assert_eq!(inserted_tags, selected_tags);
+    }
+}
+
+#[cfg(test)]
+mod new_tag_page_tests {
+    use axum::{http::StatusCode, response::Response};
+    use scraper::{ElementRef, Html};
+
+    use crate::{endpoints, tag::get_new_tag_page};
+
+    #[tokio::test]
+    async fn render_page() {
+        let response = get_new_tag_page().await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("content-type")
+                .expect("content-type header missing"),
+            "text/html; charset=utf-8"
+        );
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+
+        let form = must_get_form(&html);
+        assert_hx_endpoint(&form, endpoints::POST_TAG);
+        assert_form_input(&form, "name", "text");
+        assert_form_submit_button(&form);
+    }
+
+    async fn parse_html(response: Response) -> Html {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+
+        Html::parse_document(&text)
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors: {:?}",
+            html.errors
+        );
+    }
+
+    #[track_caller]
+    fn must_get_form(html: &Html) -> ElementRef {
+        html.select(&scraper::Selector::parse("form").unwrap())
+            .next()
+            .expect("No form found")
+    }
+
+    #[track_caller]
+    fn assert_hx_endpoint(form: &ElementRef, endpoint: &str) {
+        let hx_post = form
+            .value()
+            .attr("hx-post")
+            .expect("hx-post attribute missing");
+
+        assert_eq!(
+            hx_post, endpoint,
+            "want form with attribute hx-post=\"{endpoint}\", got {hx_post:?}"
+        );
+        assert_eq!(hx_post, endpoint);
+    }
+
+    #[track_caller]
+    fn assert_form_input(form: &ElementRef, name: &str, type_: &str) {
+        for input in form.select(&scraper::Selector::parse("input").unwrap()) {
+            let input_name = input.value().attr("name").unwrap_or_default();
+
+            if input_name == name {
+                let input_type = input.value().attr("type").unwrap_or_default();
+                let input_required = input.value().attr("required");
+
+                assert_eq!(
+                    input_type, type_,
+                    "want input with type \"{type_}\", got {input_type:?}"
+                );
+
+                assert!(
+                    input_required.is_some(),
+                    "want input with name {name} to have the required attribute but got none"
+                );
+
+                return;
+            }
+        }
+
+        panic!("No input found with name \"{name}\" and type \"{type_}\"");
+    }
+
+    #[track_caller]
+    fn assert_form_submit_button(form: &ElementRef) {
+        let submit_button = form
+            .select(&scraper::Selector::parse("button").unwrap())
+            .next()
+            .expect("No button found");
+
+        assert_eq!(
+            submit_button.value().attr("type").unwrap_or_default(),
+            "submit",
+            "want submit button with type=\"submit\""
+        );
+    }
+}
+#[cfg(test)]
+mod create_tag_endpoint_tests {
+    use std::sync::{Arc, Mutex};
+
+    use askama_axum::IntoResponse;
+    use axum::{
+        Form,
+        extract::State,
+        http::{StatusCode, header::CONTENT_TYPE},
+        response::Response,
+    };
+    use rusqlite::Connection;
+    use scraper::{ElementRef, Html};
+
+    use crate::{
+        endpoints,
+        tag::{Tag, TagName, create_tag_endpoint, get_tag},
+    };
+
+    use super::{CreateTagEndpointState, TagFormData, create_tag_table};
+
+    fn get_tag_state() -> CreateTagEndpointState {
+        let connection =
+            Connection::open_in_memory().expect("Could not open in-memory SQLite database");
+        create_tag_table(&connection).expect("Could not create tag table");
+
+        CreateTagEndpointState {
+            db_connection: Arc::new(Mutex::new(connection)),
+        }
+    }
+
+    #[tokio::test]
+    async fn can_create_tag() {
+        let state = get_tag_state();
+        let name = TagName::new_unchecked("Foo");
+        let want = Tag {
+            id: 1,
+            name: name.clone(),
+        };
+        let form = TagFormData {
+            name: name.to_string(),
+        };
+
+        let response = create_tag_endpoint(State(state.clone()), Form(form))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_hx_redirect(&response, endpoints::NEW_TRANSACTION_VIEW);
+        assert_eq!(Ok(want), get_tag(1, &state.db_connection.lock().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn create_tag_fails_on_empty_name() {
+        let state = get_tag_state();
+        let form = TagFormData {
+            name: "".to_string(),
+        };
+
+        let response = create_tag_endpoint(State(state), Form(form))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            get_header(&response, CONTENT_TYPE.as_str()),
+            "text/html; charset=utf-8"
+        );
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+        let form = must_get_form(&html);
+        assert_error_message(&form, "Error: Tag name cannot be empty");
+    }
+
+    #[track_caller]
+    fn assert_hx_redirect(response: &Response, endpoint: &str) {
+        assert_eq!(get_header(response, "hx-redirect"), endpoint,);
+    }
+
+    #[track_caller]
+    fn get_header(response: &Response, header_name: &str) -> String {
+        let header_error_message = format!("Headers missing {header_name}");
+
+        response
+            .headers()
+            .get(header_name)
+            .expect(&header_error_message)
+            .to_str()
+            .expect("Could not convert to str")
+            .to_string()
+    }
+
+    async fn parse_html(response: Response) -> Html {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+
+        Html::parse_fragment(&text)
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors {:?} for HTML {}",
+            html.errors,
+            html.html()
+        );
+    }
+
+    #[track_caller]
+    fn must_get_form(html: &Html) -> ElementRef {
+        html.select(&scraper::Selector::parse("form").unwrap())
+            .next()
+            .expect("No form found")
+    }
+
+    #[track_caller]
+    fn assert_error_message(form: &ElementRef, want_error_message: &str) {
+        let p = scraper::Selector::parse("p").unwrap();
+        let error_message = form
+            .select(&p)
+            .next()
+            .expect("No error message found")
+            .text()
+            .collect::<Vec<_>>()
+            .join("");
+        let got_error_message = error_message.trim();
+
+        assert_eq!(want_error_message, got_error_message);
+    }
+}
+
+#[cfg(test)]
+mod transaction_tag_junction_tests {
+    use rusqlite::Connection;
+    use std::collections::HashSet;
+
+    use crate::{
+        Error,
+        tag::{Tag, TagName, create_tag, create_tag_table},
+        transaction::{Transaction, create_transaction, create_transaction_table},
+    };
+
+    use super::{
+        add_tag_to_transaction, create_transaction_tag_table, get_transaction_tags,
+        remove_tag_from_transaction, set_transaction_tags,
+    };
+
+    fn get_test_connection() -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+
+        // Create all necessary tables
+        create_tag_table(&connection).expect("Could not create tag table");
+        create_transaction_table(&connection).expect("Could not create transaction table");
+        create_transaction_tag_table(&connection).expect("Could not create junction table");
+
+        connection
+    }
+
+    fn create_test_tag(name: &str, connection: &Connection) -> Tag {
+        create_tag(TagName::new_unchecked(name), connection).expect("Could not create test tag")
+    }
+
+    fn create_test_transaction(
+        amount: f64,
+        description: &str,
+        connection: &Connection,
+    ) -> Transaction {
+        create_transaction(
+            Transaction::build(amount).description(description),
+            connection,
+        )
+        .expect("Could not create test transaction")
+    }
+
+    // ============================================================================
+    // BASIC CRUD TESTS
+    // ============================================================================
+
+    #[test]
+    fn add_tag_to_transaction_succeeds() {
+        let connection = get_test_connection();
+        let tag = create_test_tag("Groceries", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        let result = add_tag_to_transaction(transaction.id(), tag.id, &connection);
+
+        assert!(result.is_ok());
+
+        // Verify the relationship was created
+        let tags = get_transaction_tags(transaction.id(), &connection)
+            .expect("Could not get transaction tags");
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0], tag);
+    }
+
+    #[test]
+    fn remove_tag_from_transaction_succeeds() {
+        let connection = get_test_connection();
+        let tag = create_test_tag("Groceries", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // First add the tag
+        add_tag_to_transaction(transaction.id(), tag.id, &connection)
+            .expect("Could not add tag to transaction");
+
+        // Then remove it
+        let result = remove_tag_from_transaction(transaction.id(), tag.id, &connection);
+
+        assert!(result.is_ok());
+
+        // Verify the relationship was removed
+        let tags = get_transaction_tags(transaction.id(), &connection)
+            .expect("Could not get transaction tags");
+        assert_eq!(tags.len(), 0);
+    }
+
+    #[test]
+    fn get_transaction_tags_returns_correct_tags() {
+        let connection = get_test_connection();
+        let tag1 = create_test_tag("Groceries", &connection);
+        let _tag2 = create_test_tag("Transport", &connection);
+        let tag3 = create_test_tag("Entertainment", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // Add tags to transaction
+        add_tag_to_transaction(transaction.id(), tag1.id, &connection).expect("Could not add tag1");
+        add_tag_to_transaction(transaction.id(), tag3.id, &connection).expect("Could not add tag3");
+        // Intentionally not adding tag2
+
+        let tags = get_transaction_tags(transaction.id(), &connection)
+            .expect("Could not get transaction tags");
+        let tag_set: HashSet<_> = tags.into_iter().collect();
+
+        let expected_set = HashSet::from([tag3, tag1]); // Note: should be sorted by name
+        assert_eq!(tag_set, expected_set);
+    }
+
+    #[test]
+    fn get_transaction_tags_returns_empty_for_no_tags() {
+        let connection = get_test_connection();
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        let tags = get_transaction_tags(transaction.id(), &connection)
+            .expect("Could not get transaction tags");
+
+        assert_eq!(tags.len(), 0);
+    }
+
+    #[test]
+    fn set_transaction_tags_replaces_existing_tags() {
+        let connection = get_test_connection();
+        let tag1 = create_test_tag("Groceries", &connection);
+        let tag2 = create_test_tag("Transport", &connection);
+        let tag3 = create_test_tag("Entertainment", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // First add some tags
+        add_tag_to_transaction(transaction.id(), tag1.id, &connection).expect("Could not add tag1");
+        add_tag_to_transaction(transaction.id(), tag2.id, &connection).expect("Could not add tag2");
+
+        // Replace with different set of tags
+        let new_tag_ids = vec![tag2.id, tag3.id];
+        let result = set_transaction_tags(transaction.id(), &new_tag_ids, &connection);
+
+        assert!(result.is_ok());
+
+        // Verify the tags were replaced
+        let tags = get_transaction_tags(transaction.id(), &connection)
+            .expect("Could not get transaction tags");
+        let tag_set: HashSet<_> = tags.into_iter().collect();
+
+        let expected_set = HashSet::from([tag2, tag3]);
+        assert_eq!(tag_set, expected_set);
+    }
+
+    #[test]
+    fn set_transaction_tags_with_empty_list_removes_all() {
+        let connection = get_test_connection();
+        let tag1 = create_test_tag("Groceries", &connection);
+        let tag2 = create_test_tag("Transport", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // First add some tags
+        add_tag_to_transaction(transaction.id(), tag1.id, &connection).expect("Could not add tag1");
+        add_tag_to_transaction(transaction.id(), tag2.id, &connection).expect("Could not add tag2");
+
+        // Set to empty list
+        let result = set_transaction_tags(transaction.id(), &[], &connection);
+
+        assert!(result.is_ok());
+
+        // Verify all tags were removed
+        let tags = get_transaction_tags(transaction.id(), &connection)
+            .expect("Could not get transaction tags");
+        assert_eq!(tags.len(), 0);
+    }
+
+    // ============================================================================
+    // ERROR HANDLING TESTS
+    // ============================================================================
+
+    #[test]
+    fn add_tag_to_transaction_fails_with_invalid_tag_id() {
+        let connection = get_test_connection();
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+        let invalid_tag_id = 999999; // Non-existent tag ID
+
+        let result = add_tag_to_transaction(transaction.id(), invalid_tag_id, &connection);
+
+        assert!(matches!(result, Err(Error::InvalidTag)));
+    }
+
+    #[test]
+    fn set_transaction_tags_fails_with_invalid_tag_id() {
+        let connection = get_test_connection();
+        let tag1 = create_test_tag("Groceries", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+        let invalid_tag_id = 999999; // Non-existent tag ID
+
+        let invalid_tag_ids = vec![tag1.id, invalid_tag_id];
+        let result = set_transaction_tags(transaction.id(), &invalid_tag_ids, &connection);
+
+        assert!(matches!(result, Err(Error::InvalidTag)));
+
+        // Verify transaction was rolled back - no tags should be added
+        let tags = get_transaction_tags(transaction.id(), &connection)
+            .expect("Could not get transaction tags");
+        assert_eq!(tags.len(), 0);
+    }
+
+    #[test]
+    fn remove_tag_from_transaction_succeeds_with_non_existent_relationship() {
+        let connection = get_test_connection();
+        let tag = create_test_tag("Groceries", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // Try to remove a tag that was never added
+        let result = remove_tag_from_transaction(transaction.id(), tag.id, &connection);
+
+        // Should succeed (idempotent operation)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn functions_handle_non_existent_transaction_id() {
+        let connection = get_test_connection();
+        let tag = create_test_tag("Groceries", &connection);
+        let invalid_transaction_id = 999999; // Non-existent transaction ID
+
+        // Adding a tag to non-existent transaction should fail due to foreign key constraint
+        let add_result = add_tag_to_transaction(invalid_transaction_id, tag.id, &connection);
+        assert!(add_result.is_err());
+
+        // Removing from non-existent transaction should succeed (idempotent)
+        let remove_result =
+            remove_tag_from_transaction(invalid_transaction_id, tag.id, &connection);
+        assert!(remove_result.is_ok());
+
+        // Getting tags for non-existent transaction should succeed and return empty
+        let get_result = get_transaction_tags(invalid_transaction_id, &connection);
+        assert!(get_result.is_ok());
+        assert_eq!(get_result.unwrap().len(), 0);
+    }
+
+    // ============================================================================
+    // EDGE CASE AND DATA INTEGRITY TESTS
+    // ============================================================================
+
+    #[test]
+    fn add_duplicate_tag_to_transaction_fails_due_to_unique_constraint() {
+        let connection = get_test_connection();
+        let tag = create_test_tag("Groceries", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // Add tag once
+        add_tag_to_transaction(transaction.id(), tag.id, &connection)
+            .expect("Could not add tag first time");
+
+        // Try to add the same tag again
+        let result = add_tag_to_transaction(transaction.id(), tag.id, &connection);
+
+        // Should fail due to unique constraint
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn multiple_transactions_can_have_same_tag() {
+        let connection = get_test_connection();
+        let tag = create_test_tag("Groceries", &connection);
+        let transaction1 = create_test_transaction(50.0, "Store purchase", &connection);
+        let transaction2 = create_test_transaction(30.0, "Market purchase", &connection);
+
+        // Add same tag to both transactions
+        add_tag_to_transaction(transaction1.id(), tag.id, &connection)
+            .expect("Could not add tag to transaction1");
+        add_tag_to_transaction(transaction2.id(), tag.id, &connection)
+            .expect("Could not add tag to transaction2");
+
+        // Verify both transactions have the tag
+        let tags1 = get_transaction_tags(transaction1.id(), &connection)
+            .expect("Could not get tags for transaction1");
+        let tags2 = get_transaction_tags(transaction2.id(), &connection)
+            .expect("Could not get tags for transaction2");
+
+        assert_eq!(tags1.len(), 1);
+        assert_eq!(tags2.len(), 1);
+        assert_eq!(tags1[0], tag);
+        assert_eq!(tags2[0], tag);
+    }
+
+    #[test]
+    fn set_transaction_tags_is_atomic() {
+        let connection = get_test_connection();
+        let tag1 = create_test_tag("Groceries", &connection);
+        let tag2 = create_test_tag("Transport", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+        let invalid_tag_id = 999999;
+
+        // First add a tag
+        add_tag_to_transaction(transaction.id(), tag1.id, &connection)
+            .expect("Could not add initial tag");
+
+        // Try to set tags with one valid and one invalid ID
+        let mixed_tag_ids = vec![tag2.id, invalid_tag_id];
+        let result = set_transaction_tags(transaction.id(), &mixed_tag_ids, &connection);
+
+        assert!(matches!(result, Err(Error::InvalidTag)));
+
+        // Verify the original tag is still there (transaction was rolled back)
+        let tags = get_transaction_tags(transaction.id(), &connection)
+            .expect("Could not get transaction tags");
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0], tag1);
+    }
+}

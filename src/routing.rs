@@ -15,7 +15,6 @@ use crate::{
     AppState,
     auth_middleware::{auth_guard, auth_guard_hx},
     balances::get_balances_page,
-    category::{create_category_endpoint, get_new_category_page},
     dashboard::get_dashboard_page,
     endpoints,
     forgot_password::get_forgot_password_page,
@@ -23,6 +22,7 @@ use crate::{
     log_in::{get_log_in_page, post_log_in},
     log_out::get_log_out,
     register_user::{get_register_page, register_user},
+    tag::{create_tag_endpoint, get_new_tag_page},
     transaction::{
         create_transaction_endpoint, get_new_transaction_page, get_transaction_endpoint,
         get_transactions_page,
@@ -56,7 +56,7 @@ pub fn build_router(state: AppState) -> Router {
             endpoints::NEW_TRANSACTION_VIEW,
             get(get_new_transaction_page),
         )
-        .route(endpoints::NEW_CATEGORY_VIEW, get(get_new_category_page))
+        .route(endpoints::NEW_TAG_VIEW, get(get_new_tag_page))
         .route(endpoints::IMPORT_VIEW, get(get_import_page))
         .route(endpoints::BALANCES_VIEW, get(get_balances_page))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
@@ -69,7 +69,7 @@ pub fn build_router(state: AppState) -> Router {
                 endpoints::TRANSACTIONS_API,
                 post(create_transaction_endpoint),
             )
-            .route(endpoints::CATEGORIES, post(create_category_endpoint))
+            .route(endpoints::POST_TAG, post(create_tag_endpoint))
             .route(endpoints::IMPORT, post(import_transactions))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),
     );
