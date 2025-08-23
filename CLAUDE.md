@@ -38,6 +38,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Recent Changes
 
+- **Categories Renamed to Tags (2025-08)**: Renamed "categories" to "tags" throughout the application
+- **Tag System Enhancement (2025-08)**: Added dedicated tags listing page at `/tags`
+- **Tag-Transaction Separation (2025-08)**: Moved tag-related code from `transaction.rs` to dedicated `tag.rs` module with many-to-many mapping between tags and transactions
 - **Store Pattern Removal (2025-08)**: Removed `TransactionStore` abstractions in favor of direct database function calls to modularize the codebase so that changes in one feature are isolated and do not affect other features.
 - **Folder Structure Flattening (2025-08)**: `src/routes/mod.rs` → `src/routing.rs`, `src/auth/*` → `src/auth_*.rs`
 - **Feature Module Organization (2025-08)**: All models moved to `src/` as self-contained modules
