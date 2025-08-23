@@ -1,7 +1,6 @@
 # To Do
 
 - Add rules-based auto-tagger (new branch, merge back w/ PR):
-  - Separate category from transaction type and table, and create a separate table that will allow for 1-N mapping of transactions to categories
   - Rename categories to tags
   - Add a user-configurable rules-based (text patterns) auto-tagging feature
   - Use rules-based tagger for automatically tagging imports

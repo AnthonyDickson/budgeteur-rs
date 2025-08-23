@@ -12,7 +12,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
-use rusqlite::{Connection, Row};
+use rusqlite::Connection;
+#[cfg(test)]
+use rusqlite::Row;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -46,6 +48,8 @@ impl CategoryName {
     /// The caller should ensure that the string is not empty.
     ///
     /// This function has `_unchecked` in the name but is not `unsafe`, because if the non-empty invariant is violated it will cause incorrect behaviour but not affect memory safety.
+    // TODO: Remove build config attribute once new_unchecked function is used elsewhere.
+    #[cfg(test)]
     pub fn new_unchecked(name: &str) -> Self {
         Self(name.to_string())
     }
@@ -190,6 +194,8 @@ fn get_category(category_id: DatabaseID, connection: &Connection) -> Result<Cate
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error.
+// TODO: Remove build config attribute once get_all_categories function is used elsewhere.
+#[cfg(test)]
 pub fn get_all_categories(connection: &Connection) -> Result<Vec<Category>, Error> {
     connection
         .prepare("SELECT id, name FROM category;")?
@@ -210,6 +216,8 @@ pub fn create_category_table(connection: &Connection) -> Result<(), rusqlite::Er
     Ok(())
 }
 
+// TODO: Remove build config attribute once map_row function is used elsewhere.
+#[cfg(test)]
 fn map_row(row: &Row) -> Result<Category, rusqlite::Error> {
     let id = row.get(0)?;
     let raw_name: String = row.get(1)?;
@@ -234,13 +242,13 @@ pub fn create_transaction_category_table(connection: &Connection) -> Result<(), 
         )",
         (),
     )?;
-    
+
     // Ensure the sequence starts at 1
     connection.execute(
         "INSERT OR IGNORE INTO sqlite_sequence (name, seq) VALUES ('transaction_category', 0)",
         (),
     )?;
-    
+
     Ok(())
 }
 
@@ -250,6 +258,8 @@ pub fn create_transaction_category_table(connection: &Connection) -> Result<(), 
 /// This function will return a:
 /// - [Error::InvalidCategory] if `category_id` does not refer to a valid category,
 /// - [Error::SqlError] if there is some other SQL error.
+// TODO: Remove build config attribute once add_category_to_transaction function is used elsewhere.
+#[cfg(test)]
 pub fn add_category_to_transaction(
     transaction_id: DatabaseID,
     category_id: DatabaseID,
@@ -274,6 +284,8 @@ pub fn add_category_to_transaction(
 ///
 /// # Errors
 /// This function will return a [Error::SqlError] if there is a SQL error.
+// TODO: Remove build config attribute once remove_category_from_transaction function is used elsewhere.
+#[cfg(test)]
 pub fn remove_category_from_transaction(
     transaction_id: DatabaseID,
     category_id: DatabaseID,
@@ -290,6 +302,8 @@ pub fn remove_category_from_transaction(
 ///
 /// # Errors
 /// This function will return a [Error::SqlError] if there is a SQL error.
+// TODO: Remove build config attribute once get_transaction_categories function is used elsewhere.
+#[cfg(test)]
 pub fn get_transaction_categories(
     transaction_id: DatabaseID,
     connection: &Connection,
@@ -318,24 +332,26 @@ pub fn get_transaction_categories(
 /// This function will return a:
 /// - [Error::InvalidCategory] if any `category_id` does not refer to a valid category,
 /// - [Error::SqlError] if there is some other SQL error.
+// TODO: Remove build config attribute once set_transaction_categories function is used elsewhere.
+#[cfg(test)]
 pub fn set_transaction_categories(
     transaction_id: DatabaseID,
     category_ids: &[DatabaseID],
     connection: &Connection,
 ) -> Result<(), Error> {
     let tx = connection.unchecked_transaction()?;
-    
+
     // Remove existing categories
     tx.execute(
         "DELETE FROM transaction_category WHERE transaction_id = ?1",
         [transaction_id],
     )?;
-    
+
     // Add new categories
     let mut stmt = tx.prepare(
         "INSERT INTO transaction_category (transaction_id, category_id) VALUES (?1, ?2)",
     )?;
-    
+
     for &category_id in category_ids {
         stmt.execute((transaction_id, category_id))
             .map_err(|error| match error {
@@ -346,7 +362,7 @@ pub fn set_transaction_categories(
                 error => error.into(),
             })?;
     }
-    
+
     drop(stmt);
     tx.commit()?;
     Ok(())
@@ -681,5 +697,320 @@ mod create_category_endpoint_tests {
         let got_error_message = error_message.trim();
 
         assert_eq!(want_error_message, got_error_message);
+    }
+}
+
+#[cfg(test)]
+mod transaction_category_junction_tests {
+    use rusqlite::Connection;
+    use std::collections::HashSet;
+
+    use crate::{
+        Error,
+        category::{Category, CategoryName, create_category, create_category_table},
+        transaction::{Transaction, create_transaction, create_transaction_table},
+    };
+
+    use super::{
+        add_category_to_transaction, create_transaction_category_table, get_transaction_categories,
+        remove_category_from_transaction, set_transaction_categories,
+    };
+
+    fn get_test_connection() -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+
+        // Create all necessary tables
+        create_category_table(&connection).expect("Could not create category table");
+        create_transaction_table(&connection).expect("Could not create transaction table");
+        create_transaction_category_table(&connection).expect("Could not create junction table");
+
+        connection
+    }
+
+    fn create_test_category(name: &str, connection: &Connection) -> Category {
+        create_category(CategoryName::new_unchecked(name), connection)
+            .expect("Could not create test category")
+    }
+
+    fn create_test_transaction(
+        amount: f64,
+        description: &str,
+        connection: &Connection,
+    ) -> Transaction {
+        create_transaction(
+            Transaction::build(amount).description(description),
+            connection,
+        )
+        .expect("Could not create test transaction")
+    }
+
+    // ============================================================================
+    // BASIC CRUD TESTS
+    // ============================================================================
+
+    #[test]
+    fn add_category_to_transaction_succeeds() {
+        let connection = get_test_connection();
+        let category = create_test_category("Groceries", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        let result = add_category_to_transaction(transaction.id(), category.id, &connection);
+
+        assert!(result.is_ok());
+
+        // Verify the relationship was created
+        let categories = get_transaction_categories(transaction.id(), &connection)
+            .expect("Could not get transaction categories");
+        assert_eq!(categories.len(), 1);
+        assert_eq!(categories[0], category);
+    }
+
+    #[test]
+    fn remove_category_from_transaction_succeeds() {
+        let connection = get_test_connection();
+        let category = create_test_category("Groceries", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // First add the category
+        add_category_to_transaction(transaction.id(), category.id, &connection)
+            .expect("Could not add category to transaction");
+
+        // Then remove it
+        let result = remove_category_from_transaction(transaction.id(), category.id, &connection);
+
+        assert!(result.is_ok());
+
+        // Verify the relationship was removed
+        let categories = get_transaction_categories(transaction.id(), &connection)
+            .expect("Could not get transaction categories");
+        assert_eq!(categories.len(), 0);
+    }
+
+    #[test]
+    fn get_transaction_categories_returns_correct_categories() {
+        let connection = get_test_connection();
+        let category1 = create_test_category("Groceries", &connection);
+        let _category2 = create_test_category("Transport", &connection);
+        let category3 = create_test_category("Entertainment", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // Add categories to transaction
+        add_category_to_transaction(transaction.id(), category1.id, &connection)
+            .expect("Could not add category1");
+        add_category_to_transaction(transaction.id(), category3.id, &connection)
+            .expect("Could not add category3");
+        // Intentionally not adding category2
+
+        let categories = get_transaction_categories(transaction.id(), &connection)
+            .expect("Could not get transaction categories");
+        let category_set: HashSet<_> = categories.into_iter().collect();
+
+        let expected_set = HashSet::from([category3, category1]); // Note: should be sorted by name
+        assert_eq!(category_set, expected_set);
+    }
+
+    #[test]
+    fn get_transaction_categories_returns_empty_for_no_categories() {
+        let connection = get_test_connection();
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        let categories = get_transaction_categories(transaction.id(), &connection)
+            .expect("Could not get transaction categories");
+
+        assert_eq!(categories.len(), 0);
+    }
+
+    #[test]
+    fn set_transaction_categories_replaces_existing_categories() {
+        let connection = get_test_connection();
+        let category1 = create_test_category("Groceries", &connection);
+        let category2 = create_test_category("Transport", &connection);
+        let category3 = create_test_category("Entertainment", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // First add some categories
+        add_category_to_transaction(transaction.id(), category1.id, &connection)
+            .expect("Could not add category1");
+        add_category_to_transaction(transaction.id(), category2.id, &connection)
+            .expect("Could not add category2");
+
+        // Replace with different set of categories
+        let new_category_ids = vec![category2.id, category3.id];
+        let result = set_transaction_categories(transaction.id(), &new_category_ids, &connection);
+
+        assert!(result.is_ok());
+
+        // Verify the categories were replaced
+        let categories = get_transaction_categories(transaction.id(), &connection)
+            .expect("Could not get transaction categories");
+        let category_set: HashSet<_> = categories.into_iter().collect();
+
+        let expected_set = HashSet::from([category2, category3]);
+        assert_eq!(category_set, expected_set);
+    }
+
+    #[test]
+    fn set_transaction_categories_with_empty_list_removes_all() {
+        let connection = get_test_connection();
+        let category1 = create_test_category("Groceries", &connection);
+        let category2 = create_test_category("Transport", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // First add some categories
+        add_category_to_transaction(transaction.id(), category1.id, &connection)
+            .expect("Could not add category1");
+        add_category_to_transaction(transaction.id(), category2.id, &connection)
+            .expect("Could not add category2");
+
+        // Set to empty list
+        let result = set_transaction_categories(transaction.id(), &[], &connection);
+
+        assert!(result.is_ok());
+
+        // Verify all categories were removed
+        let categories = get_transaction_categories(transaction.id(), &connection)
+            .expect("Could not get transaction categories");
+        assert_eq!(categories.len(), 0);
+    }
+
+    // ============================================================================
+    // ERROR HANDLING TESTS
+    // ============================================================================
+
+    #[test]
+    fn add_category_to_transaction_fails_with_invalid_category_id() {
+        let connection = get_test_connection();
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+        let invalid_category_id = 999999; // Non-existent category ID
+
+        let result =
+            add_category_to_transaction(transaction.id(), invalid_category_id, &connection);
+
+        assert!(matches!(result, Err(Error::InvalidCategory)));
+    }
+
+    #[test]
+    fn set_transaction_categories_fails_with_invalid_category_id() {
+        let connection = get_test_connection();
+        let category1 = create_test_category("Groceries", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+        let invalid_category_id = 999999; // Non-existent category ID
+
+        let invalid_category_ids = vec![category1.id, invalid_category_id];
+        let result =
+            set_transaction_categories(transaction.id(), &invalid_category_ids, &connection);
+
+        assert!(matches!(result, Err(Error::InvalidCategory)));
+
+        // Verify transaction was rolled back - no categories should be added
+        let categories = get_transaction_categories(transaction.id(), &connection)
+            .expect("Could not get transaction categories");
+        assert_eq!(categories.len(), 0);
+    }
+
+    #[test]
+    fn remove_category_from_transaction_succeeds_with_non_existent_relationship() {
+        let connection = get_test_connection();
+        let category = create_test_category("Groceries", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // Try to remove a category that was never added
+        let result = remove_category_from_transaction(transaction.id(), category.id, &connection);
+
+        // Should succeed (idempotent operation)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn functions_handle_non_existent_transaction_id() {
+        let connection = get_test_connection();
+        let category = create_test_category("Groceries", &connection);
+        let invalid_transaction_id = 999999; // Non-existent transaction ID
+
+        // Adding a category to non-existent transaction should fail due to foreign key constraint
+        let add_result =
+            add_category_to_transaction(invalid_transaction_id, category.id, &connection);
+        assert!(add_result.is_err());
+
+        // Removing from non-existent transaction should succeed (idempotent)
+        let remove_result =
+            remove_category_from_transaction(invalid_transaction_id, category.id, &connection);
+        assert!(remove_result.is_ok());
+
+        // Getting categories for non-existent transaction should succeed and return empty
+        let get_result = get_transaction_categories(invalid_transaction_id, &connection);
+        assert!(get_result.is_ok());
+        assert_eq!(get_result.unwrap().len(), 0);
+    }
+
+    // ============================================================================
+    // EDGE CASE AND DATA INTEGRITY TESTS
+    // ============================================================================
+
+    #[test]
+    fn add_duplicate_category_to_transaction_fails_due_to_unique_constraint() {
+        let connection = get_test_connection();
+        let category = create_test_category("Groceries", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+
+        // Add category once
+        add_category_to_transaction(transaction.id(), category.id, &connection)
+            .expect("Could not add category first time");
+
+        // Try to add the same category again
+        let result = add_category_to_transaction(transaction.id(), category.id, &connection);
+
+        // Should fail due to unique constraint
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn multiple_transactions_can_have_same_category() {
+        let connection = get_test_connection();
+        let category = create_test_category("Groceries", &connection);
+        let transaction1 = create_test_transaction(50.0, "Store purchase", &connection);
+        let transaction2 = create_test_transaction(30.0, "Market purchase", &connection);
+
+        // Add same category to both transactions
+        add_category_to_transaction(transaction1.id(), category.id, &connection)
+            .expect("Could not add category to transaction1");
+        add_category_to_transaction(transaction2.id(), category.id, &connection)
+            .expect("Could not add category to transaction2");
+
+        // Verify both transactions have the category
+        let categories1 = get_transaction_categories(transaction1.id(), &connection)
+            .expect("Could not get categories for transaction1");
+        let categories2 = get_transaction_categories(transaction2.id(), &connection)
+            .expect("Could not get categories for transaction2");
+
+        assert_eq!(categories1.len(), 1);
+        assert_eq!(categories2.len(), 1);
+        assert_eq!(categories1[0], category);
+        assert_eq!(categories2[0], category);
+    }
+
+    #[test]
+    fn set_transaction_categories_is_atomic() {
+        let connection = get_test_connection();
+        let category1 = create_test_category("Groceries", &connection);
+        let category2 = create_test_category("Transport", &connection);
+        let transaction = create_test_transaction(50.0, "Store purchase", &connection);
+        let invalid_category_id = 999999;
+
+        // First add a category
+        add_category_to_transaction(transaction.id(), category1.id, &connection)
+            .expect("Could not add initial category");
+
+        // Try to set categories with one valid and one invalid ID
+        let mixed_category_ids = vec![category2.id, invalid_category_id];
+        let result = set_transaction_categories(transaction.id(), &mixed_category_ids, &connection);
+
+        assert!(matches!(result, Err(Error::InvalidCategory)));
+
+        // Verify the original category is still there (transaction was rolled back)
+        let categories = get_transaction_categories(transaction.id(), &connection)
+            .expect("Could not get transaction categories");
+        assert_eq!(categories.len(), 1);
+        assert_eq!(categories[0], category1);
     }
 }
