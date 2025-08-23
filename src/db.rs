@@ -3,8 +3,8 @@
 use rusqlite::{Connection, Error, Row, Transaction as SqlTransaction};
 
 use crate::{
-    balances::create_balance_table, category::create_category_table,
-    transaction::{create_transaction_table, create_transaction_category_table}, user::create_user_table,
+    balances::create_balance_table, category::{create_category_table, create_transaction_category_table},
+    transaction::create_transaction_table, user::create_user_table,
 };
 
 /// A trait for adding an object schema to a database.
