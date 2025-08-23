@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Tags{% endblock %}
+{% block content %}
+{{ nav_bar|safe }}
+<div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-5 text-gray-900 dark:text-white">
+  <div class="relative overflow-x-auto">
+    <div class="flex justify-between flex-wrap items-end">
+      <h1 class="text-xl font-bold">Tags</h1>
+      <a
+        href="{{ new_tag_route }}"
+        class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+      >
+        Create Tag
+      </a>
+    </div>
+    <div class="dark:bg-gray-800">
+      <table class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400">
+        <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+          <tr>
+            <th scope="col" class="px-6 py-3">
+              ID
+            </th>
+            <th scope="col" class="px-6 py-3">
+              Name
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tag in tags %}
+          <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+            <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white">
+              {{ tag.id }}
+            </th>
+            <td class="px-6 py-4">
+              {{ tag.name }}
+            </td>
+          </tr>
+          {% endfor %}
+
+          {% if tags.is_empty() %}
+          <tr>
+            <td colspan="2" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+              No tags created yet. <a href="{{ new_tag_route }}" class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline">Create your first tag</a>
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

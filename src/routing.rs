@@ -22,7 +22,7 @@ use crate::{
     log_in::{get_log_in_page, post_log_in},
     log_out::get_log_out,
     register_user::{get_register_page, register_user},
-    tag::{create_tag_endpoint, get_new_tag_page},
+    tag::{create_tag_endpoint, get_new_tag_page, get_tags_page},
     transaction::{
         create_transaction_endpoint, get_new_transaction_page, get_transaction_endpoint,
         get_transactions_page,
@@ -57,6 +57,7 @@ pub fn build_router(state: AppState) -> Router {
             get(get_new_transaction_page),
         )
         .route(endpoints::NEW_TAG_VIEW, get(get_new_tag_page))
+        .route(endpoints::TAGS_VIEW, get(get_tags_page))
         .route(endpoints::IMPORT_VIEW, get(get_import_page))
         .route(endpoints::BALANCES_VIEW, get(get_balances_page))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));

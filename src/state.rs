@@ -106,4 +106,3 @@ impl FromRef<AppState> for TransactionState {
 
 /// The state needed for displaying the dashboard page.
 pub type DashboardState = TransactionState;
-

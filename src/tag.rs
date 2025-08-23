@@ -12,9 +12,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
-use rusqlite::Connection;
-#[cfg(test)]
-use rusqlite::Row;
+use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -48,8 +46,6 @@ impl TagName {
     /// The caller should ensure that the string is not empty.
     ///
     /// This function has `_unchecked` in the name but is not `unsafe`, because if the non-empty invariant is violated it will cause incorrect behaviour but not affect memory safety.
-    // TODO: Remove build config attribute once new_unchecked function is used elsewhere.
-    #[cfg(test)]
     pub fn new_unchecked(name: &str) -> Self {
         Self(name.to_string())
     }
@@ -94,6 +90,54 @@ pub async fn get_new_tag_page() -> Response {
         },
     }
     .into_response()
+}
+
+/// Renders the tags listing page.
+#[derive(Template)]
+#[template(path = "views/tags.html")]
+struct TagsTemplate<'a> {
+    nav_bar: NavbarTemplate<'a>,
+    tags: Vec<Tag>,
+    new_tag_route: &'a str,
+}
+
+/// The state needed for the tags listing page.
+#[derive(Debug, Clone)]
+pub struct TagsPageState {
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for TagsPageState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
+
+/// Route handler for the tags listing page.
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+pub async fn get_tags_page(State(state): State<TagsPageState>) -> Response {
+    let connection = state
+        .db_connection
+        .lock()
+        .expect("Could not acquire database lock");
+
+    match get_all_tags(&connection) {
+        Ok(tags) => TagsTemplate {
+            nav_bar: get_nav_bar(endpoints::TAGS_VIEW),
+            tags,
+            new_tag_route: endpoints::NEW_TAG_VIEW,
+        }
+        .into_response(),
+        Err(error) => {
+            tracing::error!("Failed to retrieve tags: {error}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response()
+        }
+    }
 }
 
 /// The state needed for creating a tag.
@@ -147,7 +191,7 @@ pub async fn create_tag_endpoint(
     )
     .map(|_tag| {
         (
-            HxRedirect(Uri::from_static(endpoints::NEW_TRANSACTION_VIEW)),
+            HxRedirect(Uri::from_static(endpoints::TAGS_VIEW)),
             StatusCode::SEE_OTHER,
         )
     })
@@ -194,8 +238,6 @@ fn get_tag(tag_id: DatabaseID, connection: &Connection) -> Result<Tag, Error> {
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error.
-// TODO: Remove build config attribute once get_all_tags function is used elsewhere.
-#[cfg(test)]
 pub fn get_all_tags(connection: &Connection) -> Result<Vec<Tag>, Error> {
     connection
         .prepare("SELECT id, name FROM tag;")?
@@ -216,8 +258,6 @@ pub fn create_tag_table(connection: &Connection) -> Result<(), rusqlite::Error> 
     Ok(())
 }
 
-// TODO: Remove build config attribute once map_row function is used elsewhere.
-#[cfg(test)]
 fn map_row(row: &Row) -> Result<Tag, rusqlite::Error> {
     let id = row.get(0)?;
     let raw_name: String = row.get(1)?;
@@ -608,7 +648,7 @@ mod create_tag_endpoint_tests {
             .into_response();
 
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        assert_hx_redirect(&response, endpoints::NEW_TRANSACTION_VIEW);
+        assert_hx_redirect(&response, endpoints::TAGS_VIEW);
         assert_eq!(Ok(want), get_tag(1, &state.db_connection.lock().unwrap()));
     }
 

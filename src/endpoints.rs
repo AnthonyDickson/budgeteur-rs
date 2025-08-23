@@ -12,6 +12,8 @@ pub const TRANSACTIONS_VIEW: &str = "/transactions";
 pub const NEW_TRANSACTION_VIEW: &str = "/transactions/new";
 /// The page for creating a new tag.
 pub const NEW_TAG_VIEW: &str = "/tag/new";
+/// The page for listing all tags.
+pub const TAGS_VIEW: &str = "/tags";
 /// The page for importing transactions from CSV files.
 pub const IMPORT_VIEW: &str = "/transactions/import";
 /// The route for getting the registration page.
@@ -103,6 +105,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_VIEW);
         assert_endpoint_is_valid_uri(endpoints::NEW_TRANSACTION_VIEW);
         assert_endpoint_is_valid_uri(endpoints::NEW_TAG_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::TAGS_VIEW);
         assert_endpoint_is_valid_uri(endpoints::IMPORT_VIEW);
         assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);

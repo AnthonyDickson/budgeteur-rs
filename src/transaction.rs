@@ -114,7 +114,6 @@ impl Transaction {
         &self.description
     }
 
-
     /// The ID of the import that this transaction belongs to.
     pub fn import_id(&self) -> Option<i64> {
         self.import_id
@@ -182,7 +181,6 @@ pub struct TransactionBuilder {
     /// - `"POS W/D LOBSTER SEAFOO-19:47"`
     pub description: String,
 
-
     /// Optional unique identifier for imported transactions.
     ///
     /// This field is used to prevent duplicate imports when processing CSV files
@@ -245,7 +243,6 @@ impl TransactionBuilder {
         self.description = description.to_owned();
         self
     }
-
 
     /// Set the import ID for the transaction.
     pub fn import_id(mut self, import_id: Option<i64>) -> Self {
@@ -411,7 +408,9 @@ pub fn import_transactions(
 /// - or [Error::SqlError] there is some other SQL error.
 pub fn get_transaction(id: DatabaseID, connection: &Connection) -> Result<Transaction, Error> {
     let transaction = connection
-        .prepare("SELECT id, amount, date, description, import_id FROM \"transaction\" WHERE id = :id")?
+        .prepare(
+            "SELECT id, amount, date, description, import_id FROM \"transaction\" WHERE id = :id",
+        )?
         .query_row(&[(":id", &id)], map_transaction_row)?;
 
     Ok(transaction)
@@ -449,10 +448,8 @@ pub fn query_transactions(
     filter: TransactionQuery,
     connection: &Connection,
 ) -> Result<Vec<Transaction>, Error> {
-    let mut query_string_parts = vec![
-        "SELECT id, amount, date, description, import_id FROM \"transaction\""
-            .to_string(),
-    ];
+    let mut query_string_parts =
+        vec!["SELECT id, amount, date, description, import_id FROM \"transaction\"".to_string()];
     let mut where_clause_parts = vec![];
     let mut query_parameters = vec![];
 
@@ -580,17 +577,16 @@ pub fn count_transactions(connection: &Connection) -> Result<usize, Error> {
 /// # Errors
 /// Returns an error if the table cannot be created or if there is an SQL error.
 pub fn create_transaction_table(connection: &Connection) -> Result<(), rusqlite::Error> {
-    connection
-        .execute(
-            "CREATE TABLE IF NOT EXISTS \"transaction\" (
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS \"transaction\" (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 amount REAL NOT NULL,
                 date TEXT NOT NULL,
                 description TEXT NOT NULL,
                 import_id INTEGER UNIQUE
                 )",
-            (),
-        )?;
+        (),
+    )?;
 
     // Ensure the sequence starts at 1
     connection.execute(
@@ -600,7 +596,6 @@ pub fn create_transaction_table(connection: &Connection) -> Result<(), rusqlite:
 
     Ok(())
 }
-
 
 /// Map a database row to a Transaction.
 fn map_transaction_row(row: &Row) -> Result<Transaction, rusqlite::Error> {
@@ -836,7 +831,6 @@ mod database_tests {
         assert_eq!(transaction.amount(), amount);
     }
 
-
     #[test]
     fn create_fails_on_duplicate_import_id() {
         let conn = get_test_connection();
@@ -902,9 +896,7 @@ mod database_tests {
 
         // Verify that only the original transaction exists in the database
         let all_transactions = conn
-            .prepare(
-                "SELECT id, amount, date, description, import_id FROM \"transaction\"",
-            )
+            .prepare("SELECT id, amount, date, description, import_id FROM \"transaction\"")
             .unwrap()
             .query_map([], map_transaction_row)
             .unwrap()
@@ -1072,9 +1064,7 @@ mod database_tests {
 
 #[cfg(test)]
 mod view_tests {
-    use std::{
-        sync::{Arc, Mutex},
-    };
+    use std::sync::{Arc, Mutex};
 
     use axum::{
         body::Body,
@@ -1086,11 +1076,7 @@ mod view_tests {
     use scraper::{ElementRef, Html, Selector, selectable::Selectable};
     use time::OffsetDateTime;
 
-    use crate::{
-        db::initialize,
-        endpoints,
-        pagination::PaginationConfig,
-    };
+    use crate::{db::initialize, endpoints, pagination::PaginationConfig};
 
     use super::*;
 
@@ -1259,7 +1245,6 @@ mod view_tests {
             "the amount for a new transaction should increment in steps of 0.01, but got {step}"
         );
     }
-
 
     #[track_caller]
     fn assert_has_submit_button(form: &ElementRef) {
