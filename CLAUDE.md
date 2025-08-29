@@ -7,14 +7,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Setup:** `cargo run --bin create_test_db -- --output-path test.db`
 
 **Development:**
+
 - `bacon` - Development server (tailwindcss + server)
-- `bacon test` - Test with file watching  
+- `bacon test` - Test with file watching
 - `bacon clippy` - Lint with file watching
 - `cargo test` - Run tests
 - `cargo clippy -- -D warnings` - Lint (warnings as errors)
 - `cargo fmt` - Format code (run after verifying code works)
 
 **Maintenance:**
+
 - `sed -i 's/old/new/g' src/*.rs` - Batch string replacement
 - `cargo run --bin reset_password -- --db-path test.db` - Reset password
 
@@ -31,6 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Route Organization**: API endpoints are mixed with view routes in the same handlers (not separated). Feature modules contain both database operations and route handlers.
 
 **Database Conventions:**
+
 - Functions take `connection: &Connection` as last parameter
 - Use `AppState::new()` for initialization (handles DB setup automatically)
 - Tests use in-memory databases with `get_test_connection()` helper

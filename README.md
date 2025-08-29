@@ -1,4 +1,5 @@
 # Budgeteur-rs
+
 [![Build & Test](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/ci.yml)
 [![Build & Push Docker Image](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/cd.yaml/badge.svg)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/cd.yaml)
 
@@ -12,6 +13,7 @@ This app aims to provide two services:
 The application consists of a single server that renders and serves HTML directly.
 
 <!--toc:start-->
+
 - [Budgeteur-rs](#budgeteur-rs)
   - [Installation and Usage](#installation-and-usage)
     - [First-Time Usage](#first-time-usage)
@@ -26,6 +28,7 @@ The application consists of a single server that renders and serves HTML directl
     - [Building and Running the Docker Image Locally](#building-and-running-the-docker-image-locally)
   - [API Design](#api-design)
     - [HTTP Status Codes](#http-status-codes)
+
 <!--toc:end-->
 
 ## Installation and Usage
@@ -49,9 +52,11 @@ docker compose up
 > especially if hosting this app on the public internet.
 
 ### First-Time Usage
+
 Navigate to `https://<published URL>/register` and create a user account.
 
 ### Resetting Your Password
+
 The app is set up for a single user and the following instructions will reset
 the password for that sole user account.
 
