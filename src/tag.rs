@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use askama_axum::Template;
 use axum::{
     Form,
-    extract::{FromRef, State},
+    extract::{FromRef, Path, State},
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
 };
@@ -81,6 +81,23 @@ struct NewTagTemplate<'a> {
     form: NewTagFormTemplate<'a>,
 }
 
+/// Renders the form for editing a tag.
+#[derive(Template)]
+#[template(path = "partials/edit_tag_form.html")]
+struct EditTagFormTemplate<'a> {
+    update_tag_endpoint: &'a str,
+    tag_name: &'a str,
+    error_message: &'a str,
+}
+
+/// Renders the edit tag page.
+#[derive(Template)]
+#[template(path = "views/edit_tag.html")]
+struct EditTagTemplate<'a> {
+    nav_bar: NavbarTemplate<'a>,
+    form: EditTagFormTemplate<'a>,
+}
+
 pub async fn get_new_tag_page() -> Response {
     NewTagTemplate {
         nav_bar: get_nav_bar(endpoints::NEW_TAG_VIEW),
@@ -92,12 +109,19 @@ pub async fn get_new_tag_page() -> Response {
     .into_response()
 }
 
+/// A tag with its formatted edit URL for template rendering.
+#[derive(Debug, Clone)]
+struct TagWithEditUrl {
+    pub tag: Tag,
+    pub edit_url: String,
+}
+
 /// Renders the tags listing page.
 #[derive(Template)]
 #[template(path = "views/tags.html")]
 struct TagsTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
-    tags: Vec<Tag>,
+    tags: Vec<TagWithEditUrl>,
     new_tag_route: &'a str,
 }
 
@@ -127,12 +151,22 @@ pub async fn get_tags_page(State(state): State<TagsPageState>) -> Response {
         .expect("Could not acquire database lock");
 
     match get_all_tags(&connection) {
-        Ok(tags) => TagsTemplate {
-            nav_bar: get_nav_bar(endpoints::TAGS_VIEW),
-            tags,
-            new_tag_route: endpoints::NEW_TAG_VIEW,
+        Ok(tags) => {
+            let tags_with_edit_urls = tags
+                .into_iter()
+                .map(|tag| TagWithEditUrl {
+                    edit_url: endpoints::format_endpoint(endpoints::EDIT_TAG_VIEW, tag.id),
+                    tag,
+                })
+                .collect();
+
+            TagsTemplate {
+                nav_bar: get_nav_bar(endpoints::TAGS_VIEW),
+                tags: tags_with_edit_urls,
+                new_tag_route: endpoints::NEW_TAG_VIEW,
+            }
+            .into_response()
         }
-        .into_response(),
         Err(error) => {
             tracing::error!("Failed to retrieve tags: {error}");
             (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response()
@@ -147,6 +181,34 @@ pub struct CreateTagEndpointState {
 }
 
 impl FromRef<AppState> for CreateTagEndpointState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
+
+/// The state needed for the edit tag page.
+#[derive(Debug, Clone)]
+pub struct EditTagPageState {
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for EditTagPageState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
+
+/// The state needed for updating a tag.
+#[derive(Debug, Clone)]
+pub struct UpdateTagEndpointState {
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for UpdateTagEndpointState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
@@ -209,6 +271,120 @@ pub async fn create_tag_endpoint(
     .into_response()
 }
 
+/// Route handler for the edit tag page.
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+pub async fn get_edit_tag_page(
+    Path(tag_id): Path<DatabaseID>,
+    State(state): State<EditTagPageState>,
+) -> Response {
+    let connection = state
+        .db_connection
+        .lock()
+        .expect("Could not acquire database lock");
+
+    let edit_endpoint = endpoints::format_endpoint(endpoints::EDIT_TAG_VIEW, tag_id);
+    let update_endpoint = endpoints::format_endpoint(endpoints::PUT_TAG, tag_id);
+
+    match get_tag(tag_id, &connection) {
+        Ok(tag) => EditTagTemplate {
+            nav_bar: get_nav_bar(&edit_endpoint),
+            form: EditTagFormTemplate {
+                update_tag_endpoint: &update_endpoint,
+                tag_name: tag.name.as_ref(),
+                error_message: "",
+            },
+        }
+        .into_response(),
+        Err(error) => {
+            let error_message = match error {
+                Error::NotFound => "Tag not found",
+                _ => {
+                    tracing::error!("Failed to retrieve tag {tag_id}: {error}");
+                    "Failed to load tag"
+                }
+            };
+
+            EditTagTemplate {
+                nav_bar: get_nav_bar(&edit_endpoint),
+                form: EditTagFormTemplate {
+                    update_tag_endpoint: &update_endpoint,
+                    tag_name: "",
+                    error_message,
+                },
+            }
+            .into_response()
+        }
+    }
+}
+
+/// A route handler for updating a tag.
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+pub async fn update_tag_endpoint(
+    Path(tag_id): Path<DatabaseID>,
+    State(state): State<UpdateTagEndpointState>,
+    Form(form_data): Form<TagFormData>,
+) -> impl IntoResponse {
+    let connection = state
+        .db_connection
+        .lock()
+        .expect("Could not acquire database lock");
+
+    let update_endpoint = endpoints::format_endpoint(endpoints::PUT_TAG, tag_id);
+
+    let name = match TagName::new(&form_data.name) {
+        Ok(name) => name,
+        Err(error) => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                EditTagFormTemplate {
+                    update_tag_endpoint: &update_endpoint,
+                    tag_name: &form_data.name,
+                    error_message: &format!("Error: {error}"),
+                },
+            )
+                .into_response();
+        }
+    };
+
+    update_tag(tag_id, name, &connection)
+        .map(|_| {
+            (
+                HxRedirect(Uri::from_static(endpoints::TAGS_VIEW)),
+                StatusCode::SEE_OTHER,
+            )
+        })
+        .map_err(|error| {
+            let (status, error_message) = match error {
+                Error::NotFound => (StatusCode::NOT_FOUND, "Tag not found"),
+                _ => {
+                    tracing::error!(
+                        "An unexpected error occurred while updating tag {tag_id}: {error}"
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "An unexpected error occurred. Please try again.",
+                    )
+                }
+            };
+
+            (
+                status,
+                EditTagFormTemplate {
+                    update_tag_endpoint: &update_endpoint,
+                    tag_name: &form_data.name,
+                    error_message,
+                },
+            )
+        })
+        .into_response()
+}
+
 /// Create a tag in the database.
 ///
 /// # Errors
@@ -225,13 +401,32 @@ pub fn create_tag(name: TagName, connection: &Connection) -> Result<Tag, Error> 
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error.
-// TODO: Remove build config attribute once get_tag function is used elsewhere.
-#[cfg(test)]
-fn get_tag(tag_id: DatabaseID, connection: &Connection) -> Result<Tag, Error> {
+pub fn get_tag(tag_id: DatabaseID, connection: &Connection) -> Result<Tag, Error> {
     connection
         .prepare("SELECT id, name FROM tag WHERE id = :id;")?
         .query_row(&[(":id", &tag_id)], map_row)
         .map_err(|error| error.into())
+}
+
+/// Update a tag's name in the database.
+///
+/// # Errors
+/// This function will return an error if there is an SQL error or if the tag doesn't exist.
+pub fn update_tag(
+    tag_id: DatabaseID,
+    new_name: TagName,
+    connection: &Connection,
+) -> Result<(), Error> {
+    let rows_affected = connection.execute(
+        "UPDATE tag SET name = ?1 WHERE id = ?2",
+        (new_name.as_ref(), tag_id),
+    )?;
+
+    if rows_affected == 0 {
+        return Err(Error::NotFound);
+    }
+
+    Ok(())
 }
 
 /// Retrieve tags in the database.
@@ -432,7 +627,7 @@ mod tag_query_tests {
 
     use rusqlite::Connection;
 
-    use crate::tag::{create_tag, get_all_tags, get_tag};
+    use crate::tag::{create_tag, get_all_tags, get_tag, update_tag};
     use crate::{Error, tag::TagName};
 
     use super::create_tag_table;
@@ -490,6 +685,33 @@ mod tag_query_tests {
         let selected_tags = HashSet::from_iter(selected_tags);
 
         assert_eq!(inserted_tags, selected_tags);
+    }
+
+    #[test]
+    fn update_tag_succeeds() {
+        let connection = get_test_db_connection();
+        let original_name = TagName::new_unchecked("Original");
+        let tag = create_tag(original_name, &connection).expect("Could not create test tag");
+
+        let new_name = TagName::new_unchecked("Updated");
+        let result = update_tag(tag.id, new_name.clone(), &connection);
+
+        assert!(result.is_ok());
+
+        let updated_tag = get_tag(tag.id, &connection).expect("Could not get updated tag");
+        assert_eq!(updated_tag.name, new_name);
+        assert_eq!(updated_tag.id, tag.id);
+    }
+
+    #[test]
+    fn update_tag_with_invalid_id_returns_not_found() {
+        let connection = get_test_db_connection();
+        let invalid_id = 999999;
+        let new_name = TagName::new_unchecked("Updated");
+
+        let result = update_tag(invalid_id, new_name, &connection);
+
+        assert_eq!(result, Err(Error::NotFound));
     }
 }
 
@@ -1035,5 +1257,294 @@ mod transaction_tag_junction_tests {
             .expect("Could not get transaction tags");
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0], tag1);
+    }
+}
+
+#[cfg(test)]
+mod edit_tag_endpoint_tests {
+    use std::sync::{Arc, Mutex};
+
+    use askama_axum::IntoResponse;
+    use axum::{
+        Form,
+        extract::{Path, State},
+        http::StatusCode,
+        response::Response,
+    };
+    use rusqlite::Connection;
+    use scraper::{ElementRef, Html};
+
+    use crate::{
+        endpoints,
+        tag::{TagName, create_tag, get_edit_tag_page, update_tag_endpoint},
+    };
+
+    use super::{EditTagPageState, TagFormData, UpdateTagEndpointState, create_tag_table};
+
+    fn get_edit_tag_state() -> EditTagPageState {
+        let connection =
+            Connection::open_in_memory().expect("Could not open in-memory SQLite database");
+        create_tag_table(&connection).expect("Could not create tag table");
+
+        EditTagPageState {
+            db_connection: Arc::new(Mutex::new(connection)),
+        }
+    }
+
+    fn get_update_tag_state() -> UpdateTagEndpointState {
+        let connection =
+            Connection::open_in_memory().expect("Could not open in-memory SQLite database");
+        create_tag_table(&connection).expect("Could not create tag table");
+
+        UpdateTagEndpointState {
+            db_connection: Arc::new(Mutex::new(connection)),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_edit_tag_page_succeeds() {
+        let state = get_edit_tag_state();
+        let tag_name = TagName::new_unchecked("Test Tag");
+        let tag = create_tag(tag_name.clone(), &state.db_connection.lock().unwrap())
+            .expect("Could not create test tag");
+
+        let response = get_edit_tag_page(Path(tag.id), State(state)).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("content-type")
+                .expect("content-type header missing"),
+            "text/html; charset=utf-8"
+        );
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+
+        let form = must_get_form(&html);
+        assert_hx_endpoint(
+            &form,
+            &endpoints::format_endpoint(endpoints::PUT_TAG, tag.id),
+            "hx-put",
+        );
+        assert_form_input_with_value(&form, "name", "text", tag_name.as_ref());
+        assert_form_submit_button(&form, "Update Tag");
+    }
+
+    #[tokio::test]
+    async fn get_edit_tag_page_with_invalid_id_shows_error() {
+        let state = get_edit_tag_state();
+        let invalid_id = 999999;
+
+        let response = get_edit_tag_page(Path(invalid_id), State(state)).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+
+        let form = must_get_form(&html);
+        assert_error_message(&form, "Tag not found");
+    }
+
+    #[tokio::test]
+    async fn update_tag_endpoint_succeeds() {
+        let state = get_update_tag_state();
+        let original_name = TagName::new_unchecked("Original");
+        let tag = create_tag(original_name, &state.db_connection.lock().unwrap())
+            .expect("Could not create test tag");
+
+        let form = TagFormData {
+            name: "Updated".to_string(),
+        };
+
+        let response = update_tag_endpoint(Path(tag.id), State(state), Form(form))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_hx_redirect(&response, endpoints::TAGS_VIEW);
+    }
+
+    #[tokio::test]
+    async fn update_tag_endpoint_with_invalid_id_returns_not_found() {
+        let state = get_update_tag_state();
+        let invalid_id = 999999;
+        let form = TagFormData {
+            name: "Updated".to_string(),
+        };
+
+        let response = update_tag_endpoint(Path(invalid_id), State(state), Form(form))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let html = parse_fragment_html(response).await;
+        assert_valid_html(&html);
+
+        let form = must_get_form(&html);
+        assert_error_message(&form, "Tag not found");
+    }
+
+    #[tokio::test]
+    async fn update_tag_endpoint_with_empty_name_returns_error() {
+        let state = get_update_tag_state();
+        let tag_name = TagName::new_unchecked("Test Tag");
+        let tag = create_tag(tag_name, &state.db_connection.lock().unwrap())
+            .expect("Could not create test tag");
+
+        let form = TagFormData {
+            name: "".to_string(),
+        };
+
+        let response = update_tag_endpoint(Path(tag.id), State(state), Form(form))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        let html = parse_fragment_html(response).await;
+        assert_valid_html(&html);
+
+        let form = must_get_form(&html);
+        assert_error_message(&form, "Error: Tag name cannot be empty");
+    }
+
+    async fn parse_html(response: Response) -> Html {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+
+        Html::parse_document(&text)
+    }
+
+    async fn parse_fragment_html(response: Response) -> Html {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+
+        Html::parse_fragment(&text)
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors {:?} for HTML {}",
+            html.errors,
+            html.html()
+        );
+    }
+
+    #[track_caller]
+    fn must_get_form(html: &Html) -> ElementRef {
+        html.select(&scraper::Selector::parse("form").unwrap())
+            .next()
+            .expect("No form found")
+    }
+
+    #[track_caller]
+    fn assert_hx_endpoint(form: &ElementRef, endpoint: &str, attribute: &str) {
+        let hx_attr = form
+            .value()
+            .attr(attribute)
+            .expect(&format!("{attribute} attribute missing"));
+
+        assert_eq!(
+            hx_attr, endpoint,
+            "want form with attribute {attribute}=\"{endpoint}\", got {hx_attr:?}"
+        );
+    }
+
+    #[track_caller]
+    fn assert_form_input_with_value(form: &ElementRef, name: &str, type_: &str, value: &str) {
+        for input in form.select(&scraper::Selector::parse("input").unwrap()) {
+            let input_name = input.value().attr("name").unwrap_or_default();
+
+            if input_name == name {
+                let input_type = input.value().attr("type").unwrap_or_default();
+                let input_value = input.value().attr("value").unwrap_or_default();
+                let input_required = input.value().attr("required");
+
+                assert_eq!(
+                    input_type, type_,
+                    "want input with type \"{type_}\", got {input_type:?}"
+                );
+
+                assert_eq!(
+                    input_value, value,
+                    "want input with value \"{value}\", got {input_value:?}"
+                );
+
+                assert!(
+                    input_required.is_some(),
+                    "want input with name {name} to have the required attribute but got none"
+                );
+
+                return;
+            }
+        }
+
+        panic!("No input found with name \"{name}\", type \"{type_}\", and value \"{value}\"");
+    }
+
+    #[track_caller]
+    fn assert_form_submit_button(form: &ElementRef, text: &str) {
+        let submit_button = form
+            .select(&scraper::Selector::parse("button").unwrap())
+            .next()
+            .expect("No button found");
+
+        assert_eq!(
+            submit_button.value().attr("type").unwrap_or_default(),
+            "submit",
+            "want submit button with type=\"submit\""
+        );
+
+        let button_text = submit_button
+            .text()
+            .collect::<Vec<_>>()
+            .join("")
+            .trim()
+            .to_string();
+        assert_eq!(
+            button_text, text,
+            "want button text \"{text}\", got \"{button_text}\""
+        );
+    }
+
+    #[track_caller]
+    fn assert_error_message(form: &ElementRef, want_error_message: &str) {
+        let p = scraper::Selector::parse("p").unwrap();
+        let error_message = form
+            .select(&p)
+            .next()
+            .expect("No error message found")
+            .text()
+            .collect::<Vec<_>>()
+            .join("");
+        let got_error_message = error_message.trim();
+
+        assert_eq!(want_error_message, got_error_message);
+    }
+
+    #[track_caller]
+    fn assert_hx_redirect(response: &Response, endpoint: &str) {
+        assert_eq!(get_header(response, "hx-redirect"), endpoint);
+    }
+
+    #[track_caller]
+    fn get_header(response: &Response, header_name: &str) -> String {
+        let header_error_message = format!("Headers missing {header_name}");
+
+        response
+            .headers()
+            .get(header_name)
+            .expect(&header_error_message)
+            .to_str()
+            .expect("Could not convert to str")
+            .to_string()
     }
 }

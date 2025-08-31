@@ -23,23 +23,34 @@
             <th scope="col" class="px-6 py-3">
               Name
             </th>
+            <th scope="col" class="px-6 py-3">
+              Actions
+            </th>
           </tr>
         </thead>
         <tbody>
-          {% for tag in tags %}
+          {% for tag_with_url in tags %}
           <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
             <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white">
-              {{ tag.id }}
+              {{ tag_with_url.tag.id }}
             </th>
             <td class="px-6 py-4">
-              {{ tag.name }}
+              {{ tag_with_url.tag.name }}
+            </td>
+            <td class="px-6 py-4">
+              <a
+                href="{{ tag_with_url.edit_url }}"
+                class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+              >
+                Edit
+              </a>
             </td>
           </tr>
           {% endfor %}
 
           {% if tags.is_empty() %}
           <tr>
-            <td colspan="2" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+            <td colspan="3" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
               No tags created yet. <a href="{{ new_tag_route }}" class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline">Create your first tag</a>
             </td>
           </tr>

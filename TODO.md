@@ -1,9 +1,6 @@
 # To Do
 
 - Add CRUD operations for manual tagging:
-  - Edit existing tags
-    - Inline button in /tags view that navigates to /tags/<tag id>/edit view
-    - Redirect back to /tags view on successful update
   - Delete existing tags
     - Inline button in /tags view
     - "API" endpoint
