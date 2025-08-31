@@ -122,7 +122,7 @@ fn print_error(error: impl ToString) {
     )
 }
 
-/// From https://crates.io/crates/capitalize
+/// From <https://crates.io/crates/capitalize>
 fn capitalise_first_char(string: &str) -> String {
     let mut chars = string.chars();
     let Some(first) = chars.next() else {

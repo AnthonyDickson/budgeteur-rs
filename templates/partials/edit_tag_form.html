@@ -1,8 +1,8 @@
-<form hx-post="{{ category_route }}" class="space-y-4 md:space-y-6">
+<form hx-put="{{ update_tag_endpoint }}" class="space-y-4 md:space-y-6">
   <div>
-    <label for="name" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Category Name</label>
+    <label for="name" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Tag Name</label>
 
-    <input id="name" type="text" name="name" placeholder="Category Name" required 
+    <input id="name" type="text" name="name" placeholder="Tag Name" required value="{{ tag_name }}"
       class=" block w-full p-2.5 rounded-lg text-sm text-gray-900 dark:text-white
 disabled:text-gray-500 bg-gray-50 dark:bg-gray-700 border border-gray-300
 dark:border-gray-600 dark:placeholder-gray-400 focus:ring-blue-600
@@ -22,6 +22,6 @@ focus:border-blue-600 focus:dark:border-blue-500 focus:dark:ring-blue-500"/>
       border-gray-300 focus:ring-4 focus:outline-none focus:ring-primary-300
       focus:dark:ring-primary-800"
   >
-    Create Category
+    Update Tag
   </button>
 </form>

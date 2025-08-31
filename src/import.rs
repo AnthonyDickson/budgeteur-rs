@@ -33,7 +33,7 @@ impl FromRef<AppState> for ImportState {
     }
 }
 
-/// Renders the form for creating a category.
+/// Renders the form for importing CSV files.
 #[derive(Template)]
 #[template(path = "partials/import_form.html")]
 pub struct ImportTransactionFormTemplate<'a> {
@@ -41,7 +41,7 @@ pub struct ImportTransactionFormTemplate<'a> {
     pub error_message: &'a str,
 }
 
-/// Renders the new Category page.
+/// Renders the import CSV page.
 #[derive(Template)]
 #[template(path = "views/import.html")]
 struct ImportTransactionsTemplate<'a> {

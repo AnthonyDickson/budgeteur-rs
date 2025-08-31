@@ -8,8 +8,4 @@
   <td class="px-6 py-4">${{ "{:.0}"|format(transaction.amount()) }}</td>
   <td class="px-6 py-4">{{ transaction.date() }}</td>
   <td class="px-6 py-4">{{ transaction.description() }}</td>
-  <td class="px-6 py-4">
-    {% if let Some(category_id) = transaction.category_id() %} {{ category_id }}
-    {% else %} - {% endif %}
-  </td>
 </tr>

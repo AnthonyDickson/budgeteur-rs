@@ -10,8 +10,12 @@ pub const DASHBOARD_VIEW: &str = "/dashboard";
 pub const TRANSACTIONS_VIEW: &str = "/transactions";
 /// The page for creating a new transaction.
 pub const NEW_TRANSACTION_VIEW: &str = "/transactions/new";
-/// The page for creating a new category.
-pub const NEW_CATEGORY_VIEW: &str = "/categories/new";
+/// The page for creating a new tag.
+pub const NEW_TAG_VIEW: &str = "/tag/new";
+/// The page for editing an existing tag.
+pub const EDIT_TAG_VIEW: &str = "/tags/:tag_id/edit";
+/// The page for listing all tags.
+pub const TAGS_VIEW: &str = "/tags";
 /// The page for importing transactions from CSV files.
 pub const IMPORT_VIEW: &str = "/transactions/import";
 /// The route for getting the registration page.
@@ -35,8 +39,12 @@ pub const LOG_IN_API: &str = "/api/log_in";
 pub const LOG_OUT: &str = "/api/log_out";
 /// The route to access users.
 pub const USERS: &str = "/api/users";
-/// The route to access categories.
-pub const CATEGORIES: &str = "/api/categories";
+/// The route to create a tag.
+pub const POST_TAG: &str = "/api/tag";
+/// The route to update a tag.
+pub const PUT_TAG: &str = "/api/tags/:tag_id";
+/// The route to delete a tag.
+pub const DELETE_TAG: &str = "/api/tags/:tag_id";
 /// The route to access transactions.
 pub const TRANSACTIONS_API: &str = "/api/transactions";
 /// The route to access a single transaction.
@@ -55,7 +63,6 @@ pub const IMPORT: &str = "/api/import";
 ///
 /// If no parameter is found in `endpoint_path`, the function returns the
 /// the original `endpoint_path`.
-#[cfg(test)]
 pub fn format_endpoint(endpoint_path: &str, id: i64) -> String {
     let mut param_start = None;
     let mut param_end = None;
@@ -102,7 +109,9 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::ROOT);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_VIEW);
         assert_endpoint_is_valid_uri(endpoints::NEW_TRANSACTION_VIEW);
-        assert_endpoint_is_valid_uri(endpoints::NEW_CATEGORY_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::NEW_TAG_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::EDIT_TAG_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::TAGS_VIEW);
         assert_endpoint_is_valid_uri(endpoints::IMPORT_VIEW);
         assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
@@ -115,7 +124,9 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_API);
         assert_endpoint_is_valid_uri(endpoints::LOG_OUT);
         assert_endpoint_is_valid_uri(endpoints::USERS);
-        assert_endpoint_is_valid_uri(endpoints::CATEGORIES);
+        assert_endpoint_is_valid_uri(endpoints::POST_TAG);
+        assert_endpoint_is_valid_uri(endpoints::PUT_TAG);
+        assert_endpoint_is_valid_uri(endpoints::DELETE_TAG);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTION);
         assert_endpoint_is_valid_uri(endpoints::IMPORT);

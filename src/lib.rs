@@ -22,7 +22,6 @@ use tokio::signal;
 mod auth_cookie;
 mod auth_middleware;
 mod balances;
-mod category;
 mod csv;
 mod dashboard;
 mod database_id;
@@ -40,6 +39,7 @@ mod register_user;
 mod routing;
 mod shared_templates;
 mod state;
+mod tag;
 pub mod transaction;
 pub mod user;
 
@@ -120,13 +120,13 @@ pub enum Error {
     #[error("hashing failed: {0}")]
     HashingError(String),
 
-    /// The category ID used to create a transaction did not match a valid category.
-    #[error("the category ID does not refer to a valid category")]
-    InvalidCategory,
+    /// The tag ID used to create a transaction did not match a valid tag.
+    #[error("the tag ID does not refer to a valid tag")]
+    InvalidTag,
 
-    /// An empty string was used to create a category name.
-    #[error("Category name cannot be empty")]
-    EmptyCategoryName,
+    /// An empty string was used to create a tag name.
+    #[error("Tag name cannot be empty")]
+    EmptyTagName,
 
     /// A date in the future was used to create a transaction.
     ///

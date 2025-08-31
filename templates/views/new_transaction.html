@@ -41,21 +41,19 @@
         <input name="description" id="description" type="text" placeholder="Description" class="{% include "styles/forms/input.html" %}" />
       </div>
 
+      {% if !available_tags.is_empty() %}
       <div>
-        <label for="category_id" class="{% include "styles/forms/label.html" %}">Category</label>
-        <select name="category_id" id="category_id" class="{% include "styles/forms/input.html" %}">
-          {% for category in categories %}
-            <option value="{{ category.id }}">{{ category.name }}</option>
+        <label class="{% include "styles/forms/label.html" %}">Tags</label>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          {% for tag in available_tags %}
+          <label class="flex items-center space-x-2 cursor-pointer">
+            <input type="checkbox" name="tag_ids" value="{{ tag.id }}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:focus:ring-blue-600" />
+            <span class="text-sm text-gray-900 dark:text-white">{{ tag.name }}</span>
+          </label>
           {% endfor %}
-
-          <option value="0">None</option>
-        </select>
-        <a href="{{ new_category_route }}"
-          class="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
-        >
-          Create Category
-        </a>
+        </div>
       </div>
+      {% endif %}
 
       <button type="submit" id="submit-button" tabindex="0" class="{% include "styles/forms/button.html" %}" >
         <span id="indicator" class="inline htmx-indicator">

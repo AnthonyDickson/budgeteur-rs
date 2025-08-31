@@ -20,15 +20,15 @@ use axum::{
 };
 use axum_htmx::HxRedirect;
 use rusqlite::{Connection, Row, params_from_iter, types::Value};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error,
-    category::{Category, get_all_categories},
     database_id::DatabaseID,
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
-    state::{NewTransactionState, TransactionState},
+    state::TransactionState,
+    tag::{Tag, get_all_tags, set_transaction_tags},
     {
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
@@ -49,7 +49,6 @@ pub struct Transaction {
     amount: f64,
     date: Date,
     description: String,
-    category_id: Option<DatabaseID>,
     import_id: Option<i64>,
 }
 
@@ -78,7 +77,6 @@ impl Transaction {
         amount: f64,
         date: Date,
         description: String,
-        category_id: Option<DatabaseID>,
         import_id: Option<i64>,
     ) -> Self {
         Self {
@@ -86,7 +84,6 @@ impl Transaction {
             amount,
             date,
             description,
-            category_id,
             import_id,
         }
     }
@@ -118,11 +115,6 @@ impl Transaction {
         &self.description
     }
 
-    /// A user-defined category that describes the type of the transaction.
-    pub fn category_id(&self) -> Option<DatabaseID> {
-        self.category_id
-    }
-
     /// The ID of the import that this transaction belongs to.
     pub fn import_id(&self) -> Option<i64> {
         self.import_id
@@ -151,7 +143,6 @@ impl Transaction {
 ///     .date(date!(2025-01-15))
 ///     .unwrap()
 ///     .description("Coffee shop purchase")
-///     .category(Some(5))
 ///     .import_id(Some(987654321))
 ///     .finalise(2);
 /// ```
@@ -191,19 +182,6 @@ pub struct TransactionBuilder {
     /// - `"POS W/D LOBSTER SEAFOO-19:47"`
     pub description: String,
 
-    /// Optional reference to a category for organizing transactions.
-    ///
-    /// If `Some(id)`, the transaction will be associated with the category
-    /// having that database ID. If `None`, the transaction remains uncategorized.
-    ///
-    /// Categories help with budgeting and expense tracking by grouping similar
-    /// transactions together (e.g., "Food & Dining", "Transportation", "Utilities").
-    ///
-    /// # Database Constraint
-    /// If specified, the category ID must exist in the categories table,
-    /// otherwise transaction creation will fail with [Error::InvalidCategory].
-    pub category_id: Option<DatabaseID>,
-
     /// Optional unique identifier for imported transactions.
     ///
     /// This field is used to prevent duplicate imports when processing CSV files
@@ -233,7 +211,6 @@ impl TransactionBuilder {
             amount,
             date: OffsetDateTime::now_utc().date(),
             description: String::new(),
-            category_id: None,
             import_id: None,
         }
     }
@@ -245,7 +222,6 @@ impl TransactionBuilder {
             amount: self.amount,
             date: self.date,
             description: self.description,
-            category_id: self.category_id,
             import_id: self.import_id,
         }
     }
@@ -269,17 +245,60 @@ impl TransactionBuilder {
         self
     }
 
-    /// Set the category for the transaction.
-    pub fn category(mut self, category_id: Option<DatabaseID>) -> Self {
-        self.category_id = category_id;
-        self
-    }
-
     /// Set the import ID for the transaction.
     pub fn import_id(mut self, import_id: Option<i64>) -> Self {
         self.import_id = import_id;
         self
     }
+}
+
+// ============================================================================
+// FORM HELPERS
+// ============================================================================
+
+/// Custom deserializer for tag IDs that handles both single values and arrays.
+/// HTML forms with multiple checkboxes of the same name can send either a single string
+/// or multiple strings, so we need to handle both cases.
+fn deserialize_tag_ids<'de, D>(deserializer: D) -> Result<Vec<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{Error, Visitor};
+    use std::fmt;
+
+    struct TagIdsVisitor;
+
+    impl<'de> Visitor<'de> for TagIdsVisitor {
+        type Value = Vec<i64>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a string or sequence of strings representing tag IDs")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Vec<i64>, E>
+        where
+            E: Error,
+        {
+            value
+                .parse::<i64>()
+                .map(|id| vec![id])
+                .map_err(Error::custom)
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Vec<i64>, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut ids = Vec::new();
+            while let Some(value) = seq.next_element::<String>()? {
+                let id = value.parse::<i64>().map_err(Error::custom)?;
+                ids.push(id);
+            }
+            Ok(ids)
+        }
+    }
+
+    deserializer.deserialize_any(TagIdsVisitor)
 }
 
 // ============================================================================
@@ -295,10 +314,9 @@ pub struct TransactionForm {
     pub date: Date,
     /// Text detailing the transaction.
     pub description: String,
-    /// The ID of the category to assign the transaction to.
-    ///
-    /// Zero should be interpreted as `None`.
-    pub category_id: DatabaseID,
+    /// The IDs of tags to associate with this transaction.
+    #[serde(default, deserialize_with = "deserialize_tag_ids")]
+    pub tag_ids: Vec<i64>,
 }
 
 /// A route handler for creating a new transaction, returns [TransactionRow] as a [Response] on success.
@@ -310,16 +328,8 @@ pub async fn create_transaction_endpoint(
     State(state): State<TransactionState>,
     Form(data): Form<TransactionForm>,
 ) -> impl IntoResponse {
-    // HACK: Zero is used as a sentinel value for None. Currently, options do not work with empty
-    // form values. For example, the URL encoded form "num=" will return an error.
-    let category = match data.category_id {
-        0 => None,
-        id => Some(id),
-    };
-
     let transaction = Transaction::build(data.amount)
         .description(&data.description)
-        .category(category)
         .date(data.date);
 
     let transaction = match transaction {
@@ -328,9 +338,19 @@ pub async fn create_transaction_endpoint(
     };
 
     let connection = state.db_connection.lock().unwrap();
-    match create_transaction(transaction, &connection) {
-        Ok(_) => {}
+    let created_transaction = match create_transaction(transaction, &connection) {
+        Ok(transaction) => transaction,
         Err(e) => return e.into_response(),
+    };
+
+    if !data.tag_ids.is_empty() {
+        if let Err(e) = set_transaction_tags(created_transaction.id(), &data.tag_ids, &connection) {
+            tracing::error!(
+                "Failed to assign tags to transaction {}: {e}",
+                created_transaction.id()
+            );
+            return e.into_response();
+        }
     }
 
     (
@@ -366,7 +386,6 @@ pub async fn get_transaction_endpoint(
 ///
 /// # Errors
 /// This function will return a:
-/// - [Error::InvalidCategory] if `category_id` does not refer to a valid category,
 /// - [Error::SqlError] if there is some other SQL error,
 /// - or [Error::InternalError] if there was an unexpected error.
 pub fn create_transaction(
@@ -375,26 +394,20 @@ pub fn create_transaction(
 ) -> Result<Transaction, Error> {
     let transaction = connection
         .prepare(
-            "INSERT INTO \"transaction\" (amount, date, description, category_id, import_id)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             RETURNING id, amount, date, description, category_id, import_id",
+            "INSERT INTO \"transaction\" (amount, date, description, import_id)
+             VALUES (?1, ?2, ?3, ?4)
+             RETURNING id, amount, date, description, import_id",
         )?
         .query_row(
             (
                 builder.amount,
                 builder.date,
                 builder.description,
-                builder.category_id,
                 builder.import_id,
             ),
             map_transaction_row,
         )
         .map_err(|error| match error {
-            // Code 787 occurs when a FOREIGN KEY constraint failed.
-            // The client tried to add a transaction for a non-existent category.
-            rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
-                Error::InvalidCategory
-            }
             // Handle duplicate import_id constraint violation
             rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 2067 => {
                 Error::DuplicateImportId
@@ -420,10 +433,10 @@ pub fn import_transactions(
 
     // Prepare the insert statement once for reuse
     let mut stmt = tx.prepare(
-        "INSERT INTO \"transaction\" (amount, date, description, category_id, import_id)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO \"transaction\" (amount, date, description, import_id)
+         VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(import_id) DO NOTHING
-         RETURNING id, amount, date, description, category_id, import_id",
+         RETURNING id, amount, date, description, import_id",
     )?;
 
     for builder in builders {
@@ -433,7 +446,6 @@ pub fn import_transactions(
                 builder.amount,
                 builder.date,
                 builder.description,
-                builder.category_id,
                 builder.import_id,
             ),
             map_transaction_row,
@@ -459,7 +471,9 @@ pub fn import_transactions(
 /// - or [Error::SqlError] there is some other SQL error.
 pub fn get_transaction(id: DatabaseID, connection: &Connection) -> Result<Transaction, Error> {
     let transaction = connection
-        .prepare("SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" WHERE id = :id")?
+        .prepare(
+            "SELECT id, amount, date, description, import_id FROM \"transaction\" WHERE id = :id",
+        )?
         .query_row(&[(":id", &id)], map_transaction_row)?;
 
     Ok(transaction)
@@ -497,10 +511,8 @@ pub fn query_transactions(
     filter: TransactionQuery,
     connection: &Connection,
 ) -> Result<Vec<Transaction>, Error> {
-    let mut query_string_parts = vec![
-        "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\""
-            .to_string(),
-    ];
+    let mut query_string_parts =
+        vec!["SELECT id, amount, date, description, import_id FROM \"transaction\"".to_string()];
     let mut where_clause_parts = vec![];
     let mut query_parameters = vec![];
 
@@ -600,7 +612,7 @@ pub fn get_transactions_paginated(
     };
 
     let query = format!(
-        "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" {} LIMIT {} OFFSET {}",
+        "SELECT id, amount, date, description, import_id FROM \"transaction\" {} LIMIT {} OFFSET {}",
         order_clause, limit, offset
     );
 
@@ -628,19 +640,16 @@ pub fn count_transactions(connection: &Connection) -> Result<usize, Error> {
 /// # Errors
 /// Returns an error if the table cannot be created or if there is an SQL error.
 pub fn create_transaction_table(connection: &Connection) -> Result<(), rusqlite::Error> {
-    connection
-        .execute(
-            "CREATE TABLE IF NOT EXISTS \"transaction\" (
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS \"transaction\" (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 amount REAL NOT NULL,
                 date TEXT NOT NULL,
                 description TEXT NOT NULL,
-                category_id INTEGER,
-                import_id INTEGER UNIQUE,
-                FOREIGN KEY(category_id) REFERENCES category(id) ON UPDATE CASCADE ON DELETE SET NULL
+                import_id INTEGER UNIQUE
                 )",
-            (),
-        )?;
+        (),
+    )?;
 
     // Ensure the sequence starts at 1
     connection.execute(
@@ -657,11 +666,9 @@ fn map_transaction_row(row: &Row) -> Result<Transaction, rusqlite::Error> {
     let amount = row.get(1)?;
     let date = row.get(2)?;
     let description = row.get(3)?;
-    let category_id = row.get(4)?;
-    let import_id = row.get(5)?;
+    let import_id = row.get(4)?;
 
-    let transaction =
-        Transaction::new_unchecked(id, amount, date, description, category_id, import_id);
+    let transaction = Transaction::new_unchecked(id, amount, date, description, import_id);
     Ok(transaction)
 }
 
@@ -675,37 +682,51 @@ fn map_transaction_row(row: &Row) -> Result<Transaction, rusqlite::Error> {
 struct NewTransactionTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     create_transaction_route: &'a str,
-    new_category_route: &'a str,
-    categories: Vec<Category>,
     max_date: Date,
+    available_tags: Vec<Tag>,
+}
+
+/// The state needed for the new transaction page.
+#[derive(Debug, Clone)]
+pub struct NewTransactionPageState {
+    /// The database connection for accessing tags.
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for NewTransactionPageState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
 }
 
 /// Renders the page for creating a transaction.
-pub async fn get_new_transaction_page(State(state): State<NewTransactionState>) -> Response {
-    let categories = match get_all_categories(
-        &state
-            .db_connection
-            .lock()
-            .expect("Could not acquire database lock"),
-    ) {
-        Ok(categories) => categories,
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+pub async fn get_new_transaction_page(State(state): State<NewTransactionPageState>) -> Response {
+    let nav_bar = get_nav_bar(endpoints::NEW_TRANSACTION_VIEW);
+
+    let connection = state
+        .db_connection
+        .lock()
+        .expect("Could not acquire database lock");
+
+    let available_tags = match get_all_tags(&connection) {
+        Ok(tags) => tags,
         Err(error) => {
-            tracing::error!(
-                "Failed to retrieve categories for new transaction page: {}",
-                error
-            );
-            return error.into_response();
+            tracing::error!("Failed to retrieve tags for new transaction page: {error}");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response();
         }
     };
-
-    let nav_bar = get_nav_bar(endpoints::NEW_TRANSACTION_VIEW);
 
     NewTransactionTemplate {
         nav_bar,
         create_transaction_route: endpoints::TRANSACTIONS_API,
-        new_category_route: endpoints::NEW_CATEGORY_VIEW,
-        categories,
         max_date: time::OffsetDateTime::now_utc().date(),
+        available_tags,
     }
     .into_response()
 }
@@ -861,11 +882,9 @@ mod transaction_builder_tests {
         let amount = PI;
         let date = OffsetDateTime::now_utc().date();
         let description = "Rust Pie".to_string();
-        let category_id = Some(42);
         let import_id = Some(123456789);
 
         let transaction = Transaction::build(amount)
-            .category(category_id)
             .description(&description)
             .date(date)
             .unwrap()
@@ -876,8 +895,7 @@ mod transaction_builder_tests {
         assert_eq!(transaction.amount(), amount);
         assert_eq!(transaction.date(), &date);
         assert_eq!(transaction.description(), description);
-        assert_eq!(transaction.category_id(), category_id);
-        assert_eq!(transaction.import_id, import_id);
+        assert_eq!(transaction.import_id(), import_id);
     }
 }
 
@@ -908,15 +926,6 @@ mod database_tests {
         assert!(result.is_ok());
         let transaction = result.unwrap();
         assert_eq!(transaction.amount(), amount);
-    }
-
-    #[test]
-    fn create_fails_on_invalid_category_id() {
-        let conn = get_test_connection();
-
-        let transaction = create_transaction(Transaction::build(PI).category(Some(999)), &conn);
-
-        assert_eq!(transaction, Err(Error::InvalidCategory));
     }
 
     #[test]
@@ -959,7 +968,6 @@ mod database_tests {
                 assert_eq!(want.amount(), got.amount(), "{error_message}");
                 assert_eq!(want.date(), got.date(), "{error_message}");
                 assert_eq!(want.description(), got.description(), "{error_message}");
-                assert_eq!(want.category_id(), got.category_id(), "{error_message}");
                 assert_eq!(want.import_id(), got.import_id(), "{error_message}");
             });
     }
@@ -985,9 +993,7 @@ mod database_tests {
 
         // Verify that only the original transaction exists in the database
         let all_transactions = conn
-            .prepare(
-                "SELECT id, amount, date, description, category_id, import_id FROM \"transaction\"",
-            )
+            .prepare("SELECT id, amount, date, description, import_id FROM \"transaction\"")
             .unwrap()
             .query_map([], map_transaction_row)
             .unwrap()
@@ -1007,7 +1013,6 @@ mod database_tests {
         assert_eq!(stored_transaction.amount(), want.amount());
         assert_eq!(stored_transaction.date(), want.date());
         assert_eq!(stored_transaction.description(), want.description());
-        assert_eq!(stored_transaction.category_id(), want.category_id());
         assert_eq!(stored_transaction.import_id(), want.import_id());
     }
 
@@ -1039,7 +1044,6 @@ mod database_tests {
                 assert_eq!(want.amount(), got.amount(), "{error_message}");
                 assert_eq!(want.date(), got.date(), "{error_message}");
                 assert_eq!(want.description(), got.description(), "{error_message}");
-                assert_eq!(want.category_id(), got.category_id(), "{error_message}");
                 assert_eq!(want.import_id(), got.import_id(), "{error_message}");
             });
     }
@@ -1128,7 +1132,7 @@ mod database_tests {
         want.sort_by(|a, b| b.date().cmp(a.date()));
 
         let got = conn
-            .prepare("SELECT id, amount, date, description, category_id, import_id FROM \"transaction\" ORDER BY date DESC").unwrap()
+            .prepare("SELECT id, amount, date, description, import_id FROM \"transaction\" ORDER BY date DESC").unwrap()
             .query_map([], map_transaction_row).unwrap()
             .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
             .collect::<Result<Vec<Transaction>, Error>>()
@@ -1157,10 +1161,7 @@ mod database_tests {
 
 #[cfg(test)]
 mod view_tests {
-    use std::{
-        collections::HashMap,
-        sync::{Arc, Mutex},
-    };
+    use std::sync::{Arc, Mutex};
 
     use axum::{
         body::Body,
@@ -1173,14 +1174,15 @@ mod view_tests {
     use time::OffsetDateTime;
 
     use crate::{
-        category::{Category, CategoryName, create_category, create_category_table},
         db::initialize,
         endpoints,
-        pagination::PaginationConfig,
-        state::NewTransactionState,
+        pagination::{PaginationConfig, PaginationIndicator},
     };
 
-    use super::*;
+    use super::{
+        NewTransactionPageState, Pagination, Transaction, TransactionBuilder,
+        TransactionsViewState, create_transaction, get_new_transaction_page, get_transactions_page,
+    };
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1190,31 +1192,17 @@ mod view_tests {
 
     #[tokio::test]
     async fn new_transaction_returns_form() {
-        let connection =
-            Connection::open_in_memory().expect("Could not create in-memory SQLite database");
-        create_category_table(&connection).expect("Could not create category table");
-        let mut categories = vec![
-            create_category(CategoryName::new_unchecked("foo"), &connection)
-                .expect("Could not create test category"),
-            create_category(CategoryName::new_unchecked("bar"), &connection)
-                .expect("Could not create test category"),
-        ];
-        // This category should be auto-generated by the view.
-        categories.push(Category {
-            id: 0,
-            name: CategoryName::new_unchecked("None"),
-        });
-        let app_state = NewTransactionState {
-            db_connection: Arc::new(Mutex::new(connection)),
+        let conn = get_test_connection();
+        let state = NewTransactionPageState {
+            db_connection: Arc::new(Mutex::new(conn)),
         };
-
-        let response = get_new_transaction_page(State(app_state)).await;
+        let response = get_new_transaction_page(State(state)).await;
 
         assert_status_ok(&response);
         assert_html_content_type(&response);
         let document = parse_html(response).await;
         assert_valid_html(&document);
-        assert_correct_form(&document, categories);
+        assert_correct_form(&document);
     }
 
     #[track_caller]
@@ -1245,7 +1233,7 @@ mod view_tests {
     }
 
     #[track_caller]
-    fn assert_correct_form(document: &Html, categories: Vec<Category>) {
+    fn assert_correct_form(document: &Html) {
         let form_selector = scraper::Selector::parse("form").unwrap();
         let forms = document.select(&form_selector).collect::<Vec<_>>();
         assert_eq!(forms.len(), 1, "want 1 form, got {}", forms.len());
@@ -1261,7 +1249,6 @@ mod view_tests {
         );
 
         assert_correct_inputs(form);
-        assert_correct_select_and_options(form, categories);
         assert_has_submit_button(form);
     }
 
@@ -1365,55 +1352,6 @@ mod view_tests {
             0.01, step,
             "the amount for a new transaction should increment in steps of 0.01, but got {step}"
         );
-    }
-
-    #[track_caller]
-    fn assert_correct_select_and_options(form: &ElementRef, categories: Vec<Category>) {
-        let select_selector = scraper::Selector::parse("select").unwrap();
-        let selects = form.select(&select_selector).collect::<Vec<_>>();
-        assert_eq!(selects.len(), 1, "want 1 select tag, got {}", selects.len());
-        let select_tag = selects.first().unwrap();
-        let select_name = select_tag.value().attr("name");
-        assert_eq!(
-            select_name,
-            Some("category_id"),
-            "want select with name=\"category_id\", got {select_name:?}"
-        );
-
-        let select_option_selector = scraper::Selector::parse("option").unwrap();
-        let options = select_tag
-            .select(&select_option_selector)
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            categories.len(),
-            options.len(),
-            "want {} options, got {}",
-            categories.len(),
-            options.len()
-        );
-        let mut category_names = HashMap::new();
-        for category in categories {
-            category_names.insert(category.id, category.name.clone());
-        }
-
-        for option in options {
-            let option_value = option.value().attr("value");
-            let option_text = option.text().collect::<String>();
-            let category_id = option_value
-                .unwrap()
-                .parse::<i64>()
-                .expect("got option with non-integer value");
-            let category_name = category_names
-                .get(&category_id)
-                .expect("got option with unknown category id");
-
-            assert_eq!(
-                option_text,
-                category_name.as_ref(),
-                "want option with value=\"{category_id}\" to have text \"{category_name}\", got {option_text:?}"
-            );
-        }
     }
 
     #[track_caller]
@@ -1748,7 +1686,7 @@ mod route_handler_tests {
             description: "test transaction".to_string(),
             amount: 12.3,
             date: OffsetDateTime::now_utc().date(),
-            category_id: 0, // 0 means no category
+            tag_ids: vec![],
         };
 
         let response = create_transaction_endpoint(State(state.clone()), Form(form))
@@ -1763,6 +1701,43 @@ mod route_handler_tests {
         let transaction = get_transaction(1, &connection).unwrap();
         assert_eq!(transaction.amount(), 12.3);
         assert_eq!(transaction.description(), "test transaction");
+    }
+
+    #[tokio::test]
+    async fn can_create_transaction_with_tags() {
+        let conn = get_test_connection();
+
+        // Create test tags
+        let tag1 =
+            crate::tag::create_tag(crate::tag::TagName::new_unchecked("Groceries"), &conn).unwrap();
+        let tag2 =
+            crate::tag::create_tag(crate::tag::TagName::new_unchecked("Food"), &conn).unwrap();
+
+        let state = TransactionState {
+            db_connection: Arc::new(Mutex::new(conn)),
+        };
+
+        let form = TransactionForm {
+            description: "test transaction with tags".to_string(),
+            amount: 25.50,
+            date: OffsetDateTime::now_utc().date(),
+            tag_ids: vec![tag1.id, tag2.id],
+        };
+
+        let response = create_transaction_endpoint(State(state.clone()), Form(form))
+            .await
+            .into_response();
+
+        assert_redirects_to_transactions_view(response);
+
+        // Verify the transaction was created with tags
+        let connection = state.db_connection.lock().unwrap();
+        let transaction = get_transaction(1, &connection).unwrap();
+        let tags = crate::tag::get_transaction_tags(transaction.id(), &connection).unwrap();
+
+        assert_eq!(tags.len(), 2);
+        assert!(tags.contains(&tag1));
+        assert!(tags.contains(&tag2));
     }
 
     #[tokio::test]
