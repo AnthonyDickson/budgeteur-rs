@@ -98,6 +98,13 @@ struct EditTagTemplate<'a> {
     form: EditTagFormTemplate<'a>,
 }
 
+/// Renders an error message for tag operations.
+#[derive(Template)]
+#[template(path = "partials/tag_error.html")]
+struct TagErrorTemplate<'a> {
+    error_message: &'a str,
+}
+
 pub async fn get_new_tag_page() -> Response {
     NewTagTemplate {
         nav_bar: get_nav_bar(endpoints::NEW_TAG_VIEW),
@@ -114,6 +121,7 @@ pub async fn get_new_tag_page() -> Response {
 struct TagWithEditUrl {
     pub tag: Tag,
     pub edit_url: String,
+    pub transaction_count: i64,
 }
 
 /// Renders the tags listing page.
@@ -154,9 +162,14 @@ pub async fn get_tags_page(State(state): State<TagsPageState>) -> Response {
         Ok(tags) => {
             let tags_with_edit_urls = tags
                 .into_iter()
-                .map(|tag| TagWithEditUrl {
-                    edit_url: endpoints::format_endpoint(endpoints::EDIT_TAG_VIEW, tag.id),
-                    tag,
+                .map(|tag| {
+                    let transaction_count =
+                        get_tag_transaction_count(tag.id, &connection).unwrap_or(0); // Default to 0 if count query fails
+                    TagWithEditUrl {
+                        edit_url: endpoints::format_endpoint(endpoints::EDIT_TAG_VIEW, tag.id),
+                        tag,
+                        transaction_count,
+                    }
                 })
                 .collect();
 
@@ -209,6 +222,20 @@ pub struct UpdateTagEndpointState {
 }
 
 impl FromRef<AppState> for UpdateTagEndpointState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
+
+/// The state needed for deleting a tag.
+#[derive(Debug, Clone)]
+pub struct DeleteTagEndpointState {
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for DeleteTagEndpointState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
@@ -385,6 +412,43 @@ pub async fn update_tag_endpoint(
         .into_response()
 }
 
+/// A route handler for deleting a tag.
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+pub async fn delete_tag_endpoint(
+    Path(tag_id): Path<DatabaseID>,
+    State(state): State<DeleteTagEndpointState>,
+) -> impl IntoResponse {
+    let connection = state
+        .db_connection
+        .lock()
+        .expect("Could not acquire database lock");
+
+    delete_tag(tag_id, &connection)
+        .map(|_| {
+            (
+                HxRedirect(Uri::from_static(endpoints::TAGS_VIEW)),
+                StatusCode::SEE_OTHER,
+            )
+        })
+        .map_err(|error| {
+            let error_message = match error {
+                Error::NotFound => "Tag not found",
+                _ => {
+                    tracing::error!(
+                        "An unexpected error occurred while deleting tag {tag_id}: {error}"
+                    );
+                    "An unexpected error occurred. Please try again."
+                }
+            };
+
+            TagErrorTemplate { error_message }
+        })
+        .into_response()
+}
+
 /// Create a tag in the database.
 ///
 /// # Errors
@@ -429,6 +493,20 @@ pub fn update_tag(
     Ok(())
 }
 
+/// Delete a tag from the database.
+///
+/// # Errors
+/// This function will return an error if there is an SQL error or if the tag doesn't exist.
+pub fn delete_tag(tag_id: DatabaseID, connection: &Connection) -> Result<(), Error> {
+    let rows_affected = connection.execute("DELETE FROM tag WHERE id = ?1", [tag_id])?;
+
+    if rows_affected == 0 {
+        return Err(Error::NotFound);
+    }
+
+    Ok(())
+}
+
 /// Retrieve tags in the database.
 ///
 /// # Errors
@@ -439,6 +517,23 @@ pub fn get_all_tags(connection: &Connection) -> Result<Vec<Tag>, Error> {
         .query_map([], map_row)?
         .map(|maybe_tag| maybe_tag.map_err(|error| error.into()))
         .collect()
+}
+
+/// Get the number of transactions associated with a tag.
+///
+/// # Errors
+/// This function will return an error if there is an SQL error.
+pub fn get_tag_transaction_count(
+    tag_id: DatabaseID,
+    connection: &Connection,
+) -> Result<i64, Error> {
+    let count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM transaction_tag WHERE tag_id = ?1",
+        [tag_id],
+        |row| row.get(0),
+    )?;
+
+    Ok(count)
 }
 
 pub fn create_tag_table(connection: &Connection) -> Result<(), rusqlite::Error> {
@@ -471,8 +566,8 @@ pub fn create_transaction_tag_table(connection: &Connection) -> Result<(), rusql
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             transaction_id INTEGER NOT NULL,
             tag_id INTEGER NOT NULL,
-            FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON DELETE CASCADE,
-            FOREIGN KEY(tag_id) REFERENCES tag(id) ON DELETE CASCADE,
+            FOREIGN KEY(transaction_id) REFERENCES \"transaction\"(id) ON UPDATE CASCADE ON DELETE CASCADE,
+            FOREIGN KEY(tag_id) REFERENCES tag(id) ON UPDATE CASCADE ON DELETE CASCADE,
             UNIQUE(transaction_id, tag_id)
         )",
         (),
@@ -630,7 +725,10 @@ mod tag_query_tests {
     use crate::tag::{create_tag, get_all_tags, get_tag, update_tag};
     use crate::{Error, tag::TagName};
 
-    use super::create_tag_table;
+    use super::{
+        add_tag_to_transaction, create_tag_table, create_transaction_tag_table, delete_tag,
+        get_tag_transaction_count,
+    };
 
     fn get_test_db_connection() -> Connection {
         let connection = Connection::open_in_memory().unwrap();
@@ -712,6 +810,72 @@ mod tag_query_tests {
         let result = update_tag(invalid_id, new_name, &connection);
 
         assert_eq!(result, Err(Error::NotFound));
+    }
+
+    #[test]
+    fn delete_tag_succeeds() {
+        let connection = get_test_db_connection();
+        let name = TagName::new_unchecked("ToDelete");
+        let tag = create_tag(name, &connection).expect("Could not create test tag");
+
+        let result = delete_tag(tag.id, &connection);
+
+        assert!(result.is_ok());
+
+        let get_result = get_tag(tag.id, &connection);
+        assert_eq!(get_result, Err(Error::NotFound));
+    }
+
+    #[test]
+    fn delete_tag_with_invalid_id_returns_not_found() {
+        let connection = get_test_db_connection();
+        let invalid_id = 999999;
+
+        let result = delete_tag(invalid_id, &connection);
+
+        assert_eq!(result, Err(Error::NotFound));
+    }
+
+    #[test]
+    fn delete_tag_with_transactions_succeeds_and_removes_relationships() {
+        let connection = get_test_db_connection();
+
+        // Create required tables
+        crate::transaction::create_transaction_table(&connection)
+            .expect("Could not create transaction table");
+        create_transaction_tag_table(&connection).expect("Could not create junction table");
+
+        // Create test data
+        let tag_name = TagName::new_unchecked("TestTag");
+        let tag = create_tag(tag_name, &connection).expect("Could not create test tag");
+
+        let transaction = crate::transaction::create_transaction(
+            crate::transaction::Transaction::build(100.0).description("Test transaction"),
+            &connection,
+        )
+        .expect("Could not create test transaction");
+
+        // Add tag to transaction
+        add_tag_to_transaction(transaction.id(), tag.id, &connection)
+            .expect("Could not add tag to transaction");
+
+        // Verify relationship exists
+        let count_before = get_tag_transaction_count(tag.id, &connection)
+            .expect("Could not get transaction count");
+        assert_eq!(count_before, 1);
+
+        // Delete the tag
+        let result = delete_tag(tag.id, &connection);
+        assert!(result.is_ok());
+
+        // Verify tag is deleted
+        let get_result = get_tag(tag.id, &connection);
+        assert_eq!(get_result, Err(Error::NotFound));
+
+        // Verify relationship is also deleted (CASCADE DELETE)
+        let count_after = get_tag_transaction_count(tag.id, &connection)
+            .expect("Could not get transaction count");
+        assert_eq!(count_after, 0);
     }
 }
 
@@ -1546,5 +1710,122 @@ mod edit_tag_endpoint_tests {
             .to_str()
             .expect("Could not convert to str")
             .to_string()
+    }
+}
+
+#[cfg(test)]
+mod delete_tag_endpoint_tests {
+    use std::sync::{Arc, Mutex};
+
+    use askama_axum::IntoResponse;
+    use axum::{
+        extract::{Path, State},
+        http::StatusCode,
+        response::Response,
+    };
+    use rusqlite::Connection;
+    use scraper::Html;
+
+    use crate::{
+        endpoints,
+        tag::{TagName, create_tag, delete_tag_endpoint},
+    };
+
+    use super::{DeleteTagEndpointState, create_tag_table};
+
+    fn get_delete_tag_state() -> DeleteTagEndpointState {
+        let connection =
+            Connection::open_in_memory().expect("Could not open in-memory SQLite database");
+        create_tag_table(&connection).expect("Could not create tag table");
+
+        DeleteTagEndpointState {
+            db_connection: Arc::new(Mutex::new(connection)),
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_tag_endpoint_succeeds() {
+        let state = get_delete_tag_state();
+        let tag_name = TagName::new_unchecked("Test Tag");
+        let tag = create_tag(tag_name, &state.db_connection.lock().unwrap())
+            .expect("Could not create test tag");
+
+        let response = delete_tag_endpoint(Path(tag.id), State(state))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_hx_redirect(&response, endpoints::TAGS_VIEW);
+    }
+
+    #[tokio::test]
+    async fn delete_tag_endpoint_with_invalid_id_returns_error_html() {
+        let state = get_delete_tag_state();
+        let invalid_id = 999999;
+
+        let response = delete_tag_endpoint(Path(invalid_id), State(state))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            get_header(&response, "content-type"),
+            "text/html; charset=utf-8"
+        );
+
+        let html = parse_fragment_html(response).await;
+        assert_valid_html(&html);
+        assert_error_content(&html, "Tag not found");
+    }
+
+    #[track_caller]
+    fn assert_hx_redirect(response: &Response, endpoint: &str) {
+        assert_eq!(get_header(response, "hx-redirect"), endpoint);
+    }
+
+    #[track_caller]
+    fn get_header(response: &Response, header_name: &str) -> String {
+        let header_error_message = format!("Headers missing {header_name}");
+
+        response
+            .headers()
+            .get(header_name)
+            .expect(&header_error_message)
+            .to_str()
+            .expect("Could not convert to str")
+            .to_string()
+    }
+
+    async fn parse_fragment_html(response: Response) -> Html {
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+
+        Html::parse_fragment(&text)
+    }
+
+    #[track_caller]
+    fn assert_valid_html(html: &Html) {
+        assert!(
+            html.errors.is_empty(),
+            "Got HTML parsing errors {:?} for HTML {}",
+            html.errors,
+            html.html()
+        );
+    }
+
+    #[track_caller]
+    fn assert_error_content(html: &Html, want_error_message: &str) {
+        let p = scraper::Selector::parse("p").unwrap();
+        let error_message = html
+            .select(&p)
+            .next()
+            .expect("No error message found")
+            .text()
+            .collect::<Vec<_>>()
+            .join("");
+        let got_error_message = error_message.trim();
+
+        assert_eq!(want_error_message, got_error_message);
     }
 }

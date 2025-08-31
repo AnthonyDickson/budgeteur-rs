@@ -6,7 +6,7 @@ use axum::{
     http::{StatusCode, Uri},
     middleware,
     response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
 };
 use axum_htmx::HxRedirect;
 use tower_http::services::ServeDir;
@@ -23,8 +23,8 @@ use crate::{
     log_out::get_log_out,
     register_user::{get_register_page, register_user},
     tag::{
-        create_tag_endpoint, get_edit_tag_page, get_new_tag_page, get_tags_page,
-        update_tag_endpoint,
+        create_tag_endpoint, delete_tag_endpoint, get_edit_tag_page, get_new_tag_page,
+        get_tags_page, update_tag_endpoint,
     },
     transaction::{
         create_transaction_endpoint, get_new_transaction_page, get_transaction_endpoint,
@@ -75,6 +75,7 @@ pub fn build_router(state: AppState) -> Router {
             )
             .route(endpoints::POST_TAG, post(create_tag_endpoint))
             .route(endpoints::PUT_TAG, put(update_tag_endpoint))
+            .route(endpoints::DELETE_TAG, delete(delete_tag_endpoint))
             .route(endpoints::IMPORT, post(import_transactions))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),
     );

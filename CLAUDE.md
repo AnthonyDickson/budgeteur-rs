@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `cargo test` - Run tests
 - `cargo clippy -- -D warnings` - Lint (warnings as errors)
 - `cargo fmt` - Format code (run after verifying code works)
+- `cargo run -- --db-path test.db` - Run the dev server
 
 **Maintenance:**
 

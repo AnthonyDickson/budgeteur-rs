@@ -43,6 +43,8 @@ pub const USERS: &str = "/api/users";
 pub const POST_TAG: &str = "/api/tag";
 /// The route to update a tag.
 pub const PUT_TAG: &str = "/api/tags/:tag_id";
+/// The route to delete a tag.
+pub const DELETE_TAG: &str = "/api/tags/:tag_id";
 /// The route to access transactions.
 pub const TRANSACTIONS_API: &str = "/api/transactions";
 /// The route to access a single transaction.
@@ -124,6 +126,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::USERS);
         assert_endpoint_is_valid_uri(endpoints::POST_TAG);
         assert_endpoint_is_valid_uri(endpoints::PUT_TAG);
+        assert_endpoint_is_valid_uri(endpoints::DELETE_TAG);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTION);
         assert_endpoint_is_valid_uri(endpoints::IMPORT);

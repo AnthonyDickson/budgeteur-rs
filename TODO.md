@@ -1,11 +1,6 @@
 # To Do
 
 - Add CRUD operations for manual tagging:
-  - Delete existing tags
-    - Inline button in /tags view
-    - "API" endpoint
-    - Show confirmation dialog before performing deletion
-    - Display error if deletion failed (toast or modal)
   - Add tags when creating a new transaction
     - Add select element to new transaction form
 - Add rules-based auto-tagger (new branch, merge back w/ PR):
