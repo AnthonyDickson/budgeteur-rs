@@ -573,6 +573,17 @@ pub fn create_transaction_tag_table(connection: &Connection) -> Result<(), rusql
         (),
     )?;
 
+    // Create indexes for foreign keys to improve query performance
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transaction_tag_transaction_id ON transaction_tag(transaction_id)",
+        (),
+    )?;
+
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transaction_tag_tag_id ON transaction_tag(tag_id)",
+        (),
+    )?;
+
     // Ensure the sequence starts at 1
     connection.execute(
         "INSERT OR IGNORE INTO sqlite_sequence (name, seq) VALUES ('transaction_tag', 0)",
@@ -662,8 +673,6 @@ pub fn get_transaction_tags(
 /// This function will return a:
 /// - [Error::InvalidTag] if any `tag_id` does not refer to a valid tag,
 /// - [Error::SqlError] if there is some other SQL error.
-// TODO: Remove build config attribute once set_transaction_tag function is used elsewhere.
-#[cfg(test)]
 pub fn set_transaction_tags(
     transaction_id: DatabaseID,
     tag_ids: &[DatabaseID],

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-**Setup:** `cargo run --bin create_test_db -- --output-path test.db`
+**Setup:** `cargo run --bin create_test_db -- --output-path test.db` - Create the test database
 
 **Development:**
 

@@ -20,7 +20,7 @@ use axum::{
 };
 use axum_htmx::HxRedirect;
 use rusqlite::{Connection, Row, params_from_iter, types::Value};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use time::{Date, OffsetDateTime};
 
 use crate::{
@@ -28,6 +28,7 @@ use crate::{
     database_id::DatabaseID,
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     state::TransactionState,
+    tag::{Tag, get_all_tags, set_transaction_tags},
     {
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
@@ -252,6 +253,55 @@ impl TransactionBuilder {
 }
 
 // ============================================================================
+// FORM HELPERS
+// ============================================================================
+
+/// Custom deserializer for tag IDs that handles both single values and arrays.
+/// HTML forms with multiple checkboxes of the same name can send either a single string
+/// or multiple strings, so we need to handle both cases.
+fn deserialize_tag_ids<'de, D>(deserializer: D) -> Result<Vec<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{Error, Visitor};
+    use std::fmt;
+
+    struct TagIdsVisitor;
+
+    impl<'de> Visitor<'de> for TagIdsVisitor {
+        type Value = Vec<i64>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a string or sequence of strings representing tag IDs")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Vec<i64>, E>
+        where
+            E: Error,
+        {
+            value
+                .parse::<i64>()
+                .map(|id| vec![id])
+                .map_err(Error::custom)
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Vec<i64>, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut ids = Vec::new();
+            while let Some(value) = seq.next_element::<String>()? {
+                let id = value.parse::<i64>().map_err(Error::custom)?;
+                ids.push(id);
+            }
+            Ok(ids)
+        }
+    }
+
+    deserializer.deserialize_any(TagIdsVisitor)
+}
+
+// ============================================================================
 // ROUTE HANDLERS
 // ============================================================================
 
@@ -264,6 +314,9 @@ pub struct TransactionForm {
     pub date: Date,
     /// Text detailing the transaction.
     pub description: String,
+    /// The IDs of tags to associate with this transaction.
+    #[serde(default, deserialize_with = "deserialize_tag_ids")]
+    pub tag_ids: Vec<i64>,
 }
 
 /// A route handler for creating a new transaction, returns [TransactionRow] as a [Response] on success.
@@ -285,9 +338,19 @@ pub async fn create_transaction_endpoint(
     };
 
     let connection = state.db_connection.lock().unwrap();
-    match create_transaction(transaction, &connection) {
-        Ok(_) => {}
+    let created_transaction = match create_transaction(transaction, &connection) {
+        Ok(transaction) => transaction,
         Err(e) => return e.into_response(),
+    };
+
+    if !data.tag_ids.is_empty() {
+        if let Err(e) = set_transaction_tags(created_transaction.id(), &data.tag_ids, &connection) {
+            tracing::error!(
+                "Failed to assign tags to transaction {}: {e}",
+                created_transaction.id()
+            );
+            return e.into_response();
+        }
     }
 
     (
@@ -620,16 +683,50 @@ struct NewTransactionTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     create_transaction_route: &'a str,
     max_date: Date,
+    available_tags: Vec<Tag>,
+}
+
+/// The state needed for the new transaction page.
+#[derive(Debug, Clone)]
+pub struct NewTransactionPageState {
+    /// The database connection for accessing tags.
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for NewTransactionPageState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
 }
 
 /// Renders the page for creating a transaction.
-pub async fn get_new_transaction_page() -> Response {
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
+pub async fn get_new_transaction_page(State(state): State<NewTransactionPageState>) -> Response {
     let nav_bar = get_nav_bar(endpoints::NEW_TRANSACTION_VIEW);
+
+    let connection = state
+        .db_connection
+        .lock()
+        .expect("Could not acquire database lock");
+
+    let available_tags = match get_all_tags(&connection) {
+        Ok(tags) => tags,
+        Err(error) => {
+            tracing::error!("Failed to retrieve tags for new transaction page: {error}");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response();
+        }
+    };
 
     NewTransactionTemplate {
         nav_bar,
         create_transaction_route: endpoints::TRANSACTIONS_API,
         max_date: time::OffsetDateTime::now_utc().date(),
+        available_tags,
     }
     .into_response()
 }
@@ -1076,9 +1173,16 @@ mod view_tests {
     use scraper::{ElementRef, Html, Selector, selectable::Selectable};
     use time::OffsetDateTime;
 
-    use crate::{db::initialize, endpoints, pagination::PaginationConfig};
+    use crate::{
+        db::initialize,
+        endpoints,
+        pagination::{PaginationConfig, PaginationIndicator},
+    };
 
-    use super::*;
+    use super::{
+        NewTransactionPageState, Pagination, Transaction, TransactionBuilder,
+        TransactionsViewState, create_transaction, get_new_transaction_page, get_transactions_page,
+    };
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -1088,7 +1192,11 @@ mod view_tests {
 
     #[tokio::test]
     async fn new_transaction_returns_form() {
-        let response = get_new_transaction_page().await;
+        let conn = get_test_connection();
+        let state = NewTransactionPageState {
+            db_connection: Arc::new(Mutex::new(conn)),
+        };
+        let response = get_new_transaction_page(State(state)).await;
 
         assert_status_ok(&response);
         assert_html_content_type(&response);
@@ -1578,6 +1686,7 @@ mod route_handler_tests {
             description: "test transaction".to_string(),
             amount: 12.3,
             date: OffsetDateTime::now_utc().date(),
+            tag_ids: vec![],
         };
 
         let response = create_transaction_endpoint(State(state.clone()), Form(form))
@@ -1592,6 +1701,43 @@ mod route_handler_tests {
         let transaction = get_transaction(1, &connection).unwrap();
         assert_eq!(transaction.amount(), 12.3);
         assert_eq!(transaction.description(), "test transaction");
+    }
+
+    #[tokio::test]
+    async fn can_create_transaction_with_tags() {
+        let conn = get_test_connection();
+
+        // Create test tags
+        let tag1 =
+            crate::tag::create_tag(crate::tag::TagName::new_unchecked("Groceries"), &conn).unwrap();
+        let tag2 =
+            crate::tag::create_tag(crate::tag::TagName::new_unchecked("Food"), &conn).unwrap();
+
+        let state = TransactionState {
+            db_connection: Arc::new(Mutex::new(conn)),
+        };
+
+        let form = TransactionForm {
+            description: "test transaction with tags".to_string(),
+            amount: 25.50,
+            date: OffsetDateTime::now_utc().date(),
+            tag_ids: vec![tag1.id, tag2.id],
+        };
+
+        let response = create_transaction_endpoint(State(state.clone()), Form(form))
+            .await
+            .into_response();
+
+        assert_redirects_to_transactions_view(response);
+
+        // Verify the transaction was created with tags
+        let connection = state.db_connection.lock().unwrap();
+        let transaction = get_transaction(1, &connection).unwrap();
+        let tags = crate::tag::get_transaction_tags(transaction.id(), &connection).unwrap();
+
+        assert_eq!(tags.len(), 2);
+        assert!(tags.contains(&tag1));
+        assert!(tags.contains(&tag2));
     }
 
     #[tokio::test]

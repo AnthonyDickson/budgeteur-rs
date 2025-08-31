@@ -1,8 +1,5 @@
 # To Do
 
-- Add CRUD operations for manual tagging:
-  - Add tags when creating a new transaction
-    - Add select element to new transaction form
 - Add rules-based auto-tagger (new branch, merge back w/ PR):
   - Add a user-configurable rules-based (text patterns) auto-tagging feature
   - Use rules-based tagger for automatically tagging imports
