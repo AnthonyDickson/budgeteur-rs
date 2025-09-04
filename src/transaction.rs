@@ -28,7 +28,8 @@ use crate::{
     database_id::DatabaseID,
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     state::TransactionState,
-    tag::{Tag, get_all_tags, set_transaction_tags},
+    tag::{Tag, get_all_tags},
+    transaction_tag::set_transaction_tags,
     {
         endpoints,
         navigation::{NavbarTemplate, get_nav_bar},
@@ -1664,6 +1665,7 @@ mod route_handler_tests {
             Transaction, TransactionBuilder, create_transaction as create_transaction_db,
             get_transaction,
         },
+        transaction_tag::get_transaction_tags,
     };
     use rusqlite::Connection;
 
@@ -1733,7 +1735,7 @@ mod route_handler_tests {
         // Verify the transaction was created with tags
         let connection = state.db_connection.lock().unwrap();
         let transaction = get_transaction(1, &connection).unwrap();
-        let tags = crate::tag::get_transaction_tags(transaction.id(), &connection).unwrap();
+        let tags = get_transaction_tags(transaction.id(), &connection).unwrap();
 
         assert_eq!(tags.len(), 2);
         assert!(tags.contains(&tag1));

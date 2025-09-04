@@ -42,6 +42,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Recent Changes
 
+- **Transaction-Tag Refactoring (2025-09)**: Extracted transaction-tag relationship code from `tag.rs` into `transaction_tag.rs` to eliminate tight coupling
 - **Tag Editing Feature (2025-08)**: Added full CRUD operations for tags including edit page at `/tags/:tag_id/edit` with PUT endpoint at `/api/tags/:tag_id`
 - **Categories Renamed to Tags (2025-08)**: Renamed "categories" to "tags" throughout the application
 - **Tag System Enhancement (2025-08)**: Added dedicated tags listing page at `/tags`
