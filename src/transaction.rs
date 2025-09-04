@@ -26,14 +26,12 @@ use time::{Date, OffsetDateTime};
 use crate::{
     AppState, Error,
     database_id::DatabaseID,
+    endpoints,
+    navigation::{NavbarTemplate, get_nav_bar},
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     state::TransactionState,
-    tag::{Tag, get_all_tags, set_transaction_tags},
-    {
-        endpoints,
-        navigation::{NavbarTemplate, get_nav_bar},
-        shared_templates::TransactionRow,
-    },
+    tag::{Tag, get_all_tags},
+    transaction_tag::{get_transaction_tags, set_transaction_tags},
 };
 
 // ============================================================================
@@ -253,6 +251,22 @@ impl TransactionBuilder {
 }
 
 // ============================================================================
+// TEMPLATES
+// ============================================================================
+
+/// Renders a transaction with its tags as a table row.
+#[derive(Template)]
+#[template(path = "partials/dashboard/transaction_with_tags.html")]
+pub struct TransactionTableRow {
+    /// The transaction to display.
+    pub transaction: Transaction,
+    /// The tags associated with this transaction.
+    pub tags: Vec<Tag>,
+    /// An optional error message if tags failed to load.
+    pub tag_error: Option<String>,
+}
+
+// ============================================================================
 // FORM HELPERS
 // ============================================================================
 
@@ -319,7 +333,7 @@ pub struct TransactionForm {
     pub tag_ids: Vec<i64>,
 }
 
-/// A route handler for creating a new transaction, returns [TransactionRow] as a [Response] on success.
+/// A route handler for creating a new transaction, redirects to transactions view on success.
 ///
 /// # Panics
 ///
@@ -441,7 +455,7 @@ pub fn import_transactions(
 
     for builder in builders {
         // Try to insert and get the result
-        let maybe_transaction = stmt.query_row(
+        let transaction_result = stmt.query_row(
             (
                 builder.amount,
                 builder.date,
@@ -452,7 +466,7 @@ pub fn import_transactions(
         );
 
         // Only collect successfully inserted transactions (not conflicts)
-        if let Ok(transaction) = maybe_transaction {
+        if let Ok(transaction) = transaction_result {
             imported_transactions.push(transaction);
         }
     }
@@ -546,7 +560,7 @@ pub fn query_transactions(
     connection
         .prepare(&query_string)?
         .query_map(params, map_transaction_row)?
-        .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
+        .map(|transaction_result| transaction_result.map_err(Error::SqlError))
         .collect()
 }
 
@@ -619,7 +633,7 @@ pub fn get_transactions_paginated(
     connection
         .prepare(&query)?
         .query_map([], map_transaction_row)?
-        .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
+        .map(|transaction_result| transaction_result.map_err(Error::SqlError))
         .collect()
 }
 
@@ -738,7 +752,7 @@ pub async fn get_transactions_page(
 ) -> Response {
     let nav_bar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
 
-    let curr_page = query_params
+    let current_page = query_params
         .page
         .unwrap_or(state.pagination_config.default_page);
     let per_page = query_params
@@ -746,7 +760,7 @@ pub async fn get_transactions_page(
         .unwrap_or(state.pagination_config.default_page_size);
 
     let limit = per_page;
-    let offset = (curr_page - 1) * per_page;
+    let offset = (current_page - 1) * per_page;
     let connection = state.db_connection.lock().unwrap();
     let page_count = match count_transactions(&connection) {
         Ok(transaction_count) => (transaction_count as f64 / per_page as f64).ceil() as u64,
@@ -762,11 +776,27 @@ pub async fn get_transactions_page(
 
     let transactions = transactions
         .into_iter()
-        .map(|transaction| TransactionRow { transaction })
+        .map(|transaction| {
+            let (tags, tag_error) = match get_transaction_tags(transaction.id(), &connection) {
+                Ok(tags) => (tags, None),
+                Err(error) => {
+                    tracing::error!(
+                        "Failed to get tags for transaction {}: {error}",
+                        transaction.id()
+                    );
+                    (Vec::new(), Some("Failed to load tags".to_string()))
+                }
+            };
+            TransactionTableRow {
+                transaction,
+                tags,
+                tag_error,
+            }
+        })
         .collect();
 
     let max_pages = state.pagination_config.max_pages;
-    let pagination_indicators = create_pagination_indicators(curr_page, page_count, max_pages);
+    let pagination_indicators = create_pagination_indicators(current_page, page_count, max_pages);
 
     TransactionsTemplate {
         nav_bar,
@@ -813,7 +843,7 @@ pub struct Pagination {
 struct TransactionsTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     /// The user's transactions for this week, as Askama templates.
-    transactions: Vec<TransactionRow>,
+    transactions: Vec<TransactionTableRow>,
     /// The route for creating a new transaction for the current user.
     create_transaction_route: Uri,
     /// The route for importing transactions from CSV files.
@@ -854,11 +884,11 @@ mod transaction_builder_tests {
     fn new_succeeds_on_today() {
         let today = OffsetDateTime::now_utc().date();
 
-        let transaction_buider = TransactionBuilder::new(123.45).date(today);
+        let transaction_builder = TransactionBuilder::new(123.45).date(today);
 
-        assert!(transaction_buider.is_ok());
+        assert!(transaction_builder.is_ok());
 
-        let transaction = transaction_buider.unwrap().finalise(1);
+        let transaction = transaction_builder.unwrap().finalise(1);
         assert_eq!(transaction.date(), &today);
     }
 
@@ -997,7 +1027,7 @@ mod database_tests {
             .unwrap()
             .query_map([], map_transaction_row)
             .unwrap()
-            .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
+            .map(|transaction_result| transaction_result.map_err(Error::SqlError))
             .collect::<Result<Vec<Transaction>, Error>>()
             .expect("Could not query transactions");
 
@@ -1063,9 +1093,9 @@ mod database_tests {
         let conn = get_test_connection();
         let transaction = create_transaction(Transaction::build(123.0), &conn).unwrap();
 
-        let maybe_transaction = get_transaction(transaction.id() + 654, &conn);
+        let transaction_result = get_transaction(transaction.id() + 654, &conn);
 
-        assert_eq!(maybe_transaction, Err(Error::NotFound));
+        assert_eq!(transaction_result, Err(Error::NotFound));
     }
 
     #[test]
@@ -1134,7 +1164,7 @@ mod database_tests {
         let got = conn
             .prepare("SELECT id, amount, date, description, import_id FROM \"transaction\" ORDER BY date DESC").unwrap()
             .query_map([], map_transaction_row).unwrap()
-            .map(|maybe_transaction| maybe_transaction.map_err(Error::SqlError))
+            .map(|transaction_result| transaction_result.map_err(Error::SqlError))
             .collect::<Result<Vec<Transaction>, Error>>()
         .unwrap();
 
@@ -1163,6 +1193,7 @@ mod database_tests {
 mod view_tests {
     use std::sync::{Arc, Mutex};
 
+    use askama::Template;
     use axum::{
         body::Body,
         extract::{Query, State},
@@ -1177,6 +1208,9 @@ mod view_tests {
         db::initialize,
         endpoints,
         pagination::{PaginationConfig, PaginationIndicator},
+        tag::{TagName, create_tag},
+        transaction::TransactionTableRow,
+        transaction_tag::set_transaction_tags,
     };
 
     use super::{
@@ -1632,6 +1666,145 @@ mod view_tests {
         }
     }
 
+    #[tokio::test]
+    async fn transactions_page_displays_tags_column() {
+        let conn = get_test_connection();
+
+        // Create test tags
+        let tag1 = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
+        let tag2 = create_tag(TagName::new_unchecked("Food"), &conn).unwrap();
+
+        // Create transactions
+        let transaction1 = create_transaction(
+            TransactionBuilder::new(50.0).description("Store purchase"),
+            &conn,
+        )
+        .unwrap();
+        let transaction2 = create_transaction(
+            TransactionBuilder::new(25.0).description("Restaurant"),
+            &conn,
+        )
+        .unwrap();
+        let _transaction3 = create_transaction(
+            TransactionBuilder::new(100.0).description("No tags transaction"),
+            &conn,
+        )
+        .unwrap();
+
+        // Assign tags to transactions
+        set_transaction_tags(transaction1.id(), &[tag1.id, tag2.id], &conn).unwrap();
+        set_transaction_tags(transaction2.id(), &[tag1.id], &conn).unwrap();
+        // transaction3 gets no tags
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            pagination_config: PaginationConfig::default(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(Pagination {
+                page: Some(1),
+                per_page: Some(10),
+            }),
+        )
+        .await;
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+
+        // Check that Tags column header exists
+        let headers = html
+            .select(&Selector::parse("thead th").unwrap())
+            .collect::<Vec<_>>();
+        let header_texts: Vec<String> = headers
+            .iter()
+            .map(|h| h.text().collect::<String>().trim().to_string())
+            .collect();
+        assert!(
+            header_texts.contains(&"Tags".to_string()),
+            "Tags column header should exist. Found headers: {:?}",
+            header_texts
+        );
+
+        // Check table rows for tag content
+        let table_rows = html
+            .select(&Selector::parse("tbody tr").unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(table_rows.len(), 3, "Should have 3 transaction rows");
+
+        // Check that each row has 5 columns (ID, Amount, Date, Description, Tags)
+        for (i, row) in table_rows.iter().enumerate() {
+            let cells = row
+                .select(&Selector::parse("th, td").unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                cells.len(),
+                5,
+                "Row {} should have 5 columns (ID, Amount, Date, Description, Tags)",
+                i
+            );
+
+            // The last cell should be the Tags column
+            let tags_cell = &cells[4];
+            let tags_cell_html = tags_cell.html();
+
+            // Check if this row should have tags or not
+            if tags_cell_html.contains("-") && !tags_cell_html.contains("bg-blue-100") {
+                // This is the "no tags" case showing "-"
+                assert!(
+                    tags_cell_html.contains("text-gray-400"),
+                    "Empty tags should be displayed with gray text"
+                );
+            } else {
+                // Should contain tag badges
+                assert!(
+                    tags_cell_html.contains("bg-blue-100"),
+                    "Tag should have blue background styling"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn transaction_table_row_displays_tag_error() {
+        let transaction = Transaction::build(50.0)
+            .description("Test transaction")
+            .finalise(1);
+
+        let row_with_error = TransactionTableRow {
+            transaction: transaction.clone(),
+            tags: vec![],
+            tag_error: Some("Failed to load tags".to_string()),
+        };
+
+        let rendered = row_with_error.render().unwrap();
+        assert!(
+            rendered.contains("Error: Failed to load tags"),
+            "Should display error message when tag_error is present"
+        );
+        assert!(
+            rendered.contains("text-red-600"),
+            "Error should be displayed in red"
+        );
+
+        let row_without_error = TransactionTableRow {
+            transaction,
+            tags: vec![],
+            tag_error: None,
+        };
+
+        let rendered = row_without_error.render().unwrap();
+        assert!(
+            !rendered.contains("Error:"),
+            "Should not display error when tag_error is None"
+        );
+        assert!(
+            rendered.contains("text-gray-400"),
+            "Should display gray dash when no tags and no error"
+        );
+    }
+
     async fn parse_html(response: Response) -> Html {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX)
@@ -1664,6 +1837,7 @@ mod route_handler_tests {
             Transaction, TransactionBuilder, create_transaction as create_transaction_db,
             get_transaction,
         },
+        transaction_tag::get_transaction_tags,
     };
     use rusqlite::Connection;
 
@@ -1733,7 +1907,7 @@ mod route_handler_tests {
         // Verify the transaction was created with tags
         let connection = state.db_connection.lock().unwrap();
         let transaction = get_transaction(1, &connection).unwrap();
-        let tags = crate::tag::get_transaction_tags(transaction.id(), &connection).unwrap();
+        let tags = get_transaction_tags(transaction.id(), &connection).unwrap();
 
         assert_eq!(tags.len(), 2);
         assert!(tags.contains(&tag1));

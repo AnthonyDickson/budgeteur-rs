@@ -41,6 +41,7 @@ mod shared_templates;
 mod state;
 mod tag;
 pub mod transaction;
+mod transaction_tag;
 pub mod user;
 
 pub use logging::logging_middleware;

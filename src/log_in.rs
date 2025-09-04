@@ -20,10 +20,33 @@ use crate::{
     AppState, Error,
     auth_cookie::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
     endpoints,
-    shared_templates::{EmailInputTemplate, LogInFormTemplate, PasswordInputTemplate},
+    shared_templates::{EmailInputTemplate, PasswordInputTemplate},
     state::create_cookie_key,
     user::{User, get_user_by_email},
 };
+
+/// Renders a log-in form with client-side and server-side validation.
+#[derive(Template)]
+#[template(path = "partials/log_in/form.html")]
+pub struct LogInFormTemplate<'a> {
+    pub email_input: EmailInputTemplate<'a>,
+    pub password_input: PasswordInputTemplate<'a>,
+    pub log_in_route: &'a str,
+    pub forgot_password_route: &'a str,
+    pub register_route: &'a str,
+}
+
+impl Default for LogInFormTemplate<'_> {
+    fn default() -> Self {
+        Self {
+            email_input: Default::default(),
+            password_input: Default::default(),
+            log_in_route: endpoints::LOG_IN_API,
+            forgot_password_route: endpoints::FORGOT_PASSWORD_VIEW,
+            register_route: endpoints::REGISTER_VIEW,
+        }
+    }
+}
 
 ///  Renders the full log-in page.
 #[derive(Template, Default)]

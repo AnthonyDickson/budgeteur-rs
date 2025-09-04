@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-**Setup:** `cargo run --bin create_test_db -- --output-path test.db` - Create the test database
+**Setup:** `cargo run --bin create_test_db -- --output-path test.db` - Create the test database, first time only
 
 **Development:**
 
@@ -40,8 +40,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Tests use in-memory databases with `get_test_connection()` helper
 - HTML parsing tests should use document tree parsing rather than string matching
 
+## Code Style
+
+- Prefer importing with the `use` statement rather than qualified imports.
+- Format code with cargo
+
+## Code Review
+
+At least:
+- Run tests
+- Run linter
+- Run formatter with `cargo fmt --check`
+
 ## Recent Changes
 
+- **Transaction-Tag Refactoring (2025-09)**: Extracted transaction-tag relationship code from `tag.rs` into `transaction_tag.rs` to eliminate tight coupling
 - **Tag Editing Feature (2025-08)**: Added full CRUD operations for tags including edit page at `/tags/:tag_id/edit` with PUT endpoint at `/api/tags/:tag_id`
 - **Categories Renamed to Tags (2025-08)**: Renamed "categories" to "tags" throughout the application
 - **Tag System Enhancement (2025-08)**: Added dedicated tags listing page at `/tags`

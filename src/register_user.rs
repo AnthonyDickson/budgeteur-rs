@@ -23,13 +23,38 @@ use crate::{
     auth_cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
     endpoints,
     routing::get_internal_server_error_redirect,
-    shared_templates::{
-        ConfirmPasswordInputTemplate, EmailInputTemplate, PasswordInputTemplate,
-        RegisterFormTemplate,
-    },
+    shared_templates::{EmailInputTemplate, PasswordInputTemplate},
     state::create_cookie_key,
     user::{count_users, create_user, get_user_by_email},
 };
+
+#[derive(Template, Default)]
+#[template(path = "partials/register/inputs/confirm_password.html")]
+pub struct ConfirmPasswordInputTemplate<'a> {
+    pub error_message: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "partials/register/form.html")]
+pub struct RegisterFormTemplate<'a> {
+    pub log_in_route: &'a str,
+    pub create_user_route: &'a str,
+    pub email_input: EmailInputTemplate<'a>,
+    pub password_input: PasswordInputTemplate<'a>,
+    pub confirm_password_input: ConfirmPasswordInputTemplate<'a>,
+}
+
+impl Default for RegisterFormTemplate<'_> {
+    fn default() -> Self {
+        Self {
+            log_in_route: endpoints::LOG_IN_VIEW,
+            create_user_route: endpoints::USERS,
+            email_input: EmailInputTemplate::default(),
+            password_input: PasswordInputTemplate::default(),
+            confirm_password_input: ConfirmPasswordInputTemplate::default(),
+        }
+    }
+}
 
 /// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).
 const PASSWORD_INPUT_MIN_LENGTH: usize = 14;
