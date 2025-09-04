@@ -20,7 +20,6 @@ use crate::{
     database_id::DatabaseID,
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
-    shared_templates::NewTagFormTemplate,
     transaction_tag::get_tag_transaction_count,
 };
 
@@ -97,6 +96,14 @@ struct EditTagFormTemplate<'a> {
 struct EditTagTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     form: EditTagFormTemplate<'a>,
+}
+
+/// Renders the form for creating a tag.
+#[derive(Template)]
+#[template(path = "partials/new_tag_form.html")]
+pub struct NewTagFormTemplate<'a> {
+    pub create_tag_endpoint: &'a str,
+    pub error_message: &'a str,
 }
 
 /// Renders an error message for tag operations.

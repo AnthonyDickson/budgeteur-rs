@@ -29,7 +29,6 @@ use crate::{
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
-    shared_templates::TransactionTableRow,
     state::TransactionState,
     tag::{Tag, get_all_tags},
     transaction_tag::{get_transaction_tags, set_transaction_tags},
@@ -249,6 +248,22 @@ impl TransactionBuilder {
         self.import_id = import_id;
         self
     }
+}
+
+// ============================================================================
+// TEMPLATES
+// ============================================================================
+
+/// Renders a transaction with its tags as a table row.
+#[derive(Template)]
+#[template(path = "partials/dashboard/transaction_with_tags.html")]
+pub struct TransactionTableRow {
+    /// The transaction to display.
+    pub transaction: Transaction,
+    /// The tags associated with this transaction.
+    pub tags: Vec<Tag>,
+    /// An optional error message if tags failed to load.
+    pub tag_error: Option<String>,
 }
 
 // ============================================================================
@@ -1193,8 +1208,8 @@ mod view_tests {
         db::initialize,
         endpoints,
         pagination::{PaginationConfig, PaginationIndicator},
-        shared_templates::TransactionTableRow,
         tag::{TagName, create_tag},
+        transaction::TransactionTableRow,
         transaction_tag::set_transaction_tags,
     };
 
