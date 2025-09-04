@@ -2,9 +2,7 @@
 
 use askama::Template;
 
-use crate::transaction::Transaction;
-
-use crate::endpoints;
+use crate::{endpoints, tag::Tag, transaction::Transaction};
 
 #[derive(Template, Default)]
 #[template(path = "partials/register/inputs/email.html")]
@@ -21,11 +19,13 @@ pub struct PasswordInputTemplate<'a> {
     pub error_message: &'a str,
 }
 
-/// Renders a transaction as a 5 column table row.
+/// Renders a transaction with its tags as a table row.
 #[derive(Template)]
-#[template(path = "partials/dashboard/transaction.html")]
-pub struct TransactionRow {
+#[template(path = "partials/dashboard/transaction_with_tags.html")]
+pub struct TransactionTableRow {
     pub transaction: Transaction,
+    pub tags: Vec<Tag>,
+    pub tag_error: Option<String>,
 }
 
 /// Renders a log-in form with client-side and server-side validation.

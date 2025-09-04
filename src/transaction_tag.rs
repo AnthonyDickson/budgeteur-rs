@@ -6,10 +6,11 @@
 
 use rusqlite::Connection;
 
-use crate::{Error, database_id::DatabaseID};
-
-#[cfg(test)]
-use crate::tag::{Tag, TagName};
+use crate::{
+    Error,
+    database_id::DatabaseID,
+    tag::{Tag, TagName},
+};
 
 /// Get the number of transactions associated with a tag.
 ///
@@ -115,8 +116,6 @@ pub fn remove_tag_from_transaction(
 ///
 /// # Errors
 /// This function will return a [Error::SqlError] if there is a SQL error.
-// TODO: Remove build config attribute once get_transaction_tags function is used elsewhere.
-#[cfg(test)]
 pub fn get_transaction_tags(
     transaction_id: DatabaseID,
     connection: &Connection,

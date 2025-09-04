@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-**Setup:** `cargo run --bin create_test_db -- --output-path test.db` - Create the test database
+**Setup:** `cargo run --bin create_test_db -- --output-path test.db` - Create the test database, first time only
 
 **Development:**
 
@@ -39,6 +39,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Use `AppState::new()` for initialization (handles DB setup automatically)
 - Tests use in-memory databases with `get_test_connection()` helper
 - HTML parsing tests should use document tree parsing rather than string matching
+
+## Code Style
+
+- Prefer importing with the `use` statement rather than qualified imports.
+- Format code with cargo
+
+## Code Review
+
+At least:
+- Run tests
+- Run linter
+- Run formatter with `cargo fmt --check`
 
 ## Recent Changes
 

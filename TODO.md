@@ -1,6 +1,6 @@
 # To Do
 
-- Display tags in transactions table view.
+- Move non-shared code out of src/shared_templates.rs into the appropriate modules.
 - Add rules-based auto-tagger (new branch, merge back w/ PR):
   - Add a user-configurable rules-based (text patterns) auto-tagging feature
   - Use rules-based tagger for automatically tagging imports
