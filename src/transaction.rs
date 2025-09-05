@@ -11,7 +11,7 @@ use std::{
 };
 
 use askama::Template;
-use askama_axum::Template as AxumTemplate;
+use askama::Template as AxumTemplate;
 use axum::{
     Form, Json,
     extract::{FromRef, Path, Query, State},
@@ -29,6 +29,7 @@ use crate::{
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
+    shared_templates::render,
     state::TransactionState,
     tag::{Tag, get_all_tags},
     transaction_tag::{get_transaction_tags, set_transaction_tags},
@@ -357,18 +358,18 @@ pub async fn create_transaction_endpoint(
         Err(e) => return e.into_response(),
     };
 
-    if !data.tag_ids.is_empty() {
-        if let Err(e) = set_transaction_tags(created_transaction.id(), &data.tag_ids, &connection) {
-            tracing::error!(
-                "Failed to assign tags to transaction {}: {e}",
-                created_transaction.id()
-            );
-            return e.into_response();
-        }
+    if !data.tag_ids.is_empty()
+        && let Err(e) = set_transaction_tags(created_transaction.id(), &data.tag_ids, &connection)
+    {
+        tracing::error!(
+            "Failed to assign tags to transaction {}: {e}",
+            created_transaction.id()
+        );
+        return e.into_response();
     }
 
     (
-        HxRedirect(Uri::from_static(endpoints::TRANSACTIONS_VIEW)),
+        HxRedirect(endpoints::TRANSACTIONS_VIEW.to_owned()),
         StatusCode::SEE_OTHER,
     )
         .into_response()
@@ -736,13 +737,15 @@ pub async fn get_new_transaction_page(State(state): State<NewTransactionPageStat
         }
     };
 
-    NewTransactionTemplate {
-        nav_bar,
-        create_transaction_route: endpoints::TRANSACTIONS_API,
-        max_date: time::OffsetDateTime::now_utc().date(),
-        available_tags,
-    }
-    .into_response()
+    render(
+        StatusCode::OK,
+        NewTransactionTemplate {
+            nav_bar,
+            create_transaction_route: endpoints::TRANSACTIONS_API,
+            max_date: time::OffsetDateTime::now_utc().date(),
+            available_tags,
+        },
+    )
 }
 
 /// Render an overview of the user's transactions.
@@ -798,16 +801,18 @@ pub async fn get_transactions_page(
     let max_pages = state.pagination_config.max_pages;
     let pagination_indicators = create_pagination_indicators(current_page, page_count, max_pages);
 
-    TransactionsTemplate {
-        nav_bar,
-        transactions,
-        create_transaction_route: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
-        import_transaction_route: Uri::from_static(endpoints::IMPORT_VIEW),
-        transactions_page_route: Uri::from_static(endpoints::TRANSACTIONS_VIEW),
-        pagination: &pagination_indicators,
-        per_page,
-    }
-    .into_response()
+    render(
+        StatusCode::OK,
+        TransactionsTemplate {
+            nav_bar,
+            transactions,
+            create_transaction_route: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
+            import_transaction_route: Uri::from_static(endpoints::IMPORT_VIEW),
+            transactions_page_route: Uri::from_static(endpoints::TRANSACTIONS_VIEW),
+            pagination: &pagination_indicators,
+            per_page,
+        },
+    )
 }
 
 /// The state needed for the transactions page.
@@ -1456,7 +1461,7 @@ mod view_tests {
     }
 
     #[track_caller]
-    fn must_get_table(html: &Html) -> ElementRef {
+    fn must_get_table(html: &Html) -> ElementRef<'_> {
         html.select(&Selector::parse("table").unwrap())
             .next()
             .expect("No table found")
@@ -1497,7 +1502,7 @@ mod view_tests {
     }
 
     #[track_caller]
-    fn must_get_pagination_indicator(html: &Html) -> ElementRef {
+    fn must_get_pagination_indicator(html: &Html) -> ElementRef<'_> {
         html.select(&Selector::parse("nav.pagination > ul.pagination").unwrap())
             .next()
             .expect("No pagination indicator found")
@@ -1820,12 +1825,12 @@ mod view_tests {
 mod route_handler_tests {
     use std::sync::{Arc, Mutex};
 
-    use askama_axum::IntoResponse;
     use axum::{
         Form,
         body::Body,
         extract::{Path, State},
         http::{Response, StatusCode},
+        response::IntoResponse,
     };
     use axum_htmx::HX_REDIRECT;
     use time::OffsetDateTime;

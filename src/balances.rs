@@ -3,10 +3,10 @@
 use std::sync::{Arc, Mutex};
 
 use askama::Template;
-use askama_axum::IntoResponse;
 use axum::{
     extract::{FromRef, State},
-    response::Response,
+    http::StatusCode,
+    response::{IntoResponse, Response},
 };
 use rusqlite::Connection;
 use time::Date;
@@ -16,6 +16,7 @@ use crate::{
     database_id::DatabaseID,
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
+    shared_templates::render,
 };
 
 /// Renders the balances page showing all account balances.
@@ -30,12 +31,13 @@ pub async fn get_balances_page(State(state): State<BalanceState>) -> Response {
         Err(error) => return error.into_response(),
     };
 
-    BalancesTemplate {
+    let template = BalancesTemplate {
         nav_bar: get_nav_bar(endpoints::BALANCES_VIEW),
         balances: &balances,
         import_page_link: endpoints::IMPORT_VIEW,
-    }
-    .into_response()
+    };
+
+    render(StatusCode::OK, template)
 }
 
 /// The state needed for the [get_balances_page](crate::balances::get_balances_page) route handler.
@@ -207,8 +209,7 @@ mod get_all_balances_tests {
 mod balances_template_tests {
     use std::iter::zip;
 
-    use askama_axum::IntoResponse;
-    use axum::{http::StatusCode, response::Response};
+    use askama::Template;
     use scraper::{ElementRef, Html, Selector};
     use time::macros::date;
 
@@ -217,8 +218,8 @@ mod balances_template_tests {
         {endpoints, navigation::get_nav_bar},
     };
 
-    #[tokio::test]
-    async fn test_get_balances_view() {
+    #[test]
+    fn test_get_balances_view() {
         let want_balance = Balance {
             id: 1,
             account: "1234-5678-9101-12".to_string(),
@@ -227,35 +228,33 @@ mod balances_template_tests {
         };
         let balances = vec![want_balance];
 
-        let response = BalancesTemplate {
+        let rendered_template = BalancesTemplate {
             nav_bar: get_nav_bar(endpoints::BALANCES_VIEW),
             balances: &balances,
             import_page_link: endpoints::IMPORT_VIEW,
         }
-        .into_response();
+        .render()
+        .expect("Could not render template");
 
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_content_type(&response, "text/html; charset=utf-8");
-        let html = parse_html(response).await;
+        let html = scraper::Html::parse_document(&rendered_template);
         assert_valid_html(&html);
         let table = must_get_table(&html);
         assert_table_contains_balances(table, &balances);
     }
 
-    #[tokio::test]
-    async fn test_get_balances_view_no_data() {
+    #[test]
+    fn test_get_balances_view_no_data() {
         let balances = vec![];
 
-        let response = BalancesTemplate {
+        let rendered_template = BalancesTemplate {
             nav_bar: get_nav_bar(endpoints::BALANCES_VIEW),
             balances: &balances,
             import_page_link: endpoints::IMPORT_VIEW,
         }
-        .into_response();
+        .render()
+        .expect("Could not render template");
 
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_content_type(&response, "text/html; charset=utf-8");
-        let html = parse_html(response).await;
+        let html = Html::parse_document(&rendered_template);
         assert_valid_html(&html);
         let paragraph = must_get_no_data_paragraph(&html);
         assert_paragraph_contains_link(paragraph, endpoints::IMPORT_VIEW);
@@ -349,23 +348,6 @@ mod balances_template_tests {
             want_url, link_target,
             "want link with href = \"{want_url}\", but got \"{link_target}\""
         );
-    }
-
-    #[track_caller]
-    fn assert_content_type(response: &Response, content_type: &str) {
-        let content_type_header = response
-            .headers()
-            .get("content-type")
-            .expect("content-type header missing");
-        assert_eq!(content_type_header, content_type);
-    }
-
-    async fn parse_html(response: Response) -> scraper::Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        scraper::Html::parse_document(&text)
     }
 
     #[track_caller]

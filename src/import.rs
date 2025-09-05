@@ -1,9 +1,9 @@
 use std::sync::{Arc, Mutex};
 
-use askama_axum::Template;
+use askama::Template;
 use axum::{
     extract::{FromRef, Multipart, State, multipart::Field},
-    http::{StatusCode, Uri},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
@@ -15,6 +15,7 @@ use crate::{
     csv::{ImportBalance, parse_csv},
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
+    shared_templates::render,
     transaction::import_transactions as import_transaction_list,
 };
 
@@ -50,14 +51,16 @@ struct ImportTransactionsTemplate<'a> {
 }
 
 pub async fn get_import_page() -> Response {
-    ImportTransactionsTemplate {
-        nav_bar: get_nav_bar(endpoints::IMPORT_VIEW),
-        form: ImportTransactionFormTemplate {
-            import_route: endpoints::IMPORT,
-            error_message: "",
+    render(
+        StatusCode::OK,
+        ImportTransactionsTemplate {
+            nav_bar: get_nav_bar(endpoints::IMPORT_VIEW),
+            form: ImportTransactionFormTemplate {
+                import_route: endpoints::IMPORT,
+                error_message: "",
+            },
         },
-    }
-    .into_response()
+    )
 }
 
 pub async fn import_transactions(
@@ -66,24 +69,28 @@ pub async fn import_transactions(
 ) -> Response {
     let mut transactions = Vec::new();
     let mut balances = Vec::new();
-    let unexpected_error_response = ImportTransactionFormTemplate {
-        import_route: endpoints::IMPORT,
-        error_message: "An unexpected error occurred, please try again later.",
-    }
-    .into_response();
+    let unexpected_error_template = render(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        ImportTransactionFormTemplate {
+            import_route: endpoints::IMPORT,
+            error_message: "An unexpected error occurred, please try again later.",
+        },
+    );
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         let csv_data = match parse_multipart_field(field).await {
             Ok(data) => data,
             Err(Error::NotCSV) => {
-                return ImportTransactionFormTemplate {
-                    import_route: endpoints::IMPORT,
-                    error_message: "File type must be CSV.",
-                }
-                .into_response();
+                return render(
+                    StatusCode::OK,
+                    ImportTransactionFormTemplate {
+                        import_route: endpoints::IMPORT,
+                        error_message: "File type must be CSV.",
+                    },
+                );
             }
             Err(_) => {
-                return unexpected_error_response;
+                return unexpected_error_template;
             }
         };
 
@@ -97,11 +104,13 @@ pub async fn import_transactions(
             }
             Err(e) => {
                 tracing::debug!("Failed to parse CSV: {}", e);
-                return ImportTransactionFormTemplate {
-                    import_route: endpoints::IMPORT,
-                    error_message: "Failed to parse CSV, check that the provided file is a valid CSV from ASB or Kiwibank.",
-                }
-                .into_response();
+                return render(
+                    StatusCode::OK,
+                    ImportTransactionFormTemplate {
+                        import_route: endpoints::IMPORT,
+                        error_message: "Failed to parse CSV, check that the provided file is a valid CSV from ASB or Kiwibank.",
+                    },
+                );
             }
         }
     }
@@ -109,18 +118,24 @@ pub async fn import_transactions(
     let connection = state.db_connection.lock().unwrap();
     if let Err(error) = import_transaction_list(transactions, &connection) {
         tracing::error!("Failed to import transactions: {}", error);
-        return unexpected_error_response;
+        return render(
+            StatusCode::OK,
+            ImportTransactionFormTemplate {
+                import_route: endpoints::IMPORT,
+                error_message: "An unexpected error occurred, please try again later.",
+            },
+        );
     }
 
     for balance in balances {
         if let Err(error) = upsert_balance(&balance, &connection) {
             tracing::error!("Failed to import account balances: {error:#?}");
-            return unexpected_error_response;
+            return unexpected_error_template;
         }
     }
 
     (
-        HxRedirect(Uri::from_static(endpoints::TRANSACTIONS_VIEW)),
+        HxRedirect(endpoints::TRANSACTIONS_VIEW.to_owned()),
         StatusCode::SEE_OTHER,
     )
         .into_response()
@@ -865,7 +880,7 @@ mod import_transactions_tests {
     }
 
     #[track_caller]
-    fn must_get_form(html: &Html) -> ElementRef {
+    fn must_get_form(html: &Html) -> ElementRef<'_> {
         html.select(&scraper::Selector::parse("form").unwrap())
             .next()
             .expect("No form found")

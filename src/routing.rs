@@ -1,9 +1,9 @@
 //! Application router configuration with protected and unprotected route definitions.
 
-use askama_axum::Template;
+use askama::Template;
 use axum::{
     Router,
-    http::{StatusCode, Uri},
+    http::StatusCode,
     middleware,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post, put},
@@ -22,6 +22,7 @@ use crate::{
     log_in::{get_log_in_page, post_log_in},
     log_out::get_log_out,
     register_user::{get_register_page, register_user},
+    shared_templates::render,
     tag::{
         create_tag_endpoint, delete_tag_endpoint, get_edit_tag_page, get_new_tag_page,
         get_tags_page, update_tag_endpoint,
@@ -103,7 +104,7 @@ async fn get_index_page() -> Redirect {
 /// Route handlers using GET should use `axum::response::Redirect` to redirect via a response.
 pub(crate) fn get_internal_server_error_redirect() -> Response {
     (
-        HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR_VIEW)),
+        HxRedirect(endpoints::INTERNAL_ERROR_VIEW.to_owned()),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
         .into_response()
@@ -114,7 +115,7 @@ pub(crate) fn get_internal_server_error_redirect() -> Response {
 struct InternalServerErrorPageTemplate;
 
 async fn get_internal_server_error_page() -> Response {
-    InternalServerErrorPageTemplate.into_response()
+    render(StatusCode::OK, InternalServerErrorPageTemplate)
 }
 
 #[derive(Template)]
@@ -122,13 +123,16 @@ async fn get_internal_server_error_page() -> Response {
 struct NotFoundTemplate;
 
 async fn get_404_not_found() -> Response {
-    (StatusCode::NOT_FOUND, NotFoundTemplate {}).into_response()
+    (
+        StatusCode::NOT_FOUND,
+        Html(NotFoundTemplate.render().unwrap_or("Not found".to_owned())),
+    )
+        .into_response()
 }
 
 #[cfg(test)]
 mod root_route_tests {
-    use askama_axum::IntoResponse;
-    use axum::http::StatusCode;
+    use axum::{http::StatusCode, response::IntoResponse};
 
     use crate::{endpoints, routing::get_index_page};
 

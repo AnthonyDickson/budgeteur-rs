@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{FromRequestParts, Request, State},
-    http::{StatusCode, Uri, header::SET_COOKIE},
+    http::{StatusCode, header::SET_COOKIE},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
@@ -91,7 +91,7 @@ pub async fn auth_guard_hx(
 ) -> Response {
     auth_guard_internal(state, request, next, || {
         (
-            HxRedirect(Uri::from_static(endpoints::LOG_IN_VIEW)),
+            HxRedirect(endpoints::LOG_IN_VIEW.to_owned()),
             StatusCode::OK,
         )
             .into_response()
@@ -105,14 +105,12 @@ mod auth_guard_tests {
         Router,
         extract::State,
         middleware,
+        response::Html,
         routing::{get, post},
     };
-    use axum_extra::{
-        extract::{
-            PrivateCookieJar,
-            cookie::{Cookie, Key, SameSite},
-        },
-        response::Html,
+    use axum_extra::extract::{
+        PrivateCookieJar,
+        cookie::{Cookie, Key, SameSite},
     };
     use axum_test::TestServer;
     use sha2::Digest;
@@ -138,7 +136,7 @@ mod auth_guard_tests {
         set_auth_cookie(jar, UserID::new(1), state.cookie_duration)
     }
 
-    const TEST_LOG_IN_ROUTE_PATH: &str = "/log_in/:user_id";
+    const TEST_LOG_IN_ROUTE_PATH: &str = "/log_in/{user_id}";
     const TEST_PROTECTED_ROUTE: &str = "/protected";
 
     fn get_test_server(cookie_duration: Duration) -> TestServer {

@@ -4,17 +4,18 @@
 use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 
-use askama_axum::Template;
+use askama::Template;
 use axum::{
     Form,
     extract::{FromRef, Path, State},
-    http::{StatusCode, Uri},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
+use crate::shared_templates::render;
 use crate::{
     AppState, Error,
     database_id::DatabaseID,
@@ -114,14 +115,16 @@ struct TagErrorTemplate<'a> {
 }
 
 pub async fn get_new_tag_page() -> Response {
-    NewTagTemplate {
-        nav_bar: get_nav_bar(endpoints::NEW_TAG_VIEW),
-        form: NewTagFormTemplate {
-            create_tag_endpoint: endpoints::POST_TAG,
-            error_message: "",
+    render(
+        StatusCode::OK,
+        NewTagTemplate {
+            nav_bar: get_nav_bar(endpoints::NEW_TAG_VIEW),
+            form: NewTagFormTemplate {
+                create_tag_endpoint: endpoints::POST_TAG,
+                error_message: "",
+            },
         },
-    }
-    .into_response()
+    )
 }
 
 /// A tag with its formatted edit URL for template rendering.
@@ -166,33 +169,35 @@ pub async fn get_tags_page(State(state): State<TagsPageState>) -> Response {
         .lock()
         .expect("Could not acquire database lock");
 
-    match get_all_tags(&connection) {
-        Ok(tags) => {
-            let tags_with_edit_urls = tags
-                .into_iter()
-                .map(|tag| {
-                    let transaction_count =
-                        get_tag_transaction_count(tag.id, &connection).unwrap_or(0); // Default to 0 if count query fails
-                    TagWithEditUrl {
-                        edit_url: endpoints::format_endpoint(endpoints::EDIT_TAG_VIEW, tag.id),
-                        tag,
-                        transaction_count,
-                    }
-                })
-                .collect();
+    let tags = match get_all_tags(&connection) {
+        Ok(tags) => tags,
 
-            TagsTemplate {
-                nav_bar: get_nav_bar(endpoints::TAGS_VIEW),
-                tags: tags_with_edit_urls,
-                new_tag_route: endpoints::NEW_TAG_VIEW,
-            }
-            .into_response()
-        }
         Err(error) => {
             tracing::error!("Failed to retrieve tags: {error}");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response()
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response();
         }
-    }
+    };
+
+    let tags_with_edit_urls = tags
+        .into_iter()
+        .map(|tag| {
+            let transaction_count = get_tag_transaction_count(tag.id, &connection).unwrap_or(0); // Default to 0 if count query fails
+            TagWithEditUrl {
+                edit_url: endpoints::format_endpoint(endpoints::EDIT_TAG_VIEW, tag.id),
+                tag,
+                transaction_count,
+            }
+        })
+        .collect();
+
+    render(
+        StatusCode::OK,
+        TagsTemplate {
+            nav_bar: get_nav_bar(endpoints::TAGS_VIEW),
+            tags: tags_with_edit_urls,
+            new_tag_route: endpoints::NEW_TAG_VIEW,
+        },
+    )
 }
 
 /// The state needed for creating a tag.
@@ -264,46 +269,46 @@ pub struct TagFormData {
 pub async fn create_tag_endpoint(
     State(state): State<CreateTagEndpointState>,
     Form(new_tag): Form<TagFormData>,
-) -> impl IntoResponse {
+) -> Response {
     let name = match TagName::new(&new_tag.name) {
         Ok(name) => name,
         Err(error) => {
-            return (
+            return render(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 NewTagFormTemplate {
                     create_tag_endpoint: endpoints::POST_TAG,
                     error_message: &format!("Error: {error}"),
                 },
-            )
-                .into_response();
+            );
         }
     };
 
-    create_tag(
+    let tag_result = create_tag(
         name,
         &state
             .db_connection
             .lock()
             .expect("Could not acquire database lock"),
-    )
-    .map(|_tag| {
-        (
-            HxRedirect(Uri::from_static(endpoints::TAGS_VIEW)),
+    );
+
+    match tag_result {
+        Ok(_) => (
+            HxRedirect(endpoints::TAGS_VIEW.to_owned()),
             StatusCode::SEE_OTHER,
         )
-    })
-    .map_err(|error| {
-        tracing::error!("An unexpected error occurred while creating a tag: {error}");
+            .into_response(),
+        Err(error) => {
+            tracing::error!("An unexpected error occurred while creating a tag: {error}");
 
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            NewTagFormTemplate {
-                create_tag_endpoint: endpoints::POST_TAG,
-                error_message: "An unexpected error occurred. Please try again.",
-            },
-        )
-    })
-    .into_response()
+            render(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                NewTagFormTemplate {
+                    create_tag_endpoint: endpoints::POST_TAG,
+                    error_message: "An unexpected error occurred. Please try again.",
+                },
+            )
+        }
+    }
 }
 
 /// Route handler for the edit tag page.
@@ -324,15 +329,17 @@ pub async fn get_edit_tag_page(
     let update_endpoint = endpoints::format_endpoint(endpoints::PUT_TAG, tag_id);
 
     match get_tag(tag_id, &connection) {
-        Ok(tag) => EditTagTemplate {
-            nav_bar: get_nav_bar(&edit_endpoint),
-            form: EditTagFormTemplate {
-                update_tag_endpoint: &update_endpoint,
-                tag_name: tag.name.as_ref(),
-                error_message: "",
+        Ok(tag) => render(
+            StatusCode::OK,
+            EditTagTemplate {
+                nav_bar: get_nav_bar(&edit_endpoint),
+                form: EditTagFormTemplate {
+                    update_tag_endpoint: &update_endpoint,
+                    tag_name: tag.name.as_ref(),
+                    error_message: "",
+                },
             },
-        }
-        .into_response(),
+        ),
         Err(error) => {
             let error_message = match error {
                 Error::NotFound => "Tag not found",
@@ -342,15 +349,17 @@ pub async fn get_edit_tag_page(
                 }
             };
 
-            EditTagTemplate {
-                nav_bar: get_nav_bar(&edit_endpoint),
-                form: EditTagFormTemplate {
-                    update_tag_endpoint: &update_endpoint,
-                    tag_name: "",
-                    error_message,
+            render(
+                StatusCode::OK,
+                EditTagTemplate {
+                    nav_bar: get_nav_bar(&edit_endpoint),
+                    form: EditTagFormTemplate {
+                        update_tag_endpoint: &update_endpoint,
+                        tag_name: "",
+                        error_message,
+                    },
                 },
-            }
-            .into_response()
+            )
         }
     }
 }
@@ -375,49 +384,43 @@ pub async fn update_tag_endpoint(
     let name = match TagName::new(&form_data.name) {
         Ok(name) => name,
         Err(error) => {
-            return (
+            return render(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 EditTagFormTemplate {
                     update_tag_endpoint: &update_endpoint,
                     tag_name: &form_data.name,
                     error_message: &format!("Error: {error}"),
                 },
-            )
-                .into_response();
+            );
         }
     };
 
-    update_tag(tag_id, name, &connection)
-        .map(|_| {
+    if let Err(error) = update_tag(tag_id, name, &connection) {
+        let (status, error_message) = if error == Error::NotFound {
+            (StatusCode::NOT_FOUND, "Tag not found")
+        } else {
+            tracing::error!("An unexpected error occurred while updating tag {tag_id}: {error}");
             (
-                HxRedirect(Uri::from_static(endpoints::TAGS_VIEW)),
-                StatusCode::SEE_OTHER,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "An unexpected error occurred. Please try again.",
             )
-        })
-        .map_err(|error| {
-            let (status, error_message) = match error {
-                Error::NotFound => (StatusCode::NOT_FOUND, "Tag not found"),
-                _ => {
-                    tracing::error!(
-                        "An unexpected error occurred while updating tag {tag_id}: {error}"
-                    );
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "An unexpected error occurred. Please try again.",
-                    )
-                }
-            };
+        };
 
-            (
-                status,
-                EditTagFormTemplate {
-                    update_tag_endpoint: &update_endpoint,
-                    tag_name: &form_data.name,
-                    error_message,
-                },
-            )
-        })
-        .into_response()
+        render(
+            status,
+            EditTagFormTemplate {
+                update_tag_endpoint: &update_endpoint,
+                tag_name: &form_data.name,
+                error_message,
+            },
+        )
+    } else {
+        (
+            HxRedirect(endpoints::TAGS_VIEW.to_owned()),
+            StatusCode::SEE_OTHER,
+        )
+            .into_response()
+    }
 }
 
 /// A route handler for deleting a tag.
@@ -434,27 +437,22 @@ pub async fn delete_tag_endpoint(
         .lock()
         .expect("Could not acquire database lock");
 
-    delete_tag(tag_id, &connection)
-        .map(|_| {
-            (
-                HxRedirect(Uri::from_static(endpoints::TAGS_VIEW)),
-                StatusCode::SEE_OTHER,
-            )
-        })
-        .map_err(|error| {
-            let error_message = match error {
-                Error::NotFound => "Tag not found",
-                _ => {
-                    tracing::error!(
-                        "An unexpected error occurred while deleting tag {tag_id}: {error}"
-                    );
-                    "An unexpected error occurred. Please try again."
-                }
-            };
+    if let Err(error) = delete_tag(tag_id, &connection) {
+        let error_message = if error == Error::NotFound {
+            "Tag not found"
+        } else {
+            tracing::error!("An unexpected error occurred while deleting tag {tag_id}: {error}");
+            "An unexpected error occurred. Please try again."
+        };
 
-            TagErrorTemplate { error_message }
-        })
-        .into_response()
+        render(StatusCode::OK, TagErrorTemplate { error_message })
+    } else {
+        (
+            HxRedirect(endpoints::TAGS_VIEW.to_owned()),
+            StatusCode::SEE_OTHER,
+        )
+            .into_response()
+    }
 }
 
 /// Create a tag in the database.
@@ -731,7 +729,7 @@ mod new_tag_page_tests {
     }
 
     #[track_caller]
-    fn must_get_form(html: &Html) -> ElementRef {
+    fn must_get_form(html: &Html) -> ElementRef<'_> {
         html.select(&scraper::Selector::parse("form").unwrap())
             .next()
             .expect("No form found")
@@ -795,12 +793,11 @@ mod new_tag_page_tests {
 mod create_tag_endpoint_tests {
     use std::sync::{Arc, Mutex};
 
-    use askama_axum::IntoResponse;
     use axum::{
         Form,
         extract::State,
         http::{StatusCode, header::CONTENT_TYPE},
-        response::Response,
+        response::{IntoResponse, Response},
     };
     use rusqlite::Connection;
     use scraper::{ElementRef, Html};
@@ -902,7 +899,7 @@ mod create_tag_endpoint_tests {
     }
 
     #[track_caller]
-    fn must_get_form(html: &Html) -> ElementRef {
+    fn must_get_form(html: &Html) -> ElementRef<'_> {
         html.select(&scraper::Selector::parse("form").unwrap())
             .next()
             .expect("No form found")
@@ -928,12 +925,11 @@ mod create_tag_endpoint_tests {
 mod edit_tag_endpoint_tests {
     use std::sync::{Arc, Mutex};
 
-    use askama_axum::IntoResponse;
     use axum::{
         Form,
         extract::{Path, State},
         http::StatusCode,
-        response::Response,
+        response::{IntoResponse, Response},
     };
     use rusqlite::Connection;
     use scraper::{ElementRef, Html};
@@ -1103,7 +1099,7 @@ mod edit_tag_endpoint_tests {
     }
 
     #[track_caller]
-    fn must_get_form(html: &Html) -> ElementRef {
+    fn must_get_form(html: &Html) -> ElementRef<'_> {
         html.select(&scraper::Selector::parse("form").unwrap())
             .next()
             .expect("No form found")
@@ -1217,11 +1213,10 @@ mod edit_tag_endpoint_tests {
 mod delete_tag_endpoint_tests {
     use std::sync::{Arc, Mutex};
 
-    use askama_axum::IntoResponse;
     use axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::Response,
+        response::{IntoResponse, Response},
     };
     use rusqlite::Connection;
     use scraper::Html;

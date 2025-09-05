@@ -21,7 +21,7 @@
         {% if monthly_summary.net_income >= 0.0 %}
           <p class="text-2xl text-green-600 dark:text-green-400">${{ "{:.0}"|format(monthly_summary.net_income) }}</p>
         {% else %}
-          <p class="text-2xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-1.0 * monthly_summary.net_income) }}</p>
+          <p class="text-2xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-monthly_summary.net_income) }}</p>
         {% endif %}
       </div>
     </div>
@@ -44,7 +44,7 @@
         {% if yearly_summary.net_income >= 0.0 %}
           <p class="text-2xl text-green-600 dark:text-green-400">${{ "{:.0}"|format(yearly_summary.net_income) }}</p>
         {% else %}
-          <p class="text-2xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-1.0 * yearly_summary.net_income) }}</p>
+          <p class="text-2xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-yearly_summary.net_income) }}</p>
         {% endif %}
       </div>
     </div>
@@ -57,7 +57,7 @@
       {% if total_account_balance >= 0.0 %}
         <p class="text-3xl text-green-600 dark:text-green-400">${{ "{:.0}"|format(total_account_balance) }}</p>
       {% else %}
-        <p class="text-3xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-1.0 * total_account_balance) }}</p>
+        <p class="text-3xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-total_account_balance) }}</p>
       {% endif %}
     </div>
   </div>

@@ -13,7 +13,7 @@ pub const NEW_TRANSACTION_VIEW: &str = "/transactions/new";
 /// The page for creating a new tag.
 pub const NEW_TAG_VIEW: &str = "/tag/new";
 /// The page for editing an existing tag.
-pub const EDIT_TAG_VIEW: &str = "/tags/:tag_id/edit";
+pub const EDIT_TAG_VIEW: &str = "/tags/{tag_id}/edit";
 /// The page for listing all tags.
 pub const TAGS_VIEW: &str = "/tags";
 /// The page for importing transactions from CSV files.
@@ -42,21 +42,21 @@ pub const USERS: &str = "/api/users";
 /// The route to create a tag.
 pub const POST_TAG: &str = "/api/tag";
 /// The route to update a tag.
-pub const PUT_TAG: &str = "/api/tags/:tag_id";
+pub const PUT_TAG: &str = "/api/tags/{tag_id}";
 /// The route to delete a tag.
-pub const DELETE_TAG: &str = "/api/tags/:tag_id";
+pub const DELETE_TAG: &str = "/api/tags/{tag_id}";
 /// The route to access transactions.
 pub const TRANSACTIONS_API: &str = "/api/transactions";
 /// The route to access a single transaction.
-pub const TRANSACTION: &str = "/api/transactions/:transaction_id";
+pub const TRANSACTION: &str = "/api/transactions/{transaction_id}";
 /// The route to upload CSV files for importing transactions.
 pub const IMPORT: &str = "/api/import";
 
 /// Replace the parameter in `endpoint_path` with `id`.
 ///
-/// A parameter is a string that starts with a colon and is followed by
-/// lowercase letters or underscores. For example, in the endpoint path
-/// '/users/:user_id', ':user_id' is the parameter.
+/// A parameter is a string that starts with a left brace, followed by
+/// lowercase letters or underscores, and ends with a right brace.
+/// For example, in the endpoint path '/users/{user_id}', '{user_id}' is the parameter.
 ///
 /// This function assumes that an endpoint path only contains ASCII characters
 /// and a single parameter.
@@ -68,10 +68,10 @@ pub fn format_endpoint(endpoint_path: &str, id: i64) -> String {
     let mut param_end = None;
 
     for (i, c) in endpoint_path.chars().enumerate() {
-        if c == ':' {
+        if c == '{' {
             param_start = Some(i);
-        } else if param_start.is_some() && !c.is_ascii_lowercase() && c != '_' {
-            param_end = Some(i);
+        } else if param_start.is_some() && c == '}' {
+            param_end = Some(i + 1);
             break;
         }
     }
@@ -134,13 +134,13 @@ mod endpoints_tests {
 
     #[test]
     fn produces_valid_uri() {
-        let formatted_path = format_endpoint("/hello/:world_id", 1);
+        let formatted_path = format_endpoint("/hello/{world_id}", 1);
 
         assert_eq!(formatted_path, "/hello/1");
         assert!(formatted_path.parse::<Uri>().is_ok());
 
         // Parameter with single word should also work.
-        let formatted_path = format_endpoint("/hello/:world", 1);
+        let formatted_path = format_endpoint("/hello/{world}", 1);
 
         assert_eq!(formatted_path, "/hello/1");
         assert!(formatted_path.parse::<Uri>().is_ok());
@@ -156,7 +156,7 @@ mod endpoints_tests {
 
     #[test]
     fn parameter_in_middle() {
-        let formatted_path = format_endpoint("/hello/:world/bye", 1);
+        let formatted_path = format_endpoint("/hello/{world}/bye", 1);
 
         assert_eq!(formatted_path, "/hello/1/bye");
         assert!(formatted_path.parse::<Uri>().is_ok());

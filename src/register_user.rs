@@ -8,7 +8,7 @@ use askama::Template;
 use axum::{
     Form,
     extract::{FromRef, State},
-    http::{StatusCode, Uri},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
@@ -23,7 +23,7 @@ use crate::{
     auth_cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
     endpoints,
     routing::get_internal_server_error_redirect,
-    shared_templates::{EmailInputTemplate, PasswordInputTemplate},
+    shared_templates::{EmailInputTemplate, PasswordInputTemplate, render},
     state::create_cookie_key,
     user::{count_users, create_user, get_user_by_email},
 };
@@ -67,16 +67,18 @@ struct RegisterPageTemplate<'a> {
 
 /// Display the registration page.
 pub async fn get_register_page() -> Response {
-    RegisterPageTemplate {
-        register_form: RegisterFormTemplate {
-            password_input: PasswordInputTemplate {
-                min_length: PASSWORD_INPUT_MIN_LENGTH,
+    render(
+        StatusCode::OK,
+        RegisterPageTemplate {
+            register_form: RegisterFormTemplate {
+                password_input: PasswordInputTemplate {
+                    min_length: PASSWORD_INPUT_MIN_LENGTH,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
         },
-    }
-    .into_response()
+    )
 }
 
 /// The state needed for creating a new user.
@@ -136,12 +138,15 @@ pub async fn register_user(
             .expect("Could not acquire database lock"),
     ) {
         Ok(count) if count >= 1 => {
-            return RegisterFormTemplate {
-                confirm_password_input: ConfirmPasswordInputTemplate {
-                    error_message: "An account has already been created, please log in with your existing account.",
+            return render(
+                StatusCode::OK,
+                RegisterFormTemplate {
+                    confirm_password_input: ConfirmPasswordInputTemplate {
+                        error_message: "An account has already been created, please log in with your existing account.",
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
-            }.into_response();
+            );
         }
         _ => {}
     }
@@ -162,15 +167,17 @@ pub async fn register_user(
         Ok(email) => email,
         // Due to the client-side validation, the below error will not happen very often, but it still pays to check.
         Err(e) => {
-            return RegisterFormTemplate {
-                email_input: EmailInputTemplate {
-                    value: &user_data.email,
-                    error_message: &format!("Invalid email address: {}", e),
+            return render(
+                StatusCode::OK,
+                RegisterFormTemplate {
+                    email_input: EmailInputTemplate {
+                        value: &user_data.email,
+                        error_message: &format!("Invalid email address: {}", e),
+                    },
+                    password_input,
+                    ..Default::default()
                 },
-                password_input,
-                ..Default::default()
-            }
-            .into_response();
+            );
         }
     };
 
@@ -183,43 +190,49 @@ pub async fn register_user(
     )
     .is_ok()
     {
-        return RegisterFormTemplate {
-            email_input: EmailInputTemplate {
-                value: &user_data.email,
-                error_message: "The email address is already in use",
+        return render(
+            StatusCode::OK,
+            RegisterFormTemplate {
+                email_input: EmailInputTemplate {
+                    value: &user_data.email,
+                    error_message: "The email address is already in use",
+                },
+                password_input,
+                ..Default::default()
             },
-            password_input,
-            ..Default::default()
-        }
-        .into_response();
+        );
     }
 
     let validated_password = match ValidatedPassword::new(&user_data.password) {
         Ok(password) => password,
         Err(e) => {
-            return RegisterFormTemplate {
-                email_input,
-                password_input: PasswordInputTemplate {
-                    value: &user_data.password,
-                    min_length: PASSWORD_INPUT_MIN_LENGTH,
-                    error_message: e.to_string().as_ref(),
+            return render(
+                StatusCode::OK,
+                RegisterFormTemplate {
+                    email_input,
+                    password_input: PasswordInputTemplate {
+                        value: &user_data.password,
+                        min_length: PASSWORD_INPUT_MIN_LENGTH,
+                        error_message: e.to_string().as_ref(),
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
-            }
-            .into_response();
+            );
         }
     };
 
     if user_data.password != user_data.confirm_password {
-        return RegisterFormTemplate {
-            email_input,
-            password_input,
-            confirm_password_input: ConfirmPasswordInputTemplate {
-                error_message: "Passwords do not match",
+        return render(
+            StatusCode::OK,
+            RegisterFormTemplate {
+                email_input,
+                password_input,
+                confirm_password_input: ConfirmPasswordInputTemplate {
+                    error_message: "Passwords do not match",
+                },
+                ..Default::default()
             },
-            ..Default::default()
-        }
-        .into_response();
+        );
     }
 
     let password_hash = match PasswordHash::new(validated_password, PasswordHash::DEFAULT_COST) {
@@ -245,7 +258,7 @@ pub async fn register_user(
         match jar {
             Ok(jar) => (
                 StatusCode::SEE_OTHER,
-                HxRedirect(Uri::from_static(endpoints::LOG_IN_VIEW)),
+                HxRedirect(endpoints::LOG_IN_VIEW.to_owned()),
                 jar,
             )
                 .into_response(),
@@ -257,15 +270,17 @@ pub async fn register_user(
         }
     })
     .map_err(|e| match e {
-        Error::DuplicateEmail => RegisterFormTemplate {
-            email_input: EmailInputTemplate {
-                value: &user_data.email,
-                error_message: "The email address is already in use",
+        Error::DuplicateEmail => render(
+            StatusCode::OK,
+            RegisterFormTemplate {
+                email_input: EmailInputTemplate {
+                    value: &user_data.email,
+                    error_message: "The email address is already in use",
+                },
+                password_input,
+                ..Default::default()
             },
-            password_input,
-            ..Default::default()
-        }
-        .into_response(),
+        ),
         e => {
             tracing::error!("An unhandled error occurred while inserting a new user: {e}");
 
@@ -406,12 +421,12 @@ mod get_register_page_tests {
 mod register_user_tests {
     use std::sync::{Arc, Mutex};
 
-    use askama_axum::IntoResponse;
     use axum::{
         Form, Router,
         body::Body,
         extract::State,
         http::{Response, StatusCode},
+        response::IntoResponse,
         routing::post,
     };
     use axum_extra::extract::PrivateCookieJar;
