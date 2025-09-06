@@ -63,6 +63,10 @@ pub const TRANSACTIONS_API: &str = "/api/transactions";
 pub const TRANSACTION: &str = "/api/transactions/{transaction_id}";
 /// The route to upload CSV files for importing transactions.
 pub const IMPORT: &str = "/api/import";
+/// The route to apply auto-tagging to all transactions.
+pub const AUTO_TAG_ALL: &str = "/api/auto-tag/all";
+/// The route to apply auto-tagging to untagged transactions only.
+pub const AUTO_TAG_UNTAGGED: &str = "/api/auto-tag/untagged";
 
 /// Replace the parameter in `endpoint_path` with `id`.
 ///
@@ -148,6 +152,8 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTION);
         assert_endpoint_is_valid_uri(endpoints::IMPORT);
+        assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_ALL);
+        assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_UNTAGGED);
     }
 
     #[test]
