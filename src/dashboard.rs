@@ -1,8 +1,9 @@
 //! This file defines the dashboard route and its handlers.
 
-use askama_axum::Template;
+use askama::Template;
 use axum::{
     extract::State,
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use time::{Duration, OffsetDateTime};
@@ -11,6 +12,7 @@ use crate::{
     balances::get_total_account_balance,
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
+    shared_templates::render,
     state::DashboardState,
     transaction::{TransactionSummary, get_transaction_summary},
 };
@@ -55,13 +57,15 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
         Err(error) => return error.into_response(),
     };
 
-    DashboardTemplate {
-        nav_bar,
-        monthly_summary,
-        yearly_summary,
-        total_account_balance,
-    }
-    .into_response()
+    render(
+        StatusCode::OK,
+        DashboardTemplate {
+            nav_bar,
+            monthly_summary,
+            yearly_summary,
+            total_account_balance,
+        },
+    )
 }
 
 #[cfg(test)]

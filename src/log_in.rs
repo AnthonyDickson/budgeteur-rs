@@ -3,11 +3,11 @@
 
 use std::sync::{Arc, Mutex};
 
-use askama_axum::Template;
+use askama::Template;
 use axum::{
     Form,
     extract::{FromRef, State},
-    http::{StatusCode, Uri},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
@@ -20,7 +20,7 @@ use crate::{
     AppState, Error,
     auth_cookie::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
     endpoints,
-    shared_templates::{EmailInputTemplate, PasswordInputTemplate},
+    shared_templates::{EmailInputTemplate, PasswordInputTemplate, render},
     state::create_cookie_key,
     user::{User, get_user_by_email},
 };
@@ -57,7 +57,7 @@ struct LogInTemplate<'a> {
 
 /// Display the log-in page.
 pub async fn get_log_in_page() -> Response {
-    LogInTemplate::default().into_response()
+    render(StatusCode::OK, LogInTemplate::default())
 }
 
 /// How long the auth cookie should last if the user selects "remember me" at log-in.
@@ -131,16 +131,20 @@ pub async fn post_log_in(
     ) {
         Ok(user) => user,
         Err(Error::NotFound) => {
-            return create_log_in_error_response(email, INVALID_CREDENTIALS_ERROR_MSG)
-                .into_response();
+            return render(
+                StatusCode::OK,
+                create_log_in_error_response(email, INVALID_CREDENTIALS_ERROR_MSG),
+            );
         }
         Err(error) => {
             tracing::error!("Unhandled error while verifying credentials: {error}");
-            return create_log_in_error_response(
-                email,
-                "An internal error occurred. Please try again later.",
-            )
-            .into_response();
+            return render(
+                StatusCode::OK,
+                create_log_in_error_response(
+                    email,
+                    "An internal error occurred. Please try again later.",
+                ),
+            );
         }
     };
 
@@ -148,16 +152,21 @@ pub async fn post_log_in(
         Ok(is_password_valid) => is_password_valid,
         Err(error) => {
             tracing::error!("Unhandled error while verifying credentials: {error}");
-            return create_log_in_error_response(
-                email,
-                "An internal error occurred. Please try again later.",
-            )
-            .into_response();
+            return render(
+                StatusCode::OK,
+                create_log_in_error_response(
+                    email,
+                    "An internal error occurred. Please try again later.",
+                ),
+            );
         }
     };
 
     if !is_password_valid {
-        return create_log_in_error_response(email, INVALID_CREDENTIALS_ERROR_MSG).into_response();
+        return render(
+            StatusCode::OK,
+            create_log_in_error_response(email, INVALID_CREDENTIALS_ERROR_MSG),
+        );
     }
 
     let cookie_duration = if user_data.remember_me.is_some() {
@@ -170,7 +179,7 @@ pub async fn post_log_in(
         .map(|updated_jar| {
             (
                 StatusCode::SEE_OTHER,
-                HxRedirect(Uri::from_static(endpoints::DASHBOARD_VIEW)),
+                HxRedirect(endpoints::DASHBOARD_VIEW.to_owned()),
                 updated_jar,
             )
         })
@@ -178,7 +187,7 @@ pub async fn post_log_in(
             tracing::error!("Error setting auth cookie: {err}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR_VIEW)),
+                HxRedirect(endpoints::INTERNAL_ERROR_VIEW.to_owned()),
                 invalidate_auth_cookie(jar),
             )
         })

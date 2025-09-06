@@ -26,7 +26,7 @@ pub struct NavbarTemplate<'a> {
 ///
 /// If a link matches `active_endpoint`, then that link will be
 /// marked as active and displayed differently in the HTML.
-pub fn get_nav_bar(active_endpoint: &str) -> NavbarTemplate {
+pub fn get_nav_bar(active_endpoint: &str) -> NavbarTemplate<'_> {
     let links = vec![
         Link {
             url: endpoints::DASHBOARD_VIEW,
@@ -47,6 +47,11 @@ pub fn get_nav_bar(active_endpoint: &str) -> NavbarTemplate {
             url: endpoints::TAGS_VIEW,
             title: "Tags",
             is_current: active_endpoint == endpoints::TAGS_VIEW,
+        },
+        Link {
+            url: endpoints::RULES_VIEW,
+            title: "Rules",
+            is_current: active_endpoint == endpoints::RULES_VIEW,
         },
         Link {
             url: endpoints::LOG_OUT,
@@ -73,6 +78,7 @@ mod nav_bar_tests {
         cases.insert(endpoints::TRANSACTIONS_VIEW, true);
         cases.insert(endpoints::BALANCES_VIEW, true);
         cases.insert(endpoints::TAGS_VIEW, true);
+        cases.insert(endpoints::RULES_VIEW, true);
 
         cases.insert(endpoints::ROOT, false);
         cases.insert(endpoints::COFFEE, false);
