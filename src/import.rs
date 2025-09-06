@@ -51,6 +51,7 @@ struct ImportTransactionsTemplate<'a> {
     form: ImportTransactionFormTemplate<'a>,
 }
 
+/// Route handler for the import CSV page.
 pub async fn get_import_page() -> Response {
     render(
         StatusCode::OK,
@@ -63,6 +64,14 @@ pub async fn get_import_page() -> Response {
     )
 }
 
+/// Route handler for importing transactions from CSV files.
+///
+/// This function processes uploaded CSV files, imports transactions and balances,
+/// and applies auto-tagging rules to the newly imported transactions.
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn import_transactions(
     State(state): State<ImportState>,
     mut multipart: Multipart,

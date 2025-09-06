@@ -1,16 +1,17 @@
 # To Do
 
-- Add rules-based auto-tagger (new branch, merge back w/ PR):
-  - Do a final pass of docstrings for all new/modified types and functions
 - Add settings page to configure which tags to exclude in dashboard (internal transfer tag created by user)
 - Ensure a tag can be applied to a transaction only once, update database schema?
 - Try use TailwindCSS classes instead of inline styles for alert containers and alerts.
 - Add thousands separator to monetary amounts by implementing custom currency filter for Askama
 - Add thousands separator to timing durations (e.g., 1,234ms instead of 1234ms) for better readability
 - Align dashboard elements nicely
+- Change aggregation periods to 28 days and 365 days
 - Organise the import, import_result and csv into a new module, `import` and only expose what's necessary. The `mod.rs` file should be minimal and just contain re-exports
 - Change log in and registration pages to just ask for password
 - Port alerts system to other pages (other than rules page) for handling error messages
+  - Use alerts for confirming deletion of items from tags and rules pages (and others when they get full CRUD).
+  - Extend to offer undo capabilities on delete/edit?
 - Split up `src/transaction.rs` into module `src/transaction/*.rs`
 - Ensure that simple and full csv imports from Kiwibank do not create duplicate
   transactions.
@@ -20,6 +21,7 @@
 - Group transactions by week, month, year.
   - Add ISO week number to transaction
   - Add year number
+- Either inline HTML files that just contain CSS classes or find a better way of reusing styles
 - Config pagination (and other config) from toml file.
 - Add command to reset user email
 - Update unit tests to parse HTML document tree for checking for the existence

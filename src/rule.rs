@@ -124,12 +124,20 @@ impl FromRef<AppState> for RuleState {
     }
 }
 
+/// Form data for creating and editing rules.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RuleFormData {
+    /// The pattern that transaction descriptions must start with (case-insensitive).
     pub pattern: String,
+    /// The ID of the tag to apply when this rule matches.
     pub tag_id: DatabaseID,
 }
 
+/// Route handler for the new rule page.
+///
+/// # Panics
+///
+/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_new_rule_page(State(state): State<RuleState>) -> Response {
     let connection = state
         .db_connection

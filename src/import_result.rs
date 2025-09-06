@@ -17,6 +17,12 @@ pub struct AlertMessage {
 }
 
 impl ImportMessageBuilder {
+    /// Create a new import message builder.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction_count` - The number of transactions that were imported
+    /// * `duration` - The time it took to complete the import operation
     pub fn new(transaction_count: usize, duration: Duration) -> Self {
         Self {
             transaction_count,
@@ -27,11 +33,11 @@ impl ImportMessageBuilder {
     /// Creates a success alert message based on import and tagging results.
     ///
     /// # Arguments
-    /// 
+    ///
     /// * `tagging_result` - The result of applying auto-tagging rules to imported transactions
     ///
     /// # Returns
-    /// 
+    ///
     /// An `AlertMessage` with appropriate success message and timing details
     pub fn success_with_tagging(&self, tagging_result: &TaggingResult) -> AlertMessage {
         let duration_ms = self.duration.as_millis();
@@ -86,7 +92,7 @@ impl ImportMessageBuilder {
     /// * `error_msg` - The error message from the failed auto-tagging operation
     ///
     /// # Returns
-    /// 
+    ///
     /// An `AlertMessage` with appropriate error message that acknowledges successful import
     /// but failed auto-tagging, providing guidance for manual tagging if transactions were imported
     pub fn error_with_partial_success(&self, error_msg: &str) -> AlertMessage {
