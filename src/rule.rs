@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AppState, Error,
+    alert::AlertTemplate,
     database_id::{DatabaseID, TransactionID},
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
@@ -107,22 +108,6 @@ struct EditRuleFormTemplate<'a> {
 #[template(path = "partials/rule_error.html")]
 struct RuleErrorTemplate<'a> {
     error_message: &'a str,
-}
-
-/// Alert message types for styling
-#[derive(Debug, Clone)]
-pub enum AlertType {
-    Success,
-    Error,
-}
-
-/// Renders alert messages with appropriate styling
-#[derive(Template)]
-#[template(path = "partials/alert.html")]
-struct AlertTemplate<'a> {
-    alert_type: AlertType,
-    message: &'a str,
-    details: &'a str,
 }
 
 /// Unified state for all rule-related operations.
@@ -454,14 +439,7 @@ pub async fn auto_tag_all_transactions_endpoint(
                 duration.as_millis()
             );
 
-            render(
-                StatusCode::OK,
-                AlertTemplate {
-                    alert_type: AlertType::Success,
-                    message,
-                    details: &details,
-                },
-            )
+            render(StatusCode::OK, AlertTemplate::success(message, &details))
         }
         Err(error) => {
             let duration = start_time.elapsed();
@@ -477,11 +455,7 @@ pub async fn auto_tag_all_transactions_endpoint(
 
             render(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate {
-                    alert_type: AlertType::Error,
-                    message: "Auto-tagging failed",
-                    details: &details,
-                },
+                AlertTemplate::error("Auto-tagging failed", &details),
             )
         }
     }
@@ -524,14 +498,7 @@ pub async fn auto_tag_untagged_transactions_endpoint(
                 duration.as_millis()
             );
 
-            render(
-                StatusCode::OK,
-                AlertTemplate {
-                    alert_type: AlertType::Success,
-                    message,
-                    details: &details,
-                },
-            )
+            render(StatusCode::OK, AlertTemplate::success(message, &details))
         }
         Err(error) => {
             let duration = start_time.elapsed();
@@ -547,11 +514,7 @@ pub async fn auto_tag_untagged_transactions_endpoint(
 
             render(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate {
-                    alert_type: AlertType::Error,
-                    message: "Auto-tagging failed",
-                    details: &details,
-                },
+                AlertTemplate::error("Auto-tagging failed", &details),
             )
         }
     }
@@ -698,9 +661,7 @@ pub fn matches_rule_pattern(description: &str, pattern: &str) -> bool {
 pub enum TaggingMode<'a> {
     FetchAll,
     FetchUntagged,
-    // TODO: Remove attribute once used elsewhere, for auto-tagging imports
-    #[allow(dead_code)]
-    FromArgs(&'a [&'a Transaction]),
+    FromArgs(&'a [Transaction]),
 }
 
 /// Get transaction IDs and descriptions for auto-tagging, optionally filtering to untagged only.
@@ -813,6 +774,16 @@ pub struct TaggingResult {
     pub tags_applied: usize,
 }
 
+impl TaggingResult {
+    /// Creates a new empty tagging result with zero transactions processed and zero tags applied
+    pub fn empty() -> Self {
+        Self {
+            transactions_processed: 0,
+            tags_applied: 0,
+        }
+    }
+}
+
 /// Apply all rules to transactions, optionally filtering to only untagged transactions.
 ///
 /// # Arguments
@@ -831,19 +802,13 @@ pub fn apply_rules_to_transactions(
     // Step 1: Get all rules
     let rules = get_all_rules(connection)?;
     if rules.is_empty() {
-        return Ok(TaggingResult {
-            transactions_processed: 0,
-            tags_applied: 0,
-        });
+        return Ok(TaggingResult::empty());
     }
 
     // Step 2: Get transactions for processing
     let transactions = get_transactions_for_auto_tagging(mode, connection)?;
     if transactions.is_empty() {
-        return Ok(TaggingResult {
-            transactions_processed: 0,
-            tags_applied: 0,
-        });
+        return Ok(TaggingResult::empty());
     }
 
     // Step 3: Get all existing transaction-tag relationships in one query (IDs only)
@@ -1453,9 +1418,11 @@ mod auto_tagging_tests {
         // Tag tx1
         set_transaction_tags(tx1.id(), &[tag.id], &connection).unwrap();
 
-        let transactions =
-            get_transactions_for_auto_tagging(TaggingMode::FromArgs(&[&tx1, &tx2]), &connection)
-                .unwrap();
+        let transactions = get_transactions_for_auto_tagging(
+            TaggingMode::FromArgs(&[tx1.clone(), tx2.clone()]),
+            &connection,
+        )
+        .unwrap();
 
         assert_eq!(transactions.len(), 2);
         assert_eq!(transactions[0].0, tx1.id());

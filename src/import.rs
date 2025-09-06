@@ -4,17 +4,19 @@ use askama::Template;
 use axum::{
     extract::{FromRef, Multipart, State, multipart::Field},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::Response,
 };
-use axum_htmx::HxRedirect;
 use rusqlite::Connection;
 
 use crate::{
     AppState, Error,
+    alert::AlertTemplate,
     balances::Balance,
     csv::{ImportBalance, parse_csv},
     endpoints,
+    import_result::ImportMessageBuilder,
     navigation::{NavbarTemplate, get_nav_bar},
+    rule::{TaggingMode, apply_rules_to_transactions},
     shared_templates::render,
     transaction::import_transactions as import_transaction_list,
 };
@@ -39,7 +41,6 @@ impl FromRef<AppState> for ImportState {
 #[template(path = "partials/import_form.html")]
 pub struct ImportTransactionFormTemplate<'a> {
     pub import_route: &'a str,
-    pub error_message: &'a str,
 }
 
 /// Renders the import CSV page.
@@ -57,7 +58,6 @@ pub async fn get_import_page() -> Response {
             nav_bar: get_nav_bar(endpoints::IMPORT_VIEW),
             form: ImportTransactionFormTemplate {
                 import_route: endpoints::IMPORT,
-                error_message: "",
             },
         },
     )
@@ -67,30 +67,27 @@ pub async fn import_transactions(
     State(state): State<ImportState>,
     mut multipart: Multipart,
 ) -> Response {
+    let start_time = std::time::Instant::now();
     let mut transactions = Vec::new();
     let mut balances = Vec::new();
-    let unexpected_error_template = render(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        ImportTransactionFormTemplate {
-            import_route: endpoints::IMPORT,
-            error_message: "An unexpected error occurred, please try again later.",
-        },
-    );
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         let csv_data = match parse_multipart_field(field).await {
             Ok(data) => data,
             Err(Error::NotCSV) => {
                 return render(
-                    StatusCode::OK,
-                    ImportTransactionFormTemplate {
-                        import_route: endpoints::IMPORT,
-                        error_message: "File type must be CSV.",
-                    },
+                    StatusCode::BAD_REQUEST,
+                    AlertTemplate::error_simple("File type must be CSV."),
                 );
             }
-            Err(_) => {
-                return unexpected_error_template;
+            Err(error) => {
+                tracing::error!("Failed to parse multipart field: {}", error);
+                return render(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    AlertTemplate::error_simple(
+                        "An unexpected error occurred, please try again later.",
+                    ),
+                );
             }
         };
 
@@ -105,40 +102,78 @@ pub async fn import_transactions(
             Err(e) => {
                 tracing::debug!("Failed to parse CSV: {}", e);
                 return render(
-                    StatusCode::OK,
-                    ImportTransactionFormTemplate {
-                        import_route: endpoints::IMPORT,
-                        error_message: "Failed to parse CSV, check that the provided file is a valid CSV from ASB or Kiwibank.",
-                    },
+                    StatusCode::BAD_REQUEST,
+                    AlertTemplate::error(
+                        "Failed to parse CSV",
+                        "Check that the provided file is a valid CSV from ASB or Kiwibank.",
+                    ),
                 );
             }
         }
     }
 
     let connection = state.db_connection.lock().unwrap();
-    if let Err(error) = import_transaction_list(transactions, &connection) {
-        tracing::error!("Failed to import transactions: {}", error);
-        return render(
-            StatusCode::OK,
-            ImportTransactionFormTemplate {
-                import_route: endpoints::IMPORT,
-                error_message: "An unexpected error occurred, please try again later.",
-            },
-        );
-    }
+    let imported_transactions = match import_transaction_list(transactions, &connection) {
+        Ok(transactions) => transactions,
+        Err(error) => {
+            tracing::error!("Failed to import transactions: {}", error);
+            return render(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                AlertTemplate::error(
+                    "Import failed",
+                    "An unexpected error occurred, please try again later.",
+                ),
+            );
+        }
+    };
+
+    // Apply auto-tagging to the imported transactions
+    let auto_tagging_result = if !imported_transactions.is_empty() {
+        apply_rules_to_transactions(TaggingMode::FromArgs(&imported_transactions), &connection)
+    } else {
+        Ok(crate::rule::TaggingResult::empty())
+    };
 
     for balance in balances {
         if let Err(error) = upsert_balance(&balance, &connection) {
-            tracing::error!("Failed to import account balances: {error:#?}");
-            return unexpected_error_template;
+            let duration = start_time.elapsed();
+            tracing::error!(
+                "Failed to import account balances after {:.1}ms: {error:#?}",
+                duration.as_millis()
+            );
+            return render(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                AlertTemplate::error(
+                    "Balance import failed",
+                    &format!(
+                        "Transactions were imported but account balances could not be updated after {:.1}ms.",
+                        duration.as_millis()
+                    ),
+                ),
+            );
         }
     }
 
-    (
-        HxRedirect(endpoints::TRANSACTIONS_VIEW.to_owned()),
-        StatusCode::SEE_OTHER,
-    )
-        .into_response()
+    let duration = start_time.elapsed();
+    let message_builder = ImportMessageBuilder::new(imported_transactions.len(), duration);
+
+    // Generate success/error message based on auto-tagging result
+    match auto_tagging_result {
+        Ok(tagging_result) => {
+            let alert_msg = message_builder.success_with_tagging(&tagging_result);
+            render(
+                StatusCode::CREATED,
+                AlertTemplate::success(&alert_msg.message, &alert_msg.details),
+            )
+        }
+        Err(error) => {
+            let alert_msg = message_builder.error_with_partial_success(&error.to_string());
+            render(
+                StatusCode::CREATED,
+                AlertTemplate::error(&alert_msg.message, &alert_msg.details),
+            )
+        }
+    }
 }
 
 async fn parse_multipart_field(field: Field<'_>) -> Result<String, Error> {
@@ -456,7 +491,10 @@ mod import_transactions_tests {
         db::initialize,
         endpoints,
         import::{ImportState, get_import_page, import_transactions},
+        rule::create_rule,
+        tag::{TagName, create_tag},
         transaction::count_transactions,
+        transaction_tag::get_transaction_tags,
     };
 
     use super::map_row_to_balance;
@@ -510,6 +548,14 @@ mod import_transactions_tests {
             26 Jan 2025,POS W/D LEE HONG BBQ -14:20 ;,,-60.00,122.00\n\
             26 Jan 2025,TRANSFER FROM A R DICKSON - 01 ;,,78.00,200.00";
 
+    // CSV with transactions that will match auto-tagging rules
+    const AUTO_TAG_TEST_CSV: &str = "Account number,Date,Memo/Description,Source Code (payment type),TP ref,TP part,TP code,OP ref,OP part,OP code,OP name,OP Bank Account Number,Amount (credit),Amount (debit),Amount,Balance\n\
+        38-1234-0123456-01,15-01-2025,Starbucks Coffee Shop ;,,,,,,,,,,,5.50,-5.50,100.00\n\
+        38-1234-0123456-01,16-01-2025,Supermarket Groceries ;,,,,,,,,,,,45.20,-45.20,54.80\n\
+        38-1234-0123456-01,17-01-2025,Amazon Prime Subscription ;,,,,,,,,,,,12.99,-12.99,41.81\n\
+        38-1234-0123456-01,18-01-2025,Shell Gas Station ;,,,,,,,,,,,35.00,-35.00,6.81\n\
+        38-1234-0123456-01,19-01-2025,Random Transaction ;,,,,,,,,,,,25.00,-25.00,-18.19";
+
     #[tokio::test]
     async fn render_page() {
         let response = get_import_page().await;
@@ -553,7 +599,7 @@ mod import_transactions_tests {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(response.status(), StatusCode::CREATED);
 
         // Check the number of transactions imported by querying the database
         let connection = state.db_connection.lock().unwrap();
@@ -563,7 +609,9 @@ mod import_transactions_tests {
             want_transaction_count, transaction_count,
             "want {want_transaction_count} transactions imported, got {transaction_count}"
         );
-        assert_hx_redirect(&response, endpoints::TRANSACTIONS_VIEW);
+
+        // Validate success alert message
+        assert_alert_success_message(response, "Import completed successfully!").await;
     }
 
     #[tokio::test]
@@ -585,7 +633,7 @@ mod import_transactions_tests {
 
         let balances =
             get_all_balances(&connection.lock().unwrap()).expect("Could not get balances");
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(response.status(), StatusCode::CREATED);
         assert_eq!(
             balances.len(),
             1,
@@ -596,6 +644,9 @@ mod import_transactions_tests {
         assert_eq!(want_account, got.account);
         assert_eq!(want_balance, got.balance);
         assert_eq!(want_date, got.date);
+
+        // Validate success alert message
+        assert_alert_success_message(response, "Import completed successfully!").await;
     }
 
     fn get_all_balances(connection: &Connection) -> Result<Vec<Balance>, Error> {
@@ -622,13 +673,16 @@ mod import_transactions_tests {
 
         let balances =
             get_all_balances(&connection.lock().unwrap()).expect("Could not get balances");
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(response.status(), StatusCode::CREATED);
         assert_eq!(
             balances.len(),
             0,
             "want 0 balance, but got {}",
             balances.len()
         );
+
+        // Validate success alert message
+        assert_alert_success_message(response, "Import completed successfully!").await;
     }
     #[tokio::test]
     async fn extracts_accounts_and_balances_kiwibank_bank_account() {
@@ -649,7 +703,7 @@ mod import_transactions_tests {
 
         let balances =
             get_all_balances(&connection.lock().unwrap()).expect("Could not get balances");
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(response.status(), StatusCode::CREATED);
         assert_eq!(
             balances.len(),
             1,
@@ -660,6 +714,9 @@ mod import_transactions_tests {
         assert_eq!(want_account, got.account);
         assert_eq!(want_balance, got.balance);
         assert_eq!(want_date, got.date);
+
+        // Validate success alert message
+        assert_alert_success_message(response, "Import completed successfully!").await;
     }
 
     #[tokio::test]
@@ -672,7 +729,7 @@ mod import_transactions_tests {
         let response =
             import_transactions(State(state.clone()), must_make_multipart_csv(&[""]).await).await;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_content_type(&response, "text/html; charset=utf-8");
 
         // Check that no transactions were created
@@ -685,13 +742,8 @@ mod import_transactions_tests {
             "want 0 transactions created, got {transaction_count}"
         );
 
-        let html = parse_html(response, HTMLParsingMode::Fragment).await;
-        assert_valid_html(&html);
-        let form = must_get_form(&html);
-        assert_error_message(
-            &form,
-            "Failed to parse CSV, check that the provided file is a valid CSV from ASB or Kiwibank.",
-        );
+        // Validate alert message
+        assert_alert_error_message(response, "Failed to parse CSV").await;
     }
 
     #[tokio::test]
@@ -706,7 +758,7 @@ mod import_transactions_tests {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_content_type(&response, "text/html; charset=utf-8");
 
         // Check that no transactions were created
@@ -719,10 +771,8 @@ mod import_transactions_tests {
             "want 0 transactions created, got {transaction_count}"
         );
 
-        let html = parse_html(response, HTMLParsingMode::Fragment).await;
-        assert_valid_html(&html);
-        let form = must_get_form(&html);
-        assert_error_message(&form, "File type must be CSV.");
+        // Validate alert message
+        assert_alert_error_message(response, "File type must be CSV.").await;
     }
 
     #[tokio::test]
@@ -740,15 +790,11 @@ mod import_transactions_tests {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         assert_content_type(&response, "text/html; charset=utf-8");
-        let html = parse_html(response, HTMLParsingMode::Fragment).await;
-        assert_valid_html(&html);
-        let form = must_get_form(&html);
-        assert_error_message(
-            &form,
-            "An unexpected error occurred, please try again later.",
-        );
+
+        // Validate alert message
+        assert_alert_error_message(response, "Import failed").await;
     }
 
     #[track_caller]
@@ -760,14 +806,75 @@ mod import_transactions_tests {
         assert_eq!(content_type_header, content_type);
     }
 
-    #[track_caller]
-    fn assert_error_message(form: &ElementRef, want_error_message: &str) {
-        let p = form
-            .select(&scraper::Selector::parse("p.text-red-500").unwrap())
+    async fn assert_alert_error_message(response: Response, expected_message: &str) {
+        let html = parse_html(response, HTMLParsingMode::Fragment).await;
+        assert_valid_html(&html);
+
+        let alert_container = html
+            .select(&scraper::Selector::parse("#alert-container").unwrap())
             .next()
-            .expect("No p tag found");
-        let error_message = p.text().collect::<String>();
-        assert_eq!(want_error_message, error_message.trim());
+            .expect("No alert container found");
+
+        let message_p = alert_container
+            .select(&scraper::Selector::parse("p.text-sm.font-medium").unwrap())
+            .next()
+            .expect("No alert message found");
+
+        let message = message_p.text().collect::<String>();
+        assert_eq!(message.trim(), expected_message);
+    }
+
+    async fn assert_alert_success_message(response: Response, expected_message: &str) {
+        let html = parse_html(response, HTMLParsingMode::Fragment).await;
+        assert_valid_html(&html);
+
+        let alert_container = html
+            .select(&scraper::Selector::parse("#alert-container").unwrap())
+            .next()
+            .expect("No alert container found");
+
+        let message_p = alert_container
+            .select(&scraper::Selector::parse("p.text-sm.font-medium").unwrap())
+            .next()
+            .expect("No alert message found");
+
+        let message = message_p.text().collect::<String>();
+        assert_eq!(message.trim(), expected_message);
+    }
+
+    async fn assert_alert_success_with_details(
+        response: Response,
+        expected_message: &str,
+        expected_details_contains: &str,
+    ) {
+        let html = parse_html(response, HTMLParsingMode::Fragment).await;
+        assert_valid_html(&html);
+
+        let alert_container = html
+            .select(&scraper::Selector::parse("#alert-container").unwrap())
+            .next()
+            .expect("No alert container found");
+
+        let message_p = alert_container
+            .select(&scraper::Selector::parse("p.text-sm.font-medium").unwrap())
+            .next()
+            .expect("No alert message found");
+
+        let message = message_p.text().collect::<String>();
+        assert_eq!(message.trim(), expected_message);
+
+        let details_p = alert_container
+            .select(&scraper::Selector::parse("p.mt-1.text-sm.opacity-80").unwrap())
+            .next()
+            .expect("No alert details found");
+
+        let details = details_p.text().collect::<String>();
+        assert!(
+            details.contains(expected_details_contains),
+            "Expected details to contain '{}', but got: '{}'",
+            expected_details_contains,
+            details.trim()
+        );
     }
 
     async fn must_make_multipart_csv(csv_strings: &[&str]) -> Multipart {
@@ -800,23 +907,6 @@ mod import_transactions_tests {
             .unwrap();
 
         Multipart::from_request(request, &{}).await.unwrap()
-    }
-    #[track_caller]
-    fn assert_hx_redirect(response: &Response, endpoint: &str) {
-        assert_eq!(get_header(response, "hx-redirect"), endpoint,);
-    }
-
-    #[track_caller]
-    fn get_header(response: &Response, header_name: &str) -> String {
-        let header_error_message = format!("Headers missing {header_name}");
-
-        response
-            .headers()
-            .get(header_name)
-            .expect(&header_error_message)
-            .to_str()
-            .expect("Could not convert to str")
-            .to_string()
     }
 
     async fn must_make_multipart(file_types: &[&str]) -> Multipart {
@@ -963,5 +1053,227 @@ mod import_transactions_tests {
             "submit",
             "want submit button with type=\"submit\""
         );
+    }
+
+    // Auto-tagging integration tests
+
+    #[tokio::test]
+    async fn import_with_auto_tagging_success() {
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
+        let state = ImportState {
+            db_connection: connection.clone(),
+        };
+
+        // Create tags and rules for auto-tagging
+        {
+            let conn = connection.lock().unwrap();
+            let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &conn).unwrap();
+            let grocery_tag = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
+
+            create_rule("Starbucks", coffee_tag.id, &conn).unwrap();
+            create_rule("Supermarket", grocery_tag.id, &conn).unwrap();
+        }
+
+        let response = import_transactions(
+            State(state.clone()),
+            must_make_multipart_csv(&[AUTO_TAG_TEST_CSV]).await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        // Check that transactions were imported
+        let connection_guard = state.db_connection.lock().unwrap();
+        let transaction_count =
+            count_transactions(&connection_guard).expect("Could not count transactions");
+        assert_eq!(
+            transaction_count, 5,
+            "Expected 5 transactions to be imported"
+        );
+
+        // Validate that auto-tagging was applied
+        assert_alert_success_with_details(
+            response,
+            "Import completed successfully!",
+            "applied 2 tags automatically",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn import_with_no_matching_rules() {
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
+        let state = ImportState {
+            db_connection: connection.clone(),
+        };
+
+        // Create tags but no rules that match the imported transactions
+        {
+            let conn = connection.lock().unwrap();
+            let _unmatched_tag = create_tag(TagName::new_unchecked("Unmatched"), &conn).unwrap();
+            create_rule("NoMatch", _unmatched_tag.id, &conn).unwrap();
+        }
+
+        let response = import_transactions(
+            State(state.clone()),
+            must_make_multipart_csv(&[AUTO_TAG_TEST_CSV]).await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        // Check that transactions were imported
+        let connection_guard = state.db_connection.lock().unwrap();
+        let transaction_count =
+            count_transactions(&connection_guard).expect("Could not count transactions");
+        assert_eq!(
+            transaction_count, 5,
+            "Expected 5 transactions to be imported"
+        );
+
+        // Validate that no auto-tags were applied
+        assert_alert_success_with_details(
+            response,
+            "Import completed successfully!",
+            "No automatic tags were applied",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn import_with_partial_auto_tagging() {
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
+        let state = ImportState {
+            db_connection: connection.clone(),
+        };
+
+        // Create only one rule that matches some transactions
+        {
+            let conn = connection.lock().unwrap();
+            let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &conn).unwrap();
+            create_rule("Starbucks", coffee_tag.id, &conn).unwrap();
+            // No rule for "Supermarket", so only coffee transactions will be tagged
+        }
+
+        let response = import_transactions(
+            State(state.clone()),
+            must_make_multipart_csv(&[AUTO_TAG_TEST_CSV]).await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        // Check that transactions were imported
+        let connection_guard = state.db_connection.lock().unwrap();
+        let transaction_count =
+            count_transactions(&connection_guard).expect("Could not count transactions");
+        assert_eq!(
+            transaction_count, 5,
+            "Expected 5 transactions to be imported"
+        );
+
+        // Validate that only 1 auto-tag was applied (for Starbucks)
+        assert_alert_success_with_details(
+            response,
+            "Import completed successfully!",
+            "applied 1 tags automatically",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn import_verifies_auto_tags_applied_to_correct_transactions() {
+        let conn = get_test_connection();
+        let connection = Arc::new(Mutex::new(conn));
+        let state = ImportState {
+            db_connection: connection.clone(),
+        };
+
+        // Create tags and rules
+        let (coffee_tag_id, grocery_tag_id) = {
+            let conn = connection.lock().unwrap();
+            let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &conn).unwrap();
+            let grocery_tag = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
+
+            create_rule("Starbucks", coffee_tag.id, &conn).unwrap();
+            create_rule("Supermarket", grocery_tag.id, &conn).unwrap();
+
+            (coffee_tag.id, grocery_tag.id)
+        };
+
+        let response = import_transactions(
+            State(state.clone()),
+            must_make_multipart_csv(&[AUTO_TAG_TEST_CSV]).await,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        // Verify specific transactions have correct tags
+        let conn = connection.lock().unwrap();
+
+        // Get all transactions and find the ones we expect to be tagged
+        let all_transactions: Vec<_> = conn
+            .prepare("SELECT id, description FROM \"transaction\" ORDER BY id")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        // Find Starbucks transaction and verify it has coffee tag
+        let starbucks_tx = all_transactions
+            .iter()
+            .find(|(_, desc)| desc.contains("Starbucks"))
+            .expect("Should find Starbucks transaction");
+
+        let starbucks_tags = get_transaction_tags(starbucks_tx.0, &conn).unwrap();
+        assert_eq!(
+            starbucks_tags.len(),
+            1,
+            "Starbucks transaction should have 1 tag"
+        );
+        assert_eq!(
+            starbucks_tags[0].id, coffee_tag_id,
+            "Starbucks should have coffee tag"
+        );
+
+        // Find Supermarket transaction and verify it has grocery tag
+        let supermarket_tx = all_transactions
+            .iter()
+            .find(|(_, desc)| desc.contains("Supermarket"))
+            .expect("Should find Supermarket transaction");
+
+        let supermarket_tags = get_transaction_tags(supermarket_tx.0, &conn).unwrap();
+        assert_eq!(
+            supermarket_tags.len(),
+            1,
+            "Supermarket transaction should have 1 tag"
+        );
+        assert_eq!(
+            supermarket_tags[0].id, grocery_tag_id,
+            "Supermarket should have grocery tag"
+        );
+
+        // Verify untagged transactions have no tags
+        let random_tx = all_transactions
+            .iter()
+            .find(|(_, desc)| desc.contains("Random Transaction"))
+            .expect("Should find Random Transaction");
+
+        let random_tags = get_transaction_tags(random_tx.0, &conn).unwrap();
+        assert_eq!(
+            random_tags.len(),
+            0,
+            "Random transaction should have no tags"
+        );
+
+        // Clean up response to avoid issues
+        drop(response);
     }
 }
