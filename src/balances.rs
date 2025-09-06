@@ -295,7 +295,9 @@ mod balances_template_tests {
                 .next()
                 .unwrap_or_else(|| panic!("Could not find table header <th> in table row {row}."))
                 .text()
-                .collect();
+                .collect::<String>()
+                .trim()
+                .to_string();
             let columns: Vec<ElementRef<'_>> = table_row.select(&row_cell_selector).collect();
             assert_eq!(
                 2,
@@ -303,8 +305,8 @@ mod balances_template_tests {
                 "Want 2 table cells <td> in table row {row}, got {}",
                 columns.len()
             );
-            let got_balance: String = columns[0].text().collect();
-            let got_date: String = columns[1].text().collect();
+            let got_balance: String = columns[0].text().collect::<String>().trim().to_string();
+            let got_date: String = columns[1].text().collect::<String>().trim().to_string();
 
             assert_eq!(
                 want.account, got_account,
@@ -328,10 +330,10 @@ mod balances_template_tests {
 
     #[track_caller]
     fn must_get_no_data_paragraph(html: &Html) -> ElementRef<'_> {
-        let paragraph_selector = Selector::parse("p.no-data").unwrap();
+        let paragraph_selector = Selector::parse("td[colspan='3']").unwrap();
         html.select(&paragraph_selector)
             .next()
-            .expect("Could not find paragraph with class 'no-data' in HTML")
+            .expect("Could not find table cell with colspan='3' in HTML")
     }
     #[track_caller]
     fn assert_paragraph_contains_link(paragraph: ElementRef<'_>, want_url: &str) {
@@ -447,7 +449,9 @@ mod get_balances_page_tests {
                 .next()
                 .unwrap_or_else(|| panic!("Could not find table header <th> in table row {row}."))
                 .text()
-                .collect();
+                .collect::<String>()
+                .trim()
+                .to_string();
             let columns: Vec<ElementRef<'_>> = table_row.select(&row_cell_selector).collect();
             assert_eq!(
                 2,
@@ -455,8 +459,8 @@ mod get_balances_page_tests {
                 "Want 2 table cells <td> in table row {row}, got {}",
                 columns.len()
             );
-            let got_balance: String = columns[0].text().collect();
-            let got_date: String = columns[1].text().collect();
+            let got_balance: String = columns[0].text().collect::<String>().trim().to_string();
+            let got_date: String = columns[1].text().collect::<String>().trim().to_string();
 
             assert_eq!(
                 want.account, got_account,

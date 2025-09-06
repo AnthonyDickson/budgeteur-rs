@@ -49,6 +49,11 @@ pub fn get_nav_bar(active_endpoint: &str) -> NavbarTemplate<'_> {
             is_current: active_endpoint == endpoints::TAGS_VIEW,
         },
         Link {
+            url: endpoints::RULES_VIEW,
+            title: "Rules",
+            is_current: active_endpoint == endpoints::RULES_VIEW,
+        },
+        Link {
             url: endpoints::LOG_OUT,
             title: "Log out",
             is_current: false,
@@ -73,6 +78,7 @@ mod nav_bar_tests {
         cases.insert(endpoints::TRANSACTIONS_VIEW, true);
         cases.insert(endpoints::BALANCES_VIEW, true);
         cases.insert(endpoints::TAGS_VIEW, true);
+        cases.insert(endpoints::RULES_VIEW, true);
 
         cases.insert(endpoints::ROOT, false);
         cases.insert(endpoints::COFFEE, false);

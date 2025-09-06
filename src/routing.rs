@@ -21,7 +21,12 @@ use crate::{
     import::{get_import_page, import_transactions},
     log_in::{get_log_in_page, post_log_in},
     log_out::get_log_out,
+    not_found::get_404_not_found,
     register_user::{get_register_page, register_user},
+    rule::{
+        create_rule_endpoint, delete_rule_endpoint, get_edit_rule_page, get_new_rule_page,
+        get_rules_page, update_rule_endpoint,
+    },
     shared_templates::render,
     tag::{
         create_tag_endpoint, delete_tag_endpoint, get_edit_tag_page, get_new_tag_page,
@@ -63,6 +68,9 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::NEW_TAG_VIEW, get(get_new_tag_page))
         .route(endpoints::EDIT_TAG_VIEW, get(get_edit_tag_page))
         .route(endpoints::TAGS_VIEW, get(get_tags_page))
+        .route(endpoints::NEW_RULE_VIEW, get(get_new_rule_page))
+        .route(endpoints::EDIT_RULE_VIEW, get(get_edit_rule_page))
+        .route(endpoints::RULES_VIEW, get(get_rules_page))
         .route(endpoints::IMPORT_VIEW, get(get_import_page))
         .route(endpoints::BALANCES_VIEW, get(get_balances_page))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
@@ -77,6 +85,9 @@ pub fn build_router(state: AppState) -> Router {
             .route(endpoints::POST_TAG, post(create_tag_endpoint))
             .route(endpoints::PUT_TAG, put(update_tag_endpoint))
             .route(endpoints::DELETE_TAG, delete(delete_tag_endpoint))
+            .route(endpoints::POST_RULE, post(create_rule_endpoint))
+            .route(endpoints::PUT_RULE, put(update_rule_endpoint))
+            .route(endpoints::DELETE_RULE, delete(delete_rule_endpoint))
             .route(endpoints::IMPORT, post(import_transactions))
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),
     );
@@ -116,18 +127,6 @@ struct InternalServerErrorPageTemplate;
 
 async fn get_internal_server_error_page() -> Response {
     render(StatusCode::OK, InternalServerErrorPageTemplate)
-}
-
-#[derive(Template)]
-#[template(path = "views/not_found_404.html")]
-struct NotFoundTemplate;
-
-async fn get_404_not_found() -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        Html(NotFoundTemplate.render().unwrap_or("Not found".to_owned())),
-    )
-        .into_response()
 }
 
 #[cfg(test)]

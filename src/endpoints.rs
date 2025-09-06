@@ -16,6 +16,12 @@ pub const NEW_TAG_VIEW: &str = "/tag/new";
 pub const EDIT_TAG_VIEW: &str = "/tags/{tag_id}/edit";
 /// The page for listing all tags.
 pub const TAGS_VIEW: &str = "/tags";
+/// The page for creating a new rule.
+pub const NEW_RULE_VIEW: &str = "/rules/new";
+/// The page for editing an existing rule.
+pub const EDIT_RULE_VIEW: &str = "/rules/{rule_id}/edit";
+/// The page for listing all rules.
+pub const RULES_VIEW: &str = "/rules";
 /// The page for importing transactions from CSV files.
 pub const IMPORT_VIEW: &str = "/transactions/import";
 /// The route for getting the registration page.
@@ -45,6 +51,12 @@ pub const POST_TAG: &str = "/api/tag";
 pub const PUT_TAG: &str = "/api/tags/{tag_id}";
 /// The route to delete a tag.
 pub const DELETE_TAG: &str = "/api/tags/{tag_id}";
+/// The route to create a rule.
+pub const POST_RULE: &str = "/api/rules";
+/// The route to update a rule.
+pub const PUT_RULE: &str = "/api/rules/{rule_id}";
+/// The route to delete a rule.
+pub const DELETE_RULE: &str = "/api/rules/{rule_id}";
 /// The route to access transactions.
 pub const TRANSACTIONS_API: &str = "/api/transactions";
 /// The route to access a single transaction.
@@ -112,6 +124,9 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::NEW_TAG_VIEW);
         assert_endpoint_is_valid_uri(endpoints::EDIT_TAG_VIEW);
         assert_endpoint_is_valid_uri(endpoints::TAGS_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::NEW_RULE_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::EDIT_RULE_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::RULES_VIEW);
         assert_endpoint_is_valid_uri(endpoints::IMPORT_VIEW);
         assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
@@ -127,6 +142,9 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::POST_TAG);
         assert_endpoint_is_valid_uri(endpoints::PUT_TAG);
         assert_endpoint_is_valid_uri(endpoints::DELETE_TAG);
+        assert_endpoint_is_valid_uri(endpoints::POST_RULE);
+        assert_endpoint_is_valid_uri(endpoints::PUT_RULE);
+        assert_endpoint_is_valid_uri(endpoints::DELETE_RULE);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTION);
         assert_endpoint_is_valid_uri(endpoints::IMPORT);

@@ -15,12 +15,12 @@ use axum_htmx::HxRedirect;
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
-use crate::shared_templates::render;
 use crate::{
     AppState, Error,
     database_id::DatabaseID,
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
+    shared_templates::render,
     transaction_tag::get_tag_transaction_count,
 };
 
@@ -570,8 +570,10 @@ mod tag_query_tests {
 
     use rusqlite::Connection;
 
-    use crate::tag::{create_tag, get_all_tags, get_tag, update_tag};
-    use crate::{Error, tag::TagName};
+    use crate::{
+        Error,
+        tag::{TagName, create_tag, get_all_tags, get_tag, update_tag},
+    };
 
     use super::{create_tag_table, delete_tag};
 

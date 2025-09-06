@@ -1,10 +1,15 @@
 # To Do
 
 - Add rules-based auto-tagger (new branch, merge back w/ PR):
-  - Add a user-configurable rules-based (text patterns) auto-tagging feature
+  - ~~Add view for managing rules `/rules` with CRUD operations, similar to the tag views.~~
+  - One rule can apply one tag to many transactions whose descriptions are prefixed with the rule (a string).
+    - E.g., for the rule "FOO BAR" -> "MyTag" a transaction with the text "FOO BAR" or "FOO BAR BAZ" will match, but
+      a transaction with the text "BAZ FOO BAR" or "BUZZ" will not match.
+  - Many rules can apply the same tag.
   - Use rules-based tagger for automatically tagging imports
   - Add UI for manually trigger tagger on either all transactions or all untagged transactions
-- Use rules-based tagger to mark internal transfers
+- Add settings page to configure which tags to exclude in dashboard (internal transfer tag created by user)
+- Ensure a tag can be applied to a transaction only once
 - Add thousands separator to monetary amounts by implementing custom currency filter for Askama
 - Align dashboard elements nicely
 - Change log in and registration pages to just ask for password
