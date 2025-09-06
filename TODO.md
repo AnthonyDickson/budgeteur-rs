@@ -2,13 +2,12 @@
 
 - Add rules-based auto-tagger (new branch, merge back w/ PR):
   - [ ] Use rules-based tagger for automatically tagging imports
-  - [ ] Update apply_rules_to_transactions function to take enum to make callsite clearer
-  - [ ] Update apply_rules_to_transactions function to take enum to either take a set of transactions to operate on or a variant indicating to fetch all transactions.
 - Add settings page to configure which tags to exclude in dashboard (internal transfer tag created by user)
 - Ensure a tag can be applied to a transaction only once
 - Add thousands separator to monetary amounts by implementing custom currency filter for Askama
 - Align dashboard elements nicely
 - Change log in and registration pages to just ask for password
+- Port alerts system to other pages (other than rules page) for handling error messages
 - Split up `src/transaction.rs` into module `src/transaction/*.rs`
 - Ensure that simple and full csv imports from Kiwibank do not create duplicate
   transactions.
