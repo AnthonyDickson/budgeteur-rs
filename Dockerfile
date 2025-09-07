@@ -1,4 +1,4 @@
-FROM rust:1.85.1-alpine3.21 AS build
+FROM rust:1.89.0-alpine3.22 AS build
 
 RUN apk update
 RUN apk add --no-cache musl-dev 
@@ -30,7 +30,7 @@ RUN tailwindcss --input templates/source.css --output static/main.css --minify
 
 #==============================================================================#
 
-FROM alpine:3.21 AS deploy
+FROM alpine:3.22 AS deploy
 
 WORKDIR /app
 
