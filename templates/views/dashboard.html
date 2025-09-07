@@ -4,63 +4,45 @@
 %} {{ nav_bar|safe }}
 <div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
   
-  <!-- Monthly Summary (Last 30 Days) -->
-  <div class="mb-8">
-    <h3 class="text-xl font-semibold mb-4">Last 30 Days</h3>
-    <div class="grid grid-cols-3 gap-4">
-      <div class="text-center">
-        <p class="text-green-600 dark:text-green-400 text-lg font-medium">Income</p>
-        <p class="text-2xl">${{ "{:.0}"|format(monthly_summary.income) }}</p>
+  <!-- Tag Exclusion Filter -->
+  {% if !tags_with_status.is_empty() %}
+  <div class="mb-8 w-full max-w-4xl">
+    <h3 class="text-xl font-semibold mb-4">Filter Summary by Tags</h3>
+    <form 
+      hx-post="{{ excluded_tags_endpoint }}" 
+      hx-target="#summary-sections"
+      hx-swap="innerHTML"
+      hx-trigger="change"
+      hx-on::response-error="alert('Error: ' + event.detail.xhr.responseText)"
+      class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg"
+    >
+      <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+        Exclude transactions with these tags from the summaries below:
+      </p>
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        {% for tag_status in tags_with_status %}
+        <label class="flex items-center space-x-2">
+          <input 
+            type="checkbox" 
+            name="excluded_tags" 
+            value="{{ tag_status.tag.id }}"
+            {% if tag_status.is_excluded %}checked{% endif %}
+            class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+          >
+          <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-300">
+            {{ tag_status.tag.name }}
+          </span>
+        </label>
+        {% endfor %}
       </div>
-      <div class="text-center">
-        <p class="text-red-600 dark:text-red-400 text-lg font-medium">Expenses</p>
-        <p class="text-2xl">${{ "{:.0}"|format(monthly_summary.expenses) }}</p>
-      </div>
-      <div class="text-center">
-        <p class="text-lg font-medium">Net Income</p>
-        {% if monthly_summary.net_income >= 0.0 %}
-          <p class="text-2xl text-green-600 dark:text-green-400">${{ "{:.0}"|format(monthly_summary.net_income) }}</p>
-        {% else %}
-          <p class="text-2xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-monthly_summary.net_income) }}</p>
-        {% endif %}
-      </div>
-    </div>
+    </form>
   </div>
+  {% endif %}
 
-  <!-- Yearly Summary (Last 12 Months) -->
-  <div class="mb-8">
-    <h3 class="text-xl font-semibold mb-4">Last 12 Months</h3>
-    <div class="grid grid-cols-3 gap-4">
-      <div class="text-center">
-        <p class="text-green-600 dark:text-green-400 text-lg font-medium">Income</p>
-        <p class="text-2xl">${{ "{:.0}"|format(yearly_summary.income) }}</p>
-      </div>
-      <div class="text-center">
-        <p class="text-red-600 dark:text-red-400 text-lg font-medium">Expenses</p>
-        <p class="text-2xl">${{ "{:.0}"|format(yearly_summary.expenses) }}</p>
-      </div>
-      <div class="text-center">
-        <p class="text-lg font-medium">Net Income</p>
-        {% if yearly_summary.net_income >= 0.0 %}
-          <p class="text-2xl text-green-600 dark:text-green-400">${{ "{:.0}"|format(yearly_summary.net_income) }}</p>
-        {% else %}
-          <p class="text-2xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-yearly_summary.net_income) }}</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <!-- Total Account Balance -->
-  <div class="mb-8">
-    <h3 class="text-xl font-semibold mb-4">Total Account Balance</h3>
-    <div class="text-center">
-      {% if total_account_balance >= 0.0 %}
-        <p class="text-3xl text-green-600 dark:text-green-400">${{ "{:.0}"|format(total_account_balance) }}</p>
-      {% else %}
-        <p class="text-3xl text-red-600 dark:text-red-400">${{ "{:.0}"|format(-total_account_balance) }}</p>
-      {% endif %}
-    </div>
-  </div>
+  <!-- Summary Sections Container -->
+  <div id="summary-sections" class="w-full max-w-4xl">
+    {% include "partials/dashboard_summaries.html" %}
+  </div> <!-- End summary-sections -->
 
 </div>
 {% endblock %}

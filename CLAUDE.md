@@ -54,6 +54,9 @@ At least:
 
 ## Recent Changes
 
+- **Dashboard Tag Exclusion (2025-09)**: Added tag-based filtering for dashboard summaries with persistent preferences
+- **Auto-Tagging System (2025-09)**: Added comprehensive rules-based auto-tagging system with CRUD operations for tagging rules, CSV import integration, manual triggering, and alert feedback
+- **Tags Column Integration (2025-09)**: Extracted transaction-tag relationship code into dedicated module and added tags column to transactions table display
 - **Transaction-Tag Refactoring (2025-09)**: Extracted transaction-tag relationship code from `tag.rs` into `transaction_tag.rs` to eliminate tight coupling
 - **Tag Editing Feature (2025-08)**: Added full CRUD operations for tags including edit page at `/tags/:tag_id/edit` with PUT endpoint at `/api/tags/:tag_id`
 - **Categories Renamed to Tags (2025-08)**: Renamed "categories" to "tags" throughout the application

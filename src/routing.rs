@@ -15,7 +15,7 @@ use crate::{
     AppState,
     auth_middleware::{auth_guard, auth_guard_hx},
     balances::get_balances_page,
-    dashboard::get_dashboard_page,
+    dashboard::{get_dashboard_page, update_excluded_tags},
     endpoints,
     forgot_password::get_forgot_password_page,
     import::{get_import_page, import_transactions},
@@ -98,6 +98,10 @@ pub fn build_router(state: AppState) -> Router {
                 post(auto_tag_untagged_transactions_endpoint),
             )
             .route(endpoints::IMPORT, post(import_transactions))
+            .route(
+                endpoints::DASHBOARD_EXCLUDED_TAGS,
+                post(update_excluded_tags),
+            )
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),
     );
 

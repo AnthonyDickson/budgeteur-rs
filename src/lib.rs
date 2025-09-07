@@ -25,6 +25,7 @@ mod auth_middleware;
 mod balances;
 mod csv;
 mod dashboard;
+mod dashboard_preferences;
 mod database_id;
 pub mod db;
 mod endpoints;
@@ -177,6 +178,14 @@ pub enum Error {
     /// An unhandled/unexpected SQL error.
     #[error("an error occurred while creating the user: {0}")]
     SqlError(rusqlite::Error),
+
+    /// An error occurred while saving dashboard preferences.
+    #[error("failed to save dashboard preferences")]
+    DashboardPreferencesSaveError,
+
+    /// An error occurred while calculating dashboard summaries.
+    #[error("failed to calculate dashboard summaries")]
+    DashboardCalculationError,
 }
 
 impl From<rusqlite::Error> for Error {
@@ -209,6 +218,14 @@ impl IntoResponse for Error {
             Error::InternalError(err) => {
                 tracing::error!("An unexpected error occurred: {}", err);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
+            Error::DashboardPreferencesSaveError => {
+                tracing::error!("Failed to save dashboard preferences");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to save your preferences. Please try again.")
+            }
+            Error::DashboardCalculationError => {
+                tracing::error!("Failed to calculate dashboard summaries");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to update dashboard summaries. Please try again.")
             }
             // Any errors that are not handled above are not intended to be shown to the client.
             error => {

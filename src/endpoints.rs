@@ -67,6 +67,8 @@ pub const IMPORT: &str = "/api/import";
 pub const AUTO_TAG_ALL: &str = "/api/auto-tag/all";
 /// The route to apply auto-tagging to untagged transactions only.
 pub const AUTO_TAG_UNTAGGED: &str = "/api/auto-tag/untagged";
+/// The route to update dashboard excluded tags.
+pub const DASHBOARD_EXCLUDED_TAGS: &str = "/api/dashboard/excluded-tags";
 
 /// Replace the parameter in `endpoint_path` with `id`.
 ///
@@ -154,6 +156,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::IMPORT);
         assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_ALL);
         assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_UNTAGGED);
+        assert_endpoint_is_valid_uri(endpoints::DASHBOARD_EXCLUDED_TAGS);
     }
 
     #[test]
