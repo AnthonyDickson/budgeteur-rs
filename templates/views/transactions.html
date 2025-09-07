@@ -24,7 +24,7 @@
                   <th scope="col" class="px-6 py-3">
                     ID
                   </th>
-                  <th scope="col" class="px-6 py-3">
+                  <th scope="col" class="px-6 py-3 text-right">
                     Amount
                   </th>
                   <th scope="col" class="px-6 py-3">
@@ -34,13 +34,13 @@
                     Description
                   </th>
                   <th scope="col" class="px-6 py-3">
-                    Category
+                    Tags
                   </th>
               </tr>
           </thead>
           <tbody>
-              {% for transaction in transactions %}
-                {{ transaction|safe }}
+              {% for transaction_row in transactions %}
+                {{ transaction_row|safe }}
               {% endfor %}
 
               {% if transactions.is_empty() %}

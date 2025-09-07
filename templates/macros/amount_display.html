@@ -1,0 +1,11 @@
+{% macro colored_amount(amount, size_class="text-2xl") -%}
+{% if amount >= 0.0 -%}
+<p class="{{ size_class }} text-green-600 dark:text-green-400">${{ "{:.0}"|format(amount) }}</p>
+{%- else -%}
+<p class="{{ size_class }} text-red-600 dark:text-red-400">${{ "{:.0}"|format(-amount) }}</p>
+{%- endif %}
+{%- endmacro colored_amount %}
+
+{% macro simple_amount(amount, size_class="text-2xl") -%}
+<p class="{{ size_class }}">${{ "{:.0}"|format(amount) }}</p>
+{%- endmacro simple_amount %}

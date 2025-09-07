@@ -1,0 +1,16 @@
+{%- import "macros/amount_display.html" as amount -%}
+{%- import "macros/transaction_summary.html" as summary -%}
+
+<!-- Monthly Summary (Last 28 Days) -->
+{% call summary::summary_section("Last 28 Days", summary_data.monthly_summary) %}
+
+<!-- Yearly Summary (Last 12 Months) -->
+{% call summary::summary_section("Last 12 Months", summary_data.yearly_summary) %}
+
+<!-- Total Account Balance -->
+<div class="mb-8">
+  <h3 class="text-xl font-semibold mb-4">Total Account Balance</h3>
+  <div class="text-center">
+    {% call amount::colored_amount(summary_data.total_account_balance, size_class="text-3xl") %}
+  </div>
+</div>

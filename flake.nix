@@ -18,15 +18,14 @@
       {
         devShells.default = with pkgs; mkShell {
           buildInputs = [
-            rust-bin.stable."1.85.0".default
+            rust-bin.stable."1.89.0".default
             rust-analyzer
           ];
 
           packages = with pkgs; [
-            tailwindcss
             bacon
             dockerfile-language-server-nodejs
-            marksman
+            tailwindcss
           ];
 
           # environment variable for running dev server.
