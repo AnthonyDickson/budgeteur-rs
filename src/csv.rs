@@ -182,7 +182,7 @@ fn parse_asb_bank_csv(text: &str) -> Result<ParseCSVResult, Error> {
                 let date_string =
                     date_string
                         .split(' ')
-                        .last()
+                        .next_back()
                         .ok_or(Error::InvalidCSV(format!(
                             "ASB bank ledger should have a date on line 6, but got '{line}'."
                         )))?;

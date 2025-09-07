@@ -57,21 +57,6 @@ impl User {
             password_hash,
         }
     }
-
-    /// The user's ID in the database.
-    pub fn id(&self) -> UserID {
-        self.id
-    }
-
-    /// The email address associated with the user.
-    pub fn email(&self) -> &EmailAddress {
-        &self.email
-    }
-
-    /// The user's password hash.
-    pub fn password_hash(&self) -> &PasswordHash {
-        &self.password_hash
-    }
 }
 
 /// Create the user table.
@@ -211,9 +196,9 @@ mod user_tests {
         let inserted_user =
             create_user(email.clone(), password_hash.clone(), &db_connection).unwrap();
 
-        assert!(inserted_user.id().as_i64() > 0);
-        assert_eq!(inserted_user.email(), &email);
-        assert_eq!(inserted_user.password_hash(), &password_hash);
+        assert!(inserted_user.id.as_i64() > 0);
+        assert_eq!(inserted_user.email, email);
+        assert_eq!(inserted_user.password_hash, password_hash);
     }
 
     #[test]
@@ -261,7 +246,7 @@ mod user_tests {
         )
         .unwrap();
 
-        let retrieved_user = get_user_by_id(test_user.id(), &db_connection).unwrap();
+        let retrieved_user = get_user_by_id(test_user.id, &db_connection).unwrap();
 
         assert_eq!(retrieved_user, test_user);
     }

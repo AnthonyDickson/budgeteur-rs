@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     validate_db_path(db_path);
 
     let user = get_user(db_path);
-    println!("Resetting password for {}", user.email());
+    println!("Resetting password for {}", user.email);
 
     let password_hash = match get_new_password_hash() {
         Some(password_hash) => password_hash,
@@ -122,7 +122,7 @@ fn print_error(error: impl ToString) {
     )
 }
 
-/// From https://crates.io/crates/capitalize
+/// From <https://crates.io/crates/capitalize>
 fn capitalise_first_char(string: &str) -> String {
     let mut chars = string.chars();
     let Some(first) = chars.next() else {
@@ -141,7 +141,7 @@ fn update_password(
 
     let rows_affected = transaction.execute(
         "UPDATE user SET password = ?1 WHERE user.id = ?2;",
-        (&password.to_string(), &user.id().as_i64()),
+        (&password.to_string(), &user.id.as_i64()),
     )?;
 
     if rows_affected != 1 {

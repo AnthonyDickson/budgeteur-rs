@@ -106,17 +106,3 @@ impl FromRef<AppState> for TransactionState {
 
 /// The state needed for displaying the dashboard page.
 pub type DashboardState = TransactionState;
-
-/// The state needed for the new transactions page.
-#[derive(Debug, Clone)]
-pub struct NewTransactionState {
-    pub db_connection: Arc<Mutex<Connection>>,
-}
-
-impl FromRef<AppState> for NewTransactionState {
-    fn from_ref(state: &AppState) -> Self {
-        Self {
-            db_connection: state.db_connection.clone(),
-        }
-    }
-}

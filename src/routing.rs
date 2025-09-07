@@ -1,12 +1,12 @@
 //! Application router configuration with protected and unprotected route definitions.
 
-use askama_axum::Template;
+use askama::Template;
 use axum::{
     Router,
-    http::{StatusCode, Uri},
+    http::StatusCode,
     middleware,
     response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::{delete, get, post, put},
 };
 use axum_htmx::HxRedirect;
 use tower_http::services::ServeDir;
@@ -15,14 +15,24 @@ use crate::{
     AppState,
     auth_middleware::{auth_guard, auth_guard_hx},
     balances::get_balances_page,
-    category::{create_category_endpoint, get_new_category_page},
-    dashboard::get_dashboard_page,
+    dashboard::{get_dashboard_page, update_excluded_tags},
     endpoints,
     forgot_password::get_forgot_password_page,
     import::{get_import_page, import_transactions},
     log_in::{get_log_in_page, post_log_in},
     log_out::get_log_out,
+    not_found::get_404_not_found,
     register_user::{get_register_page, register_user},
+    rule::{
+        auto_tag_all_transactions_endpoint, auto_tag_untagged_transactions_endpoint,
+        create_rule_endpoint, delete_rule_endpoint, get_edit_rule_page, get_new_rule_page,
+        get_rules_page, update_rule_endpoint,
+    },
+    shared_templates::render,
+    tag::{
+        create_tag_endpoint, delete_tag_endpoint, get_edit_tag_page, get_new_tag_page,
+        get_tags_page, update_tag_endpoint,
+    },
     transaction::{
         create_transaction_endpoint, get_new_transaction_page, get_transaction_endpoint,
         get_transactions_page,
@@ -56,21 +66,42 @@ pub fn build_router(state: AppState) -> Router {
             endpoints::NEW_TRANSACTION_VIEW,
             get(get_new_transaction_page),
         )
-        .route(endpoints::NEW_CATEGORY_VIEW, get(get_new_category_page))
+        .route(endpoints::NEW_TAG_VIEW, get(get_new_tag_page))
+        .route(endpoints::EDIT_TAG_VIEW, get(get_edit_tag_page))
+        .route(endpoints::TAGS_VIEW, get(get_tags_page))
+        .route(endpoints::NEW_RULE_VIEW, get(get_new_rule_page))
+        .route(endpoints::EDIT_RULE_VIEW, get(get_edit_rule_page))
+        .route(endpoints::RULES_VIEW, get(get_rules_page))
         .route(endpoints::IMPORT_VIEW, get(get_import_page))
         .route(endpoints::BALANCES_VIEW, get(get_balances_page))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
 
-    // These POST routes need to use the HX-REDIRECT header for auth redirects to work properly for
-    // HTMX requests.
+    // These POST/PUT routes need to use the HX-REDIRECT header for auth redirects to work properly for HTMX requests.
     let protected_routes = protected_routes.merge(
         Router::new()
             .route(
                 endpoints::TRANSACTIONS_API,
                 post(create_transaction_endpoint),
             )
-            .route(endpoints::CATEGORIES, post(create_category_endpoint))
+            .route(endpoints::POST_TAG, post(create_tag_endpoint))
+            .route(endpoints::PUT_TAG, put(update_tag_endpoint))
+            .route(endpoints::DELETE_TAG, delete(delete_tag_endpoint))
+            .route(endpoints::POST_RULE, post(create_rule_endpoint))
+            .route(endpoints::PUT_RULE, put(update_rule_endpoint))
+            .route(endpoints::DELETE_RULE, delete(delete_rule_endpoint))
+            .route(
+                endpoints::AUTO_TAG_ALL,
+                post(auto_tag_all_transactions_endpoint),
+            )
+            .route(
+                endpoints::AUTO_TAG_UNTAGGED,
+                post(auto_tag_untagged_transactions_endpoint),
+            )
             .route(endpoints::IMPORT, post(import_transactions))
+            .route(
+                endpoints::DASHBOARD_EXCLUDED_TAGS,
+                post(update_excluded_tags),
+            )
             .layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx)),
     );
 
@@ -97,7 +128,7 @@ async fn get_index_page() -> Redirect {
 /// Route handlers using GET should use `axum::response::Redirect` to redirect via a response.
 pub(crate) fn get_internal_server_error_redirect() -> Response {
     (
-        HxRedirect(Uri::from_static(endpoints::INTERNAL_ERROR_VIEW)),
+        HxRedirect(endpoints::INTERNAL_ERROR_VIEW.to_owned()),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
         .into_response()
@@ -108,21 +139,12 @@ pub(crate) fn get_internal_server_error_redirect() -> Response {
 struct InternalServerErrorPageTemplate;
 
 async fn get_internal_server_error_page() -> Response {
-    InternalServerErrorPageTemplate.into_response()
-}
-
-#[derive(Template)]
-#[template(path = "views/not_found_404.html")]
-struct NotFoundTemplate;
-
-async fn get_404_not_found() -> Response {
-    (StatusCode::NOT_FOUND, NotFoundTemplate {}).into_response()
+    render(StatusCode::OK, InternalServerErrorPageTemplate)
 }
 
 #[cfg(test)]
 mod root_route_tests {
-    use askama_axum::IntoResponse;
-    use axum::http::StatusCode;
+    use axum::{http::StatusCode, response::IntoResponse};
 
     use crate::{endpoints, routing::get_index_page};
 

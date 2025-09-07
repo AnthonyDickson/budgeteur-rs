@@ -19,28 +19,34 @@ use axum::{
 use axum_server::Handle;
 use tokio::signal;
 
+mod alert;
 mod auth_cookie;
 mod auth_middleware;
 mod balances;
-mod category;
 mod csv;
 mod dashboard;
+mod dashboard_preferences;
 mod database_id;
 pub mod db;
 mod endpoints;
 mod forgot_password;
 mod import;
+mod import_result;
 mod log_in;
 mod log_out;
 mod logging;
 mod navigation;
+mod not_found;
 mod pagination;
 mod password;
 mod register_user;
 mod routing;
+mod rule;
 mod shared_templates;
 mod state;
+mod tag;
 pub mod transaction;
+mod transaction_tag;
 pub mod user;
 
 pub use logging::logging_middleware;
@@ -120,13 +126,13 @@ pub enum Error {
     #[error("hashing failed: {0}")]
     HashingError(String),
 
-    /// The category ID used to create a transaction did not match a valid category.
-    #[error("the category ID does not refer to a valid category")]
-    InvalidCategory,
+    /// The tag ID used to create a transaction did not match a valid tag.
+    #[error("the tag ID does not refer to a valid tag")]
+    InvalidTag,
 
-    /// An empty string was used to create a category name.
-    #[error("Category name cannot be empty")]
-    EmptyCategoryName,
+    /// An empty string was used to create a tag name.
+    #[error("Tag name cannot be empty")]
+    EmptyTagName,
 
     /// A date in the future was used to create a transaction.
     ///
@@ -172,6 +178,14 @@ pub enum Error {
     /// An unhandled/unexpected SQL error.
     #[error("an error occurred while creating the user: {0}")]
     SqlError(rusqlite::Error),
+
+    /// An error occurred while saving dashboard preferences.
+    #[error("failed to save dashboard preferences")]
+    DashboardPreferencesSaveError,
+
+    /// An error occurred while calculating dashboard summaries.
+    #[error("failed to calculate dashboard summaries")]
+    DashboardCalculationError,
 }
 
 impl From<rusqlite::Error> for Error {
@@ -204,6 +218,14 @@ impl IntoResponse for Error {
             Error::InternalError(err) => {
                 tracing::error!("An unexpected error occurred: {}", err);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
+            Error::DashboardPreferencesSaveError => {
+                tracing::error!("Failed to save dashboard preferences");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to save your preferences. Please try again.")
+            }
+            Error::DashboardCalculationError => {
+                tracing::error!("Failed to calculate dashboard summaries");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to update dashboard summaries. Please try again.")
             }
             // Any errors that are not handled above are not intended to be shown to the client.
             error => {

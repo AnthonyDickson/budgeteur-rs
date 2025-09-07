@@ -10,8 +10,18 @@ pub const DASHBOARD_VIEW: &str = "/dashboard";
 pub const TRANSACTIONS_VIEW: &str = "/transactions";
 /// The page for creating a new transaction.
 pub const NEW_TRANSACTION_VIEW: &str = "/transactions/new";
-/// The page for creating a new category.
-pub const NEW_CATEGORY_VIEW: &str = "/categories/new";
+/// The page for creating a new tag.
+pub const NEW_TAG_VIEW: &str = "/tag/new";
+/// The page for editing an existing tag.
+pub const EDIT_TAG_VIEW: &str = "/tags/{tag_id}/edit";
+/// The page for listing all tags.
+pub const TAGS_VIEW: &str = "/tags";
+/// The page for creating a new rule.
+pub const NEW_RULE_VIEW: &str = "/rules/new";
+/// The page for editing an existing rule.
+pub const EDIT_RULE_VIEW: &str = "/rules/{rule_id}/edit";
+/// The page for listing all rules.
+pub const RULES_VIEW: &str = "/rules";
 /// The page for importing transactions from CSV files.
 pub const IMPORT_VIEW: &str = "/transactions/import";
 /// The route for getting the registration page.
@@ -35,36 +45,51 @@ pub const LOG_IN_API: &str = "/api/log_in";
 pub const LOG_OUT: &str = "/api/log_out";
 /// The route to access users.
 pub const USERS: &str = "/api/users";
-/// The route to access categories.
-pub const CATEGORIES: &str = "/api/categories";
+/// The route to create a tag.
+pub const POST_TAG: &str = "/api/tag";
+/// The route to update a tag.
+pub const PUT_TAG: &str = "/api/tags/{tag_id}";
+/// The route to delete a tag.
+pub const DELETE_TAG: &str = "/api/tags/{tag_id}";
+/// The route to create a rule.
+pub const POST_RULE: &str = "/api/rules";
+/// The route to update a rule.
+pub const PUT_RULE: &str = "/api/rules/{rule_id}";
+/// The route to delete a rule.
+pub const DELETE_RULE: &str = "/api/rules/{rule_id}";
 /// The route to access transactions.
 pub const TRANSACTIONS_API: &str = "/api/transactions";
 /// The route to access a single transaction.
-pub const TRANSACTION: &str = "/api/transactions/:transaction_id";
+pub const TRANSACTION: &str = "/api/transactions/{transaction_id}";
 /// The route to upload CSV files for importing transactions.
 pub const IMPORT: &str = "/api/import";
+/// The route to apply auto-tagging to all transactions.
+pub const AUTO_TAG_ALL: &str = "/api/auto-tag/all";
+/// The route to apply auto-tagging to untagged transactions only.
+pub const AUTO_TAG_UNTAGGED: &str = "/api/auto-tag/untagged";
+/// The route to update dashboard excluded tags.
+pub const DASHBOARD_EXCLUDED_TAGS: &str = "/api/dashboard/excluded-tags";
 
 /// Replace the parameter in `endpoint_path` with `id`.
 ///
-/// A parameter is a string that starts with a colon and is followed by
-/// lowercase letters or underscores. For example, in the endpoint path
-/// '/users/:user_id', ':user_id' is the parameter.
+/// A parameter is a string that starts with a left brace, followed by
+/// lowercase letters or underscores, and ends with a right brace.
+/// For example, in the endpoint path '/users/{user_id}', '{user_id}' is the parameter.
 ///
 /// This function assumes that an endpoint path only contains ASCII characters
 /// and a single parameter.
 ///
 /// If no parameter is found in `endpoint_path`, the function returns the
 /// the original `endpoint_path`.
-#[cfg(test)]
 pub fn format_endpoint(endpoint_path: &str, id: i64) -> String {
     let mut param_start = None;
     let mut param_end = None;
 
     for (i, c) in endpoint_path.chars().enumerate() {
-        if c == ':' {
+        if c == '{' {
             param_start = Some(i);
-        } else if param_start.is_some() && !c.is_ascii_lowercase() && c != '_' {
-            param_end = Some(i);
+        } else if param_start.is_some() && c == '}' {
+            param_end = Some(i + 1);
             break;
         }
     }
@@ -102,7 +127,12 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::ROOT);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_VIEW);
         assert_endpoint_is_valid_uri(endpoints::NEW_TRANSACTION_VIEW);
-        assert_endpoint_is_valid_uri(endpoints::NEW_CATEGORY_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::NEW_TAG_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::EDIT_TAG_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::TAGS_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::NEW_RULE_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::EDIT_RULE_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::RULES_VIEW);
         assert_endpoint_is_valid_uri(endpoints::IMPORT_VIEW);
         assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
@@ -115,21 +145,29 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_API);
         assert_endpoint_is_valid_uri(endpoints::LOG_OUT);
         assert_endpoint_is_valid_uri(endpoints::USERS);
-        assert_endpoint_is_valid_uri(endpoints::CATEGORIES);
+        assert_endpoint_is_valid_uri(endpoints::POST_TAG);
+        assert_endpoint_is_valid_uri(endpoints::PUT_TAG);
+        assert_endpoint_is_valid_uri(endpoints::DELETE_TAG);
+        assert_endpoint_is_valid_uri(endpoints::POST_RULE);
+        assert_endpoint_is_valid_uri(endpoints::PUT_RULE);
+        assert_endpoint_is_valid_uri(endpoints::DELETE_RULE);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTION);
         assert_endpoint_is_valid_uri(endpoints::IMPORT);
+        assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_ALL);
+        assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_UNTAGGED);
+        assert_endpoint_is_valid_uri(endpoints::DASHBOARD_EXCLUDED_TAGS);
     }
 
     #[test]
     fn produces_valid_uri() {
-        let formatted_path = format_endpoint("/hello/:world_id", 1);
+        let formatted_path = format_endpoint("/hello/{world_id}", 1);
 
         assert_eq!(formatted_path, "/hello/1");
         assert!(formatted_path.parse::<Uri>().is_ok());
 
         // Parameter with single word should also work.
-        let formatted_path = format_endpoint("/hello/:world", 1);
+        let formatted_path = format_endpoint("/hello/{world}", 1);
 
         assert_eq!(formatted_path, "/hello/1");
         assert!(formatted_path.parse::<Uri>().is_ok());
@@ -145,7 +183,7 @@ mod endpoints_tests {
 
     #[test]
     fn parameter_in_middle() {
-        let formatted_path = format_endpoint("/hello/:world/bye", 1);
+        let formatted_path = format_endpoint("/hello/{world}/bye", 1);
 
         assert_eq!(formatted_path, "/hello/1/bye");
         assert!(formatted_path.parse::<Uri>().is_ok());
