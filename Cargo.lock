@@ -258,6 +258,7 @@ dependencies = [
  "axum-core",
  "bytes",
  "cookie",
+ "form_urlencoded",
  "futures-util",
  "headers",
  "http",
@@ -267,6 +268,8 @@ dependencies = [
  "pin-project-lite",
  "rustversion",
  "serde",
+ "serde_html_form",
+ "serde_path_to_error",
  "tower",
  "tower-layer",
  "tower-service",
@@ -424,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "budgeteur_rs"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "askama",
  "axum",
@@ -440,8 +443,8 @@ dependencies = [
  "rusqlite",
  "scraper",
  "serde",
+ "serde_html_form",
  "serde_json",
- "serde_urlencoded",
  "sha2",
  "thiserror",
  "time",
@@ -2102,6 +2105,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "serde_html_form"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d2de91cf02bbc07cde38891769ccd5d4f073d22a40683aa4bc7a95781aaa2c4"
+dependencies = [
+ "form_urlencoded",
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
 ]
 
 [[package]]

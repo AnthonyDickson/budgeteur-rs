@@ -2,13 +2,13 @@
 
 use askama::Template;
 use axum::{
-    Form,
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use axum_extra::extract::Form;
 use rusqlite::{Connection, params_from_iter};
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use std::ops::RangeInclusive;
 use time::{Date, Duration, OffsetDateTime};
 
@@ -218,56 +218,11 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
 // API ENDPOINTS
 // ============================================================================
 
-/// Custom deserializer that can handle both single values and arrays
-/// This is needed because HTML forms send single values when only one checkbox is selected,
-/// but arrays when multiple checkboxes are selected
-fn deserialize_excluded_tags<'de, D>(deserializer: D) -> Result<Vec<DatabaseID>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    use serde::de::{Error, Visitor};
-    use std::fmt;
-
-    struct ExcludedTagsVisitor;
-
-    impl<'de> Visitor<'de> for ExcludedTagsVisitor {
-        type Value = Vec<DatabaseID>;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a string or sequence of strings representing tag IDs")
-        }
-
-        fn visit_str<E>(self, value: &str) -> Result<Vec<DatabaseID>, E>
-        where
-            E: Error,
-        {
-            value
-                .parse::<DatabaseID>()
-                .map(|id| vec![id])
-                .map_err(Error::custom)
-        }
-
-        fn visit_seq<A>(self, mut seq: A) -> Result<Vec<DatabaseID>, A::Error>
-        where
-            A: serde::de::SeqAccess<'de>,
-        {
-            let mut ids = Vec::new();
-            while let Some(value) = seq.next_element::<String>()? {
-                let id = value.parse::<DatabaseID>().map_err(Error::custom)?;
-                ids.push(id);
-            }
-            Ok(ids)
-        }
-    }
-
-    deserializer.deserialize_any(ExcludedTagsVisitor)
-}
-
 /// Form data for updating excluded tags
 #[derive(Deserialize)]
 pub struct ExcludedTagsForm {
     /// List of tag IDs to exclude from dashboard summaries
-    #[serde(default, deserialize_with = "deserialize_excluded_tags")]
+    #[serde(default)]
     pub excluded_tags: Vec<DatabaseID>,
 }
 
@@ -278,7 +233,6 @@ struct DashboardSummariesTemplate {
     /// Summary data (monthly, yearly, balance)
     summary_data: DashboardSummaryData,
 }
-
 
 /// API endpoint to update excluded tags and return updated summaries
 pub async fn update_excluded_tags(
@@ -303,17 +257,19 @@ pub async fn update_excluded_tags(
 
     // Calculate monthly summary (last 28 days)
     let one_month_ago = today - Duration::days(MONTHLY_PERIOD_DAYS);
-    let monthly_summary = match get_transaction_summary(one_month_ago..=today, excluded_tags_slice, &connection) {
-        Ok(summary) => summary,
-        Err(_) => return Error::DashboardCalculationError.into_response(),
-    };
+    let monthly_summary =
+        match get_transaction_summary(one_month_ago..=today, excluded_tags_slice, &connection) {
+            Ok(summary) => summary,
+            Err(_) => return Error::DashboardCalculationError.into_response(),
+        };
 
     // Calculate yearly summary (last 365 days)
     let one_year_ago = today - Duration::days(YEARLY_PERIOD_DAYS);
-    let yearly_summary = match get_transaction_summary(one_year_ago..=today, excluded_tags_slice, &connection) {
-        Ok(summary) => summary,
-        Err(_) => return Error::DashboardCalculationError.into_response(),
-    };
+    let yearly_summary =
+        match get_transaction_summary(one_year_ago..=today, excluded_tags_slice, &connection) {
+            Ok(summary) => summary,
+            Err(_) => return Error::DashboardCalculationError.into_response(),
+        };
 
     // Get total account balance
     let total_account_balance = match get_total_account_balance(&connection) {
@@ -344,14 +300,19 @@ mod dashboard_route_tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
+        dashboard_preferences::save_excluded_tags,
+        database_id::DatabaseID,
         db::initialize,
         state::DashboardState,
+        tag::{TagName, create_tag},
         transaction::{Transaction, create_transaction},
+        transaction_tag::set_transaction_tags,
     };
+
     use rusqlite::Connection;
     use std::sync::{Arc, Mutex};
 
-    use super::get_dashboard_page;
+    use super::{ExcludedTagsForm, get_dashboard_page};
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -483,12 +444,6 @@ mod dashboard_route_tests {
 
     #[tokio::test]
     async fn dashboard_excludes_tagged_transactions_from_summaries() {
-        use crate::{
-            dashboard_preferences::save_excluded_tags,
-            tag::{TagName, create_tag},
-            transaction_tag::set_transaction_tags,
-        };
-
         let conn = get_test_connection();
         let today = OffsetDateTime::now_utc().date();
 
@@ -528,32 +483,25 @@ mod dashboard_route_tests {
     }
 
     #[test]
-    fn deserialize_excluded_tags_handles_single_value() {
-        use super::ExcludedTagsForm;
-        use crate::database_id::DatabaseID;
+    fn excluded_tags_form_handles_multiple_values() {
+        // Test multiple values
+        let form_data = "excluded_tags=2&excluded_tags=3&excluded_tags=5";
+        let form: ExcludedTagsForm = serde_html_form::from_str(form_data).unwrap();
+        assert_eq!(form.excluded_tags, vec![2, 3, 5]);
 
-        // Test single value (the bug case) - this is what was failing in the logs
+        // Test single value
         let form_data = "excluded_tags=2";
-        let form: ExcludedTagsForm = serde_urlencoded::from_str(form_data).unwrap();
+        let form: ExcludedTagsForm = serde_html_form::from_str(form_data).unwrap();
         assert_eq!(form.excluded_tags, vec![2]);
-
-        // Test multiple values - this is how HTML forms actually send multiple checkbox values
-        // Note: serde_urlencoded doesn't handle duplicate field names the same way as form data
-        // In practice, axum's Form extractor handles this correctly for us
 
         // Test no values (when no checkboxes are selected)
         let form_data = "";
-        let form: ExcludedTagsForm = serde_urlencoded::from_str(form_data).unwrap();
+        let form: ExcludedTagsForm = serde_html_form::from_str(form_data).unwrap();
         assert_eq!(form.excluded_tags, Vec::<DatabaseID>::new());
     }
 
     #[tokio::test]
     async fn dashboard_includes_all_transactions_when_no_tags_excluded() {
-        use crate::{
-            tag::{TagName, create_tag},
-            transaction_tag::set_transaction_tags,
-        };
-
         let conn = get_test_connection();
         let today = OffsetDateTime::now_utc().date();
 
@@ -595,7 +543,9 @@ mod get_transaction_summary_tests {
     use super::{TransactionSummary, get_transaction_summary};
     use crate::{
         db::initialize,
+        tag::{TagName, create_tag},
         transaction::{Transaction, create_transaction},
+        transaction_tag::set_transaction_tags,
     };
 
     fn get_test_connection() -> Connection {
@@ -687,11 +637,6 @@ mod get_transaction_summary_tests {
 
     #[test]
     fn excludes_transactions_with_excluded_tags() {
-        use crate::{
-            tag::{TagName, create_tag},
-            transaction_tag::set_transaction_tags,
-        };
-
         let conn = get_test_connection();
         let start_date = date!(2024 - 01 - 01);
         let end_date = date!(2024 - 01 - 31);
@@ -726,11 +671,6 @@ mod get_transaction_summary_tests {
 
     #[test]
     fn includes_all_transactions_when_no_tags_excluded() {
-        use crate::{
-            tag::{TagName, create_tag},
-            transaction_tag::set_transaction_tags,
-        };
-
         let conn = get_test_connection();
         let start_date = date!(2024 - 01 - 01);
         let end_date = date!(2024 - 01 - 31);

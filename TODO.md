@@ -1,9 +1,13 @@
 # To Do
 
+- Add CI/CD job on merge into main that checks that the Docker image can be built successfully.
+- Add screenshots of app in README.md
 - Add thousands separator to monetary amounts by implementing custom currency filter for Askama
 - Add thousands separator to timing durations (e.g., 1,234ms instead of 1234ms) for better readability
 - Organise the import, import_result and csv into a new module, `import` and only expose what's necessary. The `mod.rs` file should be minimal and just contain re-exports
 - Change log in and registration pages to just ask for password
+- Dashboard: create pie chart that breaks down spending by category 
+- Dashboard: create line chart that charts monthly net income and balance (reconstruct balance from current balance and net income values)
 - Port alerts system to other pages (other than rules page) for handling error messages
   - Use alerts for confirming deletion of items from tags and rules pages (and others when they get full CRUD).
   - Alert for dashboard if excluded tag ops fail.

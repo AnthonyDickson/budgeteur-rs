@@ -1,6 +1,6 @@
 [package]
 name = "budgeteur_rs"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 default-run = "server"
 
@@ -9,6 +9,7 @@ askama = "0.14.0"
 axum = { version = "0.8.4", features = ["form", "macros", "multipart"] }
 axum-extra = { version = "0.10.1", features = [
   "cookie-private",
+  "form",
   "typed-header",
 ] }
 axum-htmx = "0.8.1"
@@ -34,4 +35,4 @@ zxcvbn = "3.1.0"
 [dev-dependencies]
 axum-test = "18.0.2"
 scraper = "0.24.0"
-serde_urlencoded = "0.7.1"
+serde_html_form = "0.2.7"
