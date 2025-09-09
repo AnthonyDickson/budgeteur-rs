@@ -13,14 +13,15 @@ use std::{
 use askama::Template;
 use askama::Template as AxumTemplate;
 use axum::{
-    Form, Json,
+    Json,
     extract::{FromRef, Path, Query, State},
     http::{StatusCode, Uri},
     response::{IntoResponse, Response},
 };
+use axum_extra::extract::Form;
 use axum_htmx::HxRedirect;
 use rusqlite::{Connection, Row, params_from_iter, types::Value};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 
 use crate::{
@@ -257,55 +258,6 @@ pub struct TransactionTableRow {
 }
 
 // ============================================================================
-// FORM HELPERS
-// ============================================================================
-
-/// Custom deserializer for tag IDs that handles both single values and arrays.
-/// HTML forms with multiple checkboxes of the same name can send either a single string
-/// or multiple strings, so we need to handle both cases.
-fn deserialize_tag_ids<'de, D>(deserializer: D) -> Result<Vec<i64>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    use serde::de::{Error, Visitor};
-    use std::fmt;
-
-    struct TagIdsVisitor;
-
-    impl<'de> Visitor<'de> for TagIdsVisitor {
-        type Value = Vec<i64>;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a string or sequence of strings representing tag IDs")
-        }
-
-        fn visit_str<E>(self, value: &str) -> Result<Vec<i64>, E>
-        where
-            E: Error,
-        {
-            value
-                .parse::<i64>()
-                .map(|id| vec![id])
-                .map_err(Error::custom)
-        }
-
-        fn visit_seq<A>(self, mut seq: A) -> Result<Vec<i64>, A::Error>
-        where
-            A: serde::de::SeqAccess<'de>,
-        {
-            let mut ids = Vec::new();
-            while let Some(value) = seq.next_element::<String>()? {
-                let id = value.parse::<i64>().map_err(Error::custom)?;
-                ids.push(id);
-            }
-            Ok(ids)
-        }
-    }
-
-    deserializer.deserialize_any(TagIdsVisitor)
-}
-
-// ============================================================================
 // ROUTE HANDLERS
 // ============================================================================
 
@@ -319,7 +271,7 @@ pub struct TransactionForm {
     /// Text detailing the transaction.
     pub description: String,
     /// The IDs of tags to associate with this transaction.
-    #[serde(default, deserialize_with = "deserialize_tag_ids")]
+    #[serde(default)]
     pub tag_ids: Vec<i64>,
 }
 
@@ -1778,12 +1730,12 @@ mod route_handler_tests {
     use std::sync::{Arc, Mutex};
 
     use axum::{
-        Form,
         body::Body,
         extract::{Path, State},
         http::{Response, StatusCode},
         response::IntoResponse,
     };
+    use axum_extra::extract::Form;
     use axum_htmx::HX_REDIRECT;
     use time::OffsetDateTime;
 
