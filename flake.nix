@@ -26,6 +26,7 @@
             bacon
             dockerfile-language-server-nodejs
             tailwindcss
+            gemini-cli
           ];
 
           # environment variable for running dev server.
