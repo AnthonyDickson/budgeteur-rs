@@ -1,6 +1,5 @@
 # To Do
 
-- Get hamburger menu working on mobile
 - Add screenshots of app in README.md
 - Add thousands separator to monetary amounts by implementing custom currency filter for Askama
 - Add thousands separator to timing durations (e.g., 1,234ms instead of 1234ms) for better readability
