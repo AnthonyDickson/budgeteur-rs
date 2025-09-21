@@ -25,3 +25,6 @@ result
 
 # Tailwind CSS build outputs
 static/main.css
+
+# Gemini CLI
+.gemini/

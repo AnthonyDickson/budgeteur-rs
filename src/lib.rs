@@ -221,11 +221,17 @@ impl IntoResponse for Error {
             }
             Error::DashboardPreferencesSaveError => {
                 tracing::error!("Failed to save dashboard preferences");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to save your preferences. Please try again.")
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to save your preferences. Please try again.",
+                )
             }
             Error::DashboardCalculationError => {
                 tracing::error!("Failed to calculate dashboard summaries");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to update dashboard summaries. Please try again.")
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to update dashboard summaries. Please try again.",
+                )
             }
             // Any errors that are not handled above are not intended to be shown to the client.
             error => {
