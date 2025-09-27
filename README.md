@@ -10,12 +10,12 @@ This app aims to provide two services:
 - Budgeting: Recording your income and expenses, and tracking savings targets.
 - Personal Finance: Keeping track of your net worth.
 
-The application consists of a single server that renders and serves HTML directly.
+This application is intended for a single user and to be self-hosted.
 
 <!--toc:start-->
 
 - [Budgeteur-rs](#budgeteur-rs)
-  - [Installation and Usage](#installation-and-usage)
+  - [Why?](#why)
     - [First-Time Usage](#first-time-usage)
     - [Resetting Your Password](#resetting-your-password)
   - [Set Up Development Environment](#set-up-development-environment)
@@ -26,19 +26,30 @@ The application consists of a single server that renders and serves HTML directl
       - [Running Tests](#running-tests)
       - [Build and View Documentation](#build-and-view-documentation)
     - [Building and Running the Docker Image Locally](#building-and-running-the-docker-image-locally)
-  - [API Design](#api-design)
-    - [HTTP Status Codes](#http-status-codes)
 
 <!--toc:end-->
 
-## Installation and Usage
+## Why?
+
+I started budgeting with a phone app, but I quickly ran into three main issues:
+
+1. it required me to enter my income/expenses manually,
+1. it only worked on my phone,
+1. and it didn't help me with tracking my net worth.
+
+I have tried using a spreadsheet to track my net worth, however I then ran into issues where editing this spreadsheet
+from multiple devices lead to old copies overwriting the copy in my cloud storage.
+
+Budgeteur is my attempt at a single, cross-platform application for tracking my budget and net worth.
+One helpful feature of Budgeteur is that you can import transactions and track your account balances from CSV files.
+These CSV can be exported from the internet banking websites for New Zealand bank accounts (ASB and Kiwibank).
+This reduces the amount manual data entry significantly, making it easier to maintain the habit of tracking your
+budget even when life gets busy.
 
 This application is distributed as a Docker image and Docker Compose is the
 recommended way of running the app.
 
 See [compose.yaml](./compose.yaml) for an example Docker compose file.
-It is set up to run a local image built with [build_image.sh](./build_image.sh),
-but should be modified to use an image from the GitHub Container Registry.
 
 Once you have your `compose.yaml` set up, just run:
 
@@ -47,9 +58,9 @@ docker compose up
 ```
 
 > [!CAUTION]
-> The server uses HTTP which is not secure. It is recommended to put the server
-> behind a reverse proxy such as Nginx to serve the application over HTTPS,
-> especially if hosting this app on the public internet.
+> The server uses HTTP which is not secure. It is highly recommended to put the
+> server behind a reverse proxy such as Nginx to serve the application over
+> HTTPS, especially if hosting this app on the public internet.
 
 ### First-Time Usage
 
@@ -57,16 +68,17 @@ Navigate to `https://<published URL>/register` and create a user account.
 
 ### Resetting Your Password
 
-The app is set up for a single user and the following instructions will reset
-the password for that sole user account.
-
 Run the following command:
 
 ```shell
 docker compose -p budgeteur exec web reset_password --db-path /app/data/budgeteur.db
 ```
 
-Refer to your `compose.yaml` for the host mount path, database filename and/or image tag.
+> [!TIP]
+> Refer to your `compose.yaml` for the host mount path, database filename and/or image tag.
+
+The app only allows a single user and the following instructions will reset
+the password for that sole user account.
 
 ## Set Up Development Environment
 
@@ -152,30 +164,3 @@ docker run --rm -p 8080:8080 -e SECRET=<YOUR-SECRET> -it ghcr.io/anthonydickson/
 > [!NOTE]
 > Add `-v $(pwd):/app/data` to the above command (before `-it`) to persist
 > the app database after the container has stopped.
-
-## API Design
-
-### HTTP Status Codes
-
-HTTP status codes are generally used in line with the standards that define
-them.
-
-2xx status codes indicate that the server understood and processed the
-request without errors, and the client does not need to perform any special
-handling of the response. Note that this means that things like invalid log-in
-credentials or invalid emails in registrations forms will return with a HTTP
-200 status code because these response will contain the error messages that
-should be displayed directly to the user and there is no action the client can
-or should take on the user's behalf to rectify these issues.
-
-3xx status codes are used for full page redirects. In cases where the response
-to a HTMX request requires a redirect, the corresponding HTMX redirect header
-is used instead.
-
-4xx status codes are used when the request could not be fulfilled due to
-issues with the request. Common causes are requests for non-existent resources
-or malformed forms (e.g., missing form fields). 4xx codes are not used to
-indicate expected application errors (invalid log-in credentials).
-
-5xx status codes are used when the request could not be fulfilled due to an
-unexpected and unhandled error on the server.
