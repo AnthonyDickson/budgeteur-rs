@@ -13,8 +13,6 @@
   - Extend to offer undo capabilities on delete/edit?
   - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
 - Split up `src/transaction.rs` into module `src/transaction/*.rs`
-- Ensure that simple and full csv imports from Kiwibank do not create duplicate
-  transactions.
 - Create unique aliases of `i64` for each of the domain models, e.g., `Tag` -> `pub type TagID = i64;`.
 - Add edit and delete functionality for transactions.
 - Add full CRUD functionality for balances

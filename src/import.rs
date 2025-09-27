@@ -541,14 +541,6 @@ mod import_transactions_tests {
         2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22\n\
         2025/04/11,2025/04/10,2025041101,DEBIT,5023,\"Buckstars\",11.50";
 
-    const KIWIBANK_BANK_STATEMENT_CSV: &str = "Account number,Date,Memo/Description,Source Code (payment type),TP ref,TP part,TP code,OP ref,OP part,OP code,OP name,OP Bank Account Number,Amount (credit),Amount (debit),Amount,Balance\n\
-        38-1234-0123456-01,31-01-2025,INTEREST EARNED ;,,,,,,,,,,0.25,,0.25,71.16\n\
-        38-1234-0123456-01,31-01-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.03,-0.03,71.13\n\
-        38-1234-0123456-01,28-02-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.35\n\
-        38-1234-0123456-01,28-02-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.33\n\
-        38-1234-0123456-01,31-03-2025,INTEREST EARNED ;,,,,,,,,,,0.22,,0.22,71.55\n\
-        38-1234-0123456-01,31-03-2025,PIE TAX 10.500% ;,,,,,,,,,,,0.02,-0.02,71.53";
-
     const KIWIBANK_BANK_STATEMENT_SIMPLE_CSV: &str = "47-8115-1482616-00,,,,\n\
             22 Jan 2025,TRANSFER TO A R DICKSON - 01 ;,,-353.46,200.00\n\
             22 Jan 2025,POS W/D LOBSTER SEAFOO-19:47 ;,,-32.00,168.00\n\
@@ -558,12 +550,12 @@ mod import_transactions_tests {
             26 Jan 2025,TRANSFER FROM A R DICKSON - 01 ;,,78.00,200.00";
 
     // CSV with transactions that will match auto-tagging rules
-    const AUTO_TAG_TEST_CSV: &str = "Account number,Date,Memo/Description,Source Code (payment type),TP ref,TP part,TP code,OP ref,OP part,OP code,OP name,OP Bank Account Number,Amount (credit),Amount (debit),Amount,Balance\n\
-        38-1234-0123456-01,15-01-2025,Starbucks Coffee Shop ;,,,,,,,,,,,5.50,-5.50,100.00\n\
-        38-1234-0123456-01,16-01-2025,Supermarket Groceries ;,,,,,,,,,,,45.20,-45.20,54.80\n\
-        38-1234-0123456-01,17-01-2025,Amazon Prime Subscription ;,,,,,,,,,,,12.99,-12.99,41.81\n\
-        38-1234-0123456-01,18-01-2025,Shell Gas Station ;,,,,,,,,,,,35.00,-35.00,6.81\n\
-        38-1234-0123456-01,19-01-2025,Random Transaction ;,,,,,,,,,,,25.00,-25.00,-18.19";
+    const AUTO_TAG_TEST_CSV: &str = "38-1234-0123456-01,,,,\n\
+    15 Jan 2025,Starbucks Coffee Shop ;,,-5.50,100.00\n\
+    16 Jan 2025,Supermarket Groceries ;,,-45.20,54.80\n\
+    17 Jan 2025,Amazon Prime Subscription ;,,-12.99,41.81\n\
+    18 Jan 2025,Shell Gas Station ;,,-35.00,6.81\n\
+    19 Jan 2025,Random Transaction ;,,-25.00,-18.19";
 
     #[tokio::test]
     async fn render_page() {
@@ -594,14 +586,13 @@ mod import_transactions_tests {
         let state = ImportState {
             db_connection: Arc::new(Mutex::new(conn)),
         };
-        let want_transaction_count = 23;
+        let want_transaction_count = 17;
 
         let response = import_transactions(
             State(state.clone()),
             must_make_multipart_csv(&[
                 ASB_BANK_STATEMENT_CSV,
                 ASB_CC_STATEMENT_CSV,
-                KIWIBANK_BANK_STATEMENT_CSV,
                 KIWIBANK_BANK_STATEMENT_SIMPLE_CSV,
             ])
             .await,
@@ -689,40 +680,6 @@ mod import_transactions_tests {
             "want 0 balance, but got {}",
             balances.len()
         );
-
-        // Validate success alert message
-        assert_alert_success_message(response, "Import completed successfully!").await;
-    }
-    #[tokio::test]
-    async fn extracts_accounts_and_balances_kiwibank_bank_account() {
-        let conn = get_test_connection();
-        let connection = Arc::new(Mutex::new(conn));
-        let state = ImportState {
-            db_connection: connection.clone(),
-        };
-        let want_account = "38-1234-0123456-01";
-        let want_balance = 71.53;
-        let want_date = date!(2025 - 03 - 31);
-
-        let response = import_transactions(
-            State(state.clone()),
-            must_make_multipart_csv(&[KIWIBANK_BANK_STATEMENT_CSV]).await,
-        )
-        .await;
-
-        let balances =
-            get_all_balances(&connection.lock().unwrap()).expect("Could not get balances");
-        assert_eq!(response.status(), StatusCode::CREATED);
-        assert_eq!(
-            balances.len(),
-            1,
-            "want 1 balance, but got {}",
-            balances.len()
-        );
-        let got = &balances[0];
-        assert_eq!(want_account, got.account);
-        assert_eq!(want_balance, got.balance);
-        assert_eq!(want_date, got.date);
 
         // Validate success alert message
         assert_alert_success_message(response, "Import completed successfully!").await;
