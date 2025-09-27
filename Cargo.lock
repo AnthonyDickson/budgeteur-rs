@@ -437,7 +437,6 @@ dependencies = [
  "axum-test",
  "bcrypt",
  "clap",
- "email_address",
  "md5",
  "rpassword",
  "rusqlite",

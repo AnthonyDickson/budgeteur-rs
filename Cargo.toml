@@ -16,7 +16,6 @@ axum-htmx = "0.8.1"
 axum-server = { version = "0.7.2" }
 bcrypt = "0.17.1"
 clap = { version = "4.5.47", features = ["derive"] }
-email_address = "0.2.9"
 md5 = "0.8.0"
 rpassword = "7.4.0"
 rusqlite = { version = "0.37.0", features = ["bundled", "time"] }

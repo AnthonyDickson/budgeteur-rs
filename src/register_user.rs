@@ -1,8 +1,5 @@
-//! The registration page for creating a new user account.
-use std::{
-    str::FromStr,
-    sync::{Arc, Mutex},
-};
+//! The registration page for setting the password for accessing the app.
+use std::sync::{Arc, Mutex};
 
 use askama::Template;
 use axum::{
@@ -13,19 +10,18 @@ use axum::{
 };
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
-use email_address::EmailAddress;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::Duration;
 
 use crate::{
-    AppState, Error, PasswordHash, ValidatedPassword,
+    AppState, PasswordHash, ValidatedPassword,
     auth_cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
     endpoints,
     routing::get_internal_server_error_redirect,
-    shared_templates::{EmailInputTemplate, PasswordInputTemplate, render},
+    shared_templates::{PasswordInputTemplate, render},
     state::create_cookie_key,
-    user::{count_users, create_user, get_user_by_email},
+    user::{count_users, create_user},
 };
 
 #[derive(Template, Default)]
@@ -39,7 +35,6 @@ pub struct ConfirmPasswordInputTemplate<'a> {
 pub struct RegisterFormTemplate<'a> {
     pub log_in_route: &'a str,
     pub create_user_route: &'a str,
-    pub email_input: EmailInputTemplate<'a>,
     pub password_input: PasswordInputTemplate<'a>,
     pub confirm_password_input: ConfirmPasswordInputTemplate<'a>,
 }
@@ -49,7 +44,6 @@ impl Default for RegisterFormTemplate<'_> {
         Self {
             log_in_route: endpoints::LOG_IN_VIEW,
             create_user_route: endpoints::USERS,
-            email_input: EmailInputTemplate::default(),
             password_input: PasswordInputTemplate::default(),
             confirm_password_input: ConfirmPasswordInputTemplate::default(),
         }
@@ -121,7 +115,6 @@ impl FromRef<RegistrationState> for Key {
 
 #[derive(Serialize, Deserialize)]
 pub struct RegisterForm {
-    pub email: String,
     pub password: String,
     pub confirm_password: String,
 }
@@ -142,7 +135,7 @@ pub async fn register_user(
                 StatusCode::OK,
                 RegisterFormTemplate {
                     confirm_password_input: ConfirmPasswordInputTemplate {
-                        error_message: "An account has already been created, please log in with your existing account.",
+                        error_message: "A password has already been created, please log in with your existing password.",
                     },
                     ..Default::default()
                 },
@@ -152,56 +145,11 @@ pub async fn register_user(
     }
 
     // Make templates ahead of time that preserve the user's input since they are used multiple times in this function.
-    let email_input = EmailInputTemplate {
-        value: &user_data.email,
-        ..Default::default()
-    };
-
     let password_input = PasswordInputTemplate {
         value: &user_data.password,
         min_length: PASSWORD_INPUT_MIN_LENGTH,
         ..Default::default()
     };
-
-    let email = match EmailAddress::from_str(&user_data.email) {
-        Ok(email) => email,
-        // Due to the client-side validation, the below error will not happen very often, but it still pays to check.
-        Err(e) => {
-            return render(
-                StatusCode::OK,
-                RegisterFormTemplate {
-                    email_input: EmailInputTemplate {
-                        value: &user_data.email,
-                        error_message: &format!("Invalid email address: {}", e),
-                    },
-                    password_input,
-                    ..Default::default()
-                },
-            );
-        }
-    };
-
-    if get_user_by_email(
-        email.as_ref(),
-        &state
-            .db_connection
-            .lock()
-            .expect("Could not acquire database lock"),
-    )
-    .is_ok()
-    {
-        return render(
-            StatusCode::OK,
-            RegisterFormTemplate {
-                email_input: EmailInputTemplate {
-                    value: &user_data.email,
-                    error_message: "The email address is already in use",
-                },
-                password_input,
-                ..Default::default()
-            },
-        );
-    }
 
     let validated_password = match ValidatedPassword::new(&user_data.password) {
         Ok(password) => password,
@@ -209,7 +157,6 @@ pub async fn register_user(
             return render(
                 StatusCode::OK,
                 RegisterFormTemplate {
-                    email_input,
                     password_input: PasswordInputTemplate {
                         value: &user_data.password,
                         min_length: PASSWORD_INPUT_MIN_LENGTH,
@@ -225,7 +172,6 @@ pub async fn register_user(
         return render(
             StatusCode::OK,
             RegisterFormTemplate {
-                email_input,
                 password_input,
                 confirm_password_input: ConfirmPasswordInputTemplate {
                     error_message: "Passwords do not match",
@@ -245,7 +191,6 @@ pub async fn register_user(
     };
 
     create_user(
-        email,
         password_hash,
         &state
             .db_connection
@@ -270,17 +215,6 @@ pub async fn register_user(
         }
     })
     .map_err(|e| match e {
-        Error::DuplicateEmail => render(
-            StatusCode::OK,
-            RegisterFormTemplate {
-                email_input: EmailInputTemplate {
-                    value: &user_data.email,
-                    error_message: "The email address is already in use",
-                },
-                password_input,
-                ..Default::default()
-            },
-        ),
         e => {
             tracing::error!("An unhandled error occurred while inserting a new user: {e}");
 
@@ -330,7 +264,7 @@ mod get_register_page_tests {
         let title = titles.first().unwrap();
         let title_text = title.text().collect::<String>().to_lowercase();
         let title_text = title_text.trim();
-        let want_title = "create account";
+        let want_title = "create password";
         assert_eq!(
             title_text, want_title,
             "want {}, got {:?}",
@@ -357,11 +291,6 @@ mod get_register_page_tests {
         }
 
         let want_form_inputs: Vec<FormInput> = vec![
-            FormInput {
-                tag: "input",
-                type_: "email",
-                id: "email",
-            },
             FormInput {
                 tag: "input",
                 type_: "password",
@@ -466,7 +395,6 @@ mod register_user_tests {
         server
             .post(endpoints::USERS)
             .form(&RegisterForm {
-                email: "foo@bar.baz".to_string(),
                 password: "iamtestingwhethericancreateanewuser".to_string(),
                 confirm_password: "iamtestingwhethericancreateanewuser".to_string(),
             })
@@ -478,7 +406,6 @@ mod register_user_tests {
     async fn create_user_fails_with_existing_user() {
         let state = get_test_app_config();
         create_user(
-            "test@test.com".parse().unwrap(),
             PasswordHash::from_raw_password("foobarbazquxgobbledygook", 4).unwrap(),
             &state
                 .db_connection
@@ -491,7 +418,6 @@ mod register_user_tests {
             State(state.clone()),
             PrivateCookieJar::new(state.cookie_key),
             Form(RegisterForm {
-                email: "foo.bar.baz".to_string(),
                 password: "averystrongandsecurepassword".to_string(),
                 confirm_password: "averystrongandsecurepassword".to_string(),
             }),
@@ -506,37 +432,8 @@ mod register_user_tests {
         let paragraph = paragraphs.first().unwrap();
         let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
         assert!(
-            paragraph_text.contains("existing account"),
-            "'{paragraph_text}' does not contain the text 'invalid email address'"
-        );
-    }
-
-    #[tokio::test]
-    async fn create_user_fails_with_invalid_email() {
-        let state = get_test_app_config();
-        let response = register_user(
-            State(state.clone()),
-            PrivateCookieJar::new(state.cookie_key),
-            Form(RegisterForm {
-                email: "foo.bar.baz".to_string(),
-                password: "averystrongandsecurepassword".to_string(),
-                confirm_password: "averystrongandsecurepassword".to_string(),
-            }),
-        )
-        .await;
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let fragment = parse_html(response).await;
-
-        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
-        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
-        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
-        let paragraph = paragraphs.first().unwrap();
-        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
-        assert!(
-            paragraph_text.contains("invalid email address"),
-            "'{paragraph_text}' does not contain the text 'invalid email address'"
+            paragraph_text.contains("existing password"),
+            "'{paragraph_text}' does not contain the text 'existing password'"
         );
     }
 
@@ -551,7 +448,6 @@ mod register_user_tests {
         let response = server
             .post(endpoints::USERS)
             .form(&RegisterForm {
-                email: "foo@bar.baz".to_string(),
                 password: "".to_string(),
                 confirm_password: "".to_string(),
             })
@@ -582,7 +478,6 @@ mod register_user_tests {
         let response = server
             .post(endpoints::USERS)
             .form(&RegisterForm {
-                email: "foo@bar.baz".to_string(),
                 password: "foo".to_string(),
                 confirm_password: "foo".to_string(),
             })
@@ -613,7 +508,6 @@ mod register_user_tests {
         let response = server
             .post(endpoints::USERS)
             .form(&RegisterForm {
-                email: "foo@bar.baz".to_string(),
                 password: "iamtestingwhethericancreateanewuser".to_string(),
                 confirm_password: "thisisadifferentpassword".to_string(),
             })

@@ -52,9 +52,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
 
     conn.execute(
-        "INSERT INTO user (email, password) VALUES (?1, ?2)",
-        (&"test@test.com", password_hash.to_string()),
+        "INSERT INTO user (password) VALUES (?1)",
+        (password_hash.to_string(),),
     )?;
+
+    println!("Success!");
 
     Ok(())
 }
