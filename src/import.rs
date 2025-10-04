@@ -7,6 +7,7 @@ use axum::{
     response::Response,
 };
 use rusqlite::Connection;
+use time::UtcOffset;
 
 use crate::{
     AppState, Error,
@@ -26,12 +27,14 @@ use crate::{
 pub struct ImportState {
     /// The database connection for managing transactions.
     pub db_connection: Arc<Mutex<Connection>>,
+    pub local_timezone: UtcOffset,
 }
 
 impl FromRef<AppState> for ImportState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
+            local_timezone: state.local_timezone,
         }
     }
 }
@@ -100,7 +103,7 @@ pub async fn import_transactions(
             }
         };
 
-        match parse_csv(&csv_data) {
+        match parse_csv(&csv_data, state.local_timezone) {
             Ok(parse_result) => {
                 transactions.extend(parse_result.transactions);
 
@@ -492,7 +495,7 @@ mod import_transactions_tests {
     };
     use rusqlite::Connection;
     use scraper::{ElementRef, Html};
-    use time::macros::date;
+    use time::{UtcOffset, macros::date};
 
     use crate::{
         Error,
@@ -585,6 +588,7 @@ mod import_transactions_tests {
         let conn = get_test_connection();
         let state = ImportState {
             db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: UtcOffset::UTC,
         };
         let want_transaction_count = 17;
 
@@ -620,6 +624,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
+            local_timezone: UtcOffset::UTC,
         };
         let want_account = "12-3405-0123456-50 (Streamline)";
         let want_balance = 20.00;
@@ -663,6 +668,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
+            local_timezone: UtcOffset::UTC,
         };
 
         let response = import_transactions(
@@ -691,6 +697,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
+            local_timezone: UtcOffset::UTC,
         };
         let response =
             import_transactions(State(state.clone()), must_make_multipart_csv(&[""]).await).await;
@@ -717,6 +724,7 @@ mod import_transactions_tests {
         let conn = get_test_connection();
         let state = ImportState {
             db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: UtcOffset::UTC,
         };
         let response = import_transactions(
             State(state.clone()),
@@ -748,6 +756,7 @@ mod import_transactions_tests {
             Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
         let state = ImportState {
             db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: UtcOffset::UTC,
         };
 
         let response = import_transactions(
@@ -1029,6 +1038,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
+            local_timezone: UtcOffset::UTC,
         };
 
         // Create tags and rules for auto-tagging
@@ -1073,6 +1083,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
+            local_timezone: UtcOffset::UTC,
         };
 
         // Create tags but no rules that match the imported transactions
@@ -1114,6 +1125,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
+            local_timezone: UtcOffset::UTC,
         };
 
         // Create only one rule that matches some transactions
@@ -1156,6 +1168,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
+            local_timezone: UtcOffset::UTC,
         };
 
         // Create tags and rules

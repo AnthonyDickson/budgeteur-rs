@@ -13,11 +13,11 @@ use axum::{
 use axum_server::Handle;
 use clap::Parser;
 use rusqlite::Connection;
+use time::{OffsetDateTime, UtcOffset};
+use time_tz::{Offset, TimeZone};
 use tower_http::trace::TraceLayer;
-
 #[cfg(debug_assertions)]
 use tower_livereload::LiveReloadLayer;
-
 use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use budgeteur_rs::{AppState, build_router, graceful_shutdown, logging_middleware};
@@ -29,6 +29,11 @@ struct Args {
     /// File path to the application SQLite database.
     #[arg(long)]
     db_path: String,
+
+    /// A canonical timezone in the IANA tz database, e.g. "Pacific/Auckland".
+    /// If not specified, tries to auto-detect the host system's timezone.
+    #[arg(short, long)]
+    timezone: Option<String>,
 
     /// The IP address to serve from.
     #[arg(short, long, default_value = "127.0.0.1")]
@@ -68,7 +73,11 @@ async fn main() {
     let addr = SocketAddr::from((address, args.port));
     let conn = Connection::open(&args.db_path)
         .unwrap_or_else(|_| panic!("Could not open database file at {}: ", args.db_path));
-    let app_config = match AppState::new(conn, &secret, Default::default()) {
+    let Some(timezone) = get_timezone(args.timezone.as_deref()) else {
+        eprint!("{} is not a valid timezone name.", args.timezone.unwrap());
+        exit(1);
+    };
+    let app_config = match AppState::new(conn, &secret, timezone, Default::default()) {
         Ok(config) => config,
         Err(error) => {
             eprintln!("Could not initialize database: {error}");
@@ -138,4 +147,15 @@ fn add_tracing_layer(router: Router) -> Router {
     router
         .layer(axum::middleware::from_fn(logging_middleware))
         .layer(tracing_layer)
+}
+
+fn get_timezone(timezone_arg: Option<&str>) -> Option<UtcOffset> {
+    if let Some(timezone_name) = timezone_arg {
+        match time_tz::timezones::get_by_name(&timezone_name) {
+            Some(tz) => Some(tz.get_offset_utc(&OffsetDateTime::now_utc()).to_utc()),
+            None => None,
+        }
+    } else {
+        Some(UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC))
+    }
 }

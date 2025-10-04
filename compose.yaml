@@ -11,6 +11,7 @@ services:
         --port 8080 
         --db-path /app/data/budgeteur.db
         --log-path /app/data/debug.log
+        --timezone Pacific/Auckland
     ports:
       # Change the port on the left if you want to change the port your PC
       # connects to.

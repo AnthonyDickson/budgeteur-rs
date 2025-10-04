@@ -164,3 +164,19 @@ docker run --rm -p 8080:8080 -e SECRET=<YOUR-SECRET> -it ghcr.io/anthonydickson/
 > [!NOTE]
 > Add `-v $(pwd):/app/data` to the above command (before `-it`) to persist
 > the app database after the container has stopped.
+
+## Dates and Timezones
+
+All dates and times shall use:
+
+1. the timezone specified in the CLI flags or
+1. the local timezone as specified by the host operating system or
+1. the UTC+00:00 timezone if the host operating system's local timezone cannot be determined.
+
+The app shall assume all dates and times from the web client use the timezone as determined above.
+
+The CLI shall accept canonical timezones as specified in <https://en.wikipedia.org/w/index.php?title=List_of_tz_database_time_zones&oldid=1309592143#List>
+
+### Limitations
+
+The timezone is only set when the server is started. You will have to restart the server to update the timezone for daylight savings.

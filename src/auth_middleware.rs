@@ -1,20 +1,48 @@
 //! Authentication middleware that validates cookies, extends sessions, and handles redirects.
 
 use axum::{
-    extract::{FromRequestParts, Request, State},
+    extract::{FromRef, FromRequestParts, Request, State},
     http::{StatusCode, header::SET_COOKIE},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
-use axum_extra::extract::PrivateCookieJar;
+use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
-use time::Duration;
+use time::{Duration, UtcOffset};
 
 use crate::{
+    AppState,
     auth_cookie::{extend_auth_cookie_duration_if_needed, get_user_id_from_auth_cookie},
     endpoints,
-    state::AuthState,
 };
+
+/// The state needed for the auth middleware
+#[derive(Clone)]
+pub struct AuthState {
+    /// The key to be used for signing and encrypting private cookies.
+    pub cookie_key: Key,
+    /// The duration for which cookies used for authentication are valid.
+    pub cookie_duration: Duration,
+    /// The local timezone as a UTC offset.
+    pub local_timezone: UtcOffset,
+}
+
+impl FromRef<AppState> for AuthState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            cookie_key: state.cookie_key.clone(),
+            cookie_duration: state.cookie_duration,
+            local_timezone: state.local_timezone,
+        }
+    }
+}
+
+// this impl tells `PrivateCookieJar` how to access the key from our state
+impl FromRef<AuthState> for Key {
+    fn from_ref(state: &AuthState) -> Self {
+        state.cookie_key.clone()
+    }
+}
 
 /// Middleware function that checks for a valid authorization cookie.
 /// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the log-in page is returned using `get_redirect`.
@@ -47,7 +75,11 @@ async fn auth_guard_internal(
     let response = next.run(request).await;
 
     let (mut parts, body) = response.into_parts();
-    let jar = match extend_auth_cookie_duration_if_needed(jar.clone(), Duration::minutes(5)) {
+    let jar = match extend_auth_cookie_duration_if_needed(
+        jar.clone(),
+        Duration::minutes(5),
+        state.local_timezone,
+    ) {
         Ok(updated_jar) => updated_jar,
         Err(err) => {
             tracing::error!("Error extending cookie duration: {err:?}. Rolling back cookie jar.");
@@ -114,14 +146,13 @@ mod auth_guard_tests {
     };
     use axum_test::TestServer;
     use sha2::Digest;
-    use time::{Duration, OffsetDateTime};
+    use time::{Duration, OffsetDateTime, UtcOffset};
 
     use crate::{
         Error,
         auth_cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
-        auth_middleware::auth_guard,
+        auth_middleware::{AuthState, auth_guard},
         endpoints::{self, format_endpoint},
-        state::AuthState,
         user::UserID,
     };
 
@@ -133,7 +164,12 @@ mod auth_guard_tests {
         State(state): State<AuthState>,
         jar: PrivateCookieJar,
     ) -> Result<PrivateCookieJar, Error> {
-        set_auth_cookie(jar, UserID::new(1), state.cookie_duration)
+        set_auth_cookie(
+            jar,
+            UserID::new(1),
+            state.cookie_duration,
+            state.local_timezone,
+        )
     }
 
     const TEST_LOG_IN_ROUTE_PATH: &str = "/log_in/{user_id}";
@@ -144,6 +180,7 @@ mod auth_guard_tests {
         let state = AuthState {
             cookie_key: Key::from(&hash),
             cookie_duration,
+            local_timezone: UtcOffset::UTC,
         };
 
         let app = Router::new()
