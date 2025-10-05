@@ -14,22 +14,21 @@ use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use time::Duration;
+use time::{Duration, UtcOffset};
 
 use crate::{
     AppState, Error,
     auth_cookie::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
     endpoints,
-    shared_templates::{EmailInputTemplate, PasswordInputTemplate, render},
+    shared_templates::{PasswordInputTemplate, render},
     state::create_cookie_key,
-    user::{User, get_user_by_email},
+    user::{User, UserID, get_user_by_id},
 };
 
 /// Renders a log-in form with client-side and server-side validation.
 #[derive(Template)]
 #[template(path = "partials/log_in/form.html")]
 pub struct LogInFormTemplate<'a> {
-    pub email_input: EmailInputTemplate<'a>,
     pub password_input: PasswordInputTemplate<'a>,
     pub log_in_route: &'a str,
     pub forgot_password_route: &'a str,
@@ -39,7 +38,6 @@ pub struct LogInFormTemplate<'a> {
 impl Default for LogInFormTemplate<'_> {
     fn default() -> Self {
         Self {
-            email_input: Default::default(),
             password_input: Default::default(),
             log_in_route: endpoints::LOG_IN_API,
             forgot_password_route: endpoints::FORGOT_PASSWORD_VIEW,
@@ -70,15 +68,22 @@ pub struct LoginState {
     pub cookie_key: Key,
     /// The duration for which cookies used for authentication are valid.
     pub cookie_duration: Duration,
+    /// The local timezone as a UTC offset.
+    pub local_timezone: UtcOffset,
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
 impl LoginState {
     /// Create the cookie key from a string and set the default cookie duration.
-    pub fn new(cookie_secret: &str, db_connection: Arc<Mutex<Connection>>) -> Self {
+    pub fn new(
+        cookie_secret: &str,
+        local_timezone: UtcOffset,
+        db_connection: Arc<Mutex<Connection>>,
+    ) -> Self {
         Self {
             cookie_key: create_cookie_key(cookie_secret),
             cookie_duration: DEFAULT_COOKIE_DURATION,
+            local_timezone: local_timezone,
             db_connection: db_connection.clone(),
         }
     }
@@ -89,6 +94,7 @@ impl FromRef<AppState> for LoginState {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
+            local_timezone: state.local_timezone,
             db_connection: state.db_connection.clone(),
         }
     }
@@ -109,7 +115,6 @@ impl FromRef<LoginState> for Key {
 /// # Errors
 ///
 /// This function will return an error in a few situations.
-/// - The email does not belong to a registered user.
 /// - The password is not correct.
 /// - An internal error occurred when verifying the password.
 ///
@@ -121,9 +126,8 @@ pub async fn post_log_in(
     jar: PrivateCookieJar,
     Form(user_data): Form<LogInData>,
 ) -> Response {
-    let email = &user_data.email;
-    let user: User = match get_user_by_email(
-        email,
+    let user: User = match get_user_by_id(
+        UserID::new(1),
         &state
             .db_connection
             .lock()
@@ -133,17 +137,16 @@ pub async fn post_log_in(
         Err(Error::NotFound) => {
             return render(
                 StatusCode::OK,
-                create_log_in_error_response(email, INVALID_CREDENTIALS_ERROR_MSG),
+                create_log_in_error_response(
+                    "Password not set, go to the registration page and set your password",
+                ),
             );
         }
         Err(error) => {
             tracing::error!("Unhandled error while verifying credentials: {error}");
             return render(
                 StatusCode::OK,
-                create_log_in_error_response(
-                    email,
-                    "An internal error occurred. Please try again later.",
-                ),
+                create_log_in_error_response("An internal error occurred. Please try again later."),
             );
         }
     };
@@ -154,10 +157,7 @@ pub async fn post_log_in(
             tracing::error!("Unhandled error while verifying credentials: {error}");
             return render(
                 StatusCode::OK,
-                create_log_in_error_response(
-                    email,
-                    "An internal error occurred. Please try again later.",
-                ),
+                create_log_in_error_response("An internal error occurred. Please try again later."),
             );
         }
     };
@@ -165,7 +165,7 @@ pub async fn post_log_in(
     if !is_password_valid {
         return render(
             StatusCode::OK,
-            create_log_in_error_response(email, INVALID_CREDENTIALS_ERROR_MSG),
+            create_log_in_error_response(INVALID_CREDENTIALS_ERROR_MSG),
         );
     }
 
@@ -175,7 +175,7 @@ pub async fn post_log_in(
         state.cookie_duration
     };
 
-    set_auth_cookie(jar.clone(), user.id, cookie_duration)
+    set_auth_cookie(jar.clone(), user.id, cookie_duration, state.local_timezone)
         .map(|updated_jar| {
             (
                 StatusCode::SEE_OTHER,
@@ -194,15 +194,8 @@ pub async fn post_log_in(
         .into_response()
 }
 
-fn create_log_in_error_response<'a>(
-    email_input: &'a str,
-    error_message: &'a str,
-) -> LogInFormTemplate<'a> {
+fn create_log_in_error_response<'a>(error_message: &'a str) -> LogInFormTemplate<'a> {
     LogInFormTemplate {
-        email_input: EmailInputTemplate {
-            value: email_input,
-            error_message: "",
-        },
         password_input: PasswordInputTemplate {
             value: "",
             min_length: 0,
@@ -212,18 +205,17 @@ fn create_log_in_error_response<'a>(
     }
 }
 
-pub const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect email or password.";
+pub const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect password.";
 
 /// The raw data entered by the user in the log-in form.
 ///
-/// The email and password are stored as plain strings. There is no need for validation here since
-/// they will be compared against the email and password in the database, which have been verified.
+/// The password is stored as a plain string. There is no need for validation here since
+/// it will be compared against the password in the database, which has been verified.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct LogInData {
-    /// Email entered during log-in.
-    pub email: String,
     /// Password entered during log-in.
     pub password: String,
+
     /// Whether to extend the initial auth cookie duration.
     ///
     /// This value comes from a checkbox, so it either has a string value or is not set
@@ -249,6 +241,7 @@ mod log_in_page_tests {
     use axum_extra::extract::PrivateCookieJar;
     use rusqlite::Connection;
     use scraper::Html;
+    use time::UtcOffset;
 
     use crate::{endpoints, user::create_user_table};
 
@@ -291,7 +284,7 @@ mod log_in_page_tests {
         );
 
         let mut expected_form_elements: HashMap<&str, Vec<&str>> = HashMap::new();
-        expected_form_elements.insert("input", vec!["email", "password"]);
+        expected_form_elements.insert("input", vec!["password"]);
         expected_form_elements.insert("button", vec!["submit"]);
 
         for (tag, element_types) in expected_form_elements {
@@ -329,7 +322,6 @@ mod log_in_page_tests {
         let state = get_test_app_config(None);
         let jar = PrivateCookieJar::new(state.cookie_key.clone());
         let form = LogInData {
-            email: "foo@bar.baz".to_string(),
             password: "wrongpassword".to_string(),
             remember_me: None,
         };
@@ -370,8 +362,8 @@ mod log_in_page_tests {
 
         let p_text = p.text().collect::<String>();
         assert!(
-            p_text.contains(INVALID_CREDENTIALS_ERROR_MSG),
-            "error message should contain string \"{INVALID_CREDENTIALS_ERROR_MSG}\" but got {p_text}"
+            p_text.contains("Password not set"),
+            "error message should contain string \"{INVALID_CREDENTIALS_ERROR_MSG}\" but got \"{p_text}\""
         );
     }
 
@@ -383,17 +375,13 @@ mod log_in_page_tests {
         if let Some(test_user) = test_user {
             connection
                 .execute(
-                    "INSERT INTO user (id, email, password) VALUES (?1, ?2, ?3)",
-                    (
-                        test_user.id.as_i64(),
-                        test_user.email.as_str(),
-                        &test_user.password_hash.to_string(),
-                    ),
+                    "INSERT INTO user (id, password) VALUES (?1, ?2)",
+                    (test_user.id.as_i64(), &test_user.password_hash.to_string()),
                 )
                 .expect("Could not create test user");
         }
 
-        LoginState::new("foobar", Arc::new(Mutex::new(connection)))
+        LoginState::new("foobar", UtcOffset::UTC, Arc::new(Mutex::new(connection)))
     }
 
     #[track_caller]
@@ -426,7 +414,7 @@ mod log_in_tests {
     use axum_test::TestServer;
 
     use rusqlite::Connection;
-    use time::{Duration, OffsetDateTime};
+    use time::{Duration, OffsetDateTime, UtcOffset};
 
     use crate::{
         PasswordHash, ValidatedPassword,
@@ -444,7 +432,6 @@ mod log_in_tests {
     async fn log_in_succeeds_with_valid_credentials() {
         let state = get_test_app_config(Some(&User {
             id: UserID::new(1),
-            email: "test@test.com".parse().expect("Could not parse test email"),
             password_hash: PasswordHash::new(
                 ValidatedPassword::new_unchecked("test"),
                 PasswordHash::DEFAULT_COST,
@@ -455,7 +442,6 @@ mod log_in_tests {
         let response = new_log_in_request(
             state,
             LogInData {
-                email: "test@test.com".to_string(),
                 password: "test".to_string(),
                 remember_me: None,
             },
@@ -504,11 +490,7 @@ mod log_in_tests {
             .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(state);
         let server = TestServer::new(app).expect("Could not create test server.");
-        let form = [
-            ("email", "test@test.com"),
-            ("password", "test"),
-            ("remember_me", "on"),
-        ];
+        let form = [("password", "test"), ("remember_me", "on")];
 
         let response = server.post(endpoints::LOG_IN_API).form(&form).await;
 
@@ -519,7 +501,6 @@ mod log_in_tests {
     async fn remember_me_extends_auth_cookie_through_form() {
         let state = get_test_app_config(Some(&User {
             id: UserID::new(1),
-            email: "test@test.com".parse().expect("Could not parse test email"),
             password_hash: PasswordHash::new(
                 ValidatedPassword::new_unchecked("test"),
                 PasswordHash::DEFAULT_COST,
@@ -530,11 +511,7 @@ mod log_in_tests {
             .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(state);
         let server = TestServer::new(app).expect("Could not create test server.");
-        let form = [
-            ("email", "test@test.com"),
-            ("password", "test"),
-            ("remember_me", "on"),
-        ];
+        let form = [("password", "test"), ("remember_me", "on")];
 
         let response = server.post(endpoints::LOG_IN_API).form(&form).await;
 
@@ -554,7 +531,7 @@ mod log_in_tests {
             .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(state);
         let server = TestServer::new(app).expect("Could not create test server.");
-        let form = [("email", "test@test.com"), ("password", "test")];
+        let form = [("password", "test")];
 
         let response = server.post(endpoints::LOG_IN_API).form(&form).await;
 
@@ -562,28 +539,9 @@ mod log_in_tests {
     }
 
     #[tokio::test]
-    async fn log_in_fails_with_incorrect_email() {
-        let state = get_test_app_config(None);
-
-        let response = new_log_in_request(
-            state,
-            LogInData {
-                email: "wrong@email.com".to_string(),
-                password: "test".to_string(),
-                remember_me: None,
-            },
-        )
-        .await;
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_body_contains_message(response, INVALID_CREDENTIALS_ERROR_MSG).await;
-    }
-
-    #[tokio::test]
     async fn log_in_fails_with_incorrect_password() {
         let state = get_test_app_config(Some(&User {
             id: UserID::new(1),
-            email: "test@test.com".parse().expect("Could not parse test email"),
             password_hash: PasswordHash::new(
                 ValidatedPassword::new_unchecked("test"),
                 PasswordHash::DEFAULT_COST,
@@ -594,7 +552,6 @@ mod log_in_tests {
         let response = new_log_in_request(
             state,
             LogInData {
-                email: "test@test.com".to_string(),
                 password: "wrongpassword".to_string(),
                 remember_me: None,
             },
@@ -614,17 +571,13 @@ mod log_in_tests {
         if let Some(test_user) = test_user {
             connection
                 .execute(
-                    "INSERT INTO user (id, email, password) VALUES (?1, ?2, ?3)",
-                    (
-                        test_user.id.as_i64(),
-                        test_user.email.as_str(),
-                        &test_user.password_hash.to_string(),
-                    ),
+                    "INSERT INTO user (id,password) VALUES (?1, ?2)",
+                    (test_user.id.as_i64(), &test_user.password_hash.to_string()),
                 )
                 .expect("Could not create test user");
         }
 
-        LoginState::new("foobar", Arc::new(Mutex::new(connection)))
+        LoginState::new("foobar", UtcOffset::UTC, Arc::new(Mutex::new(connection)))
     }
 
     async fn new_log_in_request(state: LoginState, log_in_form: LogInData) -> Response<Body> {

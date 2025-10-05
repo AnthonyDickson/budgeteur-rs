@@ -9,13 +9,6 @@ use axum::{
 use crate::endpoints;
 
 #[derive(Template, Default)]
-#[template(path = "partials/register/inputs/email.html")]
-pub struct EmailInputTemplate<'a> {
-    pub value: &'a str,
-    pub error_message: &'a str,
-}
-
-#[derive(Template, Default)]
 #[template(path = "partials/register/inputs/password.html")]
 pub struct PasswordInputTemplate<'a> {
     pub value: &'a str,

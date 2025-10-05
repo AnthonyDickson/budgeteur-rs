@@ -6,7 +6,7 @@ use axum::extract::FromRef;
 use axum_extra::extract::cookie::Key;
 use rusqlite::Connection;
 use sha2::{Digest, Sha512};
-use time::Duration;
+use time::{Duration, UtcOffset};
 
 use crate::{
     Error, auth_cookie::DEFAULT_COOKIE_DURATION, db::initialize, pagination::PaginationConfig,
@@ -17,10 +17,16 @@ use crate::{
 pub struct AppState {
     /// The key to be used for signing and encrypting private cookies.
     pub cookie_key: Key,
+
     /// The duration for which cookies used for authentication are valid.
     pub cookie_duration: Duration,
+
+    /// The local timezone as a UTC offset.
+    pub local_timezone: UtcOffset,
+
     /// The config that controls how to display pages of data.
     pub pagination_config: PaginationConfig,
+
     /// The database connection
     pub db_connection: Arc<Mutex<Connection>>,
 }
@@ -35,6 +41,7 @@ impl AppState {
     pub fn new(
         db_connection: Connection,
         cookie_secret: &str,
+        local_timezone: UtcOffset,
         pagination_config: PaginationConfig,
     ) -> Result<Self, Error> {
         initialize(&db_connection)?;
@@ -44,6 +51,7 @@ impl AppState {
         Ok(Self {
             cookie_key: create_cookie_key(cookie_secret),
             cookie_duration: DEFAULT_COOKIE_DURATION,
+            local_timezone,
             pagination_config,
             db_connection: connection,
         })
@@ -64,31 +72,6 @@ pub fn create_cookie_key(secret: &str) -> Key {
     Key::from(&hash)
 }
 
-/// The state needed for the auth middleware
-#[derive(Clone)]
-pub struct AuthState {
-    /// The key to be used for signing and encrypting private cookies.
-    pub cookie_key: Key,
-    /// The duration for which cookies used for authentication are valid.
-    pub cookie_duration: Duration,
-}
-
-impl FromRef<AppState> for AuthState {
-    fn from_ref(state: &AppState) -> Self {
-        Self {
-            cookie_key: state.cookie_key.clone(),
-            cookie_duration: state.cookie_duration,
-        }
-    }
-}
-
-// this impl tells `PrivateCookieJar` how to access the key from our state
-impl FromRef<AuthState> for Key {
-    fn from_ref(state: &AuthState) -> Self {
-        state.cookie_key.clone()
-    }
-}
-
 /// The state needed to get or create a transaction.
 #[derive(Debug, Clone)]
 pub struct TransactionState {
@@ -103,6 +86,3 @@ impl FromRef<AppState> for TransactionState {
         }
     }
 }
-
-/// The state needed for displaying the dashboard page.
-pub type DashboardState = TransactionState;

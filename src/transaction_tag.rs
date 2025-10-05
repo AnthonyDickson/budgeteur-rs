@@ -179,8 +179,10 @@ pub fn set_transaction_tags(
 
 #[cfg(test)]
 mod transaction_tag_junction_tests {
-    use rusqlite::Connection;
     use std::collections::HashSet;
+
+    use rusqlite::Connection;
+    use time::macros::date;
 
     use crate::{
         Error,
@@ -214,7 +216,7 @@ mod transaction_tag_junction_tests {
         connection: &Connection,
     ) -> Transaction {
         create_transaction(
-            Transaction::build(amount).description(description),
+            Transaction::build(amount, date!(2025 - 10 - 05), description.to_owned()),
             connection,
         )
         .expect("Could not create test transaction")
@@ -230,12 +232,12 @@ mod transaction_tag_junction_tests {
         let tag = create_test_tag("Groceries", &connection);
         let transaction = create_test_transaction(50.0, "Store purchase", &connection);
 
-        let result = add_tag_to_transaction(transaction.id(), tag.id, &connection);
+        let result = add_tag_to_transaction(transaction.id, tag.id, &connection);
 
         assert!(result.is_ok());
 
         // Verify the relationship was created
-        let tags = get_transaction_tags(transaction.id(), &connection)
+        let tags = get_transaction_tags(transaction.id, &connection)
             .expect("Could not get transaction tags");
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0], tag);
@@ -248,16 +250,16 @@ mod transaction_tag_junction_tests {
         let transaction = create_test_transaction(50.0, "Store purchase", &connection);
 
         // First add the tag
-        add_tag_to_transaction(transaction.id(), tag.id, &connection)
+        add_tag_to_transaction(transaction.id, tag.id, &connection)
             .expect("Could not add tag to transaction");
 
         // Then remove it
-        let result = remove_tag_from_transaction(transaction.id(), tag.id, &connection);
+        let result = remove_tag_from_transaction(transaction.id, tag.id, &connection);
 
         assert!(result.is_ok());
 
         // Verify the relationship was removed
-        let tags = get_transaction_tags(transaction.id(), &connection)
+        let tags = get_transaction_tags(transaction.id, &connection)
             .expect("Could not get transaction tags");
         assert_eq!(tags.len(), 0);
     }
@@ -271,11 +273,11 @@ mod transaction_tag_junction_tests {
         let transaction = create_test_transaction(50.0, "Store purchase", &connection);
 
         // Add tags to transaction
-        add_tag_to_transaction(transaction.id(), tag1.id, &connection).expect("Could not add tag1");
-        add_tag_to_transaction(transaction.id(), tag3.id, &connection).expect("Could not add tag3");
+        add_tag_to_transaction(transaction.id, tag1.id, &connection).expect("Could not add tag1");
+        add_tag_to_transaction(transaction.id, tag3.id, &connection).expect("Could not add tag3");
         // Intentionally not adding tag2
 
-        let tags = get_transaction_tags(transaction.id(), &connection)
+        let tags = get_transaction_tags(transaction.id, &connection)
             .expect("Could not get transaction tags");
         let tag_set: HashSet<_> = tags.into_iter().collect();
 
@@ -288,7 +290,7 @@ mod transaction_tag_junction_tests {
         let connection = get_test_connection();
         let transaction = create_test_transaction(50.0, "Store purchase", &connection);
 
-        let tags = get_transaction_tags(transaction.id(), &connection)
+        let tags = get_transaction_tags(transaction.id, &connection)
             .expect("Could not get transaction tags");
 
         assert_eq!(tags.len(), 0);
@@ -303,17 +305,17 @@ mod transaction_tag_junction_tests {
         let transaction = create_test_transaction(50.0, "Store purchase", &connection);
 
         // First add some tags
-        add_tag_to_transaction(transaction.id(), tag1.id, &connection).expect("Could not add tag1");
-        add_tag_to_transaction(transaction.id(), tag2.id, &connection).expect("Could not add tag2");
+        add_tag_to_transaction(transaction.id, tag1.id, &connection).expect("Could not add tag1");
+        add_tag_to_transaction(transaction.id, tag2.id, &connection).expect("Could not add tag2");
 
         // Replace with different set of tags
         let new_tag_ids = vec![tag2.id, tag3.id];
-        let result = set_transaction_tags(transaction.id(), &new_tag_ids, &connection);
+        let result = set_transaction_tags(transaction.id, &new_tag_ids, &connection);
 
         assert!(result.is_ok());
 
         // Verify the tags were replaced
-        let tags = get_transaction_tags(transaction.id(), &connection)
+        let tags = get_transaction_tags(transaction.id, &connection)
             .expect("Could not get transaction tags");
         let tag_set: HashSet<_> = tags.into_iter().collect();
 
@@ -329,16 +331,16 @@ mod transaction_tag_junction_tests {
         let transaction = create_test_transaction(50.0, "Store purchase", &connection);
 
         // First add some tags
-        add_tag_to_transaction(transaction.id(), tag1.id, &connection).expect("Could not add tag1");
-        add_tag_to_transaction(transaction.id(), tag2.id, &connection).expect("Could not add tag2");
+        add_tag_to_transaction(transaction.id, tag1.id, &connection).expect("Could not add tag1");
+        add_tag_to_transaction(transaction.id, tag2.id, &connection).expect("Could not add tag2");
 
         // Set to empty list
-        let result = set_transaction_tags(transaction.id(), &[], &connection);
+        let result = set_transaction_tags(transaction.id, &[], &connection);
 
         assert!(result.is_ok());
 
         // Verify all tags were removed
-        let tags = get_transaction_tags(transaction.id(), &connection)
+        let tags = get_transaction_tags(transaction.id, &connection)
             .expect("Could not get transaction tags");
         assert_eq!(tags.len(), 0);
     }
@@ -353,7 +355,7 @@ mod transaction_tag_junction_tests {
         let transaction = create_test_transaction(50.0, "Store purchase", &connection);
         let invalid_tag_id = 999999; // Non-existent tag ID
 
-        let result = add_tag_to_transaction(transaction.id(), invalid_tag_id, &connection);
+        let result = add_tag_to_transaction(transaction.id, invalid_tag_id, &connection);
 
         assert!(matches!(result, Err(Error::InvalidTag)));
     }
@@ -366,12 +368,12 @@ mod transaction_tag_junction_tests {
         let invalid_tag_id = 999999; // Non-existent tag ID
 
         let invalid_tag_ids = vec![tag1.id, invalid_tag_id];
-        let result = set_transaction_tags(transaction.id(), &invalid_tag_ids, &connection);
+        let result = set_transaction_tags(transaction.id, &invalid_tag_ids, &connection);
 
         assert!(matches!(result, Err(Error::InvalidTag)));
 
         // Verify transaction was rolled back - no tags should be added
-        let tags = get_transaction_tags(transaction.id(), &connection)
+        let tags = get_transaction_tags(transaction.id, &connection)
             .expect("Could not get transaction tags");
         assert_eq!(tags.len(), 0);
     }
@@ -383,7 +385,7 @@ mod transaction_tag_junction_tests {
         let transaction = create_test_transaction(50.0, "Store purchase", &connection);
 
         // Try to remove a tag that was never added
-        let result = remove_tag_from_transaction(transaction.id(), tag.id, &connection);
+        let result = remove_tag_from_transaction(transaction.id, tag.id, &connection);
 
         // Should succeed (idempotent operation)
         assert!(result.is_ok());
@@ -421,11 +423,11 @@ mod transaction_tag_junction_tests {
         let transaction = create_test_transaction(50.0, "Store purchase", &connection);
 
         // Add tag once
-        add_tag_to_transaction(transaction.id(), tag.id, &connection)
+        add_tag_to_transaction(transaction.id, tag.id, &connection)
             .expect("Could not add tag first time");
 
         // Try to add the same tag again
-        let result = add_tag_to_transaction(transaction.id(), tag.id, &connection);
+        let result = add_tag_to_transaction(transaction.id, tag.id, &connection);
 
         // Should fail due to unique constraint
         assert!(result.is_err());
@@ -439,15 +441,15 @@ mod transaction_tag_junction_tests {
         let transaction2 = create_test_transaction(30.0, "Market purchase", &connection);
 
         // Add same tag to both transactions
-        add_tag_to_transaction(transaction1.id(), tag.id, &connection)
+        add_tag_to_transaction(transaction1.id, tag.id, &connection)
             .expect("Could not add tag to transaction1");
-        add_tag_to_transaction(transaction2.id(), tag.id, &connection)
+        add_tag_to_transaction(transaction2.id, tag.id, &connection)
             .expect("Could not add tag to transaction2");
 
         // Verify both transactions have the tag
-        let tags1 = get_transaction_tags(transaction1.id(), &connection)
+        let tags1 = get_transaction_tags(transaction1.id, &connection)
             .expect("Could not get tags for transaction1");
-        let tags2 = get_transaction_tags(transaction2.id(), &connection)
+        let tags2 = get_transaction_tags(transaction2.id, &connection)
             .expect("Could not get tags for transaction2");
 
         assert_eq!(tags1.len(), 1);
@@ -465,17 +467,17 @@ mod transaction_tag_junction_tests {
         let invalid_tag_id = 999999;
 
         // First add a tag
-        add_tag_to_transaction(transaction.id(), tag1.id, &connection)
+        add_tag_to_transaction(transaction.id, tag1.id, &connection)
             .expect("Could not add initial tag");
 
         // Try to set tags with one valid and one invalid ID
         let mixed_tag_ids = vec![tag2.id, invalid_tag_id];
-        let result = set_transaction_tags(transaction.id(), &mixed_tag_ids, &connection);
+        let result = set_transaction_tags(transaction.id, &mixed_tag_ids, &connection);
 
         assert!(matches!(result, Err(Error::InvalidTag)));
 
         // Verify the original tag is still there (transaction was rolled back)
-        let tags = get_transaction_tags(transaction.id(), &connection)
+        let tags = get_transaction_tags(transaction.id, &connection)
             .expect("Could not get transaction tags");
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0], tag1);
@@ -489,14 +491,10 @@ mod transaction_tag_junction_tests {
         let tag_name = TagName::new_unchecked("TestTag");
         let tag = create_tag(tag_name, &connection).expect("Could not create test tag");
 
-        let transaction = crate::transaction::create_transaction(
-            crate::transaction::Transaction::build(100.0).description("Test transaction"),
-            &connection,
-        )
-        .expect("Could not create test transaction");
+        let transaction = create_test_transaction(100.0, "Test transaction", &connection);
 
         // Add tag to transaction
-        add_tag_to_transaction(transaction.id(), tag.id, &connection)
+        add_tag_to_transaction(transaction.id, tag.id, &connection)
             .expect("Could not add tag to transaction");
 
         // Verify relationship exists

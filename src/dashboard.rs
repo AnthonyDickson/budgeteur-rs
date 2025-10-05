@@ -2,25 +2,27 @@
 
 use askama::Template;
 use axum::{
-    extract::State,
+    extract::{FromRef, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Form;
 use rusqlite::{Connection, params_from_iter};
 use serde::Deserialize;
-use std::ops::RangeInclusive;
-use time::{Date, Duration, OffsetDateTime};
+use std::{
+    ops::RangeInclusive,
+    sync::{Arc, Mutex},
+};
+use time::{Date, Duration, OffsetDateTime, UtcOffset};
 
 use crate::{
-    Error,
+    AppState, Error,
     balances::get_total_account_balance,
     dashboard_preferences::{get_excluded_tags, save_excluded_tags},
     database_id::DatabaseID,
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
-    state::DashboardState,
     tag::{Tag, get_all_tags},
 };
 
@@ -131,6 +133,24 @@ pub fn get_transaction_summary(
 // TEMPLATES AND HANDLERS
 // ============================================================================
 
+/// The state needed for displaying the dashboard page.
+#[derive(Debug, Clone)]
+pub struct DashboardState {
+    /// The database connection for managing transactions.
+    pub db_connection: Arc<Mutex<Connection>>,
+    /// The local timezone as a UTC offset.
+    pub local_timezone: UtcOffset,
+}
+
+impl FromRef<AppState> for DashboardState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+            local_timezone: state.local_timezone,
+        }
+    }
+}
+
 /// Renders the dashboard page.
 #[derive(Template)]
 #[template(path = "views/dashboard.html")]
@@ -148,7 +168,9 @@ struct DashboardTemplate<'a> {
 pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response {
     let nav_bar = get_nav_bar(endpoints::DASHBOARD_VIEW);
 
-    let today = OffsetDateTime::now_utc().date();
+    let today = OffsetDateTime::now_utc()
+        .to_offset(state.local_timezone)
+        .date();
     let connection = state.db_connection.lock().unwrap();
 
     // Get available tags and excluded tags for dashboard summaries
@@ -248,7 +270,9 @@ pub async fn update_excluded_tags(
     }
 
     // Get updated summaries
-    let today = OffsetDateTime::now_utc().date();
+    let today = OffsetDateTime::now_utc()
+        .to_offset(state.local_timezone)
+        .date();
     let excluded_tags_slice = if excluded_tags.is_empty() {
         None
     } else {
@@ -297,13 +321,13 @@ mod dashboard_route_tests {
         http::{Response, StatusCode},
     };
     use scraper::{Html, Selector};
-    use time::{Duration, OffsetDateTime};
+    use time::{Duration, OffsetDateTime, UtcOffset};
 
     use crate::{
+        dashboard::DashboardState,
         dashboard_preferences::save_excluded_tags,
         database_id::DatabaseID,
         db::initialize,
-        state::DashboardState,
         tag::{TagName, create_tag},
         transaction::{Transaction, create_transaction},
         transaction_tag::set_transaction_tags,
@@ -326,27 +350,21 @@ mod dashboard_route_tests {
         let today = OffsetDateTime::now_utc().date();
 
         // Create transactions for monthly summary (within last 30 days)
-        create_transaction(Transaction::build(100.0).date(today).unwrap(), &conn).unwrap();
+        create_transaction(Transaction::build(100.0, today, "".to_owned()), &conn).unwrap();
         create_transaction(
-            Transaction::build(-50.0)
-                .date(today - Duration::days(15))
-                .unwrap(),
+            Transaction::build(-50.0, today - Duration::days(15), "".to_owned()),
             &conn,
         )
         .unwrap();
 
         // Create transactions for yearly summary (within last 365 days but outside monthly range)
         create_transaction(
-            Transaction::build(200.0)
-                .date(today - Duration::days(60))
-                .unwrap(),
+            Transaction::build(200.0, today - Duration::days(60), "".to_owned()),
             &conn,
         )
         .unwrap();
         create_transaction(
-            Transaction::build(-100.0)
-                .date(today - Duration::days(180))
-                .unwrap(),
+            Transaction::build(-100.0, today - Duration::days(180), "".to_owned()),
             &conn,
         )
         .unwrap();
@@ -365,6 +383,7 @@ mod dashboard_route_tests {
 
         let state = DashboardState {
             db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: UtcOffset::UTC,
         };
 
         let response = get_dashboard_page(State(state)).await;
@@ -453,21 +472,22 @@ mod dashboard_route_tests {
 
         // Create transactions
         let excluded_transaction =
-            create_transaction(Transaction::build(100.0).date(today).unwrap(), &conn).unwrap();
+            create_transaction(Transaction::build(100.0, today, "".to_owned()), &conn).unwrap();
         let included_transaction =
-            create_transaction(Transaction::build(50.0).date(today).unwrap(), &conn).unwrap();
+            create_transaction(Transaction::build(50.0, today, "".to_owned()), &conn).unwrap();
         let _untagged_transaction =
-            create_transaction(Transaction::build(25.0).date(today).unwrap(), &conn).unwrap();
+            create_transaction(Transaction::build(25.0, today, "".to_owned()), &conn).unwrap();
 
         // Tag transactions
-        set_transaction_tags(excluded_transaction.id(), &[excluded_tag.id], &conn).unwrap();
-        set_transaction_tags(included_transaction.id(), &[included_tag.id], &conn).unwrap();
+        set_transaction_tags(excluded_transaction.id, &[excluded_tag.id], &conn).unwrap();
+        set_transaction_tags(included_transaction.id, &[included_tag.id], &conn).unwrap();
 
         // Set excluded tags
         save_excluded_tags(vec![excluded_tag.id], &conn).unwrap();
 
         let state = DashboardState {
             db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: UtcOffset::UTC,
         };
 
         let response = get_dashboard_page(State(state)).await;
@@ -510,17 +530,18 @@ mod dashboard_route_tests {
 
         // Create transactions
         let tagged_transaction =
-            create_transaction(Transaction::build(100.0).date(today).unwrap(), &conn).unwrap();
+            create_transaction(Transaction::build(100.0, today, "".to_owned()), &conn).unwrap();
         let _untagged_transaction =
-            create_transaction(Transaction::build(50.0).date(today).unwrap(), &conn).unwrap();
+            create_transaction(Transaction::build(50.0, today, "".to_owned()), &conn).unwrap();
 
         // Tag one transaction
-        set_transaction_tags(tagged_transaction.id(), &[tag.id], &conn).unwrap();
+        set_transaction_tags(tagged_transaction.id, &[tag.id], &conn).unwrap();
 
         // Don't exclude any tags (default state)
 
         let state = DashboardState {
             db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: UtcOffset::UTC,
         };
 
         let response = get_dashboard_page(State(state)).await;
@@ -561,19 +582,15 @@ mod get_transaction_summary_tests {
         let end_date = date!(2024 - 01 - 31);
 
         // Create test transactions
-        create_transaction(Transaction::build(100.0).date(start_date).unwrap(), &conn).unwrap();
+        create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn).unwrap();
         create_transaction(
-            Transaction::build(-50.0)
-                .date(date!(2024 - 01 - 15))
-                .unwrap(),
+            Transaction::build(-50.0, date!(2024 - 01 - 15), "".to_owned()),
             &conn,
         )
         .unwrap();
-        create_transaction(Transaction::build(75.0).date(end_date).unwrap(), &conn).unwrap();
+        create_transaction(Transaction::build(75.0, end_date, "".to_owned()), &conn).unwrap();
         create_transaction(
-            Transaction::build(-25.0)
-                .date(date!(2024 - 01 - 20))
-                .unwrap(),
+            Transaction::build(-25.0, date!(2024 - 01 - 20), "".to_owned()),
             &conn,
         )
         .unwrap();
@@ -609,21 +626,17 @@ mod get_transaction_summary_tests {
         let end_date = date!(2024 - 01 - 31);
 
         // Transactions within range
-        create_transaction(Transaction::build(100.0).date(start_date).unwrap(), &conn).unwrap();
-        create_transaction(Transaction::build(-50.0).date(end_date).unwrap(), &conn).unwrap();
+        create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn).unwrap();
+        create_transaction(Transaction::build(-50.0, end_date, "".to_owned()), &conn).unwrap();
 
         // Transactions outside range
         create_transaction(
-            Transaction::build(200.0)
-                .date(date!(2023 - 12 - 31))
-                .unwrap(),
+            Transaction::build(200.0, date!(2023 - 12 - 31), "".to_owned()),
             &conn,
         )
         .unwrap();
         create_transaction(
-            Transaction::build(-100.0)
-                .date(date!(2024 - 02 - 01))
-                .unwrap(),
+            Transaction::build(-100.0, date!(2024 - 02 - 01), "".to_owned()),
             &conn,
         )
         .unwrap();
@@ -647,15 +660,16 @@ mod get_transaction_summary_tests {
 
         // Create test transactions
         let excluded_transaction =
-            create_transaction(Transaction::build(100.0).date(start_date).unwrap(), &conn).unwrap();
+            create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn)
+                .unwrap();
         let included_transaction =
-            create_transaction(Transaction::build(50.0).date(start_date).unwrap(), &conn).unwrap();
+            create_transaction(Transaction::build(50.0, start_date, "".to_owned()), &conn).unwrap();
         let _untagged_transaction =
-            create_transaction(Transaction::build(25.0).date(start_date).unwrap(), &conn).unwrap();
+            create_transaction(Transaction::build(25.0, start_date, "".to_owned()), &conn).unwrap();
 
         // Tag transactions
-        set_transaction_tags(excluded_transaction.id(), &[excluded_tag.id], &conn).unwrap();
-        set_transaction_tags(included_transaction.id(), &[included_tag.id], &conn).unwrap();
+        set_transaction_tags(excluded_transaction.id, &[excluded_tag.id], &conn).unwrap();
+        set_transaction_tags(included_transaction.id, &[included_tag.id], &conn).unwrap();
 
         // Get summary excluding the excluded tag
         let excluded_tags = vec![excluded_tag.id];
@@ -680,12 +694,13 @@ mod get_transaction_summary_tests {
 
         // Create test transactions
         let tagged_transaction =
-            create_transaction(Transaction::build(100.0).date(start_date).unwrap(), &conn).unwrap();
+            create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn)
+                .unwrap();
         let _untagged_transaction =
-            create_transaction(Transaction::build(50.0).date(start_date).unwrap(), &conn).unwrap();
+            create_transaction(Transaction::build(50.0, start_date, "".to_owned()), &conn).unwrap();
 
         // Tag one transaction
-        set_transaction_tags(tagged_transaction.id(), &[tag.id], &conn).unwrap();
+        set_transaction_tags(tagged_transaction.id, &[tag.id], &conn).unwrap();
 
         // Get summary with no exclusions
         let result = get_transaction_summary(start_date..=end_date, None, &conn).unwrap();

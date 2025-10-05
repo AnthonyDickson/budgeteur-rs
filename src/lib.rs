@@ -91,14 +91,8 @@ pub async fn graceful_shutdown(handle: Handle) {
 /// The errors that may occur in the application.
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error {
-    /// The email used to create the user is already in use.
-    ///
-    /// The client should try again with a different email address.
-    #[error("the email is already in use")]
-    DuplicateEmail,
-
-    /// The user provided an invalid combination of email and password.
-    #[error("invalid email or password")]
+    /// The user provided an invalid combination of password.
+    #[error("invalid password")]
     InvalidCredentials,
 
     /// Either the user ID or expiry cookie is missing from the cookie jar in
@@ -192,11 +186,6 @@ impl From<rusqlite::Error> for Error {
     fn from(value: rusqlite::Error) -> Self {
         match value {
             // Code 2067 occurs when a UNIQUE constraint failed.
-            rusqlite::Error::SqliteFailure(sql_error, Some(ref desc))
-                if sql_error.extended_code == 2067 && desc.contains("email") =>
-            {
-                Error::DuplicateEmail
-            }
             rusqlite::Error::SqliteFailure(sql_error, Some(ref desc))
                 if sql_error.extended_code == 2067 && desc.ends_with("transaction.import_id") =>
             {

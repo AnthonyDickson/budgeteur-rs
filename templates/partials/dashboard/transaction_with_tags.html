@@ -3,11 +3,11 @@
     scope="row"
     class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white"
   >
-    {{ transaction.id() }}
+    {{ transaction.id }}
   </th>
-  <td class="px-6 py-4 text-right">${{ "{:.0}"|format(transaction.amount()) }}</td>
-  <td class="px-6 py-4">{{ transaction.date() }}</td>
-  <td class="px-6 py-4">{{ transaction.description() }}</td>
+  <td class="px-6 py-4 text-right">${{ "{:.0}"|format(transaction.amount) }}</td>
+  <td class="px-6 py-4">{{ transaction.date }}</td>
+  <td class="px-6 py-4">{{ transaction.description }}</td>
   <td class="px-6 py-4">
     {% if let Some(error) = tag_error %}
       <span class="text-red-600 dark:text-red-400 text-xs">Error: {{ error }}</span>

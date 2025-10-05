@@ -27,13 +27,13 @@ pub async fn logging_middleware(request: Request, next: Next) -> Response {
     let uri = request.uri().clone();
     let response = next.run(request).await;
 
-    let (headers, body_text) = extract_header_and_body_text_from_response(response).await;
-
     if uri.path().starts_with(endpoints::STATIC) {
-        log_response(&headers, &format!("see {uri} for static file contents."));
-    } else {
-        log_response(&headers, &body_text);
+        tracing::info!("See {uri} for response contents.");
+        return response;
     }
+
+    let (headers, body_text) = extract_header_and_body_text_from_response(response).await;
+    log_response(&headers, &body_text);
 
     Response::from_parts(headers, body_text.into())
 }

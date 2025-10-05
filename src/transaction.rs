@@ -11,7 +11,6 @@ use std::{
 };
 
 use askama::Template;
-use askama::Template as AxumTemplate;
 use axum::{
     Json,
     extract::{FromRef, Path, Query, State},
@@ -22,7 +21,7 @@ use axum_extra::extract::Form;
 use axum_htmx::HxRedirect;
 use rusqlite::{Connection, Row, params_from_iter, types::Value};
 use serde::{Deserialize, Serialize};
-use time::{Date, OffsetDateTime};
+use time::{Date, OffsetDateTime, UtcOffset};
 
 use crate::{
     AppState, Error,
@@ -45,68 +44,29 @@ use crate::{
 /// To create a new `Transaction`, use [Transaction::build].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transaction {
-    id: DatabaseID,
-    amount: f64,
-    date: Date,
-    description: String,
-    import_id: Option<i64>,
+    /// The ID of the transaction.
+    pub id: DatabaseID,
+    /// The amount of money spent or earned in this transaction.
+    pub amount: f64,
+    /// When the transaction happened.
+    pub date: Date,
+    /// A text description of what the transaction was for.
+    pub description: String,
+    /// The ID of the import that this transaction belongs to.
+    pub import_id: Option<i64>,
 }
 
 impl Transaction {
-    /// Create a new transaction without checking invariants such as a valid date.
+    /// Create a new transaction.
     ///
-    /// This function is intended to be used when loading data from a trusted source such as the
-    /// application databases/stores which validate data on insertion. You **should not** use this
-    /// function with unvalidated data.
-    ///
-    /// This function has `_unchecked` in the name but is not `unsafe`, because if an invalid date
-    /// is provided it may cause incorrect behaviour but will not affect memory safety.
-    pub fn new_unchecked(
-        id: DatabaseID,
-        amount: f64,
-        date: Date,
-        description: String,
-        import_id: Option<i64>,
-    ) -> Self {
-        Self {
-            id,
+    /// Shortcut for [TransactionBuilder] for discoverability.
+    pub fn build(amount: f64, date: Date, description: String) -> TransactionBuilder {
+        TransactionBuilder {
             amount,
             date,
             description,
-            import_id,
+            import_id: None,
         }
-    }
-
-    /// Create a new transaction.
-    ///
-    /// Shortcut for [TransactionBuilder::new] for discoverability.
-    pub fn build(amount: f64) -> TransactionBuilder {
-        TransactionBuilder::new(amount)
-    }
-
-    /// The ID of the transaction.
-    pub fn id(&self) -> DatabaseID {
-        self.id
-    }
-
-    /// The amount of money spent or earned in this transaction.
-    pub fn amount(&self) -> f64 {
-        self.amount
-    }
-
-    /// When the transaction happened.
-    pub fn date(&self) -> &Date {
-        &self.date
-    }
-
-    /// A text description of what the transaction was for.
-    pub fn description(&self) -> &str {
-        &self.description
-    }
-
-    /// The ID of the import that this transaction belongs to.
-    pub fn import_id(&self) -> Option<i64> {
-        self.import_id
     }
 }
 
@@ -119,21 +79,19 @@ impl Transaction {
 /// # Examples
 ///
 /// ```rust
-/// use time::macros::date;
+/// use time::{macros::date, UtcOffset};
 ///
 /// use budgeteur_rs::transaction::Transaction;
 ///
-/// // Simple transaction with just an amount
-/// let transaction = Transaction::build(150.00)
-///     .finalise(1);
-///
 /// // Transaction with full details
-/// let transaction = Transaction::build(-45.99)
-///     .date(date!(2025-01-15))
-///     .unwrap()
-///     .description("Coffee shop purchase")
+/// let transaction = Transaction::build(
+///         -45.99,
+///         date!(2025-01-15),
+///         "Coffee shop purchase".to_owned()
+///     )
 ///     .import_id(Some(987654321))
-///     .finalise(2);
+///     .finalize(2, UtcOffset::UTC)
+///     .unwrap();
 /// ```
 #[derive(Debug, PartialEq, Clone)]
 pub struct TransactionBuilder {
@@ -192,52 +150,30 @@ pub struct TransactionBuilder {
 }
 
 impl TransactionBuilder {
-    /// Create a new transaction.
-    ///
-    /// Finalize the builder with [TransactionBuilder::finalise].
-    pub fn new(amount: f64) -> Self {
-        Self {
-            amount,
-            date: OffsetDateTime::now_utc().date(),
-            description: String::new(),
-            import_id: None,
-        }
+    /// Set the import ID for the transaction.
+    pub fn import_id(mut self, import_id: Option<i64>) -> Self {
+        self.import_id = import_id;
+        self
     }
 
     /// Build the final [Transaction] instance.
-    pub fn finalise(self, id: DatabaseID) -> Transaction {
-        Transaction {
+    ///
+    /// `local_timezone` is used to check that `.date` is not a future date.
+    ///
+    /// # Errors
+    /// This function will return an error if `date` is a date in the future.
+    pub fn finalize(self, id: DatabaseID, local_timezone: UtcOffset) -> Result<Transaction, Error> {
+        if self.date > OffsetDateTime::now_utc().to_offset(local_timezone).date() {
+            return Err(Error::FutureDate);
+        }
+
+        Ok(Transaction {
             id,
             amount: self.amount,
             date: self.date,
             description: self.description,
             import_id: self.import_id,
-        }
-    }
-
-    /// Set the date for the transaction.
-    ///
-    /// # Errors
-    /// This function will return an error if `date` is a date in the future.
-    pub fn date(mut self, date: Date) -> Result<Self, Error> {
-        if date > OffsetDateTime::now_utc().date() {
-            return Err(Error::FutureDate);
-        }
-
-        self.date = date;
-        Ok(self)
-    }
-
-    /// Set the description for the transaction.
-    pub fn description(mut self, description: &str) -> Self {
-        self.description = description.to_owned();
-        self
-    }
-
-    /// Set the import ID for the transaction.
-    pub fn import_id(mut self, import_id: Option<i64>) -> Self {
-        self.import_id = import_id;
-        self
+        })
     }
 }
 
@@ -284,14 +220,7 @@ pub async fn create_transaction_endpoint(
     State(state): State<TransactionState>,
     Form(data): Form<TransactionForm>,
 ) -> impl IntoResponse {
-    let transaction = Transaction::build(data.amount)
-        .description(&data.description)
-        .date(data.date);
-
-    let transaction = match transaction {
-        Ok(transaction) => transaction,
-        Err(e) => return e.into_response(),
-    };
+    let transaction = Transaction::build(data.amount, data.date, data.description);
 
     let connection = state.db_connection.lock().unwrap();
     let created_transaction = match create_transaction(transaction, &connection) {
@@ -300,11 +229,11 @@ pub async fn create_transaction_endpoint(
     };
 
     if !data.tag_ids.is_empty()
-        && let Err(e) = set_transaction_tags(created_transaction.id(), &data.tag_ids, &connection)
+        && let Err(e) = set_transaction_tags(created_transaction.id, &data.tag_ids, &connection)
     {
         tracing::error!(
             "Failed to assign tags to transaction {}: {e}",
-            created_transaction.id()
+            created_transaction.id
         );
         return e.into_response();
     }
@@ -587,8 +516,13 @@ fn map_transaction_row(row: &Row) -> Result<Transaction, rusqlite::Error> {
     let description = row.get(3)?;
     let import_id = row.get(4)?;
 
-    let transaction = Transaction::new_unchecked(id, amount, date, description, import_id);
-    Ok(transaction)
+    Ok(Transaction {
+        id,
+        amount,
+        date,
+        description,
+        import_id,
+    })
 }
 
 // ============================================================================
@@ -608,6 +542,8 @@ struct NewTransactionTemplate<'a> {
 /// The state needed for the new transaction page.
 #[derive(Debug, Clone)]
 pub struct NewTransactionPageState {
+    /// The local timezone as a UTC offset.
+    pub local_timezone: UtcOffset,
     /// The database connection for accessing tags.
     pub db_connection: Arc<Mutex<Connection>>,
 }
@@ -615,6 +551,7 @@ pub struct NewTransactionPageState {
 impl FromRef<AppState> for NewTransactionPageState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            local_timezone: state.local_timezone,
             db_connection: state.db_connection.clone(),
         }
     }
@@ -646,7 +583,9 @@ pub async fn get_new_transaction_page(State(state): State<NewTransactionPageStat
         NewTransactionTemplate {
             nav_bar,
             create_transaction_route: endpoints::TRANSACTIONS_API,
-            max_date: time::OffsetDateTime::now_utc().date(),
+            max_date: time::OffsetDateTime::now_utc()
+                .to_offset(state.local_timezone)
+                .date(),
             available_tags,
         },
     )
@@ -684,12 +623,12 @@ pub async fn get_transactions_page(
     let transactions = transactions
         .into_iter()
         .map(|transaction| {
-            let (tags, tag_error) = match get_transaction_tags(transaction.id(), &connection) {
+            let (tags, tag_error) = match get_transaction_tags(transaction.id, &connection) {
                 Ok(tags) => (tags, None),
                 Err(error) => {
                     tracing::error!(
                         "Failed to get tags for transaction {}: {error}",
-                        transaction.id()
+                        transaction.id
                     );
                     (Vec::new(), Some("Failed to load tags".to_string()))
                 }
@@ -747,7 +686,7 @@ pub struct Pagination {
 }
 
 /// Renders the dashboard page.
-#[derive(AxumTemplate)]
+#[derive(Template)]
 #[template(path = "views/transactions.html")]
 struct TransactionsTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
@@ -773,46 +712,65 @@ struct TransactionsTemplate<'a> {
 mod transaction_builder_tests {
     use std::f64::consts::PI;
 
-    use time::{Duration, OffsetDateTime};
+    use time::{Duration, OffsetDateTime, UtcOffset};
 
     use super::{Error, Transaction, TransactionBuilder};
 
     #[test]
-    fn new_fails_on_future_date() {
+    fn finalize_fails_on_future_date() {
         let tomorrow = OffsetDateTime::now_utc()
             .date()
             .checked_add(Duration::days(1))
             .unwrap();
 
-        let result = TransactionBuilder::new(123.45).date(tomorrow);
+        let result = TransactionBuilder {
+            amount: 123.45,
+            date: tomorrow,
+            description: "".to_owned(),
+            import_id: None,
+        }
+        .finalize(123, UtcOffset::UTC);
 
         assert_eq!(result, Err(Error::FutureDate));
     }
 
     #[test]
-    fn new_succeeds_on_today() {
+    fn finalize_succeeds_on_today() {
         let today = OffsetDateTime::now_utc().date();
 
-        let transaction_builder = TransactionBuilder::new(123.45).date(today);
+        let transaction = TransactionBuilder {
+            amount: 123.45,
+            date: today,
+            description: "".to_owned(),
+            import_id: None,
+        }
+        .finalize(123, UtcOffset::UTC);
 
-        assert!(transaction_builder.is_ok());
-
-        let transaction = transaction_builder.unwrap().finalise(1);
-        assert_eq!(transaction.date(), &today);
+        match transaction {
+            Ok(Transaction { date: got_date, .. }) => assert_eq!(today, got_date),
+            Err(error) => panic!("Got unexpected error {error}"),
+        }
     }
 
     #[test]
-    fn new_succeeds_on_past_date() {
+    fn finalize_succeeds_on_past_date() {
         let yesterday = OffsetDateTime::now_utc()
             .date()
             .checked_sub(Duration::days(1))
             .unwrap();
 
-        let result = TransactionBuilder::new(123.45).date(yesterday);
+        let result = TransactionBuilder {
+            amount: 123.45,
+            date: yesterday,
+            description: "".to_owned(),
+            import_id: None,
+        }
+        .finalize(123, UtcOffset::UTC);
 
-        assert!(result.is_ok());
-        let transaction = result.unwrap().finalise(1);
-        assert_eq!(transaction.date(), &yesterday);
+        match result {
+            Ok(Transaction { date: got_date, .. }) => assert_eq!(yesterday, got_date),
+            Err(error) => panic!("Got unexpected error {error}"),
+        }
     }
 
     #[test]
@@ -823,18 +781,20 @@ mod transaction_builder_tests {
         let description = "Rust Pie".to_string();
         let import_id = Some(123456789);
 
-        let transaction = Transaction::build(amount)
-            .description(&description)
-            .date(date)
-            .unwrap()
+        let result = Transaction::build(amount, date, description.clone())
             .import_id(import_id)
-            .finalise(id);
+            .finalize(id, UtcOffset::UTC);
 
-        assert_eq!(transaction.id(), id);
-        assert_eq!(transaction.amount(), amount);
-        assert_eq!(transaction.date(), &date);
-        assert_eq!(transaction.description(), description);
-        assert_eq!(transaction.import_id(), import_id);
+        match result {
+            Ok(transaction) => {
+                assert_eq!(transaction.id, id);
+                assert_eq!(transaction.amount, amount);
+                assert_eq!(transaction.date, date);
+                assert_eq!(transaction.description, description);
+                assert_eq!(transaction.import_id, import_id);
+            }
+            Err(error) => panic!("Unexpected error: {error}"),
+        }
     }
 }
 
@@ -843,11 +803,16 @@ mod database_tests {
     use std::f64::consts::PI;
 
     use rusqlite::Connection;
-    use time::{Duration, OffsetDateTime};
+    use time::{Duration, OffsetDateTime, macros::date};
 
-    use crate::{Error, db::initialize};
-
-    use super::*;
+    use crate::{
+        Error,
+        db::initialize,
+        transaction::{
+            SortOrder, Transaction, count_transactions, create_transaction, get_transaction,
+            get_transactions_paginated, import_transactions, map_transaction_row,
+        },
+    };
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -860,22 +825,32 @@ mod database_tests {
         let conn = get_test_connection();
         let amount = 12.3;
 
-        let result = create_transaction(Transaction::build(amount), &conn);
+        let result = create_transaction(
+            Transaction::build(amount, date!(2025 - 10 - 05), "".to_owned()),
+            &conn,
+        );
 
-        assert!(result.is_ok());
-        let transaction = result.unwrap();
-        assert_eq!(transaction.amount(), amount);
+        match result {
+            Ok(transaction) => assert_eq!(transaction.amount, amount),
+            Err(error) => panic!("Unexpected error: {error}"),
+        }
     }
 
     #[test]
     fn create_fails_on_duplicate_import_id() {
         let conn = get_test_connection();
         let import_id = Some(123456789);
-        create_transaction(Transaction::build(123.45).import_id(import_id), &conn)
-            .expect("Could not create transaction");
+        let today = date!(2025 - 10 - 04);
+        create_transaction(
+            Transaction::build(123.45, today, "".to_owned()).import_id(import_id),
+            &conn,
+        )
+        .expect("Could not create transaction");
 
-        let duplicate_transaction =
-            create_transaction(Transaction::build(123.45).import_id(import_id), &conn);
+        let duplicate_transaction = create_transaction(
+            Transaction::build(123.45, today, "".to_owned()).import_id(import_id),
+            &conn,
+        );
 
         assert_eq!(duplicate_transaction, Err(Error::DuplicateImportId));
     }
@@ -883,9 +858,10 @@ mod database_tests {
     #[test]
     fn import_multiple() {
         let conn = get_test_connection();
+        let today = date!(2025 - 10 - 04);
         let want = vec![
-            Transaction::build(123.45).import_id(Some(123456789)),
-            Transaction::build(678.90).import_id(Some(101112131)),
+            Transaction::build(123.45, today, "".to_owned()).import_id(Some(123456789)),
+            Transaction::build(678.90, today, "".to_owned()).import_id(Some(101112131)),
         ];
 
         let imported_transactions =
@@ -899,28 +875,30 @@ mod database_tests {
             imported_transactions.len()
         );
 
-        want.into_iter()
-            .zip(imported_transactions.iter())
-            .for_each(|(want, got)| {
-                let want = want.finalise(got.id());
-                let error_message = format!("want transaction {want:?}, got {got:?}");
-                assert_eq!(want.amount(), got.amount(), "{error_message}");
-                assert_eq!(want.date(), got.date(), "{error_message}");
-                assert_eq!(want.description(), got.description(), "{error_message}");
-                assert_eq!(want.import_id(), got.import_id(), "{error_message}");
-            });
+        for (want, got) in want.iter().zip(imported_transactions) {
+            assert_eq!(want.amount, got.amount);
+            assert_eq!(want.date, got.date);
+            assert_eq!(want.description, got.description);
+            assert_eq!(want.import_id, got.import_id);
+        }
     }
 
     #[test]
     fn import_ignores_duplicate_import_id() {
         let conn = get_test_connection();
         let import_id = Some(123456789);
-        let want = create_transaction(Transaction::build(123.45).import_id(import_id), &conn)
-            .expect("Could not create transaction");
+        let today = date!(2025 - 10 - 04);
+        let want = create_transaction(
+            Transaction::build(123.45, today, "".to_owned()).import_id(import_id),
+            &conn,
+        )
+        .expect("Could not create transaction");
 
-        let duplicate_transactions =
-            import_transactions(vec![Transaction::build(123.45).import_id(import_id)], &conn)
-                .expect("Could not import transactions");
+        let duplicate_transactions = import_transactions(
+            vec![Transaction::build(123.45, today, "".to_owned()).import_id(import_id)],
+            &conn,
+        )
+        .expect("Could not import transactions");
 
         // The import should return 0 transactions since the import_id already exists
         assert_eq!(
@@ -949,19 +927,19 @@ mod database_tests {
 
         // Verify the original transaction is unchanged
         let stored_transaction = &all_transactions[0];
-        assert_eq!(stored_transaction.amount(), want.amount());
-        assert_eq!(stored_transaction.date(), want.date());
-        assert_eq!(stored_transaction.description(), want.description());
-        assert_eq!(stored_transaction.import_id(), want.import_id());
+        assert_eq!(stored_transaction.amount, want.amount);
+        assert_eq!(stored_transaction.date, want.date);
+        assert_eq!(stored_transaction.description, want.description);
+        assert_eq!(stored_transaction.import_id, want.import_id);
     }
 
     #[tokio::test]
     async fn import_escapes_single_quotes() {
         let conn = get_test_connection();
+        let today = date!(2025 - 10 - 05);
         let want = vec![
-            Transaction::build(123.45)
-                .import_id(Some(123456789))
-                .description("Tom's Hardware"),
+            Transaction::build(123.45, today, "Tom's Hardware".to_owned())
+                .import_id(Some(123456789)),
         ];
 
         let imported_transactions =
@@ -976,23 +954,23 @@ mod database_tests {
         );
 
         want.into_iter()
-            .zip(imported_transactions.iter())
+            .zip(imported_transactions)
             .for_each(|(want, got)| {
-                let want = want.finalise(got.id());
-                let error_message = format!("want transaction {want:?}, got {got:?}");
-                assert_eq!(want.amount(), got.amount(), "{error_message}");
-                assert_eq!(want.date(), got.date(), "{error_message}");
-                assert_eq!(want.description(), got.description(), "{error_message}");
-                assert_eq!(want.import_id(), got.import_id(), "{error_message}");
+                assert_eq!(want.amount, got.amount);
+                assert_eq!(want.date, got.date);
+                assert_eq!(want.description, got.description);
+                assert_eq!(want.import_id, got.import_id);
             });
     }
 
     #[test]
     fn get_transaction_by_id_succeeds() {
         let conn = get_test_connection();
-        let transaction = create_transaction(Transaction::build(PI), &conn).unwrap();
+        let today = date!(2025 - 10 - 05);
+        let transaction =
+            create_transaction(Transaction::build(PI, today, "".to_owned()), &conn).unwrap();
 
-        let selected_transaction = get_transaction(transaction.id(), &conn);
+        let selected_transaction = get_transaction(transaction.id, &conn);
 
         assert_eq!(Ok(transaction), selected_transaction);
     }
@@ -1000,9 +978,11 @@ mod database_tests {
     #[test]
     fn get_transaction_fails_on_invalid_id() {
         let conn = get_test_connection();
-        let transaction = create_transaction(Transaction::build(123.0), &conn).unwrap();
+        let today = date!(2025 - 10 - 05);
+        let transaction =
+            create_transaction(Transaction::build(123.0, today, "".to_owned()), &conn).unwrap();
 
-        let transaction_result = get_transaction(transaction.id() + 654, &conn);
+        let transaction_result = get_transaction(transaction.id + 654, &conn);
 
         assert_eq!(transaction_result, Err(Error::NotFound));
     }
@@ -1014,10 +994,11 @@ mod database_tests {
         let today = OffsetDateTime::now_utc().date();
 
         for i in 1..=10 {
-            let transaction_builder = TransactionBuilder::new(i as f64)
-                .date(today.checked_sub(Duration::days(i)).unwrap())
-                .unwrap()
-                .description(&format!("transaction #{i}"));
+            let transaction_builder = Transaction::build(
+                i as f64,
+                today - Duration::days(i),
+                format!("transaction #{i}"),
+            );
 
             create_transaction(transaction_builder, &conn).unwrap();
         }
@@ -1032,10 +1013,12 @@ mod database_tests {
         let conn = get_test_connection();
         let offset = 10;
         let limit = 5;
+        let today = date!(2025 - 10 - 05);
         let mut want = Vec::new();
         for i in 1..20 {
-            let transaction = create_transaction(Transaction::build(i as f64), &conn)
-                .expect("Could not create transaction");
+            let transaction =
+                create_transaction(Transaction::build(i as f64, today, "".to_owned()), &conn)
+                    .expect("Could not create transaction");
 
             if i > offset && i <= offset + limit {
                 want.push(transaction);
@@ -1051,24 +1034,19 @@ mod database_tests {
     #[test]
     fn get_transactions_descending_date() {
         let conn = get_test_connection();
-
+        let start_date = OffsetDateTime::now_utc().date() - Duration::weeks(2);
         let mut want = vec![];
-        let start_date = OffsetDateTime::now_utc()
-            .date()
-            .checked_sub(Duration::weeks(2))
-            .unwrap();
-
         for i in 1..=3 {
-            let transaction_builder = TransactionBuilder::new(i as f64)
-                .date(start_date.checked_add(Duration::days(i)).unwrap())
-                .unwrap()
-                .description(&format!("transaction #{i}"));
+            let transaction_builder = Transaction::build(
+                i as f64,
+                start_date - Duration::days(i),
+                format!("transaction #{i}"),
+            );
 
             let transaction = create_transaction(transaction_builder, &conn).unwrap();
             want.push(transaction);
         }
-
-        want.sort_by(|a, b| b.date().cmp(a.date()));
+        want.sort_by(|a, b| b.date.cmp(&a.date));
 
         let got = conn
             .prepare("SELECT id, amount, date, description, import_id FROM \"transaction\" ORDER BY date DESC").unwrap()
@@ -1086,9 +1064,10 @@ mod database_tests {
     #[test]
     fn get_count() {
         let conn = get_test_connection();
+        let today = date!(2025 - 10 - 05);
         let want_count = 20;
         for i in 1..=want_count {
-            create_transaction(Transaction::build(i as f64), &conn)
+            create_transaction(Transaction::build(i as f64, today, "".to_owned()), &conn)
                 .expect("Could not create transaction");
         }
 
@@ -1111,7 +1090,7 @@ mod view_tests {
     };
     use rusqlite::Connection;
     use scraper::{ElementRef, Html, Selector, selectable::Selectable};
-    use time::OffsetDateTime;
+    use time::{OffsetDateTime, UtcOffset, macros::date};
 
     use crate::{
         db::initialize,
@@ -1123,8 +1102,8 @@ mod view_tests {
     };
 
     use super::{
-        NewTransactionPageState, Pagination, Transaction, TransactionBuilder,
-        TransactionsViewState, create_transaction, get_new_transaction_page, get_transactions_page,
+        NewTransactionPageState, Pagination, Transaction, TransactionsViewState,
+        create_transaction, get_new_transaction_page, get_transactions_page,
     };
 
     fn get_test_connection() -> Connection {
@@ -1137,6 +1116,7 @@ mod view_tests {
     async fn new_transaction_returns_form() {
         let conn = get_test_connection();
         let state = NewTransactionPageState {
+            local_timezone: UtcOffset::UTC,
             db_connection: Arc::new(Mutex::new(conn)),
         };
         let response = get_new_transaction_page(State(state)).await;
@@ -1313,10 +1293,11 @@ mod view_tests {
     #[tokio::test]
     async fn transactions_page_displays_paged_data() {
         let conn = get_test_connection();
+        let today = date!(2025 - 10 - 05);
 
         // Create 30 transactions in the database
         for i in 1..=30 {
-            create_transaction(TransactionBuilder::new(i as f64), &conn).unwrap();
+            create_transaction(Transaction::build(i as f64, today, "".to_owned()), &conn).unwrap();
         }
 
         let state = TransactionsViewState {
@@ -1329,9 +1310,27 @@ mod view_tests {
         let per_page = 3;
         let page = 5;
         let want_transactions = [
-            TransactionBuilder::new(1.0).finalise(13),
-            TransactionBuilder::new(1.0).finalise(14),
-            TransactionBuilder::new(1.0).finalise(15),
+            Transaction {
+                id: 13,
+                amount: 1.0,
+                date: today,
+                description: "".to_owned(),
+                import_id: None,
+            },
+            Transaction {
+                id: 14,
+                amount: 1.0,
+                date: today,
+                description: "".to_owned(),
+                import_id: None,
+            },
+            Transaction {
+                id: 15,
+                amount: 1.0,
+                date: today,
+                description: "".to_owned(),
+                import_id: None,
+            },
         ];
         let want_indicators = [
             PaginationIndicator::BackButton(4),
@@ -1397,10 +1396,9 @@ mod view_tests {
             });
 
             assert_eq!(
-                got_id,
-                want.id(),
+                got_id, want.id,
                 "Want transaction with ID {}, got {got_id}",
-                want.id()
+                want.id
             );
         }
     }
@@ -1578,6 +1576,7 @@ mod view_tests {
     #[tokio::test]
     async fn transactions_page_displays_tags_column() {
         let conn = get_test_connection();
+        let today = date!(2025 - 10 - 05);
 
         // Create test tags
         let tag1 = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
@@ -1585,24 +1584,24 @@ mod view_tests {
 
         // Create transactions
         let transaction1 = create_transaction(
-            TransactionBuilder::new(50.0).description("Store purchase"),
+            Transaction::build(50.0, today, "Store purchase".to_owned()),
             &conn,
         )
         .unwrap();
         let transaction2 = create_transaction(
-            TransactionBuilder::new(25.0).description("Restaurant"),
+            Transaction::build(25.0, today, "Restaurant".to_owned()),
             &conn,
         )
         .unwrap();
         let _transaction3 = create_transaction(
-            TransactionBuilder::new(100.0).description("No tags transaction"),
+            Transaction::build(100.0, today, "No tags transaction".to_owned()),
             &conn,
         )
         .unwrap();
 
         // Assign tags to transactions
-        set_transaction_tags(transaction1.id(), &[tag1.id, tag2.id], &conn).unwrap();
-        set_transaction_tags(transaction2.id(), &[tag1.id], &conn).unwrap();
+        set_transaction_tags(transaction1.id, &[tag1.id, tag2.id], &conn).unwrap();
+        set_transaction_tags(transaction2.id, &[tag1.id], &conn).unwrap();
         // transaction3 gets no tags
 
         let state = TransactionsViewState {
@@ -1677,9 +1676,13 @@ mod view_tests {
 
     #[test]
     fn transaction_table_row_displays_tag_error() {
-        let transaction = Transaction::build(50.0)
-            .description("Test transaction")
-            .finalise(1);
+        let transaction = Transaction {
+            id: 1,
+            amount: 50.0,
+            date: date!(2025 - 10 - 05),
+            description: "Test transaction".to_owned(),
+            import_id: None,
+        };
 
         let row_with_error = TransactionTableRow {
             transaction: transaction.clone(),
@@ -1737,15 +1740,12 @@ mod route_handler_tests {
     };
     use axum_extra::extract::Form;
     use axum_htmx::HX_REDIRECT;
-    use time::OffsetDateTime;
+    use time::{OffsetDateTime, macros::date};
 
     use crate::{
         db::initialize,
         state::TransactionState,
-        transaction::{
-            Transaction, TransactionBuilder, create_transaction as create_transaction_db,
-            get_transaction,
-        },
+        transaction::{Transaction, create_transaction as create_transaction_db, get_transaction},
         transaction_tag::get_transaction_tags,
     };
     use rusqlite::Connection;
@@ -1782,8 +1782,8 @@ mod route_handler_tests {
         // We know the first transaction will have ID 1
         let connection = state.db_connection.lock().unwrap();
         let transaction = get_transaction(1, &connection).unwrap();
-        assert_eq!(transaction.amount(), 12.3);
-        assert_eq!(transaction.description(), "test transaction");
+        assert_eq!(transaction.amount, 12.3);
+        assert_eq!(transaction.description, "test transaction");
     }
 
     #[tokio::test]
@@ -1816,7 +1816,7 @@ mod route_handler_tests {
         // Verify the transaction was created with tags
         let connection = state.db_connection.lock().unwrap();
         let transaction = get_transaction(1, &connection).unwrap();
-        let tags = get_transaction_tags(transaction.id(), &connection).unwrap();
+        let tags = get_transaction_tags(transaction.id, &connection).unwrap();
 
         assert_eq!(tags.len(), 2);
         assert!(tags.contains(&tag1));
@@ -1834,13 +1834,13 @@ mod route_handler_tests {
         let transaction = {
             let connection = state.db_connection.lock().unwrap();
             create_transaction_db(
-                TransactionBuilder::new(13.34).description("foobar"),
+                Transaction::build(13.34, date!(2025 - 10 - 05), "foobar".to_owned()),
                 &connection,
             )
             .unwrap()
         };
 
-        let response = get_transaction_endpoint(State(state), Path(transaction.id()))
+        let response = get_transaction_endpoint(State(state), Path(transaction.id))
             .await
             .into_response();
 
