@@ -1,6 +1,5 @@
 # To Do
 
-- Add screenshots of app in README.md
 - Add thousands separator to monetary amounts by implementing custom currency filter for Askama
 - Add thousands separator to timing durations (e.g., 1,234ms instead of 1234ms) for better readability
 - Organise the import, import_result and csv into a new module, `import` and only expose what's necessary. The `mod.rs` file should be minimal and just contain re-exports

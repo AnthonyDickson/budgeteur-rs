@@ -1,7 +1,9 @@
-# Budgeteur-rs
+# Budgeteur
 
 [![Build & Test](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/ci.yml)
 [![Build & Push Docker Image](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/cd.yaml/badge.svg)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/cd.yaml)
+
+## About
 
 Budgeteur is a budgeting and personal finance web-app.
 
@@ -10,15 +12,23 @@ This app aims to provide two services:
 - Budgeting: Recording your income and expenses, and tracking savings targets.
 - Personal Finance: Keeping track of your net worth.
 
-This application is intended for a single user and to be self-hosted.
+This application is intended for a single user and to be self-hosted on a home server.
+
+![Screenshot of the dashboard page of Budgeteur](./assets/dashboard_sample.jpeg)
+
+## Table of Contents
 
 <!--toc:start-->
 
-- [Budgeteur-rs](#budgeteur-rs)
+- [Budgeteur](#budgeteur)
+  - [About](#about)
+  - [Table of Contents](#table-of-contents)
   - [Why?](#why)
+  - [Getting Started](#getting-started)
     - [First-Time Usage](#first-time-usage)
     - [Resetting Your Password](#resetting-your-password)
-  - [Set Up Development Environment](#set-up-development-environment)
+  - [Dates and Timezones](#dates-and-timezones)
+  - [Development](#development)
     - [Nix Flake](#nix-flake)
     - [First Time Setup](#first-time-setup)
     - [Bacon](#bacon)
@@ -46,8 +56,9 @@ These CSV can be exported from the internet banking websites for New Zealand ban
 This reduces the amount manual data entry significantly, making it easier to maintain the habit of tracking your
 budget even when life gets busy.
 
-This application is distributed as a Docker image and Docker Compose is the
-recommended way of running the app.
+## Getting Started
+
+This application is distributed as a Docker image and Docker Compose is the recommended way of running the app.
 
 See [compose.yaml](./compose.yaml) for an example Docker compose file.
 
@@ -80,16 +91,30 @@ docker compose -p budgeteur exec web reset_password --db-path /app/data/budgeteu
 The app only allows a single user and the following instructions will reset
 the password for that sole user account.
 
-## Set Up Development Environment
+## Dates and Timezones
+
+The app will use, in order of priority, dates and times in:
+
+1. the timezone specified in the CLI flags or
+1. the local timezone as specified by the host operating system or
+1. the UTC+00:00 timezone if the host operating system's local timezone cannot be determined.
+
+The app will assume all dates and times from the web client use the timezone as determined above.
+The CLI will accept canonical timezones as specified in <https://en.wikipedia.org/w/index.php?title=List_of_tz_database_time_zones&oldid=1309592143#List>,
+e.g. "Pacific/Auckland".
+
+> [!NOTE]
+> The timezone is only set when the server is started. You will have to restart the server to update the timezone for daylight savings.
+
+## Development
 
 These instructions are for people who want to compile from source and/or modify
 the code.
 
-This project was developed with cargo 1.8.5, other versions have not been tested.
+This project was developed with cargo 1.89.0, other versions have not been tested.
 [bacon](https://dystroy.org/bacon/) is used for running scripts.
 
-**Note**: you cannot test this web app in Safari because it does not support
-secure cookies on localhost.
+**Note**: you cannot test this web app locally in Safari because it does not support secure cookies on localhost.
 
 ### Nix Flake
 
@@ -164,19 +189,3 @@ docker run --rm -p 8080:8080 -e SECRET=<YOUR-SECRET> -it ghcr.io/anthonydickson/
 > [!NOTE]
 > Add `-v $(pwd):/app/data` to the above command (before `-it`) to persist
 > the app database after the container has stopped.
-
-## Dates and Timezones
-
-All dates and times shall use:
-
-1. the timezone specified in the CLI flags or
-1. the local timezone as specified by the host operating system or
-1. the UTC+00:00 timezone if the host operating system's local timezone cannot be determined.
-
-The app shall assume all dates and times from the web client use the timezone as determined above.
-
-The CLI shall accept canonical timezones as specified in <https://en.wikipedia.org/w/index.php?title=List_of_tz_database_time_zones&oldid=1309592143#List>
-
-### Limitations
-
-The timezone is only set when the server is started. You will have to restart the server to update the timezone for daylight savings.
