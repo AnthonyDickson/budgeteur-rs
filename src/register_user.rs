@@ -239,14 +239,8 @@ mod get_register_page_tests {
         http::{Response, StatusCode, header::CONTENT_TYPE},
     };
     use scraper::Html;
-    use serde::{Deserialize, Serialize};
 
     use crate::{endpoints, register_user::get_register_page};
-
-    #[derive(Serialize, Deserialize)]
-    struct Foo {
-        bar: String,
-    }
 
     #[tokio::test]
     async fn render_register_page() {
@@ -369,7 +363,6 @@ mod register_user_tests {
     use axum_extra::extract::PrivateCookieJar;
     use axum_test::TestServer;
     use rusqlite::Connection;
-    use serde::{Deserialize, Serialize};
     use time::UtcOffset;
 
     use crate::{
@@ -386,11 +379,6 @@ mod register_user_tests {
         create_user_table(&connection).expect("Could not create user table");
 
         RegistrationState::new("42", UtcOffset::UTC, Arc::new(Mutex::new(connection)))
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct Foo {
-        bar: String,
     }
 
     #[tokio::test]

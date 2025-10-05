@@ -23,7 +23,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install Rust Toolchain
-        run: rustup toolchain install 1.89 && rustup override set 1.89
+        run: rustup toolchain install 1.90 && rustup override set 1.90
 
       - name: Build
         run: cargo build --verbose
