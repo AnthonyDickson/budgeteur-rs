@@ -23,7 +23,7 @@ mod log_out_tests {
         cookie::{Cookie, Key},
     };
     use sha2::{Digest, Sha512};
-    use time::{Duration, OffsetDateTime};
+    use time::{Duration, OffsetDateTime, UtcOffset};
 
     use crate::{
         auth_cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
@@ -34,8 +34,13 @@ mod log_out_tests {
 
     #[tokio::test]
     async fn log_out_invalidates_auth_cookie_and_redirects() {
-        let cookie_jar =
-            set_auth_cookie(get_jar(), UserID::new(123), DEFAULT_COOKIE_DURATION).unwrap();
+        let cookie_jar = set_auth_cookie(
+            get_jar(),
+            UserID::new(123),
+            DEFAULT_COOKIE_DURATION,
+            UtcOffset::UTC,
+        )
+        .unwrap();
 
         let response = get_log_out(cookie_jar).await;
 

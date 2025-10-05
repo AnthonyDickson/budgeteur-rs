@@ -698,7 +698,7 @@ fn get_transactions_for_auto_tagging(
         TaggingMode::FromArgs(transactions) => {
             return Ok(transactions
                 .iter()
-                .map(|transaction| (transaction.id(), transaction.description().to_owned()))
+                .map(|transaction| (transaction.id, transaction.description.clone()))
                 .collect());
         }
     };
@@ -1078,6 +1078,7 @@ mod auto_tagging_tests {
     use std::collections::{HashMap, HashSet};
 
     use rusqlite::Connection;
+    use time::macros::date;
 
     use crate::{
         rule::{
@@ -1103,15 +1104,16 @@ mod auto_tagging_tests {
     #[test]
     fn apply_rules_to_transactions_with_no_rules_returns_zero_results() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         // Create some transactions but no rules
         let _tx1 = create_transaction(
-            Transaction::build(100.0).description("starbucks coffee"),
+            Transaction::build(100.0, today, "starbucks coffee".to_owned()),
             &connection,
         )
         .unwrap();
         let _tx2 = create_transaction(
-            Transaction::build(50.0).description("grocery store"),
+            Transaction::build(50.0, today, "grocery store".to_owned()),
             &connection,
         )
         .unwrap();
@@ -1139,6 +1141,7 @@ mod auto_tagging_tests {
     #[test]
     fn apply_rules_to_transactions_applies_matching_rules() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         // Create tags and rules
         let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &connection).unwrap();
@@ -1148,17 +1151,17 @@ mod auto_tagging_tests {
 
         // Create transactions
         let tx1 = create_transaction(
-            Transaction::build(100.0).description("starbucks downtown"),
+            Transaction::build(100.0, today, "starbucks downtown".to_owned()),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0).description("supermarket shopping"),
+            Transaction::build(50.0, today, "supermarket shopping".to_owned()),
             &connection,
         )
         .unwrap();
         let _tx3 = create_transaction(
-            Transaction::build(25.0).description("gas station"),
+            Transaction::build(25.0, today, "gas station".to_owned()),
             &connection,
         )
         .unwrap(); // No matching rule
@@ -1169,8 +1172,8 @@ mod auto_tagging_tests {
         assert_eq!(result.tags_applied, 2);
 
         // Verify tags were applied
-        let tx1_tags = get_transaction_tags(tx1.id(), &connection).unwrap();
-        let tx2_tags = get_transaction_tags(tx2.id(), &connection).unwrap();
+        let tx1_tags = get_transaction_tags(tx1.id, &connection).unwrap();
+        let tx2_tags = get_transaction_tags(tx2.id, &connection).unwrap();
 
         assert_eq!(tx1_tags.len(), 1);
         assert_eq!(tx1_tags[0].id, coffee_tag.id);
@@ -1181,23 +1184,24 @@ mod auto_tagging_tests {
     #[test]
     fn apply_rules_to_transactions_case_insensitive_matching() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         let tag = create_tag(TagName::new_unchecked("Coffee"), &connection).unwrap();
         let _rule = create_rule("starbucks", tag.id, &connection).unwrap();
 
         // Test various case combinations
         let tx1 = create_transaction(
-            Transaction::build(100.0).description("STARBUCKS CAFE"),
+            Transaction::build(100.0, today, "STARBUCKS CAFE".to_owned()),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0).description("Starbucks Coffee"),
+            Transaction::build(50.0, today, "Starbucks Coffee".to_owned()),
             &connection,
         )
         .unwrap();
         let tx3 = create_transaction(
-            Transaction::build(25.0).description("starbucks downtown"),
+            Transaction::build(25.0, today, "starbucks downtown".to_owned()),
             &connection,
         )
         .unwrap();
@@ -1208,9 +1212,9 @@ mod auto_tagging_tests {
         assert_eq!(result.tags_applied, 3);
 
         // Verify all transactions got tagged
-        let tx1_tags = get_transaction_tags(tx1.id(), &connection).unwrap();
-        let tx2_tags = get_transaction_tags(tx2.id(), &connection).unwrap();
-        let tx3_tags = get_transaction_tags(tx3.id(), &connection).unwrap();
+        let tx1_tags = get_transaction_tags(tx1.id, &connection).unwrap();
+        let tx2_tags = get_transaction_tags(tx2.id, &connection).unwrap();
+        let tx3_tags = get_transaction_tags(tx3.id, &connection).unwrap();
 
         assert_eq!(tx1_tags.len(), 1);
         assert_eq!(tx2_tags.len(), 1);
@@ -1220,6 +1224,7 @@ mod auto_tagging_tests {
     #[test]
     fn apply_rules_to_transactions_untagged_only_mode() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &connection).unwrap();
         let existing_tag = create_tag(TagName::new_unchecked("Existing"), &connection).unwrap();
@@ -1227,18 +1232,18 @@ mod auto_tagging_tests {
 
         // Create transactions - one already tagged, one not
         let tx1 = create_transaction(
-            Transaction::build(100.0).description("starbucks cafe"),
+            Transaction::build(100.0, today, "starbucks cafe".to_owned()),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0).description("starbucks downtown"),
+            Transaction::build(50.0, today, "starbucks downtown".to_owned()),
             &connection,
         )
         .unwrap();
 
         // Tag tx1 with an existing tag
-        set_transaction_tags(tx1.id(), &[existing_tag.id], &connection).unwrap();
+        set_transaction_tags(tx1.id, &[existing_tag.id], &connection).unwrap();
 
         // Apply rules in untagged-only mode
         let result = apply_rules_to_transactions(TaggingMode::FetchUntagged, &connection).unwrap();
@@ -1247,8 +1252,8 @@ mod auto_tagging_tests {
         assert_eq!(result.tags_applied, 1);
 
         // Verify tx1 still has only the existing tag, tx2 has the coffee tag
-        let tx1_tags = get_transaction_tags(tx1.id(), &connection).unwrap();
-        let tx2_tags = get_transaction_tags(tx2.id(), &connection).unwrap();
+        let tx1_tags = get_transaction_tags(tx1.id, &connection).unwrap();
+        let tx2_tags = get_transaction_tags(tx2.id, &connection).unwrap();
 
         assert_eq!(tx1_tags.len(), 1);
         assert_eq!(tx1_tags[0].id, existing_tag.id);
@@ -1259,19 +1264,20 @@ mod auto_tagging_tests {
     #[test]
     fn apply_rules_to_transactions_merges_with_existing_tags() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &connection).unwrap();
         let existing_tag = create_tag(TagName::new_unchecked("Existing"), &connection).unwrap();
         let _rule = create_rule("starbucks", coffee_tag.id, &connection).unwrap();
 
         let tx = create_transaction(
-            Transaction::build(100.0).description("starbucks cafe"),
+            Transaction::build(100.0, today, "starbucks cafe".to_owned()),
             &connection,
         )
         .unwrap();
 
         // Give transaction an existing tag
-        set_transaction_tags(tx.id(), &[existing_tag.id], &connection).unwrap();
+        set_transaction_tags(tx.id, &[existing_tag.id], &connection).unwrap();
 
         // Apply rules (all mode, not untagged-only)
         let result = apply_rules_to_transactions(TaggingMode::FetchAll, &connection).unwrap();
@@ -1280,7 +1286,7 @@ mod auto_tagging_tests {
         assert_eq!(result.tags_applied, 1); // Only 1 new tag added
 
         // Verify transaction has both tags
-        let tx_tags = get_transaction_tags(tx.id(), &connection).unwrap();
+        let tx_tags = get_transaction_tags(tx.id, &connection).unwrap();
         let tag_ids: HashSet<_> = tx_tags.iter().map(|t| t.id).collect();
 
         assert_eq!(tx_tags.len(), 2);
@@ -1291,6 +1297,7 @@ mod auto_tagging_tests {
     #[test]
     fn apply_rules_to_transactions_multiple_rules_match_same_transaction() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &connection).unwrap();
         let chain_tag = create_tag(TagName::new_unchecked("Chain"), &connection).unwrap();
@@ -1298,7 +1305,7 @@ mod auto_tagging_tests {
         let _chain_rule = create_rule("starbucks", chain_tag.id, &connection).unwrap(); // Same pattern, different tag
 
         let tx = create_transaction(
-            Transaction::build(100.0).description("starbucks downtown"),
+            Transaction::build(100.0, today, "starbucks downtown".to_owned()),
             &connection,
         )
         .unwrap();
@@ -1309,7 +1316,7 @@ mod auto_tagging_tests {
         assert_eq!(result.tags_applied, 2); // Both rules applied
 
         // Verify transaction has both tags
-        let tx_tags = get_transaction_tags(tx.id(), &connection).unwrap();
+        let tx_tags = get_transaction_tags(tx.id, &connection).unwrap();
         let tag_ids: HashSet<_> = tx_tags.iter().map(|t| t.id).collect();
 
         assert_eq!(tx_tags.len(), 2);
@@ -1320,6 +1327,7 @@ mod auto_tagging_tests {
     #[test]
     fn apply_rules_to_transactions_no_duplicate_tags() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &connection).unwrap();
         // Create two rules with different patterns but same tag that both match the same transaction
@@ -1327,7 +1335,7 @@ mod auto_tagging_tests {
         let _rule2 = create_rule("star", coffee_tag.id, &connection).unwrap(); // Different pattern, same tag, both match "starbucks"
 
         let tx = create_transaction(
-            Transaction::build(100.0).description("starbucks cafe"),
+            Transaction::build(100.0, today, "starbucks cafe".to_owned()),
             &connection,
         )
         .unwrap();
@@ -1338,7 +1346,7 @@ mod auto_tagging_tests {
         assert_eq!(result.tags_applied, 1); // Only 1 tag applied despite 2 matching rules
 
         // Verify transaction has only one tag (no duplicates)
-        let tx_tags = get_transaction_tags(tx.id(), &connection).unwrap();
+        let tx_tags = get_transaction_tags(tx.id, &connection).unwrap();
 
         assert_eq!(tx_tags.len(), 1);
         assert_eq!(tx_tags[0].id, coffee_tag.id);
@@ -1347,23 +1355,24 @@ mod auto_tagging_tests {
     #[test]
     fn get_transactions_for_auto_tagging_all_mode() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         let tag = create_tag(TagName::new_unchecked("Test"), &connection).unwrap();
 
         // Create transactions - one tagged, one untagged
         let tx1 = create_transaction(
-            Transaction::build(100.0).description("tagged transaction"),
+            Transaction::build(100.0, today, "tagged transaction".to_owned()),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0).description("untagged transaction"),
+            Transaction::build(50.0, today, "untagged transaction".to_owned()),
             &connection,
         )
         .unwrap();
 
         // Tag tx1
-        set_transaction_tags(tx1.id(), &[tag.id], &connection).unwrap();
+        set_transaction_tags(tx1.id, &[tag.id], &connection).unwrap();
 
         let transactions =
             get_transactions_for_auto_tagging(TaggingMode::FetchAll, &connection).unwrap();
@@ -1371,60 +1380,62 @@ mod auto_tagging_tests {
         // Should return both transactions in all mode
         assert_eq!(transactions.len(), 2);
         let tx_ids: HashSet<_> = transactions.iter().map(|(id, _)| *id).collect();
-        assert!(tx_ids.contains(&tx1.id()));
-        assert!(tx_ids.contains(&tx2.id()));
+        assert!(tx_ids.contains(&tx1.id));
+        assert!(tx_ids.contains(&tx2.id));
     }
 
     #[test]
     fn get_transactions_for_auto_tagging_untagged_only_mode() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         let tag = create_tag(TagName::new_unchecked("Test"), &connection).unwrap();
 
         // Create transactions - one tagged, one untagged
         let tx1 = create_transaction(
-            Transaction::build(100.0).description("tagged transaction"),
+            Transaction::build(100.0, today, "tagged transaction".to_owned()),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0).description("untagged transaction"),
+            Transaction::build(50.0, today, "untagged transaction".to_owned()),
             &connection,
         )
         .unwrap();
 
         // Tag tx1
-        set_transaction_tags(tx1.id(), &[tag.id], &connection).unwrap();
+        set_transaction_tags(tx1.id, &[tag.id], &connection).unwrap();
 
         let transactions =
             get_transactions_for_auto_tagging(TaggingMode::FetchUntagged, &connection).unwrap();
 
         // Should return only untagged transaction
         assert_eq!(transactions.len(), 1);
-        assert_eq!(transactions[0].0, tx2.id());
+        assert_eq!(transactions[0].0, tx2.id);
         assert_eq!(transactions[0].1, "untagged transaction");
     }
 
     #[test]
     fn get_transactions_for_auto_tagging_from_args_mode() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         let tag = create_tag(TagName::new_unchecked("Test"), &connection).unwrap();
 
         // Create transactions - one tagged, one untagged
         let tx1 = create_transaction(
-            Transaction::build(100.0).description("tagged transaction"),
+            Transaction::build(100.0, today, "tagged transaction".to_owned()),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0).description("untagged transaction"),
+            Transaction::build(50.0, today, "untagged transaction".to_owned()),
             &connection,
         )
         .unwrap();
 
         // Tag tx1
-        set_transaction_tags(tx1.id(), &[tag.id], &connection).unwrap();
+        set_transaction_tags(tx1.id, &[tag.id], &connection).unwrap();
 
         let transactions = get_transactions_for_auto_tagging(
             TaggingMode::FromArgs(&[tx1.clone(), tx2.clone()]),
@@ -1433,9 +1444,9 @@ mod auto_tagging_tests {
         .unwrap();
 
         assert_eq!(transactions.len(), 2);
-        assert_eq!(transactions[0].0, tx1.id());
+        assert_eq!(transactions[0].0, tx1.id);
         assert_eq!(transactions[0].1, "tagged transaction");
-        assert_eq!(transactions[1].0, tx2.id());
+        assert_eq!(transactions[1].0, tx2.id);
         assert_eq!(transactions[1].1, "untagged transaction");
     }
 
@@ -1452,31 +1463,38 @@ mod auto_tagging_tests {
     #[test]
     fn batch_set_transaction_tags_updates_multiple_transactions() {
         let connection = get_test_db_connection();
+        let today = date!(2025 - 10 - 05);
 
         let tag1 = create_tag(TagName::new_unchecked("Tag1"), &connection).unwrap();
         let tag2 = create_tag(TagName::new_unchecked("Tag2"), &connection).unwrap();
         let tag3 = create_tag(TagName::new_unchecked("Tag3"), &connection).unwrap();
 
-        let tx1 =
-            create_transaction(Transaction::build(100.0).description("tx1"), &connection).unwrap();
-        let tx2 =
-            create_transaction(Transaction::build(50.0).description("tx2"), &connection).unwrap();
+        let tx1 = create_transaction(
+            Transaction::build(100.0, today, "tx1".to_owned()),
+            &connection,
+        )
+        .unwrap();
+        let tx2 = create_transaction(
+            Transaction::build(50.0, today, "tx2".to_owned()),
+            &connection,
+        )
+        .unwrap();
 
         // Set initial tags
-        set_transaction_tags(tx1.id(), &[tag1.id], &connection).unwrap();
-        set_transaction_tags(tx2.id(), &[tag1.id, tag2.id], &connection).unwrap();
+        set_transaction_tags(tx1.id, &[tag1.id], &connection).unwrap();
+        set_transaction_tags(tx2.id, &[tag1.id, tag2.id], &connection).unwrap();
 
         // Batch update both transactions
         let mut updates = HashMap::new();
-        updates.insert(tx1.id(), vec![tag2.id, tag3.id]);
-        updates.insert(tx2.id(), vec![tag3.id]);
+        updates.insert(tx1.id, vec![tag2.id, tag3.id]);
+        updates.insert(tx2.id, vec![tag3.id]);
 
         let result = batch_set_transaction_tags(updates, &connection);
         assert!(result.is_ok());
 
         // Verify updates
-        let tx1_tags = get_transaction_tags(tx1.id(), &connection).unwrap();
-        let tx2_tags = get_transaction_tags(tx2.id(), &connection).unwrap();
+        let tx1_tags = get_transaction_tags(tx1.id, &connection).unwrap();
+        let tx2_tags = get_transaction_tags(tx2.id, &connection).unwrap();
 
         let tx1_tag_ids: HashSet<_> = tx1_tags.iter().map(|t| t.id).collect();
         let tx2_tag_ids: HashSet<_> = tx2_tags.iter().map(|t| t.id).collect();

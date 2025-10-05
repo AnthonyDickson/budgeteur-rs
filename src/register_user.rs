@@ -12,7 +12,7 @@ use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use time::Duration;
+use time::{Duration, UtcOffset};
 
 use crate::{
     AppState, PasswordHash, ValidatedPassword,
@@ -82,15 +82,22 @@ pub struct RegistrationState {
     pub cookie_key: Key,
     /// The duration for which cookies used for authentication are valid.
     pub cookie_duration: Duration,
+    /// The local timezone as a UTC offset.
+    pub local_timezone: UtcOffset,
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
 impl RegistrationState {
     /// Create the cookie key from a string and set the default cookie duration.
-    pub fn new(cookie_secret: &str, db_connection: Arc<Mutex<Connection>>) -> Self {
+    pub fn new(
+        cookie_secret: &str,
+        local_timezone: UtcOffset,
+        db_connection: Arc<Mutex<Connection>>,
+    ) -> Self {
         Self {
             cookie_key: create_cookie_key(cookie_secret),
             cookie_duration: DEFAULT_COOKIE_DURATION,
+            local_timezone,
             db_connection: db_connection.clone(),
         }
     }
@@ -101,6 +108,7 @@ impl FromRef<AppState> for RegistrationState {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
+            local_timezone: state.local_timezone,
             db_connection: state.db_connection.clone(),
         }
     }
@@ -198,7 +206,7 @@ pub async fn register_user(
             .expect("Could not acquire database lock"),
     )
     .map(|user| {
-        let jar = set_auth_cookie(jar, user.id, state.cookie_duration);
+        let jar = set_auth_cookie(jar, user.id, state.cookie_duration, state.local_timezone);
 
         match jar {
             Ok(jar) => (
@@ -362,6 +370,7 @@ mod register_user_tests {
     use axum_test::TestServer;
     use rusqlite::Connection;
     use serde::{Deserialize, Serialize};
+    use time::UtcOffset;
 
     use crate::{
         PasswordHash, endpoints,
@@ -376,7 +385,7 @@ mod register_user_tests {
             Connection::open_in_memory().expect("Could not open in-memory SQLite database");
         create_user_table(&connection).expect("Could not create user table");
 
-        RegistrationState::new("42", Arc::new(Mutex::new(connection)))
+        RegistrationState::new("42", UtcOffset::UTC, Arc::new(Mutex::new(connection)))
     }
 
     #[derive(Serialize, Deserialize)]

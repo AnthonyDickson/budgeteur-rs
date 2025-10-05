@@ -24,7 +24,7 @@
 
           packages = with pkgs; [
             bacon
-            dockerfile-language-server-nodejs
+            dockerfile-language-server
             tailwindcss
             gemini-cli
           ];
