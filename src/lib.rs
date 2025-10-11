@@ -45,6 +45,7 @@ mod routing;
 mod rule;
 mod shared_templates;
 mod tag;
+mod timezone;
 pub mod transaction;
 mod transaction_tag;
 pub mod user;
@@ -180,6 +181,10 @@ pub enum Error {
     /// An error occurred while calculating dashboard summaries.
     #[error("failed to calculate dashboard summaries")]
     DashboardCalculationError,
+
+    /// An error occurred while getting the local timezone from a canonical timezone string.
+    #[error("invalid timezone {0}")]
+    InvalidTimezoneError(String),
 }
 
 impl From<rusqlite::Error> for Error {

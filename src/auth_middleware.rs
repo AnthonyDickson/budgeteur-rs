@@ -8,12 +8,13 @@ use axum::{
 };
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
-use time::{Duration, UtcOffset};
+use time::Duration;
 
 use crate::{
     AppState,
     auth_cookie::{extend_auth_cookie_duration_if_needed, get_user_id_from_auth_cookie},
     endpoints,
+    timezone::get_local_offset,
 };
 
 /// The state needed for the auth middleware
@@ -23,8 +24,8 @@ pub struct AuthState {
     pub cookie_key: Key,
     /// The duration for which cookies used for authentication are valid.
     pub cookie_duration: Duration,
-    /// The local timezone as a UTC offset.
-    pub local_timezone: UtcOffset,
+    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
+    pub local_timezone: String,
 }
 
 impl FromRef<AppState> for AuthState {
@@ -32,7 +33,7 @@ impl FromRef<AppState> for AuthState {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
-            local_timezone: state.local_timezone,
+            local_timezone: state.local_timezone.clone(),
         }
     }
 }
@@ -57,6 +58,14 @@ async fn auth_guard_internal(
     next: Next,
     get_redirect: fn() -> Response,
 ) -> Response {
+    let local_offset = match get_local_offset(&state.local_timezone) {
+        Some(offset) => offset,
+        None => {
+            tracing::error!("Error getting local timezone. Redirecting to log in page.");
+            return get_redirect();
+        }
+    };
+
     let (mut parts, body) = request.into_parts();
     let jar = match PrivateCookieJar::from_request_parts(&mut parts, &state).await {
         Ok(jar) => jar,
@@ -78,7 +87,7 @@ async fn auth_guard_internal(
     let jar = match extend_auth_cookie_duration_if_needed(
         jar.clone(),
         Duration::minutes(5),
-        state.local_timezone,
+        local_offset,
     ) {
         Ok(updated_jar) => updated_jar,
         Err(err) => {
@@ -146,13 +155,14 @@ mod auth_guard_tests {
     };
     use axum_test::TestServer;
     use sha2::Digest;
-    use time::{Duration, OffsetDateTime, UtcOffset};
+    use time::{Duration, OffsetDateTime};
 
     use crate::{
         Error,
         auth_cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
         auth_middleware::{AuthState, auth_guard},
         endpoints::{self, format_endpoint},
+        timezone::get_local_offset,
         user::UserID,
     };
 
@@ -164,12 +174,9 @@ mod auth_guard_tests {
         State(state): State<AuthState>,
         jar: PrivateCookieJar,
     ) -> Result<PrivateCookieJar, Error> {
-        set_auth_cookie(
-            jar,
-            UserID::new(1),
-            state.cookie_duration,
-            state.local_timezone,
-        )
+        let local_timezone = get_local_offset(&state.local_timezone).unwrap();
+
+        set_auth_cookie(jar, UserID::new(1), state.cookie_duration, local_timezone)
     }
 
     const TEST_LOG_IN_ROUTE_PATH: &str = "/log_in/{user_id}";
@@ -180,7 +187,7 @@ mod auth_guard_tests {
         let state = AuthState {
             cookie_key: Key::from(&hash),
             cookie_duration,
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         let app = Router::new()

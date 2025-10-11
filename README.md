@@ -103,9 +103,6 @@ The app will assume all dates and times from the web client use the timezone as 
 The CLI will accept canonical timezones as specified in <https://en.wikipedia.org/w/index.php?title=List_of_tz_database_time_zones&oldid=1309592143#List>,
 e.g. "Pacific/Auckland".
 
-> [!NOTE]
-> The timezone is only set when the server is started. You will have to restart the server to update the timezone for daylight savings.
-
 ## Development
 
 These instructions are for people who want to compile from source and/or modify

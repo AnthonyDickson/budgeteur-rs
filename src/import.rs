@@ -4,10 +4,9 @@ use askama::Template;
 use axum::{
     extract::{FromRef, Multipart, State, multipart::Field},
     http::StatusCode,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use rusqlite::Connection;
-use time::UtcOffset;
 
 use crate::{
     AppState, Error,
@@ -19,6 +18,7 @@ use crate::{
     navigation::{NavbarTemplate, get_nav_bar},
     rule::{TaggingMode, apply_rules_to_transactions},
     shared_templates::render,
+    timezone::get_local_offset,
     transaction::import_transactions as import_transaction_list,
 };
 
@@ -27,14 +27,15 @@ use crate::{
 pub struct ImportState {
     /// The database connection for managing transactions.
     pub db_connection: Arc<Mutex<Connection>>,
-    pub local_timezone: UtcOffset,
+    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
+    pub local_timezone: String,
 }
 
 impl FromRef<AppState> for ImportState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
-            local_timezone: state.local_timezone,
+            local_timezone: state.local_timezone.clone(),
         }
     }
 }
@@ -79,6 +80,11 @@ pub async fn import_transactions(
     State(state): State<ImportState>,
     mut multipart: Multipart,
 ) -> Response {
+    let local_timezone = match get_local_offset(&state.local_timezone) {
+        Some(offset) => offset,
+        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+    };
+
     let start_time = std::time::Instant::now();
     let mut transactions = Vec::new();
     let mut balances = Vec::new();
@@ -103,7 +109,7 @@ pub async fn import_transactions(
             }
         };
 
-        match parse_csv(&csv_data, state.local_timezone) {
+        match parse_csv(&csv_data, local_timezone) {
             Ok(parse_result) => {
                 transactions.extend(parse_result.transactions);
 
@@ -495,7 +501,7 @@ mod import_transactions_tests {
     };
     use rusqlite::Connection;
     use scraper::{ElementRef, Html};
-    use time::{UtcOffset, macros::date};
+    use time::macros::date;
 
     use crate::{
         Error,
@@ -588,7 +594,7 @@ mod import_transactions_tests {
         let conn = get_test_connection();
         let state = ImportState {
             db_connection: Arc::new(Mutex::new(conn)),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
         let want_transaction_count = 17;
 
@@ -624,7 +630,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
         let want_account = "12-3405-0123456-50 (Streamline)";
         let want_balance = 20.00;
@@ -668,7 +674,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         let response = import_transactions(
@@ -697,7 +703,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
         let response =
             import_transactions(State(state.clone()), must_make_multipart_csv(&[""]).await).await;
@@ -724,7 +730,7 @@ mod import_transactions_tests {
         let conn = get_test_connection();
         let state = ImportState {
             db_connection: Arc::new(Mutex::new(conn)),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
         let response = import_transactions(
             State(state.clone()),
@@ -756,7 +762,7 @@ mod import_transactions_tests {
             Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
         let state = ImportState {
             db_connection: Arc::new(Mutex::new(conn)),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         let response = import_transactions(
@@ -1038,7 +1044,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         // Create tags and rules for auto-tagging
@@ -1083,7 +1089,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         // Create tags but no rules that match the imported transactions
@@ -1125,7 +1131,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         // Create only one rule that matches some transactions
@@ -1168,7 +1174,7 @@ mod import_transactions_tests {
         let connection = Arc::new(Mutex::new(conn));
         let state = ImportState {
             db_connection: connection.clone(),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         // Create tags and rules
