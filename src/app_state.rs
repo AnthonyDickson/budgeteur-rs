@@ -71,18 +71,3 @@ pub fn create_cookie_key(secret: &str) -> Key {
 
     Key::from(&hash)
 }
-
-/// The state needed to get or create a transaction.
-#[derive(Debug, Clone)]
-pub struct TransactionState {
-    /// The database connection for managing transactions.
-    pub db_connection: Arc<Mutex<Connection>>,
-}
-
-impl FromRef<AppState> for TransactionState {
-    fn from_ref(state: &AppState) -> Self {
-        Self {
-            db_connection: state.db_connection.clone(),
-        }
-    }
-}

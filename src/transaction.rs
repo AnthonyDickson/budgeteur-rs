@@ -30,7 +30,6 @@ use crate::{
     navigation::{NavbarTemplate, get_nav_bar},
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     shared_templates::render,
-    state::TransactionState,
     tag::{Tag, get_all_tags},
     transaction_tag::{get_transaction_tags, set_transaction_tags},
 };
@@ -196,6 +195,21 @@ pub struct TransactionTableRow {
 // ============================================================================
 // ROUTE HANDLERS
 // ============================================================================
+
+/// The state needed to get or create a transaction.
+#[derive(Debug, Clone)]
+pub struct TransactionState {
+    /// The database connection for managing transactions.
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for TransactionState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
 
 /// The form data for creating a transaction.
 #[derive(Debug, Deserialize)]
@@ -1740,15 +1754,17 @@ mod route_handler_tests {
     };
     use axum_extra::extract::Form;
     use axum_htmx::HX_REDIRECT;
+    use rusqlite::Connection;
     use time::{OffsetDateTime, macros::date};
 
     use crate::{
         db::initialize,
-        state::TransactionState,
-        transaction::{Transaction, create_transaction as create_transaction_db, get_transaction},
+        transaction::{
+            Transaction, TransactionState, create_transaction as create_transaction_db,
+            get_transaction,
+        },
         transaction_tag::get_transaction_tags,
     };
-    use rusqlite::Connection;
 
     use super::{TransactionForm, create_transaction_endpoint, get_transaction_endpoint};
 
