@@ -20,6 +20,7 @@ use axum_server::Handle;
 use tokio::signal;
 
 mod alert;
+mod app_state;
 mod auth_cookie;
 mod auth_middleware;
 mod balances;
@@ -43,16 +44,16 @@ mod register_user;
 mod routing;
 mod rule;
 mod shared_templates;
-mod state;
 mod tag;
+mod timezone;
 pub mod transaction;
 mod transaction_tag;
 pub mod user;
 
+pub use app_state::AppState;
 pub use logging::logging_middleware;
 pub use password::{PasswordHash, ValidatedPassword};
 pub use routing::build_router;
-pub use state::AppState;
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
 /// then signals the server to shut down gracefully.
@@ -180,6 +181,10 @@ pub enum Error {
     /// An error occurred while calculating dashboard summaries.
     #[error("failed to calculate dashboard summaries")]
     DashboardCalculationError,
+
+    /// An error occurred while getting the local timezone from a canonical timezone string.
+    #[error("invalid timezone {0}")]
+    InvalidTimezoneError(String),
 }
 
 impl From<rusqlite::Error> for Error {

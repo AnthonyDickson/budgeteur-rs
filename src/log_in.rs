@@ -14,14 +14,15 @@ use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use time::{Duration, UtcOffset};
+use time::Duration;
 
 use crate::{
     AppState, Error,
+    app_state::create_cookie_key,
     auth_cookie::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
     endpoints,
     shared_templates::{PasswordInputTemplate, render},
-    state::create_cookie_key,
+    timezone::get_local_offset,
     user::{User, UserID, get_user_by_id},
 };
 
@@ -68,8 +69,8 @@ pub struct LoginState {
     pub cookie_key: Key,
     /// The duration for which cookies used for authentication are valid.
     pub cookie_duration: Duration,
-    /// The local timezone as a UTC offset.
-    pub local_timezone: UtcOffset,
+    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
+    pub local_timezone: String,
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
@@ -77,13 +78,13 @@ impl LoginState {
     /// Create the cookie key from a string and set the default cookie duration.
     pub fn new(
         cookie_secret: &str,
-        local_timezone: UtcOffset,
+        local_timezone: &str,
         db_connection: Arc<Mutex<Connection>>,
     ) -> Self {
         Self {
             cookie_key: create_cookie_key(cookie_secret),
             cookie_duration: DEFAULT_COOKIE_DURATION,
-            local_timezone: local_timezone,
+            local_timezone: local_timezone.to_owned(),
             db_connection: db_connection.clone(),
         }
     }
@@ -94,7 +95,7 @@ impl FromRef<AppState> for LoginState {
         Self {
             cookie_key: state.cookie_key.clone(),
             cookie_duration: state.cookie_duration,
-            local_timezone: state.local_timezone,
+            local_timezone: state.local_timezone.clone(),
             db_connection: state.db_connection.clone(),
         }
     }
@@ -175,7 +176,12 @@ pub async fn post_log_in(
         state.cookie_duration
     };
 
-    set_auth_cookie(jar.clone(), user.id, cookie_duration, state.local_timezone)
+    let local_timezone = match get_local_offset(&state.local_timezone) {
+        Some(offset) => offset,
+        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+    };
+
+    set_auth_cookie(jar.clone(), user.id, cookie_duration, local_timezone)
         .map(|updated_jar| {
             (
                 StatusCode::SEE_OTHER,
@@ -241,7 +247,6 @@ mod log_in_page_tests {
     use axum_extra::extract::PrivateCookieJar;
     use rusqlite::Connection;
     use scraper::Html;
-    use time::UtcOffset;
 
     use crate::{endpoints, user::create_user_table};
 
@@ -381,7 +386,7 @@ mod log_in_page_tests {
                 .expect("Could not create test user");
         }
 
-        LoginState::new("foobar", UtcOffset::UTC, Arc::new(Mutex::new(connection)))
+        LoginState::new("foobar", "Etc/UTC", Arc::new(Mutex::new(connection)))
     }
 
     #[track_caller]
@@ -414,7 +419,7 @@ mod log_in_tests {
     use axum_test::TestServer;
 
     use rusqlite::Connection;
-    use time::{Duration, OffsetDateTime, UtcOffset};
+    use time::{Duration, OffsetDateTime};
 
     use crate::{
         PasswordHash, ValidatedPassword,
@@ -577,7 +582,7 @@ mod log_in_tests {
                 .expect("Could not create test user");
         }
 
-        LoginState::new("foobar", UtcOffset::UTC, Arc::new(Mutex::new(connection)))
+        LoginState::new("foobar", "Etc/UTC", Arc::new(Mutex::new(connection)))
     }
 
     async fn new_log_in_request(state: LoginState, log_in_form: LogInData) -> Response<Body> {

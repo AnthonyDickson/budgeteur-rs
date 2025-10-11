@@ -30,8 +30,8 @@ use crate::{
     navigation::{NavbarTemplate, get_nav_bar},
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     shared_templates::render,
-    state::TransactionState,
     tag::{Tag, get_all_tags},
+    timezone::get_local_offset,
     transaction_tag::{get_transaction_tags, set_transaction_tags},
 };
 
@@ -196,6 +196,21 @@ pub struct TransactionTableRow {
 // ============================================================================
 // ROUTE HANDLERS
 // ============================================================================
+
+/// The state needed to get or create a transaction.
+#[derive(Debug, Clone)]
+pub struct TransactionState {
+    /// The database connection for managing transactions.
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for TransactionState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
 
 /// The form data for creating a transaction.
 #[derive(Debug, Deserialize)]
@@ -542,8 +557,8 @@ struct NewTransactionTemplate<'a> {
 /// The state needed for the new transaction page.
 #[derive(Debug, Clone)]
 pub struct NewTransactionPageState {
-    /// The local timezone as a UTC offset.
-    pub local_timezone: UtcOffset,
+    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
+    pub local_timezone: String,
     /// The database connection for accessing tags.
     pub db_connection: Arc<Mutex<Connection>>,
 }
@@ -551,7 +566,7 @@ pub struct NewTransactionPageState {
 impl FromRef<AppState> for NewTransactionPageState {
     fn from_ref(state: &AppState) -> Self {
         Self {
-            local_timezone: state.local_timezone,
+            local_timezone: state.local_timezone.clone(),
             db_connection: state.db_connection.clone(),
         }
     }
@@ -578,14 +593,17 @@ pub async fn get_new_transaction_page(State(state): State<NewTransactionPageStat
         }
     };
 
+    let local_timezone = match get_local_offset(&state.local_timezone) {
+        Some(offset) => offset,
+        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+    };
+
     render(
         StatusCode::OK,
         NewTransactionTemplate {
             nav_bar,
             create_transaction_route: endpoints::TRANSACTIONS_API,
-            max_date: time::OffsetDateTime::now_utc()
-                .to_offset(state.local_timezone)
-                .date(),
+            max_date: OffsetDateTime::now_utc().to_offset(local_timezone).date(),
             available_tags,
         },
     )
@@ -1090,7 +1108,7 @@ mod view_tests {
     };
     use rusqlite::Connection;
     use scraper::{ElementRef, Html, Selector, selectable::Selectable};
-    use time::{OffsetDateTime, UtcOffset, macros::date};
+    use time::{OffsetDateTime, macros::date};
 
     use crate::{
         db::initialize,
@@ -1116,7 +1134,7 @@ mod view_tests {
     async fn new_transaction_returns_form() {
         let conn = get_test_connection();
         let state = NewTransactionPageState {
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
             db_connection: Arc::new(Mutex::new(conn)),
         };
         let response = get_new_transaction_page(State(state)).await;
@@ -1740,15 +1758,17 @@ mod route_handler_tests {
     };
     use axum_extra::extract::Form;
     use axum_htmx::HX_REDIRECT;
+    use rusqlite::Connection;
     use time::{OffsetDateTime, macros::date};
 
     use crate::{
         db::initialize,
-        state::TransactionState,
-        transaction::{Transaction, create_transaction as create_transaction_db, get_transaction},
+        transaction::{
+            Transaction, TransactionState, create_transaction as create_transaction_db,
+            get_transaction,
+        },
         transaction_tag::get_transaction_tags,
     };
-    use rusqlite::Connection;
 
     use super::{TransactionForm, create_transaction_endpoint, get_transaction_endpoint};
 

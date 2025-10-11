@@ -13,7 +13,7 @@ use std::{
     ops::RangeInclusive,
     sync::{Arc, Mutex},
 };
-use time::{Date, Duration, OffsetDateTime, UtcOffset};
+use time::{Date, Duration, OffsetDateTime};
 
 use crate::{
     AppState, Error,
@@ -24,6 +24,7 @@ use crate::{
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
     tag::{Tag, get_all_tags},
+    timezone::get_local_offset,
 };
 
 // ============================================================================
@@ -138,15 +139,15 @@ pub fn get_transaction_summary(
 pub struct DashboardState {
     /// The database connection for managing transactions.
     pub db_connection: Arc<Mutex<Connection>>,
-    /// The local timezone as a UTC offset.
-    pub local_timezone: UtcOffset,
+    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
+    pub local_timezone: String,
 }
 
 impl FromRef<AppState> for DashboardState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
-            local_timezone: state.local_timezone,
+            local_timezone: state.local_timezone.clone(),
         }
     }
 }
@@ -168,9 +169,11 @@ struct DashboardTemplate<'a> {
 pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response {
     let nav_bar = get_nav_bar(endpoints::DASHBOARD_VIEW);
 
-    let today = OffsetDateTime::now_utc()
-        .to_offset(state.local_timezone)
-        .date();
+    let local_timezone = match get_local_offset(&state.local_timezone) {
+        Some(offset) => offset,
+        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+    };
+    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
     let connection = state.db_connection.lock().unwrap();
 
     // Get available tags and excluded tags for dashboard summaries
@@ -270,9 +273,11 @@ pub async fn update_excluded_tags(
     }
 
     // Get updated summaries
-    let today = OffsetDateTime::now_utc()
-        .to_offset(state.local_timezone)
-        .date();
+    let local_timezone = match get_local_offset(&state.local_timezone) {
+        Some(offset) => offset,
+        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+    };
+    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
     let excluded_tags_slice = if excluded_tags.is_empty() {
         None
     } else {
@@ -321,7 +326,7 @@ mod dashboard_route_tests {
         http::{Response, StatusCode},
     };
     use scraper::{Html, Selector};
-    use time::{Duration, OffsetDateTime, UtcOffset};
+    use time::{Duration, OffsetDateTime};
 
     use crate::{
         dashboard::DashboardState,
@@ -383,7 +388,7 @@ mod dashboard_route_tests {
 
         let state = DashboardState {
             db_connection: Arc::new(Mutex::new(conn)),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         let response = get_dashboard_page(State(state)).await;
@@ -487,7 +492,7 @@ mod dashboard_route_tests {
 
         let state = DashboardState {
             db_connection: Arc::new(Mutex::new(conn)),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         let response = get_dashboard_page(State(state)).await;
@@ -541,7 +546,7 @@ mod dashboard_route_tests {
 
         let state = DashboardState {
             db_connection: Arc::new(Mutex::new(conn)),
-            local_timezone: UtcOffset::UTC,
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         let response = get_dashboard_page(State(state)).await;
