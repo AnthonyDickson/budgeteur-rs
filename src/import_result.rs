@@ -1,6 +1,8 @@
 //! Import result handling for generating appropriate alert messages.
 
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
+
+use numfmt::{Formatter, Precision};
 
 use crate::rule::TaggingResult;
 
@@ -40,45 +42,34 @@ impl ImportMessageBuilder {
     ///
     /// An `AlertMessage` with appropriate success message and timing details
     pub fn success_with_tagging(&self, tagging_result: &TaggingResult) -> AlertMessage {
-        let duration_ms = self.duration.as_millis();
+        let duration_ms = get_thousands_separator_formatter().fmt_string(self.duration.as_millis());
 
         match (self.transaction_count, tagging_result.tags_applied) {
             (0, _) => {
                 let message = "Import completed".to_string();
                 let details = format!(
-                    "No new transactions were imported (possibly duplicates). Completed in {:.1}ms.",
-                    duration_ms
+                    "No new transactions were imported (possibly duplicates). Completed in {duration_ms}ms."
                 );
-                tracing::info!(
-                    "Import completed in {:.1}ms: no new transactions",
-                    duration_ms
-                );
+                tracing::info!("Import completed in {duration_ms}ms: no new transactions");
                 AlertMessage { message, details }
             }
             (tx_count, 0) => {
                 let message = "Import completed successfully!".to_string();
                 let details = format!(
-                    "Imported {} transactions in {:.1}ms. No automatic tags were applied.",
-                    tx_count, duration_ms
+                    "Imported {tx_count} transactions in {duration_ms}ms. No automatic tags were applied."
                 );
                 tracing::info!(
-                    "Import completed in {:.1}ms: {} transactions imported, no tags applied",
-                    duration_ms,
-                    tx_count
+                    "Import completed in {duration_ms}ms: {tx_count} transactions imported, no tags applied"
                 );
                 AlertMessage { message, details }
             }
             (tx_count, tag_count) => {
                 let message = "Import completed successfully!".to_string();
                 let details = format!(
-                    "Imported {} transactions and applied {} tags automatically in {:.1}ms.",
-                    tx_count, tag_count, duration_ms
+                    "Imported {tx_count} transactions and applied {tag_count} tags automatically in {duration_ms}ms."
                 );
                 tracing::info!(
-                    "Import completed in {:.1}ms: {} transactions imported, {} tags applied",
-                    duration_ms,
-                    tx_count,
-                    tag_count
+                    "Import completed in {duration_ms}ms: {tx_count} transactions imported, {tag_count} tags applied"
                 );
                 AlertMessage { message, details }
             }
@@ -96,33 +87,40 @@ impl ImportMessageBuilder {
     /// An `AlertMessage` with appropriate error message that acknowledges successful import
     /// but failed auto-tagging, providing guidance for manual tagging if transactions were imported
     pub fn error_with_partial_success(&self, error_msg: &str) -> AlertMessage {
-        let duration_ms = self.duration.as_millis();
+        let formatter = get_thousands_separator_formatter();
+        let tx_count = formatter.fmt_string(self.transaction_count);
+        let duration_ms = formatter.fmt_string(self.duration.as_millis());
 
         tracing::error!(
-            "Auto-tagging failed after importing {} transactions in {:.1}ms: {}",
-            self.transaction_count,
-            duration_ms,
-            error_msg
+            "Auto-tagging failed after importing {tx_count} transactions in {duration_ms}ms: {error_msg}"
         );
 
         let (message, details) = if self.transaction_count > 0 {
             (
                 "Import completed but auto-tagging failed".to_string(),
                 format!(
-                    "Imported {} transactions successfully in {:.1}ms, but automatic tagging failed. You can apply tags manually.",
-                    self.transaction_count, duration_ms
+                    "Imported {tx_count} transactions successfully in {duration_ms}ms, \
+                    but automatic tagging failed. You can apply tags manually."
                 ),
             )
         } else {
             (
                 "Import completed".to_string(),
-                format!(
-                    "No new transactions were imported. Completed in {:.1}ms.",
-                    duration_ms
-                ),
+                format!("No new transactions were imported. Completed in {duration_ms}ms."),
             )
         };
 
         AlertMessage { message, details }
     }
+}
+
+fn get_thousands_separator_formatter() -> &'static Formatter {
+    static FORMATTER: OnceLock<Formatter> = OnceLock::new();
+
+    &FORMATTER.get_or_init(|| {
+        Formatter::new()
+            .separator(',')
+            .unwrap()
+            .precision(Precision::Decimals(0))
+    })
 }

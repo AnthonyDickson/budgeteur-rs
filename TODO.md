@@ -1,6 +1,5 @@
 # To Do
 
-- Add thousands separator to timing durations (e.g., 1,234ms instead of 1234ms) for better readability
 - Organise the import, import_result and csv into a new module, `import` and only expose what's necessary. The `mod.rs` file should be minimal and just contain re-exports
 - Dashboard: create pie chart that breaks down spending by category 
 - Dashboard: create line chart that charts monthly net income and balance (reconstruct balance from current balance and net income values)
