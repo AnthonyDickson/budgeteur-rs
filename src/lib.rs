@@ -30,6 +30,7 @@ mod dashboard_preferences;
 mod database_id;
 pub mod db;
 mod endpoints;
+mod filters;
 mod forgot_password;
 mod import;
 mod import_result;

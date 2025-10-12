@@ -14,7 +14,7 @@ use time::Date;
 use crate::{
     AppState, Error,
     database_id::DatabaseID,
-    endpoints,
+    endpoints, filters,
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
 };
@@ -215,7 +215,9 @@ mod balances_template_tests {
 
     use crate::{
         balances::{Balance, BalancesTemplate},
-        {endpoints, navigation::get_nav_bar},
+        endpoints,
+        filters::currency,
+        navigation::get_nav_bar,
     };
 
     #[test]
@@ -313,11 +315,10 @@ mod balances_template_tests {
                 "want account '{}', got '{got_account}'.",
                 want.account
             );
+            let want_balance = currency(want.balance, &()).unwrap();
             assert_eq!(
-                format!("${:.0}", want.balance),
-                got_balance,
-                "want balance ${:.0}, got {got_balance}.",
-                want.balance
+                want_balance, got_balance,
+                "want balance {want_balance}, got {got_balance}."
             );
             assert_eq!(
                 want.date.to_string(),
@@ -374,7 +375,10 @@ mod get_balances_page_tests {
     use scraper::{ElementRef, Html, Selector};
     use time::macros::date;
 
-    use crate::balances::{Balance, BalanceState, create_balance_table, get_balances_page};
+    use crate::{
+        balances::{Balance, BalanceState, create_balance_table, get_balances_page},
+        filters::currency,
+    };
 
     #[tokio::test]
     async fn test_get_balances_view() {
@@ -467,11 +471,10 @@ mod get_balances_page_tests {
                 "want account '{}', got '{got_account}'.",
                 want.account
             );
+            let want_balance = currency(want.balance, &()).unwrap();
             assert_eq!(
-                format!("${:.0}", want.balance),
-                got_balance,
-                "want balance ${:.0}, got {got_balance}.",
-                want.balance
+                want_balance, got_balance,
+                "want balance {want_balance}, got {got_balance}."
             );
             assert_eq!(
                 want.date.to_string(),
