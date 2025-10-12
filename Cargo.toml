@@ -1,6 +1,6 @@
 [package]
 name = "budgeteur_rs"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 default-run = "server"
 
@@ -17,6 +17,7 @@ axum-server = { version = "0.7.2" }
 bcrypt = "0.17.1"
 clap = { version = "4.5.48", features = ["derive"] }
 md5 = "0.8.0"
+numfmt = "1.2.0"
 rpassword = "7.4.0"
 rusqlite = { version = "0.37.0", features = ["bundled", "time"] }
 serde = { version = "1.0.227", features = ["derive"] }

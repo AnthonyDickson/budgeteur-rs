@@ -26,7 +26,7 @@ use time::{Date, OffsetDateTime, UtcOffset};
 use crate::{
     AppState, Error,
     database_id::DatabaseID,
-    endpoints,
+    endpoints, filters,
     navigation::{NavbarTemplate, get_nav_bar},
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     shared_templates::render,
@@ -183,7 +183,7 @@ impl TransactionBuilder {
 
 /// Renders a transaction with its tags as a table row.
 #[derive(Template)]
-#[template(path = "partials/dashboard/transaction_with_tags.html")]
+#[template(path = "partials/transaction_table_row.html")]
 pub struct TransactionTableRow {
     /// The transaction to display.
     pub transaction: Transaction,

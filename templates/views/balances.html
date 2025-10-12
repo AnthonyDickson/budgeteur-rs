@@ -29,7 +29,7 @@
               {{ balance.account }}
             </th>
             <td class="px-6 py-4 text-right">
-              ${{ "{:.0}"|format(balance.balance) }}
+              {{ *balance.balance | abs | currency }}
             </td>
             <td class="px-6 py-4">
               {{ balance.date }}

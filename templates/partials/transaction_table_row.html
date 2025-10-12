@@ -5,7 +5,7 @@
   >
     {{ transaction.id }}
   </th>
-  <td class="px-6 py-4 text-right">${{ "{:.0}"|format(transaction.amount) }}</td>
+  <td class="px-6 py-4 text-right">{{ *transaction.amount | currency }}</td>
   <td class="px-6 py-4">{{ transaction.date }}</td>
   <td class="px-6 py-4">{{ transaction.description }}</td>
   <td class="px-6 py-4">
