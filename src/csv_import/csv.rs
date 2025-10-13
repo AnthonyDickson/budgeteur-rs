@@ -7,19 +7,9 @@ use time::{
 
 use crate::{
     Error,
+    csv_import::balance::ImportBalance,
     transaction::{Transaction, TransactionBuilder},
 };
-
-/// An account and balance imported from a CSV.
-#[derive(Debug, PartialEq)]
-pub struct ImportBalance {
-    /// The account name/number.
-    pub account: String,
-    /// The balance in the account.
-    pub balance: f64,
-    /// The date the balance is for.
-    pub date: Date,
-}
 
 /// The transactions and accounts balances found after parsing a CSV statement.
 pub struct ParseCSVResult {
@@ -458,7 +448,7 @@ mod parse_csv_tests {
     use time::{UtcOffset, macros::date};
 
     use crate::{
-        csv::{
+        csv_import::csv::{
             ImportBalance, ParseCSVResult, create_import_id, parse_asb_bank_csv,
             parse_kiwibank_bank_simple_csv,
         },

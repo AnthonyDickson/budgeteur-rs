@@ -93,12 +93,12 @@ pub fn create_balance_table(connection: &rusqlite::Connection) -> Result<(), rus
 fn get_all_balances(connection: &Connection) -> Result<Vec<Balance>, Error> {
     connection
         .prepare("SELECT id, account, balance, date FROM balance;")?
-        .query_map([], map_row)?
+        .query_map([], map_row_to_balance)?
         .map(|maybe_balance| maybe_balance.map_err(|error| error.into()))
         .collect()
 }
 
-fn map_row(row: &rusqlite::Row) -> Result<Balance, rusqlite::Error> {
+pub fn map_row_to_balance(row: &rusqlite::Row) -> Result<Balance, rusqlite::Error> {
     let id = row.get(0)?;
     let account = row.get(1)?;
     let balance = row.get(2)?;
