@@ -7,6 +7,14 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Form;
+use charming::{
+    Chart, HtmlRenderer,
+    component::Legend,
+    element::{
+        Emphasis, Label, LabelLine, LabelPosition, Tooltip, Trigger, font_settings::FontWeight,
+    },
+    series::Pie,
+};
 use rusqlite::{Connection, params_from_iter};
 use serde::Deserialize;
 use std::{
@@ -14,6 +22,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use time::{Date, Duration, OffsetDateTime};
+use tracing::instrument::WithSubscriber;
 
 use crate::{
     AppState, Error,
@@ -87,7 +96,7 @@ struct DashboardSummaryData {
 /// Returns [Error::SqlError] if:
 /// - Database connection fails
 /// - SQL query preparation or execution fails
-pub fn get_transaction_summary(
+fn get_transaction_summary(
     date_range: RangeInclusive<Date>,
     excluded_tags: Option<&[DatabaseID]>,
     connection: &Connection,
@@ -130,6 +139,21 @@ pub fn get_transaction_summary(
     })
 }
 
+// type ExpensesByTag = Vec<(f64, String)>;
+
+// fn group_expenses_by_tag(
+//     date_range: RangeInclusive<Date>,
+//     excluded_tags: Option<&[DatabaseID]>,
+//     connection: &Connection,
+// ) -> Result<ExpensesByTag, Error> {
+//     // Query:
+//     // - select all transaction
+//     // - filter by date range
+//     // - exclude tags
+//     // - group by tag, include none
+//     // - sum
+// }
+
 // ============================================================================
 // TEMPLATES AND HANDLERS
 // ============================================================================
@@ -163,6 +187,8 @@ struct DashboardTemplate<'a> {
     tags_with_status: Vec<TagWithExclusion>,
     /// API endpoint for updating excluded tags
     excluded_tags_endpoint: &'a str,
+
+    chart: &'a str,
 }
 
 /// Display a page with an overview of the user's data.
@@ -235,8 +261,47 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
             },
             tags_with_status,
             excluded_tags_endpoint: endpoints::DASHBOARD_EXCLUDED_TAGS,
+            chart: &render_chart(&create_expenses_chart()),
         },
     )
+}
+
+fn create_expenses_chart() -> Chart {
+    Chart::new()
+        .tooltip(Tooltip::new().trigger(Trigger::Item))
+        .legend(Legend::new().top("5%").left("center"))
+        .series(
+            Pie::new()
+                .name("Access From")
+                .radius(vec!["40%", "55%"])
+                .avoid_label_overlap(false)
+                .label(Label::new().show(false).position(LabelPosition::Center))
+                .emphasis(
+                    Emphasis::new().label(
+                        Label::new()
+                            .show(true)
+                            .font_size(40)
+                            .font_weight(FontWeight::Bold),
+                    ),
+                )
+                .label_line(LabelLine::new().show(false))
+                .data(vec![
+                    (1048, "Search Engine"),
+                    (735, "Direct Access"),
+                    (580, "Email Marketing"),
+                    (484, "Union Ads"),
+                    (300, "Video Ads"),
+                ]),
+        )
+}
+
+fn render_chart(chart: &Chart) -> String {
+    const WIDTH: u64 = 640;
+    const HEIGHT: u64 = 480;
+    let renderer = HtmlRenderer::new("Expense by Tag", WIDTH, HEIGHT);
+    let html_str = renderer.render(chart);
+
+    html_str.unwrap()
 }
 
 // ============================================================================
