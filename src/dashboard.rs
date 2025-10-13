@@ -165,31 +165,6 @@ struct DashboardTemplate<'a> {
     excluded_tags_endpoint: &'a str,
 }
 
-// mod filters {
-//     use std::{fmt::Display, sync::OnceLock};
-
-//     use numfmt::{Formatter, Numeric, Precision};
-
-//     pub fn abs(number: f64, _: &dyn askama::Values) -> askama::Result<f64> {
-//         Ok(number.abs())
-//     }
-
-//     pub fn currency<T: Display + Numeric>(
-//         number: T,
-//         _: &dyn askama::Values,
-//     ) -> askama::Result<String> {
-//         static FORMATTER: OnceLock<Formatter> = OnceLock::new();
-
-//         let formatter = FORMATTER.get_or_init(|| {
-//             Formatter::currency("$")
-//                 .unwrap()
-//                 .precision(Precision::Decimals(0))
-//         });
-
-//         Ok(formatter.fmt_string(number))
-//     }
-// }
-
 /// Display a page with an overview of the user's data.
 pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response {
     let nav_bar = get_nav_bar(endpoints::DASHBOARD_VIEW);
