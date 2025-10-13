@@ -1,7 +1,9 @@
 # To Do
 
-- Dashboard: create pie chart that breaks down spending by category 
-- Dashboard: create line chart that charts monthly net income and balance (reconstruct balance from current balance and net income values)
+- Sort balances on balances page by account name, increasing order
+- Change transaction-tag relationship to 1:1 mapping from 1:N mapping. The issue is that multiple tags makes it unclear
+  how transactions should be assigned to tags when calculating expenses by tag.
+- Move `import_transaction_list` to `csv_import/import_transactions.rs`
 - Port alerts system to other pages (other than rules page) for handling error messages
   - Use alerts for confirming deletion of items from tags and rules pages (and others when they get full CRUD).
   - Alert for dashboard if excluded tag ops fail.
@@ -11,6 +13,7 @@
 - Create unique aliases of `i64` for each of the domain models, e.g., `Tag` -> `pub type TagID = i64;`.
 - Add edit and delete functionality for transactions.
 - Add full CRUD functionality for balances
+- Prompt user to add transactions on dashboard page if the user has no transactions.
 - Group transactions by week, month, year.
   - Add ISO week number to transaction
   - Add year number
