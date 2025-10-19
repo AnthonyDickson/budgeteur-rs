@@ -1,7 +1,12 @@
 {% extends "base.html" %}
+
 {% block title %}Dashboard{% endblock %}
-{% block content
-%} {{ nav_bar|safe }}
+{% block scripts %}
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts-gl@2.0.9/dist/echarts-gl.min.js"></script>
+{% endblock %}
+{% block content %}
+{{ nav_bar|safe }}
 <div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
   
   <!-- Tag Exclusion Filter -->
@@ -10,7 +15,7 @@
     <h3 class="text-xl font-semibold mb-4">Filter Summary by Tags</h3>
     <form 
       hx-post="{{ excluded_tags_endpoint }}" 
-      hx-target="#summary-sections"
+      hx-target="#charts"
       hx-swap="innerHTML"
       hx-trigger="change"
       hx-on::response-error="alert('Error: ' + event.detail.xhr.responseText)"
@@ -39,10 +44,7 @@
   </div>
   {% endif %}
 
-  <!-- Summary Sections Container -->
-  <div id="summary-sections" class="w-full max-w-4xl">
-    {% include "partials/dashboard_summaries.html" %}
-  </div> <!-- End summary-sections -->
+{{ charts|safe }}
 
 </div>
 {% endblock %}

@@ -7,9 +7,19 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Form;
+use charming::{
+    Chart,
+    component::{Axis, Grid, Legend, Title, VisualMap, VisualMapPiece},
+    element::{
+        AxisPointer, AxisPointerType, AxisType, Emphasis, EmphasisFocus, JsFunction, Tooltip,
+        Trigger,
+    },
+    series::{Line, bar},
+};
 use rusqlite::{Connection, params_from_iter};
 use serde::Deserialize;
 use std::{
+    collections::HashMap,
     ops::RangeInclusive,
     sync::{Arc, Mutex},
 };
@@ -20,7 +30,7 @@ use crate::{
     balances::get_total_account_balance,
     dashboard_preferences::{get_excluded_tags, save_excluded_tags},
     database_id::DatabaseID,
-    endpoints, filters,
+    endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
     tag::{Tag, get_all_tags},
@@ -31,26 +41,12 @@ use crate::{
 // CONSTANTS
 // ============================================================================
 
-/// Number of days to look back for monthly summary calculations
-const MONTHLY_PERIOD_DAYS: i64 = 28;
-
 /// Number of days to look back for yearly summary calculations  
 const YEARLY_PERIOD_DAYS: i64 = 365;
 
 // ============================================================================
 // MODELS
 // ============================================================================
-
-/// A summary of transaction amounts over a period, with income, expenses, and net income.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TransactionSummary {
-    /// Total positive transaction amounts (income)
-    pub income: f64,
-    /// Total negative transaction amounts (expenses, as absolute value)
-    pub expenses: f64,
-    /// Net income (income - expenses)
-    pub net_income: f64,
-}
 
 /// A tag with its exclusion status for dashboard display
 #[derive(Debug, Clone)]
@@ -61,22 +57,20 @@ pub struct TagWithExclusion {
     pub is_excluded: bool,
 }
 
-/// Summary data used by dashboard templates
-#[derive(Debug, Clone)]
-struct DashboardSummaryData {
-    /// Summary of transactions for the last 28 days.
-    monthly_summary: TransactionSummary,
-    /// Summary of transactions for the last 12 months.
-    yearly_summary: TransactionSummary,
-    /// Total balance across all accounts.
-    total_account_balance: f64,
+#[derive(Debug)]
+struct Transaction {
+    amount: f64,
+    date: Date,
+    tag: String,
 }
 
 // ============================================================================
 // DATABASE FUNCTIONS
 // ============================================================================
 
-/// Get a summary of transactions (income, expenses, net income) within a date range.
+/// Get transactions and their first tags within a date range.
+///
+/// A transaction's first tag is the tag name that comes first alphabetically.
 ///
 /// # Arguments
 /// * `date_range` - The inclusive date range to summarize transactions for
@@ -87,25 +81,30 @@ struct DashboardSummaryData {
 /// Returns [Error::SqlError] if:
 /// - Database connection fails
 /// - SQL query preparation or execution fails
-pub fn get_transaction_summary(
+fn get_transactions_in_date_range(
     date_range: RangeInclusive<Date>,
     excluded_tags: Option<&[DatabaseID]>,
     connection: &Connection,
-) -> Result<TransactionSummary, Error> {
+) -> Result<Vec<Transaction>, Error> {
     let base_query = "SELECT 
-        COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) as income,
-        COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) as expenses
+        t.amount,
+        t.date,
+        COALESCE(MIN(tag.name), 'Other') AS tag_name
     FROM \"transaction\" t
+    LEFT JOIN transaction_tag tt ON t.id = tt.transaction_id
+    LEFT JOIN tag ON tt.tag_id = tag.id
     WHERE t.date BETWEEN ?1 AND ?2";
 
     let (query, params) = if let Some(tags) = excluded_tags.filter(|t| !t.is_empty()) {
         let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let query_with_exclusions = format!(
-            "{base_query} AND t.id NOT IN (
-                SELECT tt.transaction_id 
-                FROM transaction_tag tt 
-                WHERE tt.tag_id IN ({placeholders})
-            )"
+            "{base_query} AND NOT EXISTS (
+                SELECT 1 
+                FROM transaction_tag tt2 
+                WHERE tt2.transaction_id = t.id 
+                AND tt2.tag_id IN ({placeholders})
+            )
+            GROUP BY t.id, t.amount, t.date"
         );
 
         let mut params = vec![date_range.start().to_string(), date_range.end().to_string()];
@@ -113,21 +112,21 @@ pub fn get_transaction_summary(
         (query_with_exclusions, params)
     } else {
         (
-            base_query.to_string(),
+            format!("{base_query} GROUP BY t.id, t.amount, t.date"),
             vec![date_range.start().to_string(), date_range.end().to_string()],
         )
     };
 
     let mut stmt = connection.prepare(&query)?;
-    let (income, expenses): (f64, f64) = stmt.query_row(params_from_iter(params), |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    })?;
-
-    Ok(TransactionSummary {
-        income,
-        expenses,
-        net_income: income - expenses,
-    })
+    stmt.query_map(params_from_iter(params), |row| {
+        Ok(Transaction {
+            amount: row.get(0)?,
+            date: row.get(1)?,
+            tag: row.get(2)?,
+        })
+    })?
+    .collect::<Result<Vec<Transaction>, rusqlite::Error>>()
+    .map_err(|error| error.into())
 }
 
 // ============================================================================
@@ -152,43 +151,33 @@ impl FromRef<AppState> for DashboardState {
     }
 }
 
+struct DashboardChart<'a> {
+    /// The HTML element ID to use for the chart (kebab case)
+    id: &'a str,
+    /// The JSON object for echarts
+    options: &'a str,
+}
+
+/// Renders the dashboard charts section.
+#[derive(Template)]
+#[template(path = "partials/dashboard_charts.html")]
+struct DashboardChartsTemplate<'a> {
+    charts: &'a [DashboardChart<'a>],
+}
+
 /// Renders the dashboard page.
 #[derive(Template)]
 #[template(path = "views/dashboard.html")]
 struct DashboardTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
-    /// Summary data (monthly, yearly, balance)
-    summary_data: DashboardSummaryData,
+
     /// All available tags with their exclusion status
     tags_with_status: Vec<TagWithExclusion>,
     /// API endpoint for updating excluded tags
     excluded_tags_endpoint: &'a str,
+
+    charts: DashboardChartsTemplate<'a>,
 }
-
-// mod filters {
-//     use std::{fmt::Display, sync::OnceLock};
-
-//     use numfmt::{Formatter, Numeric, Precision};
-
-//     pub fn abs(number: f64, _: &dyn askama::Values) -> askama::Result<f64> {
-//         Ok(number.abs())
-//     }
-
-//     pub fn currency<T: Display + Numeric>(
-//         number: T,
-//         _: &dyn askama::Values,
-//     ) -> askama::Result<String> {
-//         static FORMATTER: OnceLock<Formatter> = OnceLock::new();
-
-//         let formatter = FORMATTER.get_or_init(|| {
-//             Formatter::currency("$")
-//                 .unwrap()
-//                 .precision(Precision::Decimals(0))
-//         });
-
-//         Ok(formatter.fmt_string(number))
-//     }
-// }
 
 /// Display a page with an overview of the user's data.
 pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response {
@@ -227,21 +216,16 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
         Some(excluded_tag_ids.as_slice())
     };
 
-    // Calculate monthly summary (last 28 days)
-    let one_month_ago = today - Duration::days(MONTHLY_PERIOD_DAYS);
-    let monthly_summary =
-        match get_transaction_summary(one_month_ago..=today, excluded_tags_slice, &connection) {
-            Ok(summary) => summary,
-            Err(error) => return error.into_response(),
-        };
-
     // Calculate yearly summary (last 365 days)
     let one_year_ago = today - Duration::days(YEARLY_PERIOD_DAYS);
-    let yearly_summary =
-        match get_transaction_summary(one_year_ago..=today, excluded_tags_slice, &connection) {
-            Ok(summary) => summary,
-            Err(error) => return error.into_response(),
-        };
+    let transactions = match get_transactions_in_date_range(
+        one_year_ago..=today,
+        excluded_tags_slice,
+        &connection,
+    ) {
+        Ok(summary) => summary,
+        Err(error) => return error.into_response(),
+    };
 
     // Get total account balance
     let total_account_balance = match get_total_account_balance(&connection) {
@@ -253,15 +237,264 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
         StatusCode::OK,
         DashboardTemplate {
             nav_bar,
-            summary_data: DashboardSummaryData {
-                monthly_summary,
-                yearly_summary,
-                total_account_balance,
-            },
             tags_with_status,
             excluded_tags_endpoint: endpoints::DASHBOARD_EXCLUDED_TAGS,
+            charts: DashboardChartsTemplate {
+                charts: &[
+                    DashboardChart {
+                        id: "net-income-chart",
+                        options: &create_net_income_chart(&transactions).to_string(),
+                    },
+                    DashboardChart {
+                        id: "balances-chart",
+                        options: &create_balances_chart(total_account_balance, &transactions)
+                            .to_string(),
+                    },
+                    DashboardChart {
+                        id: "expenses-chart",
+                        options: &create_expenses_chart(&transactions).to_string(),
+                    },
+                ],
+            },
         },
     )
+}
+
+// ============================================================================
+// CHARTS
+// ============================================================================
+
+fn create_net_income_chart(transactions: &[Transaction]) -> Chart {
+    let monthly_totals = aggregate_by_month(transactions);
+    let (labels, values) = prepare_chart_data(&monthly_totals);
+
+    Chart::new()
+        .title(
+            Title::new()
+                .text("Net income")
+                .subtext("Last twelve months"),
+        )
+        .tooltip(create_currency_tooltip())
+        .x_axis(Axis::new().type_(AxisType::Category).data(labels))
+        .y_axis(Axis::new().type_(AxisType::Value))
+        .visual_map(VisualMap::new().show(false).pieces(vec![
+            VisualMapPiece::new().lte(-1).color("red"),
+            VisualMapPiece::new().gte(0).color("green"),
+        ]))
+        .series(Line::new().name("Net Income").data(values))
+}
+
+fn create_balances_chart(total_account_balance: f64, transactions: &[Transaction]) -> Chart {
+    let monthly_totals = aggregate_by_month(transactions);
+    let (labels, values) = calculate_running_balances(total_account_balance, &monthly_totals);
+
+    Chart::new()
+        .title(
+            Title::new()
+                .text("Net Balance")
+                .subtext("Last twelve months"),
+        )
+        .tooltip(create_currency_tooltip())
+        .x_axis(Axis::new().type_(AxisType::Category).data(labels))
+        .y_axis(Axis::new().type_(AxisType::Value))
+        .series(Line::new().name("Balance").data(values))
+}
+
+fn create_expenses_chart(transactions: &[Transaction]) -> Chart {
+    // Get all unique months from transactions and sort them
+    let sorted_months = get_sorted_months(transactions);
+    let labels = format_month_labels(&sorted_months);
+    let series_data = group_monthly_expenses_by_tag(transactions, &sorted_months);
+
+    let mut chart = Chart::new()
+        .title(
+            Title::new()
+                .text("Monthly Expenses")
+                .subtext("Last twelve months, grouped by tag"),
+        )
+        .tooltip(create_optional_currency_tooltip())
+        .legend(Legend::new())
+        .grid(
+            Grid::new()
+                .left("3%")
+                .right("4%")
+                .bottom("3%")
+                .contain_label(true),
+        )
+        .x_axis(Axis::new().type_(AxisType::Category).data(labels))
+        .y_axis(Axis::new().type_(AxisType::Value));
+
+    for (tag, data) in series_data {
+        chart = chart.series(
+            bar::Bar::new()
+                .name(tag)
+                .stack("Expenses")
+                .emphasis(Emphasis::new().focus(EmphasisFocus::Series))
+                .data(data),
+        );
+    }
+
+    chart
+}
+
+// ============================================================================
+// CHART HELPER FUNCTIONS
+// ============================================================================
+
+/// Aggregates transaction amounts by month
+fn aggregate_by_month(transactions: &[Transaction]) -> HashMap<Date, f64> {
+    let mut totals: HashMap<Date, f64> = HashMap::new();
+
+    for transaction in transactions {
+        let month = transaction.date.replace_day(1).unwrap();
+        *totals.entry(month).or_insert(0.0) += transaction.amount;
+    }
+
+    totals
+}
+
+/// Gets unique months from transactions and returns them sorted
+fn get_sorted_months(transactions: &[Transaction]) -> Vec<Date> {
+    let mut months = std::collections::HashSet::new();
+
+    for transaction in transactions {
+        let month = transaction.date.replace_day(1).unwrap();
+        months.insert(month);
+    }
+
+    let mut sorted: Vec<Date> = months.into_iter().collect();
+    sorted.sort();
+    sorted
+}
+
+/// Converts monthly data into sorted labels and values for charting
+fn prepare_chart_data(monthly_totals: &HashMap<Date, f64>) -> (Vec<String>, Vec<f64>) {
+    let mut sorted_months: Vec<Date> = monthly_totals.keys().copied().collect();
+    sorted_months.sort();
+
+    let labels = format_month_labels(&sorted_months);
+    let values = sorted_months
+        .iter()
+        .map(|month| monthly_totals[month])
+        .collect();
+
+    (labels, values)
+}
+
+/// Formats month labels as three-letter abbreviations
+fn format_month_labels(months: &[Date]) -> Vec<String> {
+    months
+        .iter()
+        .map(|date| {
+            let mut month = date.month().to_string();
+            month.truncate(3);
+            month
+        })
+        .collect()
+}
+
+/// Calculates running balances by working backwards from the current total
+fn calculate_running_balances(
+    total_balance: f64,
+    monthly_totals: &HashMap<Date, f64>,
+) -> (Vec<String>, Vec<f64>) {
+    let mut sorted_months: Vec<Date> = monthly_totals.keys().copied().collect();
+    sorted_months.sort();
+
+    let labels = format_month_labels(&sorted_months);
+
+    // Calculate balances by working backwards from current total
+    let mut balances = Vec::with_capacity(sorted_months.len());
+    let mut cumulative = 0.0;
+
+    for month in sorted_months.iter().rev() {
+        balances.push(total_balance - cumulative);
+        cumulative += monthly_totals[month];
+    }
+
+    balances.reverse();
+
+    (labels, balances)
+}
+
+/// Groups expense transactions by tag and aggregates them by month
+/// Groups expense transactions by tag and aggregates them by month
+fn group_monthly_expenses_by_tag(
+    transactions: &[Transaction],
+    sorted_months: &[Date],
+) -> Vec<(String, Vec<Option<f64>>)> {
+    // Group transactions by tag
+    let mut transactions_by_tag: HashMap<&str, Vec<&Transaction>> = HashMap::new();
+
+    for transaction in transactions.iter().filter(|t| t.amount < 0.0) {
+        transactions_by_tag
+            .entry(transaction.tag.as_str())
+            .or_default()
+            .push(transaction);
+    }
+
+    // Sort tags, with "Other" at the end
+    let mut sorted_tags: Vec<&str> = transactions_by_tag
+        .keys()
+        .copied()
+        .filter(|&tag| tag != "Other")
+        .collect();
+    sorted_tags.sort();
+
+    if transactions_by_tag.contains_key("Other") {
+        sorted_tags.push("Other");
+    }
+
+    // Calculate monthly totals for each tag
+    sorted_tags
+        .into_iter()
+        .map(|tag| {
+            let monthly_data =
+                calculate_monthly_expenses(transactions_by_tag[tag].as_slice(), sorted_months);
+            (tag.to_owned(), monthly_data)
+        })
+        .collect()
+}
+
+/// Calculates monthly expense totals for a set of transactions
+fn calculate_monthly_expenses(
+    transactions: &[&Transaction],
+    sorted_months: &[Date],
+) -> Vec<Option<f64>> {
+    let mut totals_by_month: HashMap<Date, f64> = HashMap::new();
+
+    for transaction in transactions {
+        let month = transaction.date.replace_day(1).unwrap();
+        let amount = transaction.amount.abs();
+        *totals_by_month.entry(month).or_insert(0.0) += amount;
+    }
+
+    sorted_months
+        .iter()
+        .map(|month| totals_by_month.get(month).copied())
+        .collect()
+}
+
+/// Creates a tooltip configuration for currency values
+fn create_currency_tooltip() -> Tooltip {
+    Tooltip::new()
+        .trigger(Trigger::Axis)
+        .value_formatter(JsFunction::new_with_args(
+            "number",
+            "return number.toFixed(2)",
+        ))
+        .axis_pointer(AxisPointer::new().type_(AxisPointerType::Shadow))
+}
+
+/// Creates a tooltip configuration for optional currency values
+fn create_optional_currency_tooltip() -> Tooltip {
+    Tooltip::new()
+        .trigger(Trigger::Axis)
+        .value_formatter(JsFunction::new_with_args(
+            "number",
+            "return (number) ? number.toFixed(2) : \"-\"",
+        ))
+        .axis_pointer(AxisPointer::new().type_(AxisPointerType::Shadow))
 }
 
 // ============================================================================
@@ -274,14 +507,6 @@ pub struct ExcludedTagsForm {
     /// List of tag IDs to exclude from dashboard summaries
     #[serde(default)]
     pub excluded_tags: Vec<DatabaseID>,
-}
-
-/// Template for rendering just the dashboard summary sections
-#[derive(Template)]
-#[template(path = "partials/dashboard_summaries.html")]
-struct DashboardSummariesTemplate {
-    /// Summary data (monthly, yearly, balance)
-    summary_data: DashboardSummaryData,
 }
 
 /// API endpoint to update excluded tags and return updated summaries
@@ -297,7 +522,7 @@ pub async fn update_excluded_tags(
         return Error::DashboardPreferencesSaveError.into_response();
     }
 
-    // Get updated summaries
+    // Get updated charts
     let local_timezone = match get_local_offset(&state.local_timezone) {
         Some(offset) => offset,
         None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
@@ -309,39 +534,47 @@ pub async fn update_excluded_tags(
         Some(excluded_tags.as_slice())
     };
 
-    // Calculate monthly summary (last 28 days)
-    let one_month_ago = today - Duration::days(MONTHLY_PERIOD_DAYS);
-    let monthly_summary =
-        match get_transaction_summary(one_month_ago..=today, excluded_tags_slice, &connection) {
-            Ok(summary) => summary,
-            Err(_) => return Error::DashboardCalculationError.into_response(),
-        };
-
-    // Calculate yearly summary (last 365 days)
     let one_year_ago = today - Duration::days(YEARLY_PERIOD_DAYS);
-    let yearly_summary =
-        match get_transaction_summary(one_year_ago..=today, excluded_tags_slice, &connection) {
-            Ok(summary) => summary,
-            Err(_) => return Error::DashboardCalculationError.into_response(),
-        };
+    let transactions = match get_transactions_in_date_range(
+        one_year_ago..=today,
+        excluded_tags_slice,
+        &connection,
+    ) {
+        Ok(summary) => summary,
+        Err(error) => return error.into_response(),
+    };
 
     // Get total account balance
     let total_account_balance = match get_total_account_balance(&connection) {
         Ok(total) => total,
-        Err(_) => return Error::DashboardCalculationError.into_response(),
+        Err(error) => return error.into_response(),
     };
 
     render(
         StatusCode::OK,
-        DashboardSummariesTemplate {
-            summary_data: DashboardSummaryData {
-                monthly_summary,
-                yearly_summary,
-                total_account_balance,
-            },
+        DashboardChartsTemplate {
+            charts: &[
+                DashboardChart {
+                    id: "net-income-chart",
+                    options: &create_net_income_chart(&transactions).to_string(),
+                },
+                DashboardChart {
+                    id: "balances-chart",
+                    options: &create_balances_chart(total_account_balance, &transactions)
+                        .to_string(),
+                },
+                DashboardChart {
+                    id: "expenses-chart",
+                    options: &create_expenses_chart(&transactions).to_string(),
+                },
+            ],
         },
     )
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod dashboard_route_tests {
@@ -355,12 +588,10 @@ mod dashboard_route_tests {
 
     use crate::{
         dashboard::DashboardState,
-        dashboard_preferences::save_excluded_tags,
         database_id::DatabaseID,
         db::initialize,
         tag::{TagName, create_tag},
         transaction::{Transaction, create_transaction},
-        transaction_tag::set_transaction_tags,
     };
 
     use rusqlite::Connection;
@@ -375,39 +606,15 @@ mod dashboard_route_tests {
     }
 
     #[tokio::test]
-    async fn dashboard_displays_monthly_and_yearly_summaries() {
+    async fn dashboard_page_loads_successfully() {
         let conn = get_test_connection();
         let today = OffsetDateTime::now_utc().date();
 
-        // Create transactions for monthly summary (within last 30 days)
+        // Create some test data
         create_transaction(Transaction::build(100.0, today, "".to_owned()), &conn).unwrap();
         create_transaction(
             Transaction::build(-50.0, today - Duration::days(15), "".to_owned()),
             &conn,
-        )
-        .unwrap();
-
-        // Create transactions for yearly summary (within last 365 days but outside monthly range)
-        create_transaction(
-            Transaction::build(200.0, today - Duration::days(60), "".to_owned()),
-            &conn,
-        )
-        .unwrap();
-        create_transaction(
-            Transaction::build(-100.0, today - Duration::days(180), "".to_owned()),
-            &conn,
-        )
-        .unwrap();
-
-        // Create account balances
-        conn.execute(
-            "INSERT INTO balance (account, balance, date) VALUES (?1, ?2, ?3)",
-            ("Account 1", 500.0, today.to_string()),
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO balance (account, balance, date) VALUES (?1, ?2, ?3)",
-            ("Account 2", 250.0, today.to_string()),
         )
         .unwrap();
 
@@ -423,17 +630,35 @@ mod dashboard_route_tests {
         let html = parse_html(response).await;
         assert_valid_html(&html);
 
-        // Check monthly summary section
-        let monthly_section = get_section_by_heading(&html, "Last 28 Days");
-        assert_section_contains_values(&monthly_section, &["$100", "$50", "$50"]);
+        // Check that charts are present
+        assert_chart_exists(&html, "net-income-chart");
+        assert_chart_exists(&html, "balances-chart");
+        assert_chart_exists(&html, "expenses-chart");
+    }
 
-        // Check yearly summary section
-        let yearly_section = get_section_by_heading(&html, "Last 12 Months");
-        assert_section_contains_values(&yearly_section, &["$300", "$150", "$150"]);
+    #[tokio::test]
+    async fn dashboard_displays_tag_exclusion_controls() {
+        let conn = get_test_connection();
 
-        // Check total account balance section
-        let balance_section = get_section_by_heading(&html, "Total Account Balance");
-        assert_section_contains_value(&balance_section, "$750");
+        // Create test tags
+        create_tag(TagName::new("Food").unwrap(), &conn).unwrap();
+        create_tag(TagName::new("Transport").unwrap(), &conn).unwrap();
+
+        let state = DashboardState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_dashboard_page(State(state)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let html = parse_html(response).await;
+
+        // Check that tag checkboxes are present
+        let checkbox_selector =
+            Selector::parse("input[type='checkbox'][name='excluded_tags']").unwrap();
+        let checkboxes: Vec<_> = html.select(&checkbox_selector).collect();
+        assert_eq!(checkboxes.len(), 2, "Should have 2 tag checkboxes");
     }
 
     async fn parse_html(response: Response<Body>) -> Html {
@@ -454,82 +679,13 @@ mod dashboard_route_tests {
     }
 
     #[track_caller]
-    fn get_section_by_heading<'a>(html: &'a Html, heading_text: &str) -> scraper::ElementRef<'a> {
-        let heading_selector = Selector::parse("h3").unwrap();
-
-        for heading in html.select(&heading_selector) {
-            let text: String = heading.text().collect();
-            if text.trim() == heading_text {
-                // Find the parent div containing this heading
-                if let Some(parent) = heading.parent() {
-                    if let Some(section) = scraper::ElementRef::wrap(parent) {
-                        if section.value().name() == "div" {
-                            return section;
-                        }
-                    }
-                }
-            }
-        }
-        panic!("Could not find section with heading '{}'", heading_text);
-    }
-
-    #[track_caller]
-    fn assert_section_contains_values(section: &scraper::ElementRef, expected_values: &[&str]) {
-        let text: String = section.text().collect();
-        for expected in expected_values {
-            assert!(
-                text.contains(expected),
-                "Section should contain '{}' but got: {}",
-                expected,
-                text
-            );
-        }
-    }
-
-    #[track_caller]
-    fn assert_section_contains_value(section: &scraper::ElementRef, expected_value: &str) {
-        assert_section_contains_values(section, &[expected_value]);
-    }
-
-    #[tokio::test]
-    async fn excludes_tagged_transactions_from_summaries() {
-        let conn = get_test_connection();
-        let today = OffsetDateTime::now_utc().date();
-
-        // Create test tags
-        let excluded_tag = create_tag(TagName::new("ExcludedTag").unwrap(), &conn).unwrap();
-        let included_tag = create_tag(TagName::new("IncludedTag").unwrap(), &conn).unwrap();
-
-        // Create transactions
-        let excluded_transaction =
-            create_transaction(Transaction::build(100.0, today, "".to_owned()), &conn).unwrap();
-        let included_transaction =
-            create_transaction(Transaction::build(50.0, today, "".to_owned()), &conn).unwrap();
-        let _untagged_transaction =
-            create_transaction(Transaction::build(25.0, today, "".to_owned()), &conn).unwrap();
-
-        // Tag transactions
-        set_transaction_tags(excluded_transaction.id, &[excluded_tag.id], &conn).unwrap();
-        set_transaction_tags(included_transaction.id, &[included_tag.id], &conn).unwrap();
-
-        // Set excluded tags
-        save_excluded_tags(vec![excluded_tag.id], &conn).unwrap();
-
-        let state = DashboardState {
-            db_connection: Arc::new(Mutex::new(conn)),
-            local_timezone: "Etc/UTC".to_owned(),
-        };
-
-        let response = get_dashboard_page(State(state)).await;
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let html = parse_html(response).await;
-        assert_valid_html(&html);
-
-        // Check that monthly summary excludes the tagged transaction
-        // Should only include $50 (included) + $25 (untagged) = $75, not $100 from excluded
-        let monthly_section = get_section_by_heading(&html, "Last 28 Days");
-        assert_section_contains_value(&monthly_section, "$75"); // Total income should be $75, not $175
+    fn assert_chart_exists(html: &Html, chart_id: &str) {
+        let selector = Selector::parse(&format!("#{}", chart_id)).unwrap();
+        assert!(
+            html.select(&selector).next().is_some(),
+            "Chart with id '{}' not found",
+            chart_id
+        );
     }
 
     #[test]
@@ -549,49 +705,14 @@ mod dashboard_route_tests {
         let form: ExcludedTagsForm = serde_html_form::from_str(form_data).unwrap();
         assert_eq!(form.excluded_tags, Vec::<DatabaseID>::new());
     }
-
-    #[tokio::test]
-    async fn includes_all_transactions_when_no_tags_excluded() {
-        let conn = get_test_connection();
-        let today = OffsetDateTime::now_utc().date();
-
-        // Create test tags
-        let tag = create_tag(TagName::new("TestTag").unwrap(), &conn).unwrap();
-
-        // Create transactions
-        let tagged_transaction =
-            create_transaction(Transaction::build(100.0, today, "".to_owned()), &conn).unwrap();
-        let _untagged_transaction =
-            create_transaction(Transaction::build(50.0, today, "".to_owned()), &conn).unwrap();
-
-        // Tag one transaction
-        set_transaction_tags(tagged_transaction.id, &[tag.id], &conn).unwrap();
-
-        // Don't exclude any tags (default state)
-
-        let state = DashboardState {
-            db_connection: Arc::new(Mutex::new(conn)),
-            local_timezone: "Etc/UTC".to_owned(),
-        };
-
-        let response = get_dashboard_page(State(state)).await;
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let html = parse_html(response).await;
-        assert_valid_html(&html);
-
-        // Check that monthly summary includes all transactions
-        let monthly_section = get_section_by_heading(&html, "Last 28 Days");
-        assert_section_contains_value(&monthly_section, "$150"); // Total income should be $150
-    }
 }
 
 #[cfg(test)]
-mod get_transaction_summary_tests {
+mod get_transactions_in_date_range_tests {
     use rusqlite::Connection;
     use time::macros::date;
 
-    use super::{TransactionSummary, get_transaction_summary};
+    use super::get_transactions_in_date_range;
     use crate::{
         db::initialize,
         tag::{TagName, create_tag},
@@ -606,7 +727,7 @@ mod get_transaction_summary_tests {
     }
 
     #[test]
-    fn returns_summary_with_income_and_expenses() {
+    fn returns_transactions_in_date_range() {
         let conn = get_test_connection();
         let start_date = date!(2024 - 01 - 01);
         let end_date = date!(2024 - 01 - 31);
@@ -619,34 +740,27 @@ mod get_transaction_summary_tests {
         )
         .unwrap();
         create_transaction(Transaction::build(75.0, end_date, "".to_owned()), &conn).unwrap();
-        create_transaction(
-            Transaction::build(-25.0, date!(2024 - 01 - 20), "".to_owned()),
-            &conn,
-        )
-        .unwrap();
 
-        let result = get_transaction_summary(start_date..=end_date, None, &conn).unwrap();
+        let transactions =
+            get_transactions_in_date_range(start_date..=end_date, None, &conn).unwrap();
 
-        assert_eq!(result.income, 175.0);
-        assert_eq!(result.expenses, 75.0);
-        assert_eq!(result.net_income, 100.0);
+        assert_eq!(transactions.len(), 3);
+
+        // Verify amounts are correct
+        let total: f64 = transactions.iter().map(|t| t.amount).sum();
+        assert_eq!(total, 125.0); // 100 - 50 + 75
     }
 
     #[test]
-    fn returns_zero_summary_for_no_transactions() {
+    fn returns_empty_vec_for_no_transactions() {
         let conn = get_test_connection();
         let start_date = date!(2024 - 01 - 01);
         let end_date = date!(2024 - 01 - 31);
 
-        let result = get_transaction_summary(start_date..=end_date, None, &conn).unwrap();
+        let transactions =
+            get_transactions_in_date_range(start_date..=end_date, None, &conn).unwrap();
 
-        let expected = TransactionSummary {
-            income: 0.0,
-            expenses: 0.0,
-            net_income: 0.0,
-        };
-
-        assert_eq!(result, expected);
+        assert_eq!(transactions.len(), 0);
     }
 
     #[test]
@@ -671,11 +785,12 @@ mod get_transaction_summary_tests {
         )
         .unwrap();
 
-        let result = get_transaction_summary(start_date..=end_date, None, &conn).unwrap();
+        let transactions =
+            get_transactions_in_date_range(start_date..=end_date, None, &conn).unwrap();
 
-        assert_eq!(result.income, 100.0);
-        assert_eq!(result.expenses, 50.0);
-        assert_eq!(result.net_income, 50.0);
+        assert_eq!(transactions.len(), 2);
+        let total: f64 = transactions.iter().map(|t| t.amount).sum();
+        assert_eq!(total, 50.0); // 100 - 50
     }
 
     #[test]
@@ -701,16 +816,15 @@ mod get_transaction_summary_tests {
         set_transaction_tags(excluded_transaction.id, &[excluded_tag.id], &conn).unwrap();
         set_transaction_tags(included_transaction.id, &[included_tag.id], &conn).unwrap();
 
-        // Get summary excluding the excluded tag
+        // Get transactions excluding the excluded tag
         let excluded_tags = vec![excluded_tag.id];
-        let result =
-            get_transaction_summary(start_date..=end_date, Some(&excluded_tags), &conn).unwrap();
+        let transactions =
+            get_transactions_in_date_range(start_date..=end_date, Some(&excluded_tags), &conn)
+                .unwrap();
 
-        // Should only include $50 (tagged with included tag) + $25 (untagged) = $75
-        // Should exclude $100 (tagged with excluded tag)
-        assert_eq!(result.income, 75.0);
-        assert_eq!(result.expenses, 0.0);
-        assert_eq!(result.net_income, 75.0);
+        assert_eq!(transactions.len(), 2);
+        let total: f64 = transactions.iter().map(|t| t.amount).sum();
+        assert_eq!(total, 75.0); // 50 + 25, excluding 100
     }
 
     #[test]
@@ -732,12 +846,203 @@ mod get_transaction_summary_tests {
         // Tag one transaction
         set_transaction_tags(tagged_transaction.id, &[tag.id], &conn).unwrap();
 
-        // Get summary with no exclusions
-        let result = get_transaction_summary(start_date..=end_date, None, &conn).unwrap();
+        // Get transactions with no exclusions
+        let transactions =
+            get_transactions_in_date_range(start_date..=end_date, None, &conn).unwrap();
 
-        // Should include all transactions: $100 + $50 = $150
-        assert_eq!(result.income, 150.0);
-        assert_eq!(result.expenses, 0.0);
-        assert_eq!(result.net_income, 150.0);
+        assert_eq!(transactions.len(), 2);
+        let total: f64 = transactions.iter().map(|t| t.amount).sum();
+        assert_eq!(total, 150.0); // 100 + 50
+    }
+
+    #[test]
+    fn assigns_other_tag_to_untagged_transactions() {
+        let conn = get_test_connection();
+        let start_date = date!(2024 - 01 - 01);
+        let end_date = date!(2024 - 01 - 31);
+
+        // Create untagged transaction
+        create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn).unwrap();
+
+        let transactions =
+            get_transactions_in_date_range(start_date..=end_date, None, &conn).unwrap();
+
+        assert_eq!(transactions.len(), 1);
+        assert_eq!(transactions[0].tag, "Other");
+    }
+
+    #[test]
+    fn uses_first_alphabetical_tag_for_multi_tagged_transactions() {
+        let conn = get_test_connection();
+        let start_date = date!(2024 - 01 - 01);
+        let end_date = date!(2024 - 01 - 31);
+
+        // Create tags (not in alphabetical order)
+        let zebra_tag = create_tag(TagName::new("Zebra").unwrap(), &conn).unwrap();
+        let alpha_tag = create_tag(TagName::new("Alpha").unwrap(), &conn).unwrap();
+
+        // Create transaction with multiple tags
+        let transaction =
+            create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn)
+                .unwrap();
+        set_transaction_tags(transaction.id, &[zebra_tag.id, alpha_tag.id], &conn).unwrap();
+
+        let transactions =
+            get_transactions_in_date_range(start_date..=end_date, None, &conn).unwrap();
+
+        assert_eq!(transactions.len(), 1);
+        assert_eq!(transactions[0].tag, "Alpha"); // First alphabetically
+    }
+}
+
+#[cfg(test)]
+mod chart_function_tests {
+    use time::macros::date;
+
+    use super::{
+        Transaction, aggregate_by_month, calculate_monthly_expenses, format_month_labels,
+        get_sorted_months, group_monthly_expenses_by_tag,
+    };
+
+    fn create_test_transaction(amount: f64, date: time::Date, tag: &str) -> Transaction {
+        Transaction {
+            amount,
+            date,
+            tag: tag.to_owned(),
+        }
+    }
+
+    #[test]
+    fn aggregate_by_month_sums_transactions() {
+        let transactions = vec![
+            create_test_transaction(100.0, date!(2024 - 01 - 15), "Food"),
+            create_test_transaction(50.0, date!(2024 - 01 - 20), "Transport"),
+            create_test_transaction(-30.0, date!(2024 - 02 - 10), "Food"),
+        ];
+
+        let result = aggregate_by_month(&transactions);
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[&date!(2024 - 01 - 01)], 150.0);
+        assert_eq!(result[&date!(2024 - 02 - 01)], -30.0);
+    }
+
+    #[test]
+    fn aggregate_by_month_handles_empty_input() {
+        let transactions = vec![];
+        let result = aggregate_by_month(&transactions);
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn get_sorted_months_returns_unique_sorted_months() {
+        let transactions = vec![
+            create_test_transaction(100.0, date!(2024 - 03 - 15), "Food"),
+            create_test_transaction(50.0, date!(2024 - 01 - 20), "Transport"),
+            create_test_transaction(-30.0, date!(2024 - 02 - 10), "Food"),
+            create_test_transaction(25.0, date!(2024 - 01 - 25), "Other"), // Same month as second
+        ];
+
+        let result = get_sorted_months(&transactions);
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], date!(2024 - 01 - 01));
+        assert_eq!(result[1], date!(2024 - 02 - 01));
+        assert_eq!(result[2], date!(2024 - 03 - 01));
+    }
+
+    #[test]
+    fn format_month_labels_creates_three_letter_abbreviations() {
+        let months = vec![
+            date!(2024 - 01 - 01),
+            date!(2024 - 02 - 01),
+            date!(2024 - 12 - 01),
+        ];
+
+        let result = format_month_labels(&months);
+
+        assert_eq!(result, vec!["Jan", "Feb", "Dec"]);
+    }
+
+    #[test]
+    fn calculate_monthly_expenses_aggregates_by_month() {
+        let t1 = create_test_transaction(-100.0, date!(2024 - 01 - 15), "Food");
+        let t2 = create_test_transaction(-50.0, date!(2024 - 01 - 20), "Food");
+        let t3 = create_test_transaction(-30.0, date!(2024 - 02 - 10), "Food");
+
+        let transactions = vec![&t1, &t2, &t3];
+        let months = vec![
+            date!(2024 - 01 - 01),
+            date!(2024 - 02 - 01),
+            date!(2024 - 03 - 01),
+        ];
+
+        let result = calculate_monthly_expenses(&transactions, &months);
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], Some(150.0)); // Jan: 100 + 50
+        assert_eq!(result[1], Some(30.0)); // Feb: 30
+        assert_eq!(result[2], None); // Mar: no data
+    }
+
+    #[test]
+    fn group_monthly_expenses_by_tag_groups_correctly() {
+        let transactions = vec![
+            create_test_transaction(-100.0, date!(2024 - 01 - 15), "Food"),
+            create_test_transaction(-50.0, date!(2024 - 01 - 20), "Transport"),
+            create_test_transaction(-30.0, date!(2024 - 02 - 10), "Food"),
+            create_test_transaction(200.0, date!(2024 - 01 - 10), "Income"), // Positive, should be ignored
+        ];
+
+        let months = vec![date!(2024 - 01 - 01), date!(2024 - 02 - 01)];
+
+        let result = group_monthly_expenses_by_tag(&transactions, &months);
+
+        // Should have 2 tags: Food and Transport (Income is positive, so excluded)
+        assert_eq!(result.len(), 2);
+
+        // Find Food tag
+        let food_data = result.iter().find(|(tag, _)| tag == "Food").unwrap();
+        assert_eq!(food_data.1, vec![Some(100.0), Some(30.0)]);
+
+        // Find Transport tag
+        let transport_data = result.iter().find(|(tag, _)| tag == "Transport").unwrap();
+        assert_eq!(transport_data.1, vec![Some(50.0), None]);
+    }
+
+    #[test]
+    fn group_monthly_expenses_by_tag_puts_other_last() {
+        let transactions = vec![
+            create_test_transaction(-100.0, date!(2024 - 01 - 15), "Zebra"),
+            create_test_transaction(-50.0, date!(2024 - 01 - 20), "Other"),
+            create_test_transaction(-30.0, date!(2024 - 01 - 10), "Alpha"),
+        ];
+
+        let months = vec![date!(2024 - 01 - 01)];
+
+        let result = group_monthly_expenses_by_tag(&transactions, &months);
+
+        assert_eq!(result.len(), 3);
+        // Check that "Other" is last
+        assert_eq!(result[2].0, "Other");
+        // Check alphabetical order for others
+        assert_eq!(result[0].0, "Alpha");
+        assert_eq!(result[1].0, "Zebra");
+    }
+
+    #[test]
+    fn group_monthly_expenses_by_tag_handles_no_other_tag() {
+        let transactions = vec![
+            create_test_transaction(-100.0, date!(2024 - 01 - 15), "Food"),
+            create_test_transaction(-50.0, date!(2024 - 01 - 20), "Transport"),
+        ];
+
+        let months = vec![date!(2024 - 01 - 01)];
+
+        let result = group_monthly_expenses_by_tag(&transactions, &months);
+
+        // Should have 2 tags, neither is "Other"
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|(tag, _)| tag != "Other"));
     }
 }

@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use askama::Template;
 use axum::{
     extract::{FromRef, Multipart, State, multipart::Field},
     http::StatusCode,
@@ -11,11 +10,7 @@ use rusqlite::Connection;
 use crate::{
     AppState, Error,
     alert::AlertTemplate,
-    balances::Balance,
-    csv::{ImportBalance, parse_csv},
-    endpoints,
-    import_result::ImportMessageBuilder,
-    navigation::{NavbarTemplate, get_nav_bar},
+    csv_import::{alert::ImportMessageBuilder, balance::upsert_balance, csv::parse_csv},
     rule::{TaggingMode, apply_rules_to_transactions},
     shared_templates::render,
     timezone::get_local_offset,
@@ -38,34 +33,6 @@ impl FromRef<AppState> for ImportState {
             local_timezone: state.local_timezone.clone(),
         }
     }
-}
-
-/// Renders the form for importing CSV files.
-#[derive(Template)]
-#[template(path = "partials/import_form.html")]
-pub struct ImportTransactionFormTemplate<'a> {
-    pub import_route: &'a str,
-}
-
-/// Renders the import CSV page.
-#[derive(Template)]
-#[template(path = "views/import.html")]
-struct ImportTransactionsTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    form: ImportTransactionFormTemplate<'a>,
-}
-
-/// Route handler for the import CSV page.
-pub async fn get_import_page() -> Response {
-    render(
-        StatusCode::OK,
-        ImportTransactionsTemplate {
-            nav_bar: get_nav_bar(endpoints::IMPORT_VIEW),
-            form: ImportTransactionFormTemplate {
-                import_route: endpoints::IMPORT,
-            },
-        },
-    )
 }
 
 /// Route handler for importing transactions from CSV files.
@@ -223,273 +190,6 @@ async fn parse_multipart_field(field: Field<'_>) -> Result<String, Error> {
     Ok(data)
 }
 
-fn upsert_balance(
-    imported_balance: &ImportBalance,
-    connection: &Connection,
-) -> Result<Balance, Error> {
-    // First, try the upsert with RETURNING
-    let maybe_balance = connection
-        .prepare(
-            "INSERT INTO balance (account, balance, date)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(account) DO UPDATE SET
-                 balance = excluded.balance,
-                 date = excluded.date
-             WHERE excluded.date > balance.date
-             RETURNING id, account, balance, date",
-        )?
-        .query_row(
-            (
-                &imported_balance.account,
-                imported_balance.balance,
-                imported_balance.date,
-            ),
-            map_row_to_balance,
-        );
-
-    match maybe_balance {
-        Ok(balance) => Ok(balance),
-        Err(rusqlite::Error::QueryReturnedNoRows) => {
-            // No rows returned means the WHERE condition wasn't met
-            // (trying to insert older data), so fetch the existing record
-            connection
-                .prepare("SELECT id, account, balance, date FROM balance WHERE account = ?1")?
-                .query_row([&imported_balance.account], map_row_to_balance)
-                .map_err(Error::from)
-        }
-        Err(error) => Err(Error::from(error)),
-    }
-}
-
-fn map_row_to_balance(row: &rusqlite::Row) -> Result<Balance, rusqlite::Error> {
-    let id = row.get(0)?;
-    let account = row.get(1)?;
-    let balance = row.get(2)?;
-    let date = row.get(3)?;
-
-    Ok(Balance {
-        id,
-        account,
-        balance,
-        date,
-    })
-}
-
-#[cfg(test)]
-mod upsert_balance_tests {
-    use rusqlite::Connection;
-    use time::macros::date;
-
-    use crate::{
-        balances::{Balance, create_balance_table},
-        csv::ImportBalance,
-        import::upsert_balance,
-    };
-
-    #[tokio::test]
-    async fn can_upsert_balance() {
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-        let want = Balance {
-            id: 1,
-            account: "1234-5678-9101-012".to_owned(),
-            balance: 37_337_252_784.63,
-            date: date!(2025 - 05 - 31),
-        };
-
-        let got = upsert_balance(
-            &ImportBalance {
-                account: want.account.clone(),
-                balance: want.balance,
-                date: want.date,
-            },
-            &connection,
-        )
-        .expect("Could not create account balance");
-
-        assert_eq!(want, got, "want balance {want:?}, got {got:?}");
-    }
-
-    /// This test detects a bug with upsert when the same CSV, and therefore the
-    /// same balances, are imported twice.
-    ///
-    /// When using the last inserted row id to fetch the balance row, if there
-    /// was a conflict which resulted in no rows being inserted/updated the row
-    /// id would either be zero if the database connection was reset, or the
-    /// last successfully inserted row otherwise. In the first case, this
-    /// resulted in an error 'NotFound: the requested resource could not be
-    /// found', and in the second case it would result in an unrelated balance
-    /// being returned.
-    #[tokio::test]
-    async fn upsert_balances_twice() {
-        let want = vec![
-            Balance {
-                id: 1,
-                account: "1234-5678-9101-012".to_owned(),
-                balance: 123.45,
-                date: date!(2025 - 05 - 31),
-            },
-            Balance {
-                id: 2,
-                account: "1234-5678-9101-013".to_owned(),
-                balance: 234.56,
-                date: date!(2025 - 05 - 31),
-            },
-            Balance {
-                id: 3,
-                account: "1234-5678-9101-014".to_owned(),
-                balance: 345.67,
-                date: date!(2025 - 05 - 27),
-            },
-            Balance {
-                id: 4,
-                account: "1234-5678-9101-015".to_owned(),
-                balance: 567.89,
-                date: date!(2025 - 06 - 06),
-            },
-        ];
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-
-        for balance in &want {
-            upsert_balance(
-                &ImportBalance {
-                    account: balance.account.clone(),
-                    balance: balance.balance,
-                    date: balance.date,
-                },
-                &connection,
-            )
-            .expect("Could not create account balance");
-        }
-
-        let mut got = Vec::new();
-        for balance in &want {
-            let got_balance = upsert_balance(
-                &ImportBalance {
-                    account: balance.account.clone(),
-                    balance: balance.balance,
-                    date: balance.date,
-                },
-                &connection,
-            )
-            .expect("Could not create account balance");
-            got.push(got_balance);
-        }
-
-        assert_eq!(want, got, "want balance {want:?}, got {got:?}");
-    }
-
-    #[tokio::test]
-    async fn upsert_balance_increments_id() {
-        let want = vec![
-            Balance {
-                id: 1,
-                account: "1234-5678-9101-012".to_owned(),
-                balance: 37_337_252_784.63,
-                date: date!(2025 - 05 - 31),
-            },
-            Balance {
-                id: 2,
-                account: "2345-6789-1011-123".to_owned(),
-                balance: 37_337_252_784.63,
-                date: date!(2025 - 05 - 31),
-            },
-        ];
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-
-        let mut got = Vec::new();
-
-        for balance in &want {
-            let got_balance = upsert_balance(
-                &ImportBalance {
-                    account: balance.account.clone(),
-                    balance: balance.balance,
-                    date: balance.date,
-                },
-                &connection,
-            )
-            .expect("Could not create account balance");
-            got.push(got_balance);
-        }
-
-        assert_eq!(want, got, "want balance {want:?}, got {got:?}");
-    }
-
-    #[tokio::test]
-    async fn upsert_takes_balance_with_latest_date() {
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-        let account = "1234-5678-9101-112";
-        let test_balances = vec![
-            // This entry should be accepted in the first upsert
-            Balance {
-                id: 1,
-                account: account.to_owned(),
-                balance: 73_254.89,
-                date: date!(2025 - 05 - 30),
-            },
-            // This entry should overwrite the balance from the first upsert
-            // because it is newer
-            Balance {
-                id: 1,
-                account: account.to_owned(),
-                balance: 37_337_252_784.63,
-                date: date!(2025 - 05 - 31),
-            },
-            // This entry should be ignored because it is older.
-            Balance {
-                id: 1,
-                account: account.to_owned(),
-                balance: 2_727_843.43,
-                date: date!(2025 - 05 - 29),
-            },
-        ];
-        let want = vec![
-            Balance {
-                id: 1,
-                account: account.to_owned(),
-                balance: 73_254.89,
-                date: date!(2025 - 05 - 30),
-            },
-            Balance {
-                id: 1,
-                account: account.to_owned(),
-                balance: 37_337_252_784.63,
-                date: date!(2025 - 05 - 31),
-            },
-            Balance {
-                id: 1,
-                account: account.to_owned(),
-                balance: 37_337_252_784.63,
-                date: date!(2025 - 05 - 31),
-            },
-        ];
-
-        let mut got = Vec::new();
-
-        for balance in test_balances {
-            let got_balance = upsert_balance(
-                &ImportBalance {
-                    account: balance.account.clone(),
-                    balance: balance.balance,
-                    date: balance.date,
-                },
-                &connection,
-            )
-            .expect("Could not create account balance");
-            got.push(got_balance);
-        }
-
-        assert_eq!(want, got, "want left");
-    }
-}
-
 #[cfg(test)]
 mod import_transactions_tests {
     use std::sync::{Arc, Mutex};
@@ -500,22 +200,20 @@ mod import_transactions_tests {
         response::Response,
     };
     use rusqlite::Connection;
-    use scraper::{ElementRef, Html};
+    use scraper::Html;
     use time::macros::date;
 
     use crate::{
         Error,
-        balances::Balance,
+        balances::{Balance, map_row_to_balance},
+        csv_import::import_transactions::{ImportState, import_transactions},
         db::initialize,
         endpoints,
-        import::{ImportState, get_import_page, import_transactions},
         rule::create_rule,
         tag::{TagName, create_tag},
         transaction::count_transactions,
         transaction_tag::get_transaction_tags,
     };
-
-    use super::map_row_to_balance;
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -565,29 +263,6 @@ mod import_transactions_tests {
     17 Jan 2025,Amazon Prime Subscription ;,,-12.99,41.81\n\
     18 Jan 2025,Shell Gas Station ;,,-35.00,6.81\n\
     19 Jan 2025,Random Transaction ;,,-25.00,-18.19";
-
-    #[tokio::test]
-    async fn render_page() {
-        let response = get_import_page().await;
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response
-                .headers()
-                .get("content-type")
-                .expect("content-type header missing"),
-            "text/html; charset=utf-8"
-        );
-
-        let html = parse_html(response, HTMLParsingMode::Document).await;
-        assert_valid_html(&html);
-
-        let form = must_get_form(&html);
-        assert_hx_endpoint(&form, endpoints::IMPORT);
-        assert_form_enctype(&form, "multipart/form-data");
-        assert_form_input(&form, "files", "file");
-        assert_form_submit_button(&form);
-    }
 
     #[tokio::test]
     async fn post_multiple_bank_csv() {
@@ -788,7 +463,7 @@ mod import_transactions_tests {
     }
 
     async fn assert_alert_error_message(response: Response, expected_message: &str) {
-        let html = parse_html(response, HTMLParsingMode::Fragment).await;
+        let html = parse_html(response).await;
         assert_valid_html(&html);
 
         let alert_container = html
@@ -806,7 +481,7 @@ mod import_transactions_tests {
     }
 
     async fn assert_alert_success_message(response: Response, expected_message: &str) {
-        let html = parse_html(response, HTMLParsingMode::Fragment).await;
+        let html = parse_html(response).await;
         assert_valid_html(&html);
 
         let alert_container = html
@@ -828,7 +503,7 @@ mod import_transactions_tests {
         expected_message: &str,
         expected_details_contains: &str,
     ) {
-        let html = parse_html(response, HTMLParsingMode::Fragment).await;
+        let html = parse_html(response).await;
         assert_valid_html(&html);
 
         let alert_container = html
@@ -925,20 +600,12 @@ mod import_transactions_tests {
         Multipart::from_request(request, &{}).await.unwrap()
     }
 
-    enum HTMLParsingMode {
-        Document,
-        Fragment,
-    }
-
-    async fn parse_html(response: Response, mode: HTMLParsingMode) -> Html {
+    async fn parse_html(response: Response) -> Html {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
         let text = String::from_utf8_lossy(&body).to_string();
 
-        match mode {
-            HTMLParsingMode::Document => Html::parse_document(&text),
-            HTMLParsingMode::Fragment => Html::parse_fragment(&text),
-        }
+        Html::parse_fragment(&text)
     }
 
     #[track_caller]
@@ -947,92 +614,6 @@ mod import_transactions_tests {
             html.errors.is_empty(),
             "Got HTML parsing errors: {:?}",
             html.errors
-        );
-    }
-
-    #[track_caller]
-    fn must_get_form(html: &Html) -> ElementRef<'_> {
-        html.select(&scraper::Selector::parse("form").unwrap())
-            .next()
-            .expect("No form found")
-    }
-
-    #[track_caller]
-    fn assert_hx_endpoint(form: &ElementRef, endpoint: &str) {
-        let hx_post = form
-            .value()
-            .attr("hx-post")
-            .expect("hx-post attribute missing");
-
-        assert_eq!(
-            hx_post, endpoint,
-            "want form with attribute hx-post=\"{endpoint}\", got {hx_post:?}"
-        );
-        assert_eq!(hx_post, endpoint);
-    }
-
-    #[track_caller]
-    fn assert_form_enctype(form: &ElementRef, enctype: &str) {
-        let form_enctype = form
-            .value()
-            .attr("enctype")
-            .expect("enctype attribute missing");
-
-        assert_eq!(
-            form_enctype, enctype,
-            "want form with attribute enctype=\"{enctype}\", got {form_enctype:?}"
-        );
-    }
-
-    #[track_caller]
-    fn assert_form_input(form: &ElementRef, name: &str, type_: &str) {
-        for input in form.select(&scraper::Selector::parse("input").unwrap()) {
-            let input_name = input.value().attr("name").unwrap_or_default();
-
-            if input_name == name {
-                let input_type = input.value().attr("type").unwrap_or_default();
-                let input_required = input.value().attr("required");
-                let input_multiple = input.value().attr("multiple");
-                let input_accept = input.value().attr("accept").unwrap_or_default();
-
-                assert_eq!(
-                    input_type, type_,
-                    "want input with type \"{type_}\", got {input_type:?}"
-                );
-
-                assert!(
-                    input_required.is_some(),
-                    "want input with name {name} to have the required attribute but got none"
-                );
-
-                assert!(
-                    input_multiple.is_some(),
-                    "want input with name {name} to have the multiple attribute but got none"
-                );
-
-                assert_eq!(
-                    input_accept, "text/csv",
-                    "want input with name {name} to have the accept attribute \"text/csv\" but got {input_accept:?}"
-                );
-
-                return;
-            }
-        }
-
-        panic!("No input found with name \"{name}\" and type \"{type_}\"");
-    }
-
-    #[track_caller]
-    fn assert_form_submit_button(form: &ElementRef) {
-        let submit_button = form
-            .select(&scraper::Selector::parse("button").unwrap())
-            .next()
-            .expect("No button found");
-
-        assert_eq!(
-            submit_button.value().attr("type").unwrap_or_default(),
-            "submit",
-            "want submit button with type=\"submit\""
         );
     }
 

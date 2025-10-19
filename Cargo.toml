@@ -1,6 +1,6 @@
 [package]
 name = "budgeteur_rs"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 default-run = "server"
 
@@ -15,6 +15,7 @@ axum-extra = { version = "0.10.1", features = [
 axum-htmx = "0.8.1"
 axum-server = { version = "0.7.2" }
 bcrypt = "0.17.1"
+charming = "0.6.0"
 clap = { version = "4.5.48", features = ["derive"] }
 md5 = "0.8.0"
 numfmt = "1.2.0"
