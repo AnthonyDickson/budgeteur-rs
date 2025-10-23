@@ -5,7 +5,7 @@
 
 use rusqlite::Connection;
 
-use crate::{Error, database_id::DatabaseID};
+use crate::{Error, database_id::DatabaseId};
 
 /// Create the dashboard_excluded_tags table in the database.
 ///
@@ -40,7 +40,7 @@ pub fn create_dashboard_excluded_tags_table(
 /// Returns [Error::SqlError] if:
 /// - Database transaction fails
 /// - SQL query preparation or execution fails
-pub fn save_excluded_tags(tag_ids: Vec<DatabaseID>, connection: &Connection) -> Result<(), Error> {
+pub fn save_excluded_tags(tag_ids: Vec<DatabaseId>, connection: &Connection) -> Result<(), Error> {
     let transaction = connection.unchecked_transaction()?;
 
     // Clear all existing excluded tags
@@ -70,13 +70,13 @@ pub fn save_excluded_tags(tag_ids: Vec<DatabaseID>, connection: &Connection) -> 
 /// Returns [Error::SqlError] if:
 /// - Database connection fails
 /// - SQL query preparation or execution fails
-pub fn get_excluded_tags(connection: &Connection) -> Result<Vec<DatabaseID>, Error> {
+pub fn get_excluded_tags(connection: &Connection) -> Result<Vec<DatabaseId>, Error> {
     let mut stmt =
         connection.prepare("SELECT tag_id FROM dashboard_excluded_tags ORDER BY tag_id")?;
 
     let tag_ids = stmt
-        .query_map([], |row| row.get::<_, DatabaseID>(0))?
-        .collect::<Result<Vec<DatabaseID>, rusqlite::Error>>()?;
+        .query_map([], |row| row.get::<_, DatabaseId>(0))?
+        .collect::<Result<Vec<DatabaseId>, rusqlite::Error>>()?;
 
     Ok(tag_ids)
 }

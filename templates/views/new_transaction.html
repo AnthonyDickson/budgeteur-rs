@@ -55,6 +55,18 @@
       </div>
       {% endif %}
 
+      {% if !available_tags.is_empty() %}
+      <div>
+        <label for="tag_id" class="{% include "styles/forms/label.html" %}">Tag</label>
+        <select name="tag_id" id="tag_id" class="{% include "styles/forms/input.html" %}">
+          <option value="">Select a tag</option>
+          {% for tag in available_tags %}
+          <option value="{{ tag.id }}">{{ tag.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
       <button type="submit" id="submit-button" tabindex="0" class="{% include "styles/forms/button.html" %}" >
         <span id="indicator" class="inline htmx-indicator">
           {% include "components/spinner.html" %}

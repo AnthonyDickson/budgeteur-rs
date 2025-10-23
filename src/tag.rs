@@ -16,9 +16,7 @@ use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AppState, Error,
-    database_id::DatabaseID,
-    endpoints,
+    AppState, Error, endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
 };
@@ -63,11 +61,13 @@ impl Display for TagName {
     }
 }
 
+pub type TagId = i64;
+
 /// A tag for grouping expenses and income, e.g., 'Groceries', 'Eating Out', 'Wages'.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Tag {
     /// The ID of the tag.
-    pub id: DatabaseID,
+    pub id: TagId,
 
     /// The name of the tag.
     pub name: TagName,
@@ -257,7 +257,7 @@ pub async fn create_tag_endpoint(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_edit_tag_page(
-    Path(tag_id): Path<DatabaseID>,
+    Path(tag_id): Path<TagId>,
     State(state): State<EditTagPageState>,
 ) -> Response {
     let connection = state
@@ -310,7 +310,7 @@ pub async fn get_edit_tag_page(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn update_tag_endpoint(
-    Path(tag_id): Path<DatabaseID>,
+    Path(tag_id): Path<TagId>,
     State(state): State<UpdateTagEndpointState>,
     Form(form_data): Form<TagFormData>,
 ) -> impl IntoResponse {
@@ -369,7 +369,7 @@ pub async fn update_tag_endpoint(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn delete_tag_endpoint(
-    Path(tag_id): Path<DatabaseID>,
+    Path(tag_id): Path<TagId>,
     State(state): State<DeleteTagEndpointState>,
 ) -> impl IntoResponse {
     let connection = state
@@ -411,7 +411,7 @@ pub fn create_tag(name: TagName, connection: &Connection) -> Result<Tag, Error> 
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error.
-pub fn get_tag(tag_id: DatabaseID, connection: &Connection) -> Result<Tag, Error> {
+pub fn get_tag(tag_id: TagId, connection: &Connection) -> Result<Tag, Error> {
     connection
         .prepare("SELECT id, name FROM tag WHERE id = :id;")?
         .query_row(&[(":id", &tag_id)], map_row)
@@ -422,11 +422,7 @@ pub fn get_tag(tag_id: DatabaseID, connection: &Connection) -> Result<Tag, Error
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error or if the tag doesn't exist.
-pub fn update_tag(
-    tag_id: DatabaseID,
-    new_name: TagName,
-    connection: &Connection,
-) -> Result<(), Error> {
+pub fn update_tag(tag_id: TagId, new_name: TagName, connection: &Connection) -> Result<(), Error> {
     let rows_affected = connection.execute(
         "UPDATE tag SET name = ?1 WHERE id = ?2",
         (new_name.as_ref(), tag_id),
@@ -443,7 +439,7 @@ pub fn update_tag(
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error or if the tag doesn't exist.
-pub fn delete_tag(tag_id: DatabaseID, connection: &Connection) -> Result<(), Error> {
+pub fn delete_tag(tag_id: TagId, connection: &Connection) -> Result<(), Error> {
     let rows_affected = connection.execute("DELETE FROM tag WHERE id = ?1", [tag_id])?;
 
     if rows_affected == 0 {

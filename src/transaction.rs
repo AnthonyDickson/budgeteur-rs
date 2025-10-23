@@ -5,10 +5,7 @@
 //! - Database functions for storing, querying, and managing transactions
 //! - View handlers for transaction-related web pages
 
-use std::{
-    ops::RangeInclusive,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use askama::Template;
 use axum::{
@@ -19,20 +16,19 @@ use axum::{
 };
 use axum_extra::extract::Form;
 use axum_htmx::HxRedirect;
-use rusqlite::{Connection, Row, params_from_iter, types::Value};
+use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime, UtcOffset};
 
 use crate::{
     AppState, Error,
-    database_id::DatabaseID,
+    database_id::{DatabaseId, TransactionId},
     endpoints, filters,
     navigation::{NavbarTemplate, get_nav_bar},
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     shared_templates::render,
-    tag::{Tag, get_all_tags},
+    tag::{Tag, TagId, TagName, get_all_tags},
     timezone::get_local_offset,
-    transaction_tag::{get_transaction_tags, set_transaction_tags},
 };
 
 // ============================================================================
@@ -45,7 +41,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transaction {
     /// The ID of the transaction.
-    pub id: DatabaseID,
+    pub id: DatabaseId,
     /// The amount of money spent or earned in this transaction.
     pub amount: f64,
     /// When the transaction happened.
@@ -54,6 +50,8 @@ pub struct Transaction {
     pub description: String,
     /// The ID of the import that this transaction belongs to.
     pub import_id: Option<i64>,
+    /// The ID of the category the transaction belongs to.
+    pub tag_id: Option<TagId>,
 }
 
 impl Transaction {
@@ -66,6 +64,7 @@ impl Transaction {
             date,
             description,
             import_id: None,
+            tag_id: None,
         }
     }
 }
@@ -147,6 +146,9 @@ pub struct TransactionBuilder {
     /// The import ID is typically generated using [crate::csv::create_import_id]
     /// which creates a hash from the raw CSV line content.
     pub import_id: Option<i64>,
+
+    /// The category of the transaction, e.g. "Groceries", "Transport", "Rent".
+    pub tag_id: Option<TagId>,
 }
 
 impl TransactionBuilder {
@@ -156,13 +158,19 @@ impl TransactionBuilder {
         self
     }
 
+    /// Set the tag id for the transaction.
+    pub fn tag_id(mut self, tag_id: Option<TagId>) -> Self {
+        self.tag_id = tag_id;
+        self
+    }
+
     /// Build the final [Transaction] instance.
     ///
     /// `local_timezone` is used to check that `.date` is not a future date.
     ///
     /// # Errors
     /// This function will return an error if `date` is a date in the future.
-    pub fn finalize(self, id: DatabaseID, local_timezone: UtcOffset) -> Result<Transaction, Error> {
+    pub fn finalize(self, id: DatabaseId, local_timezone: UtcOffset) -> Result<Transaction, Error> {
         if self.date > OffsetDateTime::now_utc().to_offset(local_timezone).date() {
             return Err(Error::FutureDate);
         }
@@ -173,6 +181,7 @@ impl TransactionBuilder {
             date: self.date,
             description: self.description,
             import_id: self.import_id,
+            tag_id: self.tag_id,
         })
     }
 }
@@ -182,15 +191,19 @@ impl TransactionBuilder {
 // ============================================================================
 
 /// Renders a transaction with its tags as a table row.
-#[derive(Template)]
+#[derive(Debug, Template, PartialEq)]
 #[template(path = "partials/transaction_table_row.html")]
 pub struct TransactionTableRow {
-    /// The transaction to display.
-    pub transaction: Transaction,
-    /// The tags associated with this transaction.
-    pub tags: Vec<Tag>,
-    /// An optional error message if tags failed to load.
-    pub tag_error: Option<String>,
+    /// The ID of the transaction.
+    pub id: TransactionId,
+    /// The amount of money spent or earned in this transaction.
+    pub amount: f64,
+    /// When the transaction happened.
+    pub date: Date,
+    /// A text description of what the transaction was for.
+    pub description: String,
+    /// The name of the transactions tag.
+    pub tag_name: Option<TagName>,
 }
 
 // ============================================================================
@@ -223,7 +236,7 @@ pub struct TransactionForm {
     pub description: String,
     /// The IDs of tags to associate with this transaction.
     #[serde(default)]
-    pub tag_ids: Vec<i64>,
+    pub tag_id: Option<TagId>,
 }
 
 /// A route handler for creating a new transaction, redirects to transactions view on success.
@@ -233,24 +246,15 @@ pub struct TransactionForm {
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn create_transaction_endpoint(
     State(state): State<TransactionState>,
-    Form(data): Form<TransactionForm>,
+    Form(form): Form<TransactionForm>,
 ) -> impl IntoResponse {
-    let transaction = Transaction::build(data.amount, data.date, data.description);
+    let transaction =
+        Transaction::build(form.amount, form.date, form.description).tag_id(form.tag_id);
 
     let connection = state.db_connection.lock().unwrap();
-    let created_transaction = match create_transaction(transaction, &connection) {
-        Ok(transaction) => transaction,
-        Err(e) => return e.into_response(),
-    };
 
-    if !data.tag_ids.is_empty()
-        && let Err(e) = set_transaction_tags(created_transaction.id, &data.tag_ids, &connection)
-    {
-        tracing::error!(
-            "Failed to assign tags to transaction {}: {e}",
-            created_transaction.id
-        );
-        return e.into_response();
+    if let Err(error) = create_transaction(transaction, &connection) {
+        return error.into_response();
     }
 
     (
@@ -269,7 +273,7 @@ pub async fn create_transaction_endpoint(
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_transaction_endpoint(
     State(state): State<TransactionState>,
-    Path(transaction_id): Path<DatabaseID>,
+    Path(transaction_id): Path<DatabaseId>,
 ) -> impl IntoResponse {
     let connection = state.db_connection.lock().unwrap();
     get_transaction(transaction_id, &connection)
@@ -294,9 +298,9 @@ pub fn create_transaction(
 ) -> Result<Transaction, Error> {
     let transaction = connection
         .prepare(
-            "INSERT INTO \"transaction\" (amount, date, description, import_id)
-             VALUES (?1, ?2, ?3, ?4)
-             RETURNING id, amount, date, description, import_id",
+            "INSERT INTO \"transaction\" (amount, date, description, import_id, tag_id)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             RETURNING id, amount, date, description, import_id, tag_id",
         )?
         .query_row(
             (
@@ -304,10 +308,12 @@ pub fn create_transaction(
                 builder.date,
                 builder.description,
                 builder.import_id,
+                builder.tag_id,
             ),
             map_transaction_row,
         )
         .map_err(|error| match error {
+            // TODO: Check how this handles tag_id constraint violation and write test
             // Handle duplicate import_id constraint violation
             rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 2067 => {
                 Error::DuplicateImportId
@@ -333,10 +339,10 @@ pub fn import_transactions(
 
     // Prepare the insert statement once for reuse
     let mut stmt = tx.prepare(
-        "INSERT INTO \"transaction\" (amount, date, description, import_id)
-         VALUES (?1, ?2, ?3, ?4)
+        "INSERT INTO \"transaction\" (amount, date, description, import_id, tag_id)
+         VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(import_id) DO NOTHING
-         RETURNING id, amount, date, description, import_id",
+         RETURNING id, amount, date, description, import_id, tag_id",
     )?;
 
     for builder in builders {
@@ -347,6 +353,7 @@ pub fn import_transactions(
                 builder.date,
                 builder.description,
                 builder.import_id,
+                builder.tag_id,
             ),
             map_transaction_row,
         );
@@ -369,28 +376,14 @@ pub fn import_transactions(
 /// This function will return a:
 /// - [Error::NotFound] if `id` does not refer to a valid transaction,
 /// - or [Error::SqlError] there is some other SQL error.
-pub fn get_transaction(id: DatabaseID, connection: &Connection) -> Result<Transaction, Error> {
+pub fn get_transaction(id: DatabaseId, connection: &Connection) -> Result<Transaction, Error> {
     let transaction = connection
         .prepare(
-            "SELECT id, amount, date, description, import_id FROM \"transaction\" WHERE id = :id",
+            "SELECT id, amount, date, description, import_id, tag_id FROM \"transaction\" WHERE id = :id",
         )?
         .query_row(&[(":id", &id)], map_transaction_row)?;
 
     Ok(transaction)
-}
-
-/// Defines how transactions should be fetched from [query_transactions].
-#[derive(Default)]
-pub struct TransactionQuery {
-    /// Include transactions within `date_range` (inclusive).
-    pub date_range: Option<RangeInclusive<Date>>,
-    /// Selects up to the first N (`limit`) transactions.
-    pub limit: Option<u64>,
-    /// Ignore the first N transactions. Only has an effect if `limit` is not `None`.
-    pub offset: u64,
-    /// Orders transactions by date in the order `sort_date`. None returns transactions in the
-    /// order they are stored.
-    pub sort_date: Option<SortOrder>,
 }
 
 /// The order to sort transactions in a [TransactionQuery].
@@ -401,53 +394,6 @@ pub enum SortOrder {
     Ascending,
     /// Sort in order of decreasing value.
     Descending,
-}
-
-/// Query for transactions in the database.
-///
-/// # Errors
-/// This function will return a [Error::SqlError] there is a SQL error.
-pub fn query_transactions(
-    filter: TransactionQuery,
-    connection: &Connection,
-) -> Result<Vec<Transaction>, Error> {
-    let mut query_string_parts =
-        vec!["SELECT id, amount, date, description, import_id FROM \"transaction\"".to_string()];
-    let mut where_clause_parts = vec![];
-    let mut query_parameters = vec![];
-
-    if let Some(date_range) = filter.date_range {
-        where_clause_parts.push(format!(
-            "date BETWEEN ?{} AND ?{}",
-            query_parameters.len() + 1,
-            query_parameters.len() + 2,
-        ));
-        query_parameters.push(Value::Text(date_range.start().to_string()));
-        query_parameters.push(Value::Text(date_range.end().to_string()));
-    }
-
-    if !where_clause_parts.is_empty() {
-        query_string_parts.push(String::from("WHERE ") + &where_clause_parts.join(" AND "));
-    }
-
-    match filter.sort_date {
-        Some(SortOrder::Ascending) => query_string_parts.push("ORDER BY date ASC".to_string()),
-        Some(SortOrder::Descending) => query_string_parts.push("ORDER BY date DESC".to_string()),
-        None => {}
-    }
-
-    if let Some(limit) = filter.limit {
-        query_string_parts.push(format!("LIMIT {limit} OFFSET {}", filter.offset));
-    }
-
-    let query_string = query_string_parts.join(" ");
-    let params = params_from_iter(query_parameters.iter());
-
-    connection
-        .prepare(&query_string)?
-        .query_map(params, map_transaction_row)?
-        .map(|transaction_result| transaction_result.map_err(Error::SqlError))
-        .collect()
 }
 
 /// Get transactions with pagination and sorting by date.
@@ -463,25 +409,39 @@ pub fn query_transactions(
 /// - Database connection fails
 /// - SQL query preparation or execution fails
 /// - Transaction row mapping fails
-pub fn get_transactions_paginated(
+pub fn get_transaction_table_rows_paginated(
     limit: u64,
     offset: u64,
     sort_order: SortOrder,
     connection: &Connection,
-) -> Result<Vec<Transaction>, Error> {
+) -> Result<Vec<TransactionTableRow>, Error> {
     let order_clause = match sort_order {
         SortOrder::Ascending => "ORDER BY date ASC",
         SortOrder::Descending => "ORDER BY date DESC",
     };
 
     let query = format!(
-        "SELECT id, amount, date, description, import_id FROM \"transaction\" {} LIMIT {} OFFSET {}",
+        "SELECT \"transaction\".id, amount, date, description, tag.name FROM \"transaction\"
+        LEFT JOIN tag ON \"transaction\".tag_id = tag.id 
+        {} LIMIT {} OFFSET {}",
         order_clause, limit, offset
     );
 
     connection
         .prepare(&query)?
-        .query_map([], map_transaction_row)?
+        .query_map([], |row| {
+            let tag_name = row
+                .get::<usize, Option<String>>(4)?
+                .map(|some_tag_name| TagName::new_unchecked(&some_tag_name));
+
+            Ok(TransactionTableRow {
+                id: row.get(0)?,
+                amount: row.get(1)?,
+                date: row.get(2)?,
+                description: row.get(3)?,
+                tag_name,
+            })
+        })?
         .map(|transaction_result| transaction_result.map_err(Error::SqlError))
         .collect()
 }
@@ -509,7 +469,9 @@ pub fn create_transaction_table(connection: &Connection) -> Result<(), rusqlite:
                 amount REAL NOT NULL,
                 date TEXT NOT NULL,
                 description TEXT NOT NULL,
-                import_id INTEGER UNIQUE
+                import_id INTEGER UNIQUE,
+                tag_id INTEGER,
+                FOREIGN KEY(tag_id) REFERENCES tag(id) ON UPDATE CASCADE ON DELETE SET NULL
                 )",
         (),
     )?;
@@ -517,6 +479,12 @@ pub fn create_transaction_table(connection: &Connection) -> Result<(), rusqlite:
     // Ensure the sequence starts at 1
     connection.execute(
         "INSERT OR IGNORE INTO sqlite_sequence (name, seq) VALUES ('transaction', 0)",
+        (),
+    )?;
+
+    // Add composite index used by dashboard page.
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transaction_date_tag ON \"transaction\"(date, tag_id);",
         (),
     )?;
 
@@ -530,6 +498,7 @@ fn map_transaction_row(row: &Row) -> Result<Transaction, rusqlite::Error> {
     let date = row.get(2)?;
     let description = row.get(3)?;
     let import_id = row.get(4)?;
+    let tag_id = row.get(5)?;
 
     Ok(Transaction {
         id,
@@ -537,6 +506,7 @@ fn map_transaction_row(row: &Row) -> Result<Transaction, rusqlite::Error> {
         date,
         description,
         import_id,
+        tag_id,
     })
 }
 
@@ -632,32 +602,12 @@ pub async fn get_transactions_page(
     };
 
     let transactions =
-        get_transactions_paginated(limit, offset, SortOrder::Descending, &connection);
+        get_transaction_table_rows_paginated(limit, offset, SortOrder::Descending, &connection);
     let transactions = match transactions {
         Ok(transactions) => transactions,
         Err(error) => return error.into_response(),
     };
-
-    let transactions = transactions
-        .into_iter()
-        .map(|transaction| {
-            let (tags, tag_error) = match get_transaction_tags(transaction.id, &connection) {
-                Ok(tags) => (tags, None),
-                Err(error) => {
-                    tracing::error!(
-                        "Failed to get tags for transaction {}: {error}",
-                        transaction.id
-                    );
-                    (Vec::new(), Some("Failed to load tags".to_string()))
-                }
-            };
-            TransactionTableRow {
-                transaction,
-                tags,
-                tag_error,
-            }
-        })
-        .collect();
+    tracing::info!("{transactions:#?}");
 
     let max_pages = state.pagination_config.max_pages;
     let pagination_indicators = create_pagination_indicators(current_page, page_count, max_pages);
@@ -746,6 +696,7 @@ mod transaction_builder_tests {
             date: tomorrow,
             description: "".to_owned(),
             import_id: None,
+            tag_id: None,
         }
         .finalize(123, UtcOffset::UTC);
 
@@ -761,6 +712,7 @@ mod transaction_builder_tests {
             date: today,
             description: "".to_owned(),
             import_id: None,
+            tag_id: None,
         }
         .finalize(123, UtcOffset::UTC);
 
@@ -782,6 +734,7 @@ mod transaction_builder_tests {
             date: yesterday,
             description: "".to_owned(),
             import_id: None,
+            tag_id: None,
         }
         .finalize(123, UtcOffset::UTC);
 
@@ -827,8 +780,9 @@ mod database_tests {
         Error,
         db::initialize,
         transaction::{
-            SortOrder, Transaction, count_transactions, create_transaction, get_transaction,
-            get_transactions_paginated, import_transactions, map_transaction_row,
+            SortOrder, Transaction, TransactionTableRow, count_transactions, create_transaction,
+            get_transaction, get_transaction_table_rows_paginated, import_transactions,
+            map_transaction_row,
         },
     };
 
@@ -928,7 +882,9 @@ mod database_tests {
 
         // Verify that only the original transaction exists in the database
         let all_transactions = conn
-            .prepare("SELECT id, amount, date, description, import_id FROM \"transaction\"")
+            .prepare(
+                "SELECT id, amount, date, description, import_id, tag_id  FROM \"transaction\"",
+            )
             .unwrap()
             .query_map([], map_transaction_row)
             .unwrap()
@@ -1021,7 +977,7 @@ mod database_tests {
             create_transaction(transaction_builder, &conn).unwrap();
         }
 
-        let got = get_transactions_paginated(5, 0, SortOrder::Ascending, &conn).unwrap();
+        let got = get_transaction_table_rows_paginated(5, 0, SortOrder::Ascending, &conn).unwrap();
 
         assert_eq!(got.len(), 5, "got {} transactions, want 5", got.len());
     }
@@ -1039,11 +995,17 @@ mod database_tests {
                     .expect("Could not create transaction");
 
             if i > offset && i <= offset + limit {
-                want.push(transaction);
+                want.push(TransactionTableRow {
+                    id: transaction.id,
+                    amount: transaction.amount,
+                    date: transaction.date,
+                    description: transaction.description.clone(),
+                    tag_name: None,
+                });
             }
         }
 
-        let got = get_transactions_paginated(limit, offset, SortOrder::Ascending, &conn)
+        let got = get_transaction_table_rows_paginated(limit, offset, SortOrder::Ascending, &conn)
             .expect("Could not query transactions");
 
         assert_eq!(want, got);
@@ -1067,11 +1029,16 @@ mod database_tests {
         want.sort_by(|a, b| b.date.cmp(&a.date));
 
         let got = conn
-            .prepare("SELECT id, amount, date, description, import_id FROM \"transaction\" ORDER BY date DESC").unwrap()
-            .query_map([], map_transaction_row).unwrap()
+            .prepare(
+                "SELECT id, amount, date, description, import_id, tag_id
+                FROM \"transaction\" ORDER BY date DESC",
+            )
+            .unwrap()
+            .query_map([], map_transaction_row)
+            .unwrap()
             .map(|transaction_result| transaction_result.map_err(Error::SqlError))
             .collect::<Result<Vec<Transaction>, Error>>()
-        .unwrap();
+            .unwrap();
 
         assert_eq!(
             got, want,
@@ -1099,7 +1066,6 @@ mod database_tests {
 mod view_tests {
     use std::sync::{Arc, Mutex};
 
-    use askama::Template;
     use axum::{
         body::Body,
         extract::{Query, State},
@@ -1115,8 +1081,6 @@ mod view_tests {
         endpoints,
         pagination::{PaginationConfig, PaginationIndicator},
         tag::{TagName, create_tag},
-        transaction::TransactionTableRow,
-        transaction_tag::set_transaction_tags,
     };
 
     use super::{
@@ -1334,6 +1298,7 @@ mod view_tests {
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
+                tag_id: None,
             },
             Transaction {
                 id: 14,
@@ -1341,6 +1306,7 @@ mod view_tests {
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
+                tag_id: None,
             },
             Transaction {
                 id: 15,
@@ -1348,6 +1314,7 @@ mod view_tests {
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
+                tag_id: None,
             },
         ];
         let want_indicators = [
@@ -1601,26 +1568,21 @@ mod view_tests {
         let tag2 = create_tag(TagName::new_unchecked("Food"), &conn).unwrap();
 
         // Create transactions
-        let transaction1 = create_transaction(
-            Transaction::build(50.0, today, "Store purchase".to_owned()),
+        create_transaction(
+            Transaction::build(50.0, today, "Store purchase".to_owned()).tag_id(Some(tag2.id)),
             &conn,
         )
         .unwrap();
-        let transaction2 = create_transaction(
-            Transaction::build(25.0, today, "Restaurant".to_owned()),
+        create_transaction(
+            Transaction::build(25.0, today, "Restaurant".to_owned()).tag_id(Some(tag1.id)),
             &conn,
         )
         .unwrap();
-        let _transaction3 = create_transaction(
+        create_transaction(
             Transaction::build(100.0, today, "No tags transaction".to_owned()),
             &conn,
         )
         .unwrap();
-
-        // Assign tags to transactions
-        set_transaction_tags(transaction1.id, &[tag1.id, tag2.id], &conn).unwrap();
-        set_transaction_tags(transaction2.id, &[tag1.id], &conn).unwrap();
-        // transaction3 gets no tags
 
         let state = TransactionsViewState {
             db_connection: Arc::new(Mutex::new(conn)),
@@ -1692,49 +1654,6 @@ mod view_tests {
         }
     }
 
-    #[test]
-    fn transaction_table_row_displays_tag_error() {
-        let transaction = Transaction {
-            id: 1,
-            amount: 50.0,
-            date: date!(2025 - 10 - 05),
-            description: "Test transaction".to_owned(),
-            import_id: None,
-        };
-
-        let row_with_error = TransactionTableRow {
-            transaction: transaction.clone(),
-            tags: vec![],
-            tag_error: Some("Failed to load tags".to_string()),
-        };
-
-        let rendered = row_with_error.render().unwrap();
-        assert!(
-            rendered.contains("Error: Failed to load tags"),
-            "Should display error message when tag_error is present"
-        );
-        assert!(
-            rendered.contains("text-red-600"),
-            "Error should be displayed in red"
-        );
-
-        let row_without_error = TransactionTableRow {
-            transaction,
-            tags: vec![],
-            tag_error: None,
-        };
-
-        let rendered = row_without_error.render().unwrap();
-        assert!(
-            !rendered.contains("Error:"),
-            "Should not display error when tag_error is None"
-        );
-        assert!(
-            rendered.contains("text-gray-400"),
-            "Should display gray dash when no tags and no error"
-        );
-    }
-
     async fn parse_html(response: Response) -> Html {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX)
@@ -1763,11 +1682,11 @@ mod route_handler_tests {
 
     use crate::{
         db::initialize,
+        tag::{TagName, create_tag},
         transaction::{
             Transaction, TransactionState, create_transaction as create_transaction_db,
             get_transaction,
         },
-        transaction_tag::get_transaction_tags,
     };
 
     use super::{TransactionForm, create_transaction_endpoint, get_transaction_endpoint};
@@ -1789,7 +1708,7 @@ mod route_handler_tests {
             description: "test transaction".to_string(),
             amount: 12.3,
             date: OffsetDateTime::now_utc().date(),
-            tag_ids: vec![],
+            tag_id: None,
         };
 
         let response = create_transaction_endpoint(State(state.clone()), Form(form))
@@ -1809,13 +1728,7 @@ mod route_handler_tests {
     #[tokio::test]
     async fn can_create_transaction_with_tags() {
         let conn = get_test_connection();
-
-        // Create test tags
-        let tag1 =
-            crate::tag::create_tag(crate::tag::TagName::new_unchecked("Groceries"), &conn).unwrap();
-        let tag2 =
-            crate::tag::create_tag(crate::tag::TagName::new_unchecked("Food"), &conn).unwrap();
-
+        let tag = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
         let state = TransactionState {
             db_connection: Arc::new(Mutex::new(conn)),
         };
@@ -1824,23 +1737,17 @@ mod route_handler_tests {
             description: "test transaction with tags".to_string(),
             amount: 25.50,
             date: OffsetDateTime::now_utc().date(),
-            tag_ids: vec![tag1.id, tag2.id],
+            tag_id: Some(tag.id),
         };
-
         let response = create_transaction_endpoint(State(state.clone()), Form(form))
             .await
             .into_response();
 
         assert_redirects_to_transactions_view(response);
-
         // Verify the transaction was created with tags
         let connection = state.db_connection.lock().unwrap();
         let transaction = get_transaction(1, &connection).unwrap();
-        let tags = get_transaction_tags(transaction.id, &connection).unwrap();
-
-        assert_eq!(tags.len(), 2);
-        assert!(tags.contains(&tag1));
-        assert!(tags.contains(&tag2));
+        assert_eq!(transaction.tag_id, Some(tag.id));
     }
 
     #[tokio::test]
