@@ -44,6 +44,7 @@ mod routing;
 mod rule;
 mod shared_templates;
 mod tag;
+mod tags_page;
 mod timezone;
 pub mod transaction;
 mod transaction_tag;

@@ -31,8 +31,9 @@ use crate::{
     shared_templates::render,
     tag::{
         create_tag_endpoint, delete_tag_endpoint, get_edit_tag_page, get_new_tag_page,
-        get_tags_page, update_tag_endpoint,
+        update_tag_endpoint,
     },
+    tags_page::get_tags_page,
     transaction::{
         create_transaction_endpoint, get_new_transaction_page, get_transaction_endpoint,
         get_transactions_page,
