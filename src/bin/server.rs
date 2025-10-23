@@ -151,10 +151,7 @@ fn add_tracing_layer(router: Router) -> Router {
 /// Otherwise, returns canonical timezone string for UTC+00.
 fn get_timezone_name(timezone_arg: Option<String>) -> Option<String> {
     if let Some(timezone_name) = timezone_arg {
-        match time_tz::timezones::get_by_name(&timezone_name) {
-            Some(_) => Some(timezone_name),
-            None => None,
-        }
+        time_tz::timezones::get_by_name(&timezone_name).map(|_| timezone_name)
     } else {
         Some("Etc/UTC".to_owned())
     }

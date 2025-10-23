@@ -287,9 +287,10 @@ mod import_transactions_tests {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // Check the number of transactions imported by querying the database
-        let connection = state.db_connection.lock().unwrap();
-        let transaction_count =
-            count_transactions(&connection).expect("Could not count transactions");
+        let transaction_count = {
+            let connection = state.db_connection.lock().unwrap();
+            count_transactions(&connection).expect("Could not count transactions")
+        };
         assert_eq!(
             want_transaction_count, transaction_count,
             "want {want_transaction_count} transactions imported, got {transaction_count}"
@@ -647,9 +648,10 @@ mod import_transactions_tests {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // Check that transactions were imported
-        let connection_guard = state.db_connection.lock().unwrap();
-        let transaction_count =
-            count_transactions(&connection_guard).expect("Could not count transactions");
+        let transaction_count = {
+            let connection_guard = state.db_connection.lock().unwrap();
+            count_transactions(&connection_guard).expect("Could not count transactions")
+        };
         assert_eq!(
             transaction_count, 5,
             "Expected 5 transactions to be imported"
@@ -689,9 +691,10 @@ mod import_transactions_tests {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // Check that transactions were imported
-        let connection_guard = state.db_connection.lock().unwrap();
-        let transaction_count =
-            count_transactions(&connection_guard).expect("Could not count transactions");
+        let transaction_count = {
+            let connection_guard = state.db_connection.lock().unwrap();
+            count_transactions(&connection_guard).expect("Could not count transactions")
+        };
         assert_eq!(
             transaction_count, 5,
             "Expected 5 transactions to be imported"
@@ -732,9 +735,10 @@ mod import_transactions_tests {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // Check that transactions were imported
-        let connection_guard = state.db_connection.lock().unwrap();
-        let transaction_count =
-            count_transactions(&connection_guard).expect("Could not count transactions");
+        let transaction_count = {
+            let connection_guard = state.db_connection.lock().unwrap();
+            count_transactions(&connection_guard).expect("Could not count transactions")
+        };
         assert_eq!(
             transaction_count, 5,
             "Expected 5 transactions to be imported"

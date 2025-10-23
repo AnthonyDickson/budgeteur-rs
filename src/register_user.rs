@@ -228,12 +228,10 @@ pub async fn register_user(
             }
         }
     })
-    .map_err(|e| match e {
-        e => {
-            tracing::error!("An unhandled error occurred while inserting a new user: {e}");
+    .map_err(|e| {
+        tracing::error!("An unhandled error occurred while inserting a new user: {e}");
 
-            get_internal_server_error_redirect()
-        }
+        get_internal_server_error_redirect()
     })
     .into_response()
 }

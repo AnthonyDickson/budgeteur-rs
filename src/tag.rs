@@ -1052,7 +1052,7 @@ mod edit_tag_endpoint_tests {
         let hx_attr = form
             .value()
             .attr(attribute)
-            .expect(&format!("{attribute} attribute missing"));
+            .unwrap_or_else(|| panic!("{attribute} attribute missing"));
 
         assert_eq!(
             hx_attr, endpoint,
