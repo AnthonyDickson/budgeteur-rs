@@ -1,6 +1,5 @@
 # To Do
 
-- Sort balances on balances page by account name, increasing order
 - Change transaction-tag relationship to 1:1 mapping from 1:N mapping. The issue is that multiple tags makes it unclear
   how transactions should be assigned to tags when calculating expenses by tag.
 - Move `import_transaction_list` to `csv_import/import_transactions.rs`

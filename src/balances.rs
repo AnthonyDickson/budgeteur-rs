@@ -92,7 +92,7 @@ pub fn create_balance_table(connection: &rusqlite::Connection) -> Result<(), rus
 
 fn get_all_balances(connection: &Connection) -> Result<Vec<Balance>, Error> {
     connection
-        .prepare("SELECT id, account, balance, date FROM balance;")?
+        .prepare("SELECT id, account, balance, date FROM balance ORDER BY account ASC;")?
         .query_map([], map_row_to_balance)?
         .map(|maybe_balance| maybe_balance.map_err(|error| error.into()))
         .collect()
@@ -160,14 +160,14 @@ mod get_all_balances_tests {
         create_balance_table(&connection).expect("Could not create balances table");
         let want_balances = vec![
             Balance {
-                id: 1,
-                account: "foo".to_owned(),
+                id: 2,
+                account: "bar".to_owned(),
                 balance: 1.0,
                 date: date!(2025 - 07 - 20),
             },
             Balance {
-                id: 2,
-                account: "bar".to_owned(),
+                id: 1,
+                account: "foo".to_owned(),
                 balance: 1.0,
                 date: date!(2025 - 07 - 20),
             },
