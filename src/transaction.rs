@@ -1294,7 +1294,7 @@ mod view_tests {
         let want_transactions = [
             Transaction {
                 id: 18,
-                amount: 1.0,
+                amount: 18.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
@@ -1302,7 +1302,7 @@ mod view_tests {
             },
             Transaction {
                 id: 17,
-                amount: 1.0,
+                amount: 17.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
@@ -1310,7 +1310,7 @@ mod view_tests {
             },
             Transaction {
                 id: 16,
-                amount: 1.0,
+                amount: 16.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
@@ -1368,22 +1368,27 @@ mod view_tests {
             table_rows.len()
         );
 
-        let th_selector = Selector::parse("th").unwrap();
+        let td_selector = Selector::parse("td").unwrap();
         for (i, (row, want)) in table_rows.iter().zip(transactions).enumerate() {
-            let th = row
-                .select(&th_selector)
+            let td = row
+                .select(&td_selector)
                 .next()
                 .unwrap_or_else(|| panic!("Could not find th element in table row {i}"));
 
-            let id_str = th.text().collect::<String>();
-            let got_id: i64 = id_str.trim().parse().unwrap_or_else(|_| {
-                panic!("Could not parse ID {id_str} on table row {i} as integer")
-            });
+            let amount_str = td.text().collect::<String>();
+            let got_amount: f64 = amount_str
+                .trim()
+                .strip_prefix("$")
+                .unwrap()
+                .parse()
+                .unwrap_or_else(|_| {
+                    panic!("Could not parse amount {amount_str} on table row {i} as integer")
+                });
 
             assert_eq!(
-                got_id, want.id,
-                "Want transaction with ID {}, got {got_id}",
-                want.id
+                got_amount, want.amount,
+                "Want transaction with amount (ID) {}, got {got_amount}",
+                want.amount
             );
         }
     }
@@ -1628,13 +1633,13 @@ mod view_tests {
                 .collect::<Vec<_>>();
             assert_eq!(
                 cells.len(),
-                5,
-                "Row {} should have 5 columns (ID, Amount, Date, Description, Tags)",
+                4,
+                "Row {} should have 4 columns (Amount, Date, Description, Tags)",
                 i
             );
 
             // The last cell should be the Tags column
-            let tags_cell = &cells[4];
+            let tags_cell = &cells[3];
             let tags_cell_html = tags_cell.html();
 
             // Check if this row should have tags or not
