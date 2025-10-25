@@ -1,6 +1,5 @@
 # To Do
 
-- Add thousands separator to chart values.
 - Sort rule alphabetically by tag name then by rule pattern.
 - Move `import_transaction_list` to `csv_import/import_transactions.rs`
 - Error alert if import fails
