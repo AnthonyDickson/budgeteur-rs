@@ -14,7 +14,7 @@ use crate::{
     rule::{TaggingMode, TaggingResult, apply_rules_to_transactions},
     shared_templates::render,
     timezone::get_local_offset,
-    transaction::import_transactions as import_transaction_list,
+    transaction::{Transaction, TransactionBuilder, map_transaction_row},
 };
 
 /// The state needed for importing transactions.
@@ -188,6 +188,52 @@ async fn parse_multipart_field(field: Field<'_>) -> Result<String, Error> {
     tracing::debug!("Received file '{}' that is {} bytes", file_name, data.len());
 
     Ok(data)
+}
+
+/// Import many transactions from a CSV file.
+///
+/// Ignores transactions with import IDs that already exist in the database.
+///
+/// # Errors
+/// Returns an [Error::SqlError] if there is an unexpected SQL error.
+fn import_transaction_list(
+    builders: Vec<TransactionBuilder>,
+    connection: &Connection,
+) -> Result<Vec<Transaction>, Error> {
+    let tx = connection.unchecked_transaction()?;
+    let mut imported_transactions = Vec::new();
+
+    // Prepare the insert statement once for reuse
+    let mut stmt = tx.prepare(
+        "INSERT INTO \"transaction\" (amount, date, description, import_id, tag_id)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(import_id) DO NOTHING
+         RETURNING id, amount, date, description, import_id, tag_id",
+    )?;
+
+    for builder in builders {
+        // Try to insert and get the result
+        let transaction_result = stmt.query_row(
+            (
+                builder.amount,
+                builder.date,
+                builder.description,
+                builder.import_id,
+                builder.tag_id,
+            ),
+            map_transaction_row,
+        );
+
+        // Only collect successfully inserted transactions (not conflicts)
+        if let Ok(transaction) = transaction_result {
+            imported_transactions.push(transaction);
+        }
+    }
+
+    drop(stmt);
+
+    tx.commit()?;
+    Ok(imported_transactions)
 }
 
 #[cfg(test)]
@@ -834,5 +880,150 @@ mod import_transactions_tests {
 
         // Clean up response to avoid issues
         drop(response);
+    }
+}
+
+#[cfg(test)]
+mod import_transaction_list_tests {
+    use rusqlite::Connection;
+    use time::macros::date;
+
+    use crate::{
+        Error,
+        csv_import::import_transactions::import_transaction_list,
+        db::initialize,
+        transaction::{Transaction, create_transaction, map_transaction_row},
+    };
+
+    fn get_test_connection() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn create_succeeds() {
+        let conn = get_test_connection();
+        let amount = 12.3;
+
+        let result = create_transaction(
+            Transaction::build(amount, date!(2025 - 10 - 05), "".to_owned()),
+            &conn,
+        );
+
+        match result {
+            Ok(transaction) => assert_eq!(transaction.amount, amount),
+            Err(error) => panic!("Unexpected error: {error}"),
+        }
+    }
+
+    #[test]
+    fn import_multiple() {
+        let conn = get_test_connection();
+        let today = date!(2025 - 10 - 04);
+        let want = vec![
+            Transaction::build(123.45, today, "".to_owned()).import_id(Some(123456789)),
+            Transaction::build(678.90, today, "".to_owned()).import_id(Some(101112131)),
+        ];
+
+        let imported_transactions =
+            import_transaction_list(want.clone(), &conn).expect("Could not create transaction");
+
+        assert_eq!(
+            want.len(),
+            imported_transactions.len(),
+            "want {} transactions, got {}",
+            want.len(),
+            imported_transactions.len()
+        );
+
+        for (want, got) in want.iter().zip(imported_transactions) {
+            assert_eq!(want.amount, got.amount);
+            assert_eq!(want.date, got.date);
+            assert_eq!(want.description, got.description);
+            assert_eq!(want.import_id, got.import_id);
+        }
+    }
+
+    #[test]
+    fn import_ignores_duplicate_import_id() {
+        let conn = get_test_connection();
+        let import_id = Some(123456789);
+        let today = date!(2025 - 10 - 04);
+        let want = create_transaction(
+            Transaction::build(123.45, today, "".to_owned()).import_id(import_id),
+            &conn,
+        )
+        .expect("Could not create transaction");
+
+        let duplicate_transactions = import_transaction_list(
+            vec![Transaction::build(123.45, today, "".to_owned()).import_id(import_id)],
+            &conn,
+        )
+        .expect("Could not import transactions");
+
+        // The import should return 0 transactions since the import_id already exists
+        assert_eq!(
+            duplicate_transactions.len(),
+            0,
+            "import should ignore transactions with duplicate import IDs: want 0 transactions, got {}",
+            duplicate_transactions.len()
+        );
+
+        // Verify that only the original transaction exists in the database
+        let all_transactions = conn
+            .prepare(
+                "SELECT id, amount, date, description, import_id, tag_id  FROM \"transaction\"",
+            )
+            .unwrap()
+            .query_map([], map_transaction_row)
+            .unwrap()
+            .map(|transaction_result| transaction_result.map_err(Error::SqlError))
+            .collect::<Result<Vec<Transaction>, Error>>()
+            .expect("Could not query transactions");
+
+        assert_eq!(
+            all_transactions.len(),
+            1,
+            "Expected exactly 1 transaction in database after duplicate import attempt, got {}",
+            all_transactions.len()
+        );
+
+        // Verify the original transaction is unchanged
+        let stored_transaction = &all_transactions[0];
+        assert_eq!(stored_transaction.amount, want.amount);
+        assert_eq!(stored_transaction.date, want.date);
+        assert_eq!(stored_transaction.description, want.description);
+        assert_eq!(stored_transaction.import_id, want.import_id);
+    }
+
+    #[tokio::test]
+    async fn import_escapes_single_quotes() {
+        let conn = get_test_connection();
+        let today = date!(2025 - 10 - 05);
+        let want = vec![
+            Transaction::build(123.45, today, "Tom's Hardware".to_owned())
+                .import_id(Some(123456789)),
+        ];
+
+        let imported_transactions =
+            import_transaction_list(want.clone(), &conn).expect("Could not create transaction");
+
+        assert_eq!(
+            want.len(),
+            imported_transactions.len(),
+            "want {} transactions, got {}",
+            want.len(),
+            imported_transactions.len()
+        );
+
+        want.into_iter()
+            .zip(imported_transactions)
+            .for_each(|(want, got)| {
+                assert_eq!(want.amount, got.amount);
+                assert_eq!(want.date, got.date);
+                assert_eq!(want.description, got.description);
+                assert_eq!(want.import_id, got.import_id);
+            });
     }
 }

@@ -2,8 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Review whether displaying IDs (e.g., transactions view, tags view) is useful
-- Move `import_transaction_list` to `csv_import/import_transactions.rs`
 - Error alert if import fails
 - Port alerts system to other pages (other than rules page) for handling error messages
   - Use alerts for confirming deletion of items from tags and rules pages (and others when they get full CRUD).
