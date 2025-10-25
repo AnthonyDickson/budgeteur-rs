@@ -88,7 +88,6 @@ mod nav_bar_tests {
         cases.insert(endpoints::LOG_IN_VIEW, false);
         cases.insert(endpoints::LOG_OUT, false);
         cases.insert(endpoints::REGISTER_VIEW, false);
-        cases.insert(endpoints::TRANSACTION, false);
         cases.insert(endpoints::TRANSACTIONS_API, false);
         cases.insert(endpoints::USERS, false);
 

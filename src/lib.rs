@@ -46,7 +46,7 @@ mod shared_templates;
 mod tag;
 mod tags_page;
 mod timezone;
-pub mod transaction;
+mod transaction;
 pub mod user;
 
 pub use app_state::AppState;
