@@ -1,6 +1,5 @@
 # To Do
 
-- Update "Filter Summary by Tags" to more appropriate name. "Exclude Tags from Charts"?
 - Add thousands separator to chart values.
 - Sort rule alphabetically by tag name then by rule pattern.
 - Move `import_transaction_list` to `csv_import/import_transactions.rs`
