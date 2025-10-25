@@ -18,7 +18,7 @@ use tower_http::trace::TraceLayer;
 use tower_livereload::LiveReloadLayer;
 use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberInitExt};
 
-use budgeteur_rs::{AppState, build_router, graceful_shutdown, logging_middleware};
+use budgeteur_rs::{AppState, build_router, db::initialize, graceful_shutdown, logging_middleware};
 
 /// The REST API server for budgeteur_rs.
 #[derive(Parser, Debug)]
@@ -71,17 +71,15 @@ async fn main() {
     let addr = SocketAddr::from((address, args.port));
     let conn = Connection::open(&args.db_path)
         .unwrap_or_else(|_| panic!("Could not open database file at {}: ", args.db_path));
+    if let Err(error) = initialize(&conn) {
+        eprintln!("Could not initialize database: {error}");
+        exit(1);
+    }
     let Some(timezone) = get_timezone_name(args.timezone.clone()) else {
         eprint!("{} is not a valid timezone name.", args.timezone.unwrap());
         exit(1);
     };
-    let app_config = match AppState::new(conn, &secret, &timezone, Default::default()) {
-        Ok(config) => config,
-        Err(error) => {
-            eprintln!("Could not initialize database: {error}");
-            exit(1);
-        }
-    };
+    let app_config = AppState::new(conn, &secret, &timezone, Default::default());
 
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));

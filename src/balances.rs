@@ -13,7 +13,7 @@ use time::Date;
 
 use crate::{
     AppState, Error,
-    database_id::DatabaseID,
+    database_id::DatabaseId,
     endpoints, filters,
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
@@ -67,7 +67,7 @@ struct BalancesTemplate<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Balance {
     /// The id for the account balance.
-    pub id: DatabaseID,
+    pub id: DatabaseId,
     /// The account with which to associate the balance.
     pub account: String,
     /// The balance.

@@ -1,8 +1,10 @@
 # To Do
 
-- Change transaction-tag relationship to 1:1 mapping from 1:N mapping. The issue is that multiple tags makes it unclear
-  how transactions should be assigned to tags when calculating expenses by tag.
+- Update "Filter Summary by Tags" to more appropriate name. "Exclude Tags from Charts"?
+- Add thousands separator to chart values.
+- Sort rule alphabetically by tag name then by rule pattern.
 - Move `import_transaction_list` to `csv_import/import_transactions.rs`
+- Error alert if import fails
 - Port alerts system to other pages (other than rules page) for handling error messages
   - Use alerts for confirming deletion of items from tags and rules pages (and others when they get full CRUD).
   - Alert for dashboard if excluded tag ops fail.
