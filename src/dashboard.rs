@@ -11,8 +11,8 @@ use charming::{
     Chart,
     component::{Axis, Grid, Legend, Title, VisualMap, VisualMapPiece},
     element::{
-        AxisPointer, AxisPointerType, AxisType, Emphasis, EmphasisFocus, JsFunction, Tooltip,
-        Trigger,
+        AxisLabel, AxisPointer, AxisPointerType, AxisType, Emphasis, EmphasisFocus, JsFunction,
+        Tooltip, Trigger,
     },
     series::{Line, bar},
 };
@@ -266,7 +266,11 @@ fn create_net_income_chart(transactions: &[Transaction]) -> Chart {
         )
         .tooltip(create_currency_tooltip())
         .x_axis(Axis::new().type_(AxisType::Category).data(labels))
-        .y_axis(Axis::new().type_(AxisType::Value))
+        .y_axis(
+            Axis::new()
+                .type_(AxisType::Value)
+                .axis_label(AxisLabel::new().formatter(get_chart_currency_formatter())),
+        )
         .visual_map(VisualMap::new().show(false).pieces(vec![
             VisualMapPiece::new().lte(-1).color("red"),
             VisualMapPiece::new().gte(0).color("green"),
@@ -286,7 +290,11 @@ fn create_balances_chart(total_account_balance: f64, transactions: &[Transaction
         )
         .tooltip(create_currency_tooltip())
         .x_axis(Axis::new().type_(AxisType::Category).data(labels))
-        .y_axis(Axis::new().type_(AxisType::Value))
+        .y_axis(
+            Axis::new()
+                .type_(AxisType::Value)
+                .axis_label(AxisLabel::new().formatter(get_chart_currency_formatter())),
+        )
         .series(Line::new().name("Balance").data(values))
 }
 
@@ -302,7 +310,7 @@ fn create_expenses_chart(transactions: &[Transaction]) -> Chart {
                 .text("Monthly Expenses")
                 .subtext("Last twelve months, grouped by tag"),
         )
-        .tooltip(create_optional_currency_tooltip())
+        .tooltip(create_currency_tooltip())
         .legend(Legend::new())
         .grid(
             Grid::new()
@@ -312,7 +320,11 @@ fn create_expenses_chart(transactions: &[Transaction]) -> Chart {
                 .contain_label(true),
         )
         .x_axis(Axis::new().type_(AxisType::Category).data(labels))
-        .y_axis(Axis::new().type_(AxisType::Value));
+        .y_axis(
+            Axis::new()
+                .type_(AxisType::Value)
+                .axis_label(AxisLabel::new().formatter(get_chart_currency_formatter())),
+        );
 
     for (tag, data) in series_data {
         chart = chart.series(
@@ -465,25 +477,24 @@ fn calculate_monthly_expenses(
         .collect()
 }
 
+#[inline]
+fn get_chart_currency_formatter() -> JsFunction {
+    JsFunction::new_with_args(
+        "number",
+        // Use USD instead of NZD since it is easier to read (No 'NZ' prefix)
+        "const currencyFormatter = new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            });
+            return (number) ? currencyFormatter.format(number) : \"-\";",
+    )
+}
+
 /// Creates a tooltip configuration for currency values
 fn create_currency_tooltip() -> Tooltip {
     Tooltip::new()
         .trigger(Trigger::Axis)
-        .value_formatter(JsFunction::new_with_args(
-            "number",
-            "return number.toFixed(2)",
-        ))
-        .axis_pointer(AxisPointer::new().type_(AxisPointerType::Shadow))
-}
-
-/// Creates a tooltip configuration for optional currency values
-fn create_optional_currency_tooltip() -> Tooltip {
-    Tooltip::new()
-        .trigger(Trigger::Axis)
-        .value_formatter(JsFunction::new_with_args(
-            "number",
-            "return (number) ? number.toFixed(2) : \"-\"",
-        ))
+        .value_formatter(get_chart_currency_formatter())
         .axis_pointer(AxisPointer::new().type_(AxisPointerType::Shadow))
 }
 
