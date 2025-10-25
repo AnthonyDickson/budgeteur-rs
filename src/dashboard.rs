@@ -265,6 +265,13 @@ fn create_net_income_chart(transactions: &[Transaction]) -> Chart {
                 .subtext("Last twelve months"),
         )
         .tooltip(create_currency_tooltip())
+        .grid(
+            Grid::new()
+                .left("3%")
+                .right("4%")
+                .bottom("3%")
+                .contain_label(true),
+        )
         .x_axis(Axis::new().type_(AxisType::Category).data(labels))
         .y_axis(
             Axis::new()
@@ -289,6 +296,13 @@ fn create_balances_chart(total_account_balance: f64, transactions: &[Transaction
                 .subtext("Last twelve months"),
         )
         .tooltip(create_currency_tooltip())
+        .grid(
+            Grid::new()
+                .left("3%")
+                .right("4%")
+                .bottom("3%")
+                .contain_label(true),
+        )
         .x_axis(Axis::new().type_(AxisType::Category).data(labels))
         .y_axis(
             Axis::new()
@@ -311,12 +325,13 @@ fn create_expenses_chart(transactions: &[Transaction]) -> Chart {
                 .subtext("Last twelve months, grouped by tag"),
         )
         .tooltip(create_currency_tooltip())
-        .legend(Legend::new())
+        .legend(Legend::new().left(230).top(0))
         .grid(
             Grid::new()
                 .left("3%")
                 .right("4%")
                 .bottom("3%")
+                .top(90)
                 .contain_label(true),
         )
         .x_axis(Axis::new().type_(AxisType::Category).data(labels))
