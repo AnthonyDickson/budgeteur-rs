@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Sort tags alphabetically
 - Review whether displaying IDs (e.g., transactions view, tags view) is useful
 - Move `import_transaction_list` to `csv_import/import_transactions.rs`
 - Error alert if import fails
