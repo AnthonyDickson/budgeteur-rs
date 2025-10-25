@@ -16,12 +16,9 @@ use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AppState, Error,
-    database_id::DatabaseID,
-    endpoints,
+    AppState, Error, endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
-    transaction_tag::get_tag_transaction_count,
 };
 
 /// The name of a tag.
@@ -64,11 +61,13 @@ impl Display for TagName {
     }
 }
 
+pub type TagId = i64;
+
 /// A tag for grouping expenses and income, e.g., 'Groceries', 'Eating Out', 'Wages'.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Tag {
     /// The ID of the tag.
-    pub id: DatabaseID,
+    pub id: TagId,
 
     /// The name of the tag.
     pub name: TagName,
@@ -127,23 +126,6 @@ pub async fn get_new_tag_page() -> Response {
     )
 }
 
-/// A tag with its formatted edit URL for template rendering.
-#[derive(Debug, Clone)]
-struct TagWithEditUrl {
-    pub tag: Tag,
-    pub edit_url: String,
-    pub transaction_count: i64,
-}
-
-/// Renders the tags listing page.
-#[derive(Template)]
-#[template(path = "views/tags.html")]
-struct TagsTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    tags: Vec<TagWithEditUrl>,
-    new_tag_route: &'a str,
-}
-
 /// The state needed for the tags listing page.
 #[derive(Debug, Clone)]
 pub struct TagsPageState {
@@ -156,48 +138,6 @@ impl FromRef<AppState> for TagsPageState {
             db_connection: state.db_connection.clone(),
         }
     }
-}
-
-/// Route handler for the tags listing page.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
-pub async fn get_tags_page(State(state): State<TagsPageState>) -> Response {
-    let connection = state
-        .db_connection
-        .lock()
-        .expect("Could not acquire database lock");
-
-    let tags = match get_all_tags(&connection) {
-        Ok(tags) => tags,
-
-        Err(error) => {
-            tracing::error!("Failed to retrieve tags: {error}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response();
-        }
-    };
-
-    let tags_with_edit_urls = tags
-        .into_iter()
-        .map(|tag| {
-            let transaction_count = get_tag_transaction_count(tag.id, &connection).unwrap_or(0); // Default to 0 if count query fails
-            TagWithEditUrl {
-                edit_url: endpoints::format_endpoint(endpoints::EDIT_TAG_VIEW, tag.id),
-                tag,
-                transaction_count,
-            }
-        })
-        .collect();
-
-    render(
-        StatusCode::OK,
-        TagsTemplate {
-            nav_bar: get_nav_bar(endpoints::TAGS_VIEW),
-            tags: tags_with_edit_urls,
-            new_tag_route: endpoints::NEW_TAG_VIEW,
-        },
-    )
 }
 
 /// The state needed for creating a tag.
@@ -317,7 +257,7 @@ pub async fn create_tag_endpoint(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_edit_tag_page(
-    Path(tag_id): Path<DatabaseID>,
+    Path(tag_id): Path<TagId>,
     State(state): State<EditTagPageState>,
 ) -> Response {
     let connection = state
@@ -370,7 +310,7 @@ pub async fn get_edit_tag_page(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn update_tag_endpoint(
-    Path(tag_id): Path<DatabaseID>,
+    Path(tag_id): Path<TagId>,
     State(state): State<UpdateTagEndpointState>,
     Form(form_data): Form<TagFormData>,
 ) -> impl IntoResponse {
@@ -429,7 +369,7 @@ pub async fn update_tag_endpoint(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn delete_tag_endpoint(
-    Path(tag_id): Path<DatabaseID>,
+    Path(tag_id): Path<TagId>,
     State(state): State<DeleteTagEndpointState>,
 ) -> impl IntoResponse {
     let connection = state
@@ -471,7 +411,7 @@ pub fn create_tag(name: TagName, connection: &Connection) -> Result<Tag, Error> 
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error.
-pub fn get_tag(tag_id: DatabaseID, connection: &Connection) -> Result<Tag, Error> {
+pub fn get_tag(tag_id: TagId, connection: &Connection) -> Result<Tag, Error> {
     connection
         .prepare("SELECT id, name FROM tag WHERE id = :id;")?
         .query_row(&[(":id", &tag_id)], map_row)
@@ -482,11 +422,7 @@ pub fn get_tag(tag_id: DatabaseID, connection: &Connection) -> Result<Tag, Error
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error or if the tag doesn't exist.
-pub fn update_tag(
-    tag_id: DatabaseID,
-    new_name: TagName,
-    connection: &Connection,
-) -> Result<(), Error> {
+pub fn update_tag(tag_id: TagId, new_name: TagName, connection: &Connection) -> Result<(), Error> {
     let rows_affected = connection.execute(
         "UPDATE tag SET name = ?1 WHERE id = ?2",
         (new_name.as_ref(), tag_id),
@@ -503,7 +439,7 @@ pub fn update_tag(
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error or if the tag doesn't exist.
-pub fn delete_tag(tag_id: DatabaseID, connection: &Connection) -> Result<(), Error> {
+pub fn delete_tag(tag_id: TagId, connection: &Connection) -> Result<(), Error> {
     let rows_affected = connection.execute("DELETE FROM tag WHERE id = ?1", [tag_id])?;
 
     if rows_affected == 0 {
@@ -1112,7 +1048,7 @@ mod edit_tag_endpoint_tests {
         let hx_attr = form
             .value()
             .attr(attribute)
-            .expect(&format!("{attribute} attribute missing"));
+            .unwrap_or_else(|| panic!("{attribute} attribute missing"));
 
         assert_eq!(
             hx_attr, endpoint,

@@ -108,7 +108,7 @@ e.g. "Pacific/Auckland".
 These instructions are for people who want to compile from source and/or modify
 the code.
 
-This project was developed with cargo 1.89.0, other versions have not been tested.
+This project was developed with cargo 1.90.0, other versions have not been tested.
 [bacon](https://dystroy.org/bacon/) is used for running scripts.
 
 **Note**: you cannot test this web app locally in Safari because it does not support secure cookies on localhost.

@@ -577,6 +577,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "2025/03/20,2025/03/20,2025032002,CREDIT,5023,\"PAYMENT RECEIVED THANK YOU\",-2750.00",
                 )),
+                tag_id: None,
             },
             TransactionBuilder {
                 amount: -8.50,
@@ -585,6 +586,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "2025/04/09,2025/04/08,2025040902,DEBIT,5023,\"Birdy Bytes\",8.50",
                 )),
+                tag_id: None,
             },
             TransactionBuilder {
                 amount: -10.63,
@@ -595,6 +597,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "2025/04/10,2025/04/07,2025041001,DEBIT,5023,\"AMAZON DOWNLOADS TOKYO 862.00 YEN at a Conversion Rate  of 81.0913 (NZ$10.63)\",10.63",
                 )),
+                tag_id: None,
             },
             TransactionBuilder {
                 amount: -0.22,
@@ -603,6 +606,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22",
                 )),
+                tag_id: None,
             },
             TransactionBuilder {
                 amount: -11.50,
@@ -611,6 +615,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "2025/04/11,2025/04/10,2025041101,DEBIT,5023,\"Buckstars\",11.50",
                 )),
+                tag_id: None,
             },
         ];
         let want_balance = None;
@@ -641,6 +646,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "22 Jan 2025,TRANSFER TO A R DICKSON - 01 ;,,-353.46,200.00",
                 )),
+                tag_id: None,
             },
             TransactionBuilder {
                 amount: -32.00,
@@ -649,6 +655,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "22 Jan 2025,POS W/D LOBSTER SEAFOO-19:47 ;,,-32.00,168.00",
                 )),
+                tag_id: None,
             },
             TransactionBuilder {
                 amount: 32.00,
@@ -657,6 +664,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "22 Jan 2025,TRANSFER FROM A R DICKSON - 01 ;,,32.00,200.00",
                 )),
+                tag_id: None,
             },
             TransactionBuilder {
                 amount: -18.00,
@@ -665,6 +673,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "26 Jan 2025,POS W/D BEAUTY CHINA -14:02 ;,,-18.00,182.00",
                 )),
+                tag_id: None,
             },
             TransactionBuilder {
                 amount: -60.00,
@@ -673,6 +682,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "26 Jan 2025,POS W/D LEE HONG BBQ -14:20 ;,,-60.00,122.00",
                 )),
+                tag_id: None,
             },
             TransactionBuilder {
                 amount: 78.00,
@@ -681,6 +691,7 @@ mod parse_csv_tests {
                 import_id: Some(create_import_id(
                     "26 Jan 2025,TRANSFER FROM A R DICKSON - 01 ;,,78.00,200.00",
                 )),
+                tag_id: None,
             },
         ];
 

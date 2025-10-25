@@ -44,9 +44,9 @@ mod routing;
 mod rule;
 mod shared_templates;
 mod tag;
+mod tags_page;
 mod timezone;
 pub mod transaction;
-mod transaction_tag;
 pub mod user;
 
 pub use app_state::AppState;
@@ -170,7 +170,7 @@ pub enum Error {
     InternalError(String),
 
     /// An unhandled/unexpected SQL error.
-    #[error("an error occurred while creating the user: {0}")]
+    #[error("an unexpected SQL error occurred: {0}")]
     SqlError(rusqlite::Error),
 
     /// An error occurred while saving dashboard preferences.

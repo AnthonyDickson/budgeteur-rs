@@ -43,15 +43,13 @@
 
       {% if !available_tags.is_empty() %}
       <div>
-        <label class="{% include "styles/forms/label.html" %}">Tags</label>
-        <div class="grid grid-cols-2 gap-2 mt-2">
+        <label for="tag_id" class="{% include "styles/forms/label.html" %}">Tag</label>
+        <select name="tag_id" id="tag_id" class="{% include "styles/forms/input.html" %}">
+          <option value="">Select a tag</option>
           {% for tag in available_tags %}
-          <label class="flex items-center space-x-2 cursor-pointer">
-            <input type="checkbox" name="tag_ids" value="{{ tag.id }}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:focus:ring-blue-600" />
-            <span class="text-sm text-gray-900 dark:text-white">{{ tag.name }}</span>
-          </label>
+          <option value="{{ tag.id }}">{{ tag.name }}</option>
           {% endfor %}
-        </div>
+        </select>
       </div>
       {% endif %}
 

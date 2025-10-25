@@ -11,8 +11,8 @@ use charming::{
     Chart,
     component::{Axis, Grid, Legend, Title, VisualMap, VisualMapPiece},
     element::{
-        AxisPointer, AxisPointerType, AxisType, Emphasis, EmphasisFocus, JsFunction, Tooltip,
-        Trigger,
+        AxisLabel, AxisPointer, AxisPointerType, AxisType, Emphasis, EmphasisFocus, JsFunction,
+        Tooltip, Trigger,
     },
     series::{Line, bar},
 };
@@ -29,7 +29,7 @@ use crate::{
     AppState, Error,
     balances::get_total_account_balance,
     dashboard_preferences::{get_excluded_tags, save_excluded_tags},
-    database_id::DatabaseID,
+    database_id::DatabaseId,
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
@@ -68,9 +68,7 @@ struct Transaction {
 // DATABASE FUNCTIONS
 // ============================================================================
 
-/// Get transactions and their first tags within a date range.
-///
-/// A transaction's first tag is the tag name that comes first alphabetically.
+/// Get transactions and their tags within a date range.
 ///
 /// # Arguments
 /// * `date_range` - The inclusive date range to summarize transactions for
@@ -83,36 +81,28 @@ struct Transaction {
 /// - SQL query preparation or execution fails
 fn get_transactions_in_date_range(
     date_range: RangeInclusive<Date>,
-    excluded_tags: Option<&[DatabaseID]>,
+    excluded_tags: Option<&[DatabaseId]>,
     connection: &Connection,
 ) -> Result<Vec<Transaction>, Error> {
     let base_query = "SELECT 
         t.amount,
         t.date,
-        COALESCE(MIN(tag.name), 'Other') AS tag_name
+        COALESCE(tag.name, 'Other') AS tag_name
     FROM \"transaction\" t
-    LEFT JOIN transaction_tag tt ON t.id = tt.transaction_id
-    LEFT JOIN tag ON tt.tag_id = tag.id
+    LEFT JOIN tag ON tag.id = t.tag_id
     WHERE t.date BETWEEN ?1 AND ?2";
 
     let (query, params) = if let Some(tags) = excluded_tags.filter(|t| !t.is_empty()) {
         let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let query_with_exclusions = format!(
-            "{base_query} AND NOT EXISTS (
-                SELECT 1 
-                FROM transaction_tag tt2 
-                WHERE tt2.transaction_id = t.id 
-                AND tt2.tag_id IN ({placeholders})
-            )
-            GROUP BY t.id, t.amount, t.date"
-        );
+        let query_without_excluded_tags =
+            format!("{base_query} AND (t.tag_id IS NULL OR t.tag_id NOT IN ({placeholders}))");
 
         let mut params = vec![date_range.start().to_string(), date_range.end().to_string()];
         params.extend(tags.iter().map(|tag| tag.to_string()));
-        (query_with_exclusions, params)
+        (query_without_excluded_tags, params)
     } else {
         (
-            format!("{base_query} GROUP BY t.id, t.amount, t.date"),
+            base_query.to_owned(),
             vec![date_range.start().to_string(), date_range.end().to_string()],
         )
     };
@@ -276,7 +266,11 @@ fn create_net_income_chart(transactions: &[Transaction]) -> Chart {
         )
         .tooltip(create_currency_tooltip())
         .x_axis(Axis::new().type_(AxisType::Category).data(labels))
-        .y_axis(Axis::new().type_(AxisType::Value))
+        .y_axis(
+            Axis::new()
+                .type_(AxisType::Value)
+                .axis_label(AxisLabel::new().formatter(get_chart_currency_formatter())),
+        )
         .visual_map(VisualMap::new().show(false).pieces(vec![
             VisualMapPiece::new().lte(-1).color("red"),
             VisualMapPiece::new().gte(0).color("green"),
@@ -296,7 +290,11 @@ fn create_balances_chart(total_account_balance: f64, transactions: &[Transaction
         )
         .tooltip(create_currency_tooltip())
         .x_axis(Axis::new().type_(AxisType::Category).data(labels))
-        .y_axis(Axis::new().type_(AxisType::Value))
+        .y_axis(
+            Axis::new()
+                .type_(AxisType::Value)
+                .axis_label(AxisLabel::new().formatter(get_chart_currency_formatter())),
+        )
         .series(Line::new().name("Balance").data(values))
 }
 
@@ -312,7 +310,7 @@ fn create_expenses_chart(transactions: &[Transaction]) -> Chart {
                 .text("Monthly Expenses")
                 .subtext("Last twelve months, grouped by tag"),
         )
-        .tooltip(create_optional_currency_tooltip())
+        .tooltip(create_currency_tooltip())
         .legend(Legend::new())
         .grid(
             Grid::new()
@@ -322,7 +320,11 @@ fn create_expenses_chart(transactions: &[Transaction]) -> Chart {
                 .contain_label(true),
         )
         .x_axis(Axis::new().type_(AxisType::Category).data(labels))
-        .y_axis(Axis::new().type_(AxisType::Value));
+        .y_axis(
+            Axis::new()
+                .type_(AxisType::Value)
+                .axis_label(AxisLabel::new().formatter(get_chart_currency_formatter())),
+        );
 
     for (tag, data) in series_data {
         chart = chart.series(
@@ -475,25 +477,24 @@ fn calculate_monthly_expenses(
         .collect()
 }
 
+#[inline]
+fn get_chart_currency_formatter() -> JsFunction {
+    JsFunction::new_with_args(
+        "number",
+        // Use USD instead of NZD since it is easier to read (No 'NZ' prefix)
+        "const currencyFormatter = new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            });
+            return (number) ? currencyFormatter.format(number) : \"-\";",
+    )
+}
+
 /// Creates a tooltip configuration for currency values
 fn create_currency_tooltip() -> Tooltip {
     Tooltip::new()
         .trigger(Trigger::Axis)
-        .value_formatter(JsFunction::new_with_args(
-            "number",
-            "return number.toFixed(2)",
-        ))
-        .axis_pointer(AxisPointer::new().type_(AxisPointerType::Shadow))
-}
-
-/// Creates a tooltip configuration for optional currency values
-fn create_optional_currency_tooltip() -> Tooltip {
-    Tooltip::new()
-        .trigger(Trigger::Axis)
-        .value_formatter(JsFunction::new_with_args(
-            "number",
-            "return (number) ? number.toFixed(2) : \"-\"",
-        ))
+        .value_formatter(get_chart_currency_formatter())
         .axis_pointer(AxisPointer::new().type_(AxisPointerType::Shadow))
 }
 
@@ -506,7 +507,7 @@ fn create_optional_currency_tooltip() -> Tooltip {
 pub struct ExcludedTagsForm {
     /// List of tag IDs to exclude from dashboard summaries
     #[serde(default)]
-    pub excluded_tags: Vec<DatabaseID>,
+    pub excluded_tags: Vec<DatabaseId>,
 }
 
 /// API endpoint to update excluded tags and return updated summaries
@@ -588,7 +589,7 @@ mod dashboard_route_tests {
 
     use crate::{
         dashboard::DashboardState,
-        database_id::DatabaseID,
+        database_id::DatabaseId,
         db::initialize,
         tag::{TagName, create_tag},
         transaction::{Transaction, create_transaction},
@@ -703,7 +704,7 @@ mod dashboard_route_tests {
         // Test no values (when no checkboxes are selected)
         let form_data = "";
         let form: ExcludedTagsForm = serde_html_form::from_str(form_data).unwrap();
-        assert_eq!(form.excluded_tags, Vec::<DatabaseID>::new());
+        assert_eq!(form.excluded_tags, Vec::<DatabaseId>::new());
     }
 }
 
@@ -717,7 +718,6 @@ mod get_transactions_in_date_range_tests {
         db::initialize,
         tag::{TagName, create_tag},
         transaction::{Transaction, create_transaction},
-        transaction_tag::set_transaction_tags,
     };
 
     fn get_test_connection() -> Connection {
@@ -804,17 +804,18 @@ mod get_transactions_in_date_range_tests {
         let included_tag = create_tag(TagName::new("IncludedTag").unwrap(), &conn).unwrap();
 
         // Create test transactions
-        let excluded_transaction =
-            create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn)
-                .unwrap();
-        let included_transaction =
-            create_transaction(Transaction::build(50.0, start_date, "".to_owned()), &conn).unwrap();
+        let _excluded_transaction = create_transaction(
+            Transaction::build(100.0, start_date, "".to_owned()).tag_id(Some(excluded_tag.id)),
+            &conn,
+        )
+        .unwrap();
+        let _included_transaction = create_transaction(
+            Transaction::build(50.0, start_date, "".to_owned()).tag_id(Some(included_tag.id)),
+            &conn,
+        )
+        .unwrap();
         let _untagged_transaction =
             create_transaction(Transaction::build(25.0, start_date, "".to_owned()), &conn).unwrap();
-
-        // Tag transactions
-        set_transaction_tags(excluded_transaction.id, &[excluded_tag.id], &conn).unwrap();
-        set_transaction_tags(included_transaction.id, &[included_tag.id], &conn).unwrap();
 
         // Get transactions excluding the excluded tag
         let excluded_tags = vec![excluded_tag.id];
@@ -822,7 +823,7 @@ mod get_transactions_in_date_range_tests {
             get_transactions_in_date_range(start_date..=end_date, Some(&excluded_tags), &conn)
                 .unwrap();
 
-        assert_eq!(transactions.len(), 2);
+        assert_eq!(transactions.len(), 2, "Got transactions: {transactions:#?}");
         let total: f64 = transactions.iter().map(|t| t.amount).sum();
         assert_eq!(total, 75.0); // 50 + 25, excluding 100
     }
@@ -837,14 +838,13 @@ mod get_transactions_in_date_range_tests {
         let tag = create_tag(TagName::new("TestTag").unwrap(), &conn).unwrap();
 
         // Create test transactions
-        let tagged_transaction =
-            create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn)
-                .unwrap();
+        let _tagged_transaction = create_transaction(
+            Transaction::build(100.0, start_date, "".to_owned()).tag_id(Some(tag.id)),
+            &conn,
+        )
+        .unwrap();
         let _untagged_transaction =
             create_transaction(Transaction::build(50.0, start_date, "".to_owned()), &conn).unwrap();
-
-        // Tag one transaction
-        set_transaction_tags(tagged_transaction.id, &[tag.id], &conn).unwrap();
 
         // Get transactions with no exclusions
         let transactions =
@@ -869,29 +869,6 @@ mod get_transactions_in_date_range_tests {
 
         assert_eq!(transactions.len(), 1);
         assert_eq!(transactions[0].tag, "Other");
-    }
-
-    #[test]
-    fn uses_first_alphabetical_tag_for_multi_tagged_transactions() {
-        let conn = get_test_connection();
-        let start_date = date!(2024 - 01 - 01);
-        let end_date = date!(2024 - 01 - 31);
-
-        // Create tags (not in alphabetical order)
-        let zebra_tag = create_tag(TagName::new("Zebra").unwrap(), &conn).unwrap();
-        let alpha_tag = create_tag(TagName::new("Alpha").unwrap(), &conn).unwrap();
-
-        // Create transaction with multiple tags
-        let transaction =
-            create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn)
-                .unwrap();
-        set_transaction_tags(transaction.id, &[zebra_tag.id, alpha_tag.id], &conn).unwrap();
-
-        let transactions =
-            get_transactions_in_date_range(start_date..=end_date, None, &conn).unwrap();
-
-        assert_eq!(transactions.len(), 1);
-        assert_eq!(transactions[0].tag, "Alpha"); // First alphabetically
     }
 }
 

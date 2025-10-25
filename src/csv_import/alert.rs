@@ -117,7 +117,7 @@ impl ImportMessageBuilder {
 fn get_thousands_separator_formatter() -> &'static Formatter {
     static FORMATTER: OnceLock<Formatter> = OnceLock::new();
 
-    &FORMATTER.get_or_init(|| {
+    FORMATTER.get_or_init(|| {
         Formatter::new()
             .separator(',')
             .unwrap()

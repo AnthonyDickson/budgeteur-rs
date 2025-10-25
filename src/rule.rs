@@ -2,7 +2,7 @@
 //! A rule matches transaction descriptions that start with a specific pattern and applies a tag.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     sync::{Arc, Mutex},
 };
 
@@ -20,12 +20,12 @@ use serde::{Deserialize, Serialize};
 use crate::{
     AppState, Error,
     alert::AlertTemplate,
-    database_id::{DatabaseID, TransactionID},
+    database_id::{DatabaseId, TransactionId},
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
     not_found::NotFoundTemplate,
     shared_templates::render,
-    tag::{Tag, TagName, get_all_tags},
+    tag::{Tag, TagId, TagName, get_all_tags},
     transaction::Transaction,
 };
 
@@ -34,13 +34,13 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Rule {
     /// The ID of the rule.
-    pub id: DatabaseID,
+    pub id: DatabaseId,
 
     /// The pattern that transaction descriptions must start with (case-insensitive).
     pub pattern: String,
 
     /// The ID of the tag to apply when this rule matches.
-    pub tag_id: DatabaseID,
+    pub tag_id: DatabaseId,
 }
 
 /// A rule with its associated tag information for display purposes.
@@ -99,7 +99,7 @@ struct EditRuleFormTemplate<'a> {
     update_rule_endpoint: &'a str,
     available_tags: Vec<Tag>,
     rule_pattern: &'a str,
-    selected_tag_id: DatabaseID,
+    selected_tag_id: DatabaseId,
     error_message: &'a str,
 }
 
@@ -130,7 +130,7 @@ pub struct RuleFormData {
     /// The pattern that transaction descriptions must start with (case-insensitive).
     pub pattern: String,
     /// The ID of the tag to apply when this rule matches.
-    pub tag_id: DatabaseID,
+    pub tag_id: DatabaseId,
 }
 
 /// Route handler for the new rule page.
@@ -268,7 +268,7 @@ pub async fn create_rule_endpoint(
 /// Panics if the lock for the database connection is already held by the same thread.
 #[axum::debug_handler]
 pub async fn get_edit_rule_page(
-    Path(rule_id): Path<DatabaseID>,
+    Path(rule_id): Path<DatabaseId>,
     State(state): State<RuleState>,
 ) -> Response {
     let connection = state
@@ -315,7 +315,7 @@ pub async fn get_edit_rule_page(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn update_rule_endpoint(
-    Path(rule_id): Path<DatabaseID>,
+    Path(rule_id): Path<DatabaseId>,
     State(state): State<RuleState>,
     Form(form_data): Form<RuleFormData>,
 ) -> impl IntoResponse {
@@ -384,7 +384,7 @@ pub async fn update_rule_endpoint(
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn delete_rule_endpoint(
-    Path(rule_id): Path<DatabaseID>,
+    Path(rule_id): Path<DatabaseId>,
     State(state): State<RuleState>,
 ) -> impl IntoResponse {
     let connection = state
@@ -430,11 +430,11 @@ pub async fn auto_tag_all_transactions_endpoint(
             tracing::info!(
                 "Auto-tagging all transactions completed in {:.2}ms: {} transactions processed, {} tags applied",
                 duration.as_millis(),
-                result.transactions_processed,
+                result.transactions_tagged,
                 result.tags_applied
             );
 
-            let message = if result.transactions_processed > 0 {
+            let message = if result.transactions_tagged > 0 {
                 "Auto-tagging completed successfully!"
             } else {
                 "Auto-tagging completed - no transactions were processed."
@@ -442,7 +442,7 @@ pub async fn auto_tag_all_transactions_endpoint(
 
             let details = format!(
                 "Tagged {} transactions with {} tags in {:.1}ms",
-                result.transactions_processed,
+                result.transactions_tagged,
                 result.tags_applied,
                 duration.as_millis()
             );
@@ -489,11 +489,11 @@ pub async fn auto_tag_untagged_transactions_endpoint(
             tracing::info!(
                 "Auto-tagging untagged transactions completed in {:.2}ms: {} transactions processed, {} tags applied",
                 duration.as_millis(),
-                result.transactions_processed,
+                result.transactions_tagged,
                 result.tags_applied
             );
 
-            let message = if result.transactions_processed > 0 {
+            let message = if result.transactions_tagged > 0 {
                 "Auto-tagging untagged transactions completed successfully!"
             } else {
                 "Auto-tagging completed - no untagged transactions were processed."
@@ -501,7 +501,7 @@ pub async fn auto_tag_untagged_transactions_endpoint(
 
             let details = format!(
                 "Tagged {} untagged transactions with {} tags in {:.1}ms",
-                result.transactions_processed,
+                result.transactions_tagged,
                 result.tags_applied,
                 duration.as_millis()
             );
@@ -534,7 +534,7 @@ pub async fn auto_tag_untagged_transactions_endpoint(
 /// This function will return an error if there is an SQL error.
 pub fn create_rule(
     pattern: &str,
-    tag_id: DatabaseID,
+    tag_id: DatabaseId,
     connection: &Connection,
 ) -> Result<Rule, Error> {
     connection.execute(
@@ -555,7 +555,7 @@ pub fn create_rule(
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error.
-pub fn get_rule(rule_id: DatabaseID, connection: &Connection) -> Result<Rule, Error> {
+pub fn get_rule(rule_id: DatabaseId, connection: &Connection) -> Result<Rule, Error> {
     connection
         .prepare("SELECT id, pattern, tag_id FROM rule WHERE id = :id;")?
         .query_row(&[(":id", &rule_id)], map_rule_row)
@@ -567,9 +567,9 @@ pub fn get_rule(rule_id: DatabaseID, connection: &Connection) -> Result<Rule, Er
 /// # Errors
 /// This function will return an error if there is an SQL error or if the rule doesn't exist.
 pub fn update_rule(
-    rule_id: DatabaseID,
+    rule_id: DatabaseId,
     new_pattern: &str,
-    new_tag_id: DatabaseID,
+    new_tag_id: DatabaseId,
     connection: &Connection,
 ) -> Result<(), Error> {
     let rows_affected = connection.execute(
@@ -588,7 +588,7 @@ pub fn update_rule(
 ///
 /// # Errors
 /// This function will return an error if there is an SQL error or if the rule doesn't exist.
-pub fn delete_rule(rule_id: DatabaseID, connection: &Connection) -> Result<(), Error> {
+pub fn delete_rule(rule_id: DatabaseId, connection: &Connection) -> Result<(), Error> {
     let rows_affected = connection.execute("DELETE FROM rule WHERE id = ?1", [rule_id])?;
 
     if rows_affected == 0 {
@@ -604,7 +604,9 @@ pub fn delete_rule(rule_id: DatabaseID, connection: &Connection) -> Result<(), E
 /// This function will return an error if there is an SQL error.
 pub fn get_all_rules(connection: &Connection) -> Result<Vec<Rule>, Error> {
     connection
-        .prepare("SELECT id, pattern, tag_id FROM rule;")?
+        // Sort by descending length to ensure that ambiguous patterns (e.g, foo, foobar)
+        // always match the more specific (longer) pattern first
+        .prepare("SELECT id, pattern, tag_id FROM rule ORDER BY LENGTH(pattern) DESC;")?
         .query_map([], map_rule_row)?
         .map(|maybe_rule| maybe_rule.map_err(|error| error.into()))
         .collect()
@@ -620,7 +622,7 @@ pub fn get_all_rules_with_tags(connection: &Connection) -> Result<Vec<RuleWithTa
             "SELECT r.id, r.pattern, r.tag_id, t.id, t.name 
              FROM rule r 
              INNER JOIN tag t ON r.tag_id = t.id
-             ORDER BY r.pattern",
+             ORDER BY t.name ASC, r.pattern ASC",
         )?
         .query_map([], |row| {
             let rule_id = row.get(0)?;
@@ -686,35 +688,37 @@ pub enum TaggingMode<'a> {
 fn get_transactions_for_auto_tagging(
     mode: TaggingMode,
     connection: &Connection,
-) -> Result<Vec<(TransactionID, String)>, Error> {
+) -> Result<Vec<(TransactionId, Option<TagId>, String)>, Error> {
     let query = match mode {
-        TaggingMode::FetchAll => "SELECT id, description FROM \"transaction\"",
+        TaggingMode::FetchAll => "SELECT id, tag_id, description FROM \"transaction\"",
         TaggingMode::FetchUntagged => {
-            "SELECT t.id, t.description 
-         FROM \"transaction\" t
-         LEFT JOIN transaction_tag tt ON t.id = tt.transaction_id
-         WHERE tt.transaction_id IS NULL"
+            "SELECT id, tag_id, description FROM \"transaction\" WHERE tag_id IS NULL"
         }
         TaggingMode::FromArgs(transactions) => {
             return Ok(transactions
                 .iter()
-                .map(|transaction| (transaction.id, transaction.description.clone()))
+                .map(|transaction| {
+                    (
+                        transaction.id,
+                        transaction.tag_id,
+                        transaction.description.clone(),
+                    )
+                })
                 .collect());
         }
     };
 
     connection
         .prepare(query)?
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(Error::from)
 }
 
 /// Batch set tags for multiple transactions, replacing any existing tags.
-/// This is more efficient than calling set_transaction_tags multiple times.
 ///
 /// # Arguments
-/// * `transaction_tag_map` - Map of transaction_id to vector of tag_ids
+/// * `transaction_tag_map` - Vec of transaction_id and tag_id pairs
 /// * `connection` - Database connection
 ///
 /// # Errors
@@ -722,50 +726,28 @@ fn get_transactions_for_auto_tagging(
 /// - [Error::InvalidTag] if any `tag_id` does not refer to a valid tag,
 /// - [Error::SqlError] if there is some other SQL error.
 fn batch_set_transaction_tags(
-    transaction_tag_map: HashMap<DatabaseID, Vec<DatabaseID>>,
+    transaction_tag_pairs: Vec<(TransactionId, TagId)>,
     connection: &Connection,
 ) -> Result<(), Error> {
-    if transaction_tag_map.is_empty() {
+    if transaction_tag_pairs.is_empty() {
         return Ok(());
     }
 
     let tx = connection.unchecked_transaction()?;
 
-    // Batch delete existing tags for all transactions
-    let transaction_ids: Vec<DatabaseID> = transaction_tag_map.keys().copied().collect();
-    let placeholders = transaction_ids
-        .iter()
-        .map(|_| "?")
-        .collect::<Vec<_>>()
-        .join(",");
-    let delete_query = format!(
-        "DELETE FROM transaction_tag WHERE transaction_id IN ({})",
-        placeholders
-    );
-
-    let delete_params: Vec<&dyn rusqlite::ToSql> = transaction_ids
-        .iter()
-        .map(|id| id as &dyn rusqlite::ToSql)
-        .collect();
-    tx.execute(&delete_query, &delete_params[..])?;
-
     // Batch insert new tags
     let mut stmt =
-        tx.prepare("INSERT INTO transaction_tag (transaction_id, tag_id) VALUES (?1, ?2)")?;
+        tx.prepare("UPDATE \"transaction\" SET tag_id = ?2 WHERE \"transaction\".id = ?1")?;
 
-    for (transaction_id, tag_ids) in &transaction_tag_map {
-        for &tag_id in tag_ids {
-            stmt.execute((transaction_id, tag_id))
-                .map_err(|error| match error {
-                    // Code 787 occurs when a FOREIGN KEY constraint failed.
-                    rusqlite::Error::SqliteFailure(error, Some(_))
-                        if error.extended_code == 787 =>
-                    {
-                        Error::InvalidTag
-                    }
-                    error => error.into(),
-                })?;
-        }
+    for (transaction_id, tag_id) in &transaction_tag_pairs {
+        stmt.execute((transaction_id, tag_id))
+            .map_err(|error| match error {
+                // Code 787 occurs when a FOREIGN KEY constraint failed.
+                rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
+                    Error::InvalidTag
+                }
+                error => error.into(),
+            })?;
     }
 
     drop(stmt);
@@ -777,7 +759,7 @@ fn batch_set_transaction_tags(
 #[derive(Debug, Clone)]
 pub struct TaggingResult {
     /// Number of transactions processed
-    pub transactions_processed: usize,
+    pub transactions_tagged: usize,
     /// Number of tags applied
     pub tags_applied: usize,
 }
@@ -786,7 +768,7 @@ impl TaggingResult {
     /// Creates a new empty tagging result with zero transactions processed and zero tags applied
     pub fn empty() -> Self {
         Self {
-            transactions_processed: 0,
+            transactions_tagged: 0,
             tags_applied: 0,
         }
     }
@@ -807,70 +789,42 @@ pub fn apply_rules_to_transactions(
     mode: TaggingMode,
     connection: &Connection,
 ) -> Result<TaggingResult, Error> {
-    // Step 1: Get all rules
     let rules = get_all_rules(connection)?;
     if rules.is_empty() {
         return Ok(TaggingResult::empty());
     }
 
-    // Step 2: Get transactions for processing
     let transactions = get_transactions_for_auto_tagging(mode, connection)?;
     if transactions.is_empty() {
         return Ok(TaggingResult::empty());
     }
 
-    // Step 3: Get all existing transaction-tag relationships in one query (IDs only)
-    let existing_tag_ids: HashMap<DatabaseID, HashSet<DatabaseID>> = connection
-        .prepare("SELECT transaction_id, tag_id FROM transaction_tag")?
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .fold(HashMap::new(), |mut map, (tx_id, tag_id)| {
-            map.entry(tx_id).or_default().insert(tag_id);
-            map
-        });
+    let mut updates: Vec<(TransactionId, TagId)> = Vec::new();
+    let mut transactions_tagged = 0;
+    let mut applied_tags = HashSet::new();
 
-    // Step 4: Collect all tag updates to apply in batch
-    let mut updates: HashMap<TransactionID, Vec<DatabaseID>> = HashMap::new();
-    let mut transactions_processed = 0;
-    let mut tags_applied = 0;
-
-    for (transaction_id, description) in &transactions {
-        // Find all matching rules for this transaction
-        let mut matching_tag_ids = HashSet::new();
+    for (transaction_id, _, description) in &transactions {
+        let mut matching_tag_id = None;
         for rule in &rules {
             if matches_rule_pattern(description, &rule.pattern) {
-                matching_tag_ids.insert(rule.tag_id);
+                matching_tag_id = Some(rule.tag_id);
+                break;
             }
         }
 
-        // If we found matching rules, prepare the tag update
-        if !matching_tag_ids.is_empty() {
-            // Get existing tags for this transaction (from our cache)
-            let mut all_tag_ids = existing_tag_ids
-                .get(transaction_id)
-                .cloned()
-                .unwrap_or_default();
-            let initial_tag_count = all_tag_ids.len();
-
-            // Add new tags
-            all_tag_ids.extend(matching_tag_ids);
-
-            // Only update if there are actually new tags to add
-            if all_tag_ids.len() > initial_tag_count {
-                let final_tag_ids: Vec<DatabaseID> = all_tag_ids.into_iter().collect();
-                tags_applied += final_tag_ids.len() - initial_tag_count;
-                updates.insert(*transaction_id, final_tag_ids);
-                transactions_processed += 1;
-            }
+        if let Some(matching_tag_id) = matching_tag_id {
+            updates.push((*transaction_id, matching_tag_id));
+            applied_tags.insert(matching_tag_id);
+            transactions_tagged += 1;
         }
     }
 
-    // Step 5: Apply all updates in a single batch transaction
     batch_set_transaction_tags(updates, connection)?;
 
+    let tags_applied = applied_tags.len();
+
     Ok(TaggingResult {
-        transactions_processed,
+        transactions_tagged,
         tags_applied,
     })
 }
@@ -890,6 +844,12 @@ pub fn create_rule_table(connection: &Connection) -> Result<(), rusqlite::Error>
     // Create index for foreign key to improve query performance
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_rule_tag_id ON rule(tag_id)",
+        (),
+    )?;
+
+    // Improve performance when sorting by pattern
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rule_pattern ON rule(pattern)",
         (),
     )?;
 
@@ -1075,7 +1035,7 @@ mod rule_tests {
 
 #[cfg(test)]
 mod auto_tagging_tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
 
     use rusqlite::Connection;
     use time::macros::date;
@@ -1086,10 +1046,7 @@ mod auto_tagging_tests {
             create_rule_table, get_transactions_for_auto_tagging,
         },
         tag::{TagName, create_tag, create_tag_table},
-        transaction::{Transaction, create_transaction, create_transaction_table},
-        transaction_tag::{
-            create_transaction_tag_table, get_transaction_tags, set_transaction_tags,
-        },
+        transaction::{Transaction, create_transaction, create_transaction_table, get_transaction},
     };
 
     fn get_test_db_connection() -> Connection {
@@ -1097,12 +1054,11 @@ mod auto_tagging_tests {
         create_tag_table(&connection).expect("Could not create tag table");
         create_rule_table(&connection).expect("Could not create rule table");
         create_transaction_table(&connection).expect("Could not create transaction table");
-        create_transaction_tag_table(&connection).expect("Could not create junction table");
         connection
     }
 
     #[test]
-    fn apply_rules_to_transactions_with_no_rules_returns_zero_results() {
+    fn no_rules_returns_zero_results() {
         let connection = get_test_db_connection();
         let today = date!(2025 - 10 - 05);
 
@@ -1120,12 +1076,12 @@ mod auto_tagging_tests {
 
         let result = apply_rules_to_transactions(TaggingMode::FetchAll, &connection).unwrap();
 
-        assert_eq!(result.transactions_processed, 0);
+        assert_eq!(result.transactions_tagged, 0);
         assert_eq!(result.tags_applied, 0);
     }
 
     #[test]
-    fn apply_rules_with_no_transactions_returns_zero_results() {
+    fn no_transactions_returns_zero_results() {
         let connection = get_test_db_connection();
 
         // Create rules but no transactions
@@ -1134,12 +1090,12 @@ mod auto_tagging_tests {
 
         let result = apply_rules_to_transactions(TaggingMode::FetchAll, &connection).unwrap();
 
-        assert_eq!(result.transactions_processed, 0);
+        assert_eq!(result.transactions_tagged, 0);
         assert_eq!(result.tags_applied, 0);
     }
 
     #[test]
-    fn apply_rules_to_transactions_applies_matching_rules() {
+    fn applies_matching_rules() {
         let connection = get_test_db_connection();
         let today = date!(2025 - 10 - 05);
 
@@ -1168,21 +1124,19 @@ mod auto_tagging_tests {
 
         let result = apply_rules_to_transactions(TaggingMode::FetchAll, &connection).unwrap();
 
-        assert_eq!(result.transactions_processed, 2);
+        assert_eq!(result.transactions_tagged, 2);
         assert_eq!(result.tags_applied, 2);
 
         // Verify tags were applied
-        let tx1_tags = get_transaction_tags(tx1.id, &connection).unwrap();
-        let tx2_tags = get_transaction_tags(tx2.id, &connection).unwrap();
+        let got_tx1 = get_transaction(tx1.id, &connection).unwrap();
+        let got_tx2 = get_transaction(tx2.id, &connection).unwrap();
 
-        assert_eq!(tx1_tags.len(), 1);
-        assert_eq!(tx1_tags[0].id, coffee_tag.id);
-        assert_eq!(tx2_tags.len(), 1);
-        assert_eq!(tx2_tags[0].id, grocery_tag.id);
+        assert_eq!(got_tx1.tag_id, Some(coffee_tag.id));
+        assert_eq!(got_tx2.tag_id, Some(grocery_tag.id));
     }
 
     #[test]
-    fn apply_rules_to_transactions_case_insensitive_matching() {
+    fn case_insensitive_matching() {
         let connection = get_test_db_connection();
         let today = date!(2025 - 10 - 05);
 
@@ -1208,21 +1162,21 @@ mod auto_tagging_tests {
 
         let result = apply_rules_to_transactions(TaggingMode::FetchAll, &connection).unwrap();
 
-        assert_eq!(result.transactions_processed, 3);
-        assert_eq!(result.tags_applied, 3);
+        assert_eq!(result.transactions_tagged, 3);
+        assert_eq!(result.tags_applied, 1);
 
         // Verify all transactions got tagged
-        let tx1_tags = get_transaction_tags(tx1.id, &connection).unwrap();
-        let tx2_tags = get_transaction_tags(tx2.id, &connection).unwrap();
-        let tx3_tags = get_transaction_tags(tx3.id, &connection).unwrap();
+        let got_tx1 = get_transaction(tx1.id, &connection).unwrap();
+        let got_tx2 = get_transaction(tx2.id, &connection).unwrap();
+        let got_tx3 = get_transaction(tx3.id, &connection).unwrap();
 
-        assert_eq!(tx1_tags.len(), 1);
-        assert_eq!(tx2_tags.len(), 1);
-        assert_eq!(tx3_tags.len(), 1);
+        assert_eq!(got_tx1.tag_id, Some(tag.id));
+        assert_eq!(got_tx2.tag_id, Some(tag.id));
+        assert_eq!(got_tx3.tag_id, Some(tag.id));
     }
 
     #[test]
-    fn apply_rules_to_transactions_untagged_only_mode() {
+    fn untagged_only_mode() {
         let connection = get_test_db_connection();
         let today = date!(2025 - 10 - 05);
 
@@ -1232,7 +1186,8 @@ mod auto_tagging_tests {
 
         // Create transactions - one already tagged, one not
         let tx1 = create_transaction(
-            Transaction::build(100.0, today, "starbucks cafe".to_owned()),
+            Transaction::build(100.0, today, "starbucks cafe".to_owned())
+                .tag_id(Some(existing_tag.id)),
             &connection,
         )
         .unwrap();
@@ -1242,27 +1197,22 @@ mod auto_tagging_tests {
         )
         .unwrap();
 
-        // Tag tx1 with an existing tag
-        set_transaction_tags(tx1.id, &[existing_tag.id], &connection).unwrap();
-
         // Apply rules in untagged-only mode
         let result = apply_rules_to_transactions(TaggingMode::FetchUntagged, &connection).unwrap();
 
-        assert_eq!(result.transactions_processed, 1); // Only tx2 should be processed
+        assert_eq!(result.transactions_tagged, 1); // Only tx2 should be processed
         assert_eq!(result.tags_applied, 1);
 
         // Verify tx1 still has only the existing tag, tx2 has the coffee tag
-        let tx1_tags = get_transaction_tags(tx1.id, &connection).unwrap();
-        let tx2_tags = get_transaction_tags(tx2.id, &connection).unwrap();
+        let got_tx1 = get_transaction(tx1.id, &connection).unwrap();
+        let got_tx2 = get_transaction(tx2.id, &connection).unwrap();
 
-        assert_eq!(tx1_tags.len(), 1);
-        assert_eq!(tx1_tags[0].id, existing_tag.id);
-        assert_eq!(tx2_tags.len(), 1);
-        assert_eq!(tx2_tags[0].id, coffee_tag.id);
+        assert_eq!(got_tx1.tag_id, Some(existing_tag.id));
+        assert_eq!(got_tx2.tag_id, Some(coffee_tag.id));
     }
 
     #[test]
-    fn apply_rules_to_transactions_merges_with_existing_tags() {
+    fn replaces_existing_tags() {
         let connection = get_test_db_connection();
         let today = date!(2025 - 10 - 05);
 
@@ -1271,89 +1221,50 @@ mod auto_tagging_tests {
         let _rule = create_rule("starbucks", coffee_tag.id, &connection).unwrap();
 
         let tx = create_transaction(
-            Transaction::build(100.0, today, "starbucks cafe".to_owned()),
+            Transaction::build(100.0, today, "starbucks cafe".to_owned())
+                .tag_id(Some(existing_tag.id)),
             &connection,
         )
         .unwrap();
-
-        // Give transaction an existing tag
-        set_transaction_tags(tx.id, &[existing_tag.id], &connection).unwrap();
 
         // Apply rules (all mode, not untagged-only)
         let result = apply_rules_to_transactions(TaggingMode::FetchAll, &connection).unwrap();
 
-        assert_eq!(result.transactions_processed, 1);
+        assert_eq!(result.transactions_tagged, 1);
         assert_eq!(result.tags_applied, 1); // Only 1 new tag added
 
         // Verify transaction has both tags
-        let tx_tags = get_transaction_tags(tx.id, &connection).unwrap();
-        let tag_ids: HashSet<_> = tx_tags.iter().map(|t| t.id).collect();
+        let got_tx = get_transaction(tx.id, &connection).unwrap();
 
-        assert_eq!(tx_tags.len(), 2);
-        assert!(tag_ids.contains(&existing_tag.id));
-        assert!(tag_ids.contains(&coffee_tag.id));
+        assert_eq!(got_tx.tag_id, Some(coffee_tag.id));
     }
 
     #[test]
-    fn apply_rules_to_transactions_multiple_rules_match_same_transaction() {
+    fn applies_longer_rule() {
         let connection = get_test_db_connection();
         let today = date!(2025 - 10 - 05);
 
-        let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &connection).unwrap();
-        let chain_tag = create_tag(TagName::new_unchecked("Chain"), &connection).unwrap();
-        let _coffee_rule = create_rule("starbucks", coffee_tag.id, &connection).unwrap();
-        let _chain_rule = create_rule("starbucks", chain_tag.id, &connection).unwrap(); // Same pattern, different tag
+        let foo_tag = create_tag(TagName::new_unchecked("Foo"), &connection).unwrap();
+        let bar_tag = create_tag(TagName::new_unchecked("Bar"), &connection).unwrap();
+        let _rule1 = create_rule("foo", foo_tag.id, &connection).unwrap();
+        let _rule2 = create_rule("foobar", bar_tag.id, &connection).unwrap(); // Different pattern, same tag, both match "starbucks"
 
         let tx = create_transaction(
-            Transaction::build(100.0, today, "starbucks downtown".to_owned()),
+            Transaction::build(100.0, today, "foobar".to_owned()),
             &connection,
         )
         .unwrap();
 
         let result = apply_rules_to_transactions(TaggingMode::FetchAll, &connection).unwrap();
 
-        assert_eq!(result.transactions_processed, 1);
-        assert_eq!(result.tags_applied, 2); // Both rules applied
-
-        // Verify transaction has both tags
-        let tx_tags = get_transaction_tags(tx.id, &connection).unwrap();
-        let tag_ids: HashSet<_> = tx_tags.iter().map(|t| t.id).collect();
-
-        assert_eq!(tx_tags.len(), 2);
-        assert!(tag_ids.contains(&coffee_tag.id));
-        assert!(tag_ids.contains(&chain_tag.id));
-    }
-
-    #[test]
-    fn apply_rules_to_transactions_no_duplicate_tags() {
-        let connection = get_test_db_connection();
-        let today = date!(2025 - 10 - 05);
-
-        let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &connection).unwrap();
-        // Create two rules with different patterns but same tag that both match the same transaction
-        let _rule1 = create_rule("starbucks", coffee_tag.id, &connection).unwrap();
-        let _rule2 = create_rule("star", coffee_tag.id, &connection).unwrap(); // Different pattern, same tag, both match "starbucks"
-
-        let tx = create_transaction(
-            Transaction::build(100.0, today, "starbucks cafe".to_owned()),
-            &connection,
-        )
-        .unwrap();
-
-        let result = apply_rules_to_transactions(TaggingMode::FetchAll, &connection).unwrap();
-
-        assert_eq!(result.transactions_processed, 1);
+        assert_eq!(result.transactions_tagged, 1);
         assert_eq!(result.tags_applied, 1); // Only 1 tag applied despite 2 matching rules
-
-        // Verify transaction has only one tag (no duplicates)
-        let tx_tags = get_transaction_tags(tx.id, &connection).unwrap();
-
-        assert_eq!(tx_tags.len(), 1);
-        assert_eq!(tx_tags[0].id, coffee_tag.id);
+        let got_tx = get_transaction(tx.id, &connection).unwrap();
+        assert_eq!(got_tx.tag_id, Some(bar_tag.id));
     }
 
     #[test]
-    fn get_transactions_for_auto_tagging_all_mode() {
+    fn auto_tagging_all_mode() {
         let connection = get_test_db_connection();
         let today = date!(2025 - 10 - 05);
 
@@ -1361,7 +1272,7 @@ mod auto_tagging_tests {
 
         // Create transactions - one tagged, one untagged
         let tx1 = create_transaction(
-            Transaction::build(100.0, today, "tagged transaction".to_owned()),
+            Transaction::build(100.0, today, "tagged transaction".to_owned()).tag_id(Some(tag.id)),
             &connection,
         )
         .unwrap();
@@ -1371,15 +1282,12 @@ mod auto_tagging_tests {
         )
         .unwrap();
 
-        // Tag tx1
-        set_transaction_tags(tx1.id, &[tag.id], &connection).unwrap();
-
         let transactions =
             get_transactions_for_auto_tagging(TaggingMode::FetchAll, &connection).unwrap();
 
         // Should return both transactions in all mode
         assert_eq!(transactions.len(), 2);
-        let tx_ids: HashSet<_> = transactions.iter().map(|(id, _)| *id).collect();
+        let tx_ids: HashSet<_> = transactions.iter().map(|(id, _, _)| *id).collect();
         assert!(tx_ids.contains(&tx1.id));
         assert!(tx_ids.contains(&tx2.id));
     }
@@ -1392,8 +1300,8 @@ mod auto_tagging_tests {
         let tag = create_tag(TagName::new_unchecked("Test"), &connection).unwrap();
 
         // Create transactions - one tagged, one untagged
-        let tx1 = create_transaction(
-            Transaction::build(100.0, today, "tagged transaction".to_owned()),
+        create_transaction(
+            Transaction::build(100.0, today, "tagged transaction".to_owned()).tag_id(Some(tag.id)),
             &connection,
         )
         .unwrap();
@@ -1403,16 +1311,14 @@ mod auto_tagging_tests {
         )
         .unwrap();
 
-        // Tag tx1
-        set_transaction_tags(tx1.id, &[tag.id], &connection).unwrap();
-
         let transactions =
             get_transactions_for_auto_tagging(TaggingMode::FetchUntagged, &connection).unwrap();
 
         // Should return only untagged transaction
         assert_eq!(transactions.len(), 1);
         assert_eq!(transactions[0].0, tx2.id);
-        assert_eq!(transactions[0].1, "untagged transaction");
+        assert_eq!(transactions[0].1, None);
+        assert_eq!(transactions[0].2, "untagged transaction");
     }
 
     #[test]
@@ -1424,7 +1330,7 @@ mod auto_tagging_tests {
 
         // Create transactions - one tagged, one untagged
         let tx1 = create_transaction(
-            Transaction::build(100.0, today, "tagged transaction".to_owned()),
+            Transaction::build(100.0, today, "tagged transaction".to_owned()).tag_id(Some(tag.id)),
             &connection,
         )
         .unwrap();
@@ -1434,9 +1340,6 @@ mod auto_tagging_tests {
         )
         .unwrap();
 
-        // Tag tx1
-        set_transaction_tags(tx1.id, &[tag.id], &connection).unwrap();
-
         let transactions = get_transactions_for_auto_tagging(
             TaggingMode::FromArgs(&[tx1.clone(), tx2.clone()]),
             &connection,
@@ -1445,17 +1348,19 @@ mod auto_tagging_tests {
 
         assert_eq!(transactions.len(), 2);
         assert_eq!(transactions[0].0, tx1.id);
-        assert_eq!(transactions[0].1, "tagged transaction");
+        assert_eq!(transactions[0].1, Some(tag.id));
+        assert_eq!(transactions[0].2, "tagged transaction");
         assert_eq!(transactions[1].0, tx2.id);
-        assert_eq!(transactions[1].1, "untagged transaction");
+        assert_eq!(transactions[1].1, None);
+        assert_eq!(transactions[1].2, "untagged transaction");
     }
 
     #[test]
-    fn batch_set_transaction_tags_with_empty_map() {
+    fn batch_set_transaction_tags_with_empty_vec() {
         let connection = get_test_db_connection();
-        let empty_map = HashMap::new();
+        let empty_vec = Vec::new();
 
-        let result = batch_set_transaction_tags(empty_map, &connection);
+        let result = batch_set_transaction_tags(empty_vec, &connection);
 
         assert!(result.is_ok());
     }
@@ -1470,36 +1375,25 @@ mod auto_tagging_tests {
         let tag3 = create_tag(TagName::new_unchecked("Tag3"), &connection).unwrap();
 
         let tx1 = create_transaction(
-            Transaction::build(100.0, today, "tx1".to_owned()),
+            Transaction::build(100.0, today, "tx1".to_owned()).tag_id(Some(tag1.id)),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0, today, "tx2".to_owned()),
+            Transaction::build(50.0, today, "tx2".to_owned()).tag_id(Some(tag1.id)),
             &connection,
         )
         .unwrap();
-
-        // Set initial tags
-        set_transaction_tags(tx1.id, &[tag1.id], &connection).unwrap();
-        set_transaction_tags(tx2.id, &[tag1.id, tag2.id], &connection).unwrap();
-
         // Batch update both transactions
-        let mut updates = HashMap::new();
-        updates.insert(tx1.id, vec![tag2.id, tag3.id]);
-        updates.insert(tx2.id, vec![tag3.id]);
+        let updates = vec![(tx1.id, tag2.id), (tx2.id, tag3.id)];
 
         let result = batch_set_transaction_tags(updates, &connection);
         assert!(result.is_ok());
 
         // Verify updates
-        let tx1_tags = get_transaction_tags(tx1.id, &connection).unwrap();
-        let tx2_tags = get_transaction_tags(tx2.id, &connection).unwrap();
-
-        let tx1_tag_ids: HashSet<_> = tx1_tags.iter().map(|t| t.id).collect();
-        let tx2_tag_ids: HashSet<_> = tx2_tags.iter().map(|t| t.id).collect();
-
-        assert_eq!(tx1_tag_ids, HashSet::from([tag2.id, tag3.id]));
-        assert_eq!(tx2_tag_ids, HashSet::from([tag3.id]));
+        let got_tx1 = get_transaction(tx1.id, &connection).unwrap();
+        let got_tx2 = get_transaction(tx2.id, &connection).unwrap();
+        assert_eq!(got_tx1.tag_id, Some(tag2.id));
+        assert_eq!(got_tx2.tag_id, Some(tag3.id));
     }
 }

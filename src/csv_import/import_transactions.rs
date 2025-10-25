@@ -11,7 +11,7 @@ use crate::{
     AppState, Error,
     alert::AlertTemplate,
     csv_import::{alert::ImportMessageBuilder, balance::upsert_balance, csv::parse_csv},
-    rule::{TaggingMode, apply_rules_to_transactions},
+    rule::{TaggingMode, TaggingResult, apply_rules_to_transactions},
     shared_templates::render,
     timezone::get_local_offset,
     transaction::import_transactions as import_transaction_list,
@@ -116,7 +116,7 @@ pub async fn import_transactions(
     let auto_tagging_result = if !imported_transactions.is_empty() {
         apply_rules_to_transactions(TaggingMode::FromArgs(&imported_transactions), &connection)
     } else {
-        Ok(crate::rule::TaggingResult::empty())
+        Ok(TaggingResult::empty())
     };
 
     for balance in balances {
@@ -210,9 +210,8 @@ mod import_transactions_tests {
         db::initialize,
         endpoints,
         rule::create_rule,
-        tag::{TagName, create_tag},
+        tag::{TagId, TagName, create_tag},
         transaction::count_transactions,
-        transaction_tag::get_transaction_tags,
     };
 
     fn get_test_connection() -> Connection {
@@ -287,9 +286,10 @@ mod import_transactions_tests {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // Check the number of transactions imported by querying the database
-        let connection = state.db_connection.lock().unwrap();
-        let transaction_count =
-            count_transactions(&connection).expect("Could not count transactions");
+        let transaction_count = {
+            let connection = state.db_connection.lock().unwrap();
+            count_transactions(&connection).expect("Could not count transactions")
+        };
         assert_eq!(
             want_transaction_count, transaction_count,
             "want {want_transaction_count} transactions imported, got {transaction_count}"
@@ -647,9 +647,10 @@ mod import_transactions_tests {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // Check that transactions were imported
-        let connection_guard = state.db_connection.lock().unwrap();
-        let transaction_count =
-            count_transactions(&connection_guard).expect("Could not count transactions");
+        let transaction_count = {
+            let connection_guard = state.db_connection.lock().unwrap();
+            count_transactions(&connection_guard).expect("Could not count transactions")
+        };
         assert_eq!(
             transaction_count, 5,
             "Expected 5 transactions to be imported"
@@ -689,9 +690,11 @@ mod import_transactions_tests {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // Check that transactions were imported
-        let connection_guard = state.db_connection.lock().unwrap();
-        let transaction_count =
-            count_transactions(&connection_guard).expect("Could not count transactions");
+        let transaction_count = {
+            let connection_guard = state.db_connection.lock().unwrap();
+
+            count_transactions(&connection_guard).expect("Could not count transactions")
+        };
         assert_eq!(
             transaction_count, 5,
             "Expected 5 transactions to be imported"
@@ -732,9 +735,10 @@ mod import_transactions_tests {
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // Check that transactions were imported
-        let connection_guard = state.db_connection.lock().unwrap();
-        let transaction_count =
-            count_transactions(&connection_guard).expect("Could not count transactions");
+        let transaction_count = {
+            let connection_guard = state.db_connection.lock().unwrap();
+            count_transactions(&connection_guard).expect("Could not count transactions")
+        };
         assert_eq!(
             transaction_count, 5,
             "Expected 5 transactions to be imported"
@@ -783,10 +787,14 @@ mod import_transactions_tests {
 
         // Get all transactions and find the ones we expect to be tagged
         let all_transactions: Vec<_> = conn
-            .prepare("SELECT id, description FROM \"transaction\" ORDER BY id")
+            .prepare("SELECT id, description, tag_id FROM \"transaction\" ORDER BY id")
             .unwrap()
             .query_map([], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<TagId>>(2)?,
+                ))
             })
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
@@ -795,49 +803,34 @@ mod import_transactions_tests {
         // Find Starbucks transaction and verify it has coffee tag
         let starbucks_tx = all_transactions
             .iter()
-            .find(|(_, desc)| desc.contains("Starbucks"))
+            .find(|(_, desc, _)| desc.contains("Starbucks"))
             .expect("Should find Starbucks transaction");
 
-        let starbucks_tags = get_transaction_tags(starbucks_tx.0, &conn).unwrap();
         assert_eq!(
-            starbucks_tags.len(),
-            1,
-            "Starbucks transaction should have 1 tag"
-        );
-        assert_eq!(
-            starbucks_tags[0].id, coffee_tag_id,
+            starbucks_tx.2,
+            Some(coffee_tag_id),
             "Starbucks should have coffee tag"
         );
 
         // Find Supermarket transaction and verify it has grocery tag
         let supermarket_tx = all_transactions
             .iter()
-            .find(|(_, desc)| desc.contains("Supermarket"))
+            .find(|(_, desc, _)| desc.contains("Supermarket"))
             .expect("Should find Supermarket transaction");
 
-        let supermarket_tags = get_transaction_tags(supermarket_tx.0, &conn).unwrap();
         assert_eq!(
-            supermarket_tags.len(),
-            1,
-            "Supermarket transaction should have 1 tag"
-        );
-        assert_eq!(
-            supermarket_tags[0].id, grocery_tag_id,
+            supermarket_tx.2,
+            Some(grocery_tag_id),
             "Supermarket should have grocery tag"
         );
 
         // Verify untagged transactions have no tags
         let random_tx = all_transactions
             .iter()
-            .find(|(_, desc)| desc.contains("Random Transaction"))
+            .find(|(_, desc, _)| desc.contains("Random Transaction"))
             .expect("Should find Random Transaction");
 
-        let random_tags = get_transaction_tags(random_tx.0, &conn).unwrap();
-        assert_eq!(
-            random_tags.len(),
-            0,
-            "Random transaction should have no tags"
-        );
+        assert_eq!(random_tx.2, None, "Random transaction should have no tags");
 
         // Clean up response to avoid issues
         drop(response);

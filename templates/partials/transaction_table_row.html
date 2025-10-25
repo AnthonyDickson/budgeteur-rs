@@ -3,24 +3,18 @@
     scope="row"
     class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white"
   >
-    {{ transaction.id }}
+    {{ id }}
   </th>
-  <td class="px-6 py-4 text-right">{{ *transaction.amount | currency }}</td>
-  <td class="px-6 py-4">{{ transaction.date }}</td>
-  <td class="px-6 py-4">{{ transaction.description }}</td>
+  <td class="px-6 py-4 text-right">{{ *amount | currency }}</td>
+  <td class="px-6 py-4">{{ date }}</td>
+  <td class="px-6 py-4">{{ description }}</td>
   <td class="px-6 py-4">
-    {% if let Some(error) = tag_error %}
-      <span class="text-red-600 dark:text-red-400 text-xs">Error: {{ error }}</span>
-    {% else if tags.is_empty() %}
-      <span class="text-gray-400 dark:text-gray-500">-</span>
+    {% if let Some(tag_name) = tag_name %}
+      <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-300">
+        {{ tag_name }}
+      </span>
     {% else %}
-      <div class="flex flex-wrap gap-1.5">
-        {% for tag in tags %}
-          <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-300">
-            {{ tag.name }}
-          </span>
-        {% endfor %}
-      </div>
+      <span class="text-gray-400 dark:text-gray-500">-</span>
     {% endif %}
   </td>
 </tr>

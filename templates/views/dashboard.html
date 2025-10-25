@@ -8,11 +8,13 @@
 {% block content %}
 {{ nav_bar|safe }}
 <div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
-  
+
+  {{ charts|safe }}
+
   <!-- Tag Exclusion Filter -->
   {% if !tags_with_status.is_empty() %}
   <div class="mb-8 w-full max-w-4xl">
-    <h3 class="text-xl font-semibold mb-4">Filter Summary by Tags</h3>
+    <h3 class="text-xl font-semibold mb-4">Filter Out Tags</h3>
     <form 
       hx-post="{{ excluded_tags_endpoint }}" 
       hx-target="#charts"
@@ -22,7 +24,7 @@
       class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg"
     >
       <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
-        Exclude transactions with these tags from the summaries below:
+        Exclude transactions with these tags from the charts above:
       </p>
       <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {% for tag_status in tags_with_status %}
@@ -43,8 +45,6 @@
     </form>
   </div>
   {% endif %}
-
-{{ charts|safe }}
 
 </div>
 {% endblock %}
