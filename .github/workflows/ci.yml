@@ -29,9 +29,6 @@ jobs:
           rustup component add clippy && \
           rustup component add rustfmt
 
-      - name: Build
-        run: cargo check --verbose
-
       - name: Test
         run: cargo test --verbose
 
