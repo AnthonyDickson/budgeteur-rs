@@ -622,7 +622,7 @@ pub fn get_all_rules_with_tags(connection: &Connection) -> Result<Vec<RuleWithTa
             "SELECT r.id, r.pattern, r.tag_id, t.id, t.name 
              FROM rule r 
              INNER JOIN tag t ON r.tag_id = t.id
-             ORDER BY r.pattern",
+             ORDER BY t.name ASC, r.pattern ASC",
         )?
         .query_map([], |row| {
             let rule_id = row.get(0)?;
@@ -844,6 +844,12 @@ pub fn create_rule_table(connection: &Connection) -> Result<(), rusqlite::Error>
     // Create index for foreign key to improve query performance
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_rule_tag_id ON rule(tag_id)",
+        (),
+    )?;
+
+    // Improve performance when sorting by pattern
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rule_pattern ON rule(pattern)",
         (),
     )?;
 
