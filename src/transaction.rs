@@ -607,7 +607,6 @@ pub async fn get_transactions_page(
         Ok(transactions) => transactions,
         Err(error) => return error.into_response(),
     };
-    tracing::info!("{transactions:#?}");
 
     let max_pages = state.pagination_config.max_pages;
     let pagination_indicators = create_pagination_indicators(current_page, page_count, max_pages);
@@ -1291,9 +1290,10 @@ mod view_tests {
         };
         let per_page = 3;
         let page = 5;
+        // Transactions are sorted in reverse chronological order
         let want_transactions = [
             Transaction {
-                id: 13,
+                id: 18,
                 amount: 1.0,
                 date: today,
                 description: "".to_owned(),
@@ -1301,7 +1301,7 @@ mod view_tests {
                 tag_id: None,
             },
             Transaction {
-                id: 14,
+                id: 17,
                 amount: 1.0,
                 date: today,
                 description: "".to_owned(),
@@ -1309,7 +1309,7 @@ mod view_tests {
                 tag_id: None,
             },
             Transaction {
-                id: 15,
+                id: 16,
                 amount: 1.0,
                 date: today,
                 description: "".to_owned(),
