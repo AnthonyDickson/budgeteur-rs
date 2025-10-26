@@ -1,7 +1,7 @@
 # Budgeteur
 
 [![Build & Test](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/ci.yml)
-[![Build & Push Docker Image](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/cd.yaml/badge.svg)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/cd.yaml)
+[![Publish Image and Release](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/release.yaml/badge.svg?branch=main)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/release.yaml)
 
 ## About
 
