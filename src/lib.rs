@@ -28,7 +28,7 @@ mod csv_import;
 mod dashboard;
 mod dashboard_preferences;
 mod database_id;
-pub mod db;
+mod db;
 mod endpoints;
 mod filters;
 mod forgot_password;
@@ -47,12 +47,14 @@ mod tag;
 mod tags_page;
 mod timezone;
 mod transaction;
-pub mod user;
+mod user;
 
 pub use app_state::AppState;
-pub use logging::logging_middleware;
+pub use db::initialize as initialize_db;
+pub use logging::{LOG_BODY_LENGTH_LIMIT, logging_middleware};
 pub use password::{PasswordHash, ValidatedPassword};
 pub use routing::build_router;
+pub use user::{User, UserID, get_user_by_id};
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
 /// then signals the server to shut down gracefully.

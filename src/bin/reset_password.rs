@@ -6,11 +6,10 @@ use std::{
 };
 
 use bcrypt::DEFAULT_COST;
-use budgeteur_rs::user::{User, UserID, get_user_by_id};
 use clap::Parser;
 use rusqlite::Connection;
 
-use budgeteur_rs::{PasswordHash, ValidatedPassword};
+use budgeteur_rs::{PasswordHash, User, UserID, ValidatedPassword, get_user_by_id};
 
 /// A utility for changing the password for a registered user.
 #[derive(Parser, Debug)]

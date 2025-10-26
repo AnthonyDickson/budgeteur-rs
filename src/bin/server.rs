@@ -18,7 +18,7 @@ use tower_http::trace::TraceLayer;
 use tower_livereload::LiveReloadLayer;
 use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberInitExt};
 
-use budgeteur_rs::{AppState, build_router, db::initialize, graceful_shutdown, logging_middleware};
+use budgeteur_rs::{AppState, build_router, graceful_shutdown, initialize_db, logging_middleware};
 
 /// The REST API server for budgeteur_rs.
 #[derive(Parser, Debug)]
@@ -71,7 +71,7 @@ async fn main() {
     let addr = SocketAddr::from((address, args.port));
     let conn = Connection::open(&args.db_path)
         .unwrap_or_else(|_| panic!("Could not open database file at {}: ", args.db_path));
-    if let Err(error) = initialize(&conn) {
+    if let Err(error) = initialize_db(&conn) {
         eprintln!("Could not initialize database: {error}");
         exit(1);
     }

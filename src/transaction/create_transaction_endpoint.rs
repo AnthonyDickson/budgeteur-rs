@@ -1,3 +1,4 @@
+//! Defines the endpoint for creating a new transaction.
 use std::sync::{Arc, Mutex};
 
 use axum::{

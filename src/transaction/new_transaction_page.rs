@@ -1,3 +1,5 @@
+//! Defines the route handler for the page for creating a new transaction.
+
 use std::sync::{Arc, Mutex};
 
 use askama::Template;

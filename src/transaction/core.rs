@@ -1,3 +1,5 @@
+//! Defines the core data models and database queries for transactions.
+
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 use time::Date;

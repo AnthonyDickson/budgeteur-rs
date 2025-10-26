@@ -1,3 +1,4 @@
+//! Defines the route handler for the page that displays transactions as a table.
 use std::sync::{Arc, Mutex};
 
 use askama::Template;
