@@ -5,7 +5,7 @@ use std::process::exit;
 use clap::Parser;
 use rusqlite::Connection;
 
-use budgeteur_rs::{PasswordHash, ValidatedPassword, db::initialize};
+use budgeteur_rs::{PasswordHash, ValidatedPassword, initialize_db};
 
 /// A utility for creating a test database for the REST API server of budgeteur_rs.
 #[derive(Parser, Debug)]
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Creating database at {output_path:#?}");
     let conn = Connection::open(output_path)?;
 
-    initialize(&conn)?;
+    initialize_db(&conn)?;
 
     println!("Creating test user...");
 

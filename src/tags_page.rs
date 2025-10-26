@@ -59,7 +59,6 @@ pub async fn get_tags_page(State(state): State<TagsPageState>) -> Response {
             return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response();
         }
     };
-    tracing::info!("{transactions_per_tag:#?}");
 
     let tags_with_edit_urls = tags
         .into_iter()

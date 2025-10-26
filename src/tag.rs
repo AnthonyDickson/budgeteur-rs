@@ -455,19 +455,20 @@ pub fn delete_tag(tag_id: TagId, connection: &Connection) -> Result<(), Error> {
 /// This function will return an error if there is an SQL error.
 pub fn get_all_tags(connection: &Connection) -> Result<Vec<Tag>, Error> {
     connection
-        .prepare("SELECT id, name FROM tag;")?
+        .prepare("SELECT id, name FROM tag ORDER BY name ASC;")?
         .query_map([], map_row)?
         .map(|maybe_tag| maybe_tag.map_err(|error| error.into()))
         .collect()
 }
 
 pub fn create_tag_table(connection: &Connection) -> Result<(), rusqlite::Error> {
-    connection.execute(
+    connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS tag (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE
-            );",
-        (),
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tag_name ON tag(name);",
     )?;
 
     Ok(())

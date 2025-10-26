@@ -74,7 +74,8 @@ async fn extract_header_and_body_text_from_response(
     (headers, String::from_utf8_lossy(&body_bytes).to_string())
 }
 
-const LOG_BODY_LENGTH_LIMIT: usize = 64;
+/// The maximum number of characters to print from a request/response body.
+pub const LOG_BODY_LENGTH_LIMIT: usize = 64;
 
 fn log_request(headers: &axum::http::request::Parts, body: &str) {
     if body.len() > LOG_BODY_LENGTH_LIMIT {

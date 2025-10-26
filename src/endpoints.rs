@@ -59,8 +59,6 @@ pub const PUT_RULE: &str = "/api/rules/{rule_id}";
 pub const DELETE_RULE: &str = "/api/rules/{rule_id}";
 /// The route to access transactions.
 pub const TRANSACTIONS_API: &str = "/api/transactions";
-/// The route to access a single transaction.
-pub const TRANSACTION: &str = "/api/transactions/{transaction_id}";
 /// The route to upload CSV files for importing transactions.
 pub const IMPORT: &str = "/api/import";
 /// The route to apply auto-tagging to all transactions.
@@ -152,7 +150,6 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::PUT_RULE);
         assert_endpoint_is_valid_uri(endpoints::DELETE_RULE);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
-        assert_endpoint_is_valid_uri(endpoints::TRANSACTION);
         assert_endpoint_is_valid_uri(endpoints::IMPORT);
         assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_ALL);
         assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_UNTAGGED);

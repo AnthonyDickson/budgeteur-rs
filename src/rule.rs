@@ -1041,12 +1041,16 @@ mod auto_tagging_tests {
     use time::macros::date;
 
     use crate::{
+        Error,
+        database_id::DatabaseId,
         rule::{
             TaggingMode, apply_rules_to_transactions, batch_set_transaction_tags, create_rule,
             create_rule_table, get_transactions_for_auto_tagging,
         },
         tag::{TagName, create_tag, create_tag_table},
-        transaction::{Transaction, create_transaction, create_transaction_table, get_transaction},
+        transaction::{
+            Transaction, create_transaction, create_transaction_table, map_transaction_row,
+        },
     };
 
     fn get_test_db_connection() -> Connection {
@@ -1395,5 +1399,21 @@ mod auto_tagging_tests {
         let got_tx2 = get_transaction(tx2.id, &connection).unwrap();
         assert_eq!(got_tx1.tag_id, Some(tag2.id));
         assert_eq!(got_tx2.tag_id, Some(tag3.id));
+    }
+
+    /// Retrieve a transaction from the database by its `id`.
+    ///
+    /// # Errors
+    /// This function will return a:
+    /// - [Error::NotFound] if `id` does not refer to a valid transaction,
+    /// - or [Error::SqlError] there is some other SQL error.
+    pub fn get_transaction(id: DatabaseId, connection: &Connection) -> Result<Transaction, Error> {
+        let transaction = connection
+        .prepare(
+            "SELECT id, amount, date, description, import_id, tag_id FROM \"transaction\" WHERE id = :id",
+        )?
+        .query_row(&[(":id", &id)], map_transaction_row)?;
+
+        Ok(transaction)
     }
 }
