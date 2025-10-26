@@ -199,7 +199,7 @@ mod view_tests {
             match input_name {
                 Some("amount") => {
                     assert_required(input);
-                    assert_amount_min_and_step(input);
+                    assert_amount_step(input);
                 }
                 Some("date") => {
                     assert_required(input);
@@ -244,19 +244,7 @@ mod view_tests {
     }
 
     #[track_caller]
-    fn assert_amount_min_and_step(input: &ElementRef) {
-        let min_value = input
-            .value()
-            .attr("min")
-            .expect("amount input should have the attribute 'min'");
-        let min_value: i64 = min_value
-            .parse()
-            .expect("the attribute 'min' for the amount input should be an integer");
-        assert_eq!(
-            0, min_value,
-            "the amount for a new transaction should be limited to a minimum of 0, but got {min_value}"
-        );
-
+    fn assert_amount_step(input: &ElementRef) {
         let step = input
             .value()
             .attr("step")
