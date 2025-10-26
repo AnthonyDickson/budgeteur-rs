@@ -2,11 +2,13 @@
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    Form,
     extract::{FromRef, State},
     http::StatusCode,
     response::IntoResponse,
 };
+// Must use axum_extra's Form since that parses an empty string as None instead
+// of crashing like axum::Form.
+use axum_extra::extract::Form;
 use axum_htmx::HxRedirect;
 use rusqlite::Connection;
 use serde::Deserialize;
@@ -76,7 +78,8 @@ pub async fn create_transaction_endpoint(
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use axum::{Form, body::Body, extract::State, http::Response, response::IntoResponse};
+    use axum::{body::Body, extract::State, http::Response, response::IntoResponse};
+    use axum_extra::extract::Form;
     use axum_htmx::HX_REDIRECT;
     use rusqlite::Connection;
     use time::OffsetDateTime;
