@@ -1041,16 +1041,12 @@ mod auto_tagging_tests {
     use time::macros::date;
 
     use crate::{
-        Error,
-        database_id::DatabaseId,
         rule::{
             TaggingMode, apply_rules_to_transactions, batch_set_transaction_tags, create_rule,
             create_rule_table, get_transactions_for_auto_tagging,
         },
         tag::{TagName, create_tag, create_tag_table},
-        transaction::{
-            Transaction, create_transaction, create_transaction_table, map_transaction_row,
-        },
+        transaction::{Transaction, create_transaction, create_transaction_table, get_transaction},
     };
 
     fn get_test_db_connection() -> Connection {
@@ -1068,12 +1064,12 @@ mod auto_tagging_tests {
 
         // Create some transactions but no rules
         let _tx1 = create_transaction(
-            Transaction::build(100.0, today, "starbucks coffee".to_owned()),
+            Transaction::build(100.0, today, "starbucks coffee"),
             &connection,
         )
         .unwrap();
         let _tx2 = create_transaction(
-            Transaction::build(50.0, today, "grocery store".to_owned()),
+            Transaction::build(50.0, today, "grocery store"),
             &connection,
         )
         .unwrap();
@@ -1111,20 +1107,17 @@ mod auto_tagging_tests {
 
         // Create transactions
         let tx1 = create_transaction(
-            Transaction::build(100.0, today, "starbucks downtown".to_owned()),
+            Transaction::build(100.0, today, "starbucks downtown"),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0, today, "supermarket shopping".to_owned()),
+            Transaction::build(50.0, today, "supermarket shopping"),
             &connection,
         )
         .unwrap();
-        let _tx3 = create_transaction(
-            Transaction::build(25.0, today, "gas station".to_owned()),
-            &connection,
-        )
-        .unwrap(); // No matching rule
+        let _tx3 = create_transaction(Transaction::build(25.0, today, "gas station"), &connection)
+            .unwrap(); // No matching rule
 
         let result = apply_rules_to_transactions(TaggingMode::FetchAll, &connection).unwrap();
 
@@ -1149,17 +1142,17 @@ mod auto_tagging_tests {
 
         // Test various case combinations
         let tx1 = create_transaction(
-            Transaction::build(100.0, today, "STARBUCKS CAFE".to_owned()),
+            Transaction::build(100.0, today, "STARBUCKS CAFE"),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0, today, "Starbucks Coffee".to_owned()),
+            Transaction::build(50.0, today, "Starbucks Coffee"),
             &connection,
         )
         .unwrap();
         let tx3 = create_transaction(
-            Transaction::build(25.0, today, "starbucks downtown".to_owned()),
+            Transaction::build(25.0, today, "starbucks downtown"),
             &connection,
         )
         .unwrap();
@@ -1190,13 +1183,12 @@ mod auto_tagging_tests {
 
         // Create transactions - one already tagged, one not
         let tx1 = create_transaction(
-            Transaction::build(100.0, today, "starbucks cafe".to_owned())
-                .tag_id(Some(existing_tag.id)),
+            Transaction::build(100.0, today, "starbucks cafe").tag_id(Some(existing_tag.id)),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0, today, "starbucks downtown".to_owned()),
+            Transaction::build(50.0, today, "starbucks downtown"),
             &connection,
         )
         .unwrap();
@@ -1225,8 +1217,7 @@ mod auto_tagging_tests {
         let _rule = create_rule("starbucks", coffee_tag.id, &connection).unwrap();
 
         let tx = create_transaction(
-            Transaction::build(100.0, today, "starbucks cafe".to_owned())
-                .tag_id(Some(existing_tag.id)),
+            Transaction::build(100.0, today, "starbucks cafe").tag_id(Some(existing_tag.id)),
             &connection,
         )
         .unwrap();
@@ -1253,11 +1244,8 @@ mod auto_tagging_tests {
         let _rule1 = create_rule("foo", foo_tag.id, &connection).unwrap();
         let _rule2 = create_rule("foobar", bar_tag.id, &connection).unwrap(); // Different pattern, same tag, both match "starbucks"
 
-        let tx = create_transaction(
-            Transaction::build(100.0, today, "foobar".to_owned()),
-            &connection,
-        )
-        .unwrap();
+        let tx =
+            create_transaction(Transaction::build(100.0, today, "foobar"), &connection).unwrap();
 
         let result = apply_rules_to_transactions(TaggingMode::FetchAll, &connection).unwrap();
 
@@ -1276,12 +1264,12 @@ mod auto_tagging_tests {
 
         // Create transactions - one tagged, one untagged
         let tx1 = create_transaction(
-            Transaction::build(100.0, today, "tagged transaction".to_owned()).tag_id(Some(tag.id)),
+            Transaction::build(100.0, today, "tagged transaction").tag_id(Some(tag.id)),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0, today, "untagged transaction".to_owned()),
+            Transaction::build(50.0, today, "untagged transaction"),
             &connection,
         )
         .unwrap();
@@ -1305,12 +1293,12 @@ mod auto_tagging_tests {
 
         // Create transactions - one tagged, one untagged
         create_transaction(
-            Transaction::build(100.0, today, "tagged transaction".to_owned()).tag_id(Some(tag.id)),
+            Transaction::build(100.0, today, "tagged transaction").tag_id(Some(tag.id)),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0, today, "untagged transaction".to_owned()),
+            Transaction::build(50.0, today, "untagged transaction"),
             &connection,
         )
         .unwrap();
@@ -1334,12 +1322,12 @@ mod auto_tagging_tests {
 
         // Create transactions - one tagged, one untagged
         let tx1 = create_transaction(
-            Transaction::build(100.0, today, "tagged transaction".to_owned()).tag_id(Some(tag.id)),
+            Transaction::build(100.0, today, "tagged transaction").tag_id(Some(tag.id)),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0, today, "untagged transaction".to_owned()),
+            Transaction::build(50.0, today, "untagged transaction"),
             &connection,
         )
         .unwrap();
@@ -1379,12 +1367,12 @@ mod auto_tagging_tests {
         let tag3 = create_tag(TagName::new_unchecked("Tag3"), &connection).unwrap();
 
         let tx1 = create_transaction(
-            Transaction::build(100.0, today, "tx1".to_owned()).tag_id(Some(tag1.id)),
+            Transaction::build(100.0, today, "tx1").tag_id(Some(tag1.id)),
             &connection,
         )
         .unwrap();
         let tx2 = create_transaction(
-            Transaction::build(50.0, today, "tx2".to_owned()).tag_id(Some(tag1.id)),
+            Transaction::build(50.0, today, "tx2").tag_id(Some(tag1.id)),
             &connection,
         )
         .unwrap();
@@ -1399,21 +1387,5 @@ mod auto_tagging_tests {
         let got_tx2 = get_transaction(tx2.id, &connection).unwrap();
         assert_eq!(got_tx1.tag_id, Some(tag2.id));
         assert_eq!(got_tx2.tag_id, Some(tag3.id));
-    }
-
-    /// Retrieve a transaction from the database by its `id`.
-    ///
-    /// # Errors
-    /// This function will return a:
-    /// - [Error::NotFound] if `id` does not refer to a valid transaction,
-    /// - or [Error::SqlError] there is some other SQL error.
-    pub fn get_transaction(id: DatabaseId, connection: &Connection) -> Result<Transaction, Error> {
-        let transaction = connection
-        .prepare(
-            "SELECT id, amount, date, description, import_id, tag_id FROM \"transaction\" WHERE id = :id",
-        )?
-        .query_row(&[(":id", &id)], map_transaction_row)?;
-
-        Ok(transaction)
     }
 }

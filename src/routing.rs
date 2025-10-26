@@ -35,8 +35,8 @@ use crate::{
     },
     tags_page::get_tags_page,
     transaction::{
-        create_transaction_endpoint, delete_transaction_endpoint, get_new_transaction_page,
-        get_transactions_page,
+        create_transaction_endpoint, delete_transaction_endpoint, edit_tranction_endpoint,
+        get_create_transaction_page, get_edit_transaction_page, get_transactions_page,
     },
 };
 
@@ -64,7 +64,11 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
         .route(
             endpoints::NEW_TRANSACTION_VIEW,
-            get(get_new_transaction_page),
+            get(get_create_transaction_page),
+        )
+        .route(
+            endpoints::EDIT_TRANSACTION_VIEW,
+            get(get_edit_transaction_page),
         )
         .route(endpoints::NEW_TAG_VIEW, get(get_new_tag_page))
         .route(endpoints::EDIT_TAG_VIEW, get(get_edit_tag_page))
@@ -86,6 +90,10 @@ pub fn build_router(state: AppState) -> Router {
             .route(
                 endpoints::DELETE_TRANSACTION,
                 delete(delete_transaction_endpoint),
+            )
+            .route(
+                endpoints::EDIT_TRANSACTION_VIEW,
+                put(edit_tranction_endpoint),
             )
             .route(endpoints::POST_TAG, post(create_tag_endpoint))
             .route(endpoints::PUT_TAG, put(update_tag_endpoint))
@@ -140,10 +148,26 @@ pub(crate) fn get_internal_server_error_redirect() -> Response {
 
 #[derive(Template)]
 #[template(path = "views/internal_server_error_500.html")]
-struct InternalServerErrorPageTemplate;
+pub struct InternalServerErrorPageTemplate<'a> {
+    pub description: &'a str,
+    pub fix: &'a str,
+}
+
+impl Default for InternalServerErrorPageTemplate<'_> {
+    fn default() -> Self {
+        Self {
+            description: "Sorry, something went wrong.",
+            fix: "Try again later or check the server logs",
+        }
+    }
+}
 
 async fn get_internal_server_error_page() -> Response {
-    render(StatusCode::OK, InternalServerErrorPageTemplate)
+    render_internal_server_error(Default::default())
+}
+
+pub fn render_internal_server_error(template: InternalServerErrorPageTemplate) -> Response {
+    render(StatusCode::INTERNAL_SERVER_ERROR, template)
 }
 
 #[cfg(test)]
