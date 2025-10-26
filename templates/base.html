@@ -8,7 +8,9 @@
         <link rel="icon" type="image/png" href="/static/favicon-128x128.png" sizes="128x128"/>
         <link href="/static/main.css" rel="stylesheet" />
 
-        <script src="https://unpkg.com/htmx.org@2.0.2"></script>
+        <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz" crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/htmx-ext-response-targets@2.0.4" integrity="sha384-T41oglUPvXLGBVyRdZsVRxNWnOOqCynaPubjUVjxhsjFTKrFJGEMm3/0KGmNQ+Pg" crossorigin="anonymous"></script>
+
         <style>
             #indicator.htmx-indicator {
                 display: none;
@@ -25,7 +27,7 @@
         {% block scripts %}{% endblock %}
         <script src="/static/app.js" defer></script>
     </head>
-    <body class="container max-w-full min-h-screen bg-gray-50 dark:bg-gray-900">
+    <body class="container max-w-full min-h-screen bg-gray-50 dark:bg-gray-900" hx-ext="response-targets">
       {% block content %}{% endblock %}
       
       <!-- Alert container for out-of-band swaps -->

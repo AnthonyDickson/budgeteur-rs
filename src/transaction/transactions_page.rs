@@ -26,9 +26,9 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct TransactionsViewState {
     /// The database connection for managing transactions.
-    pub db_connection: Arc<Mutex<Connection>>,
+    db_connection: Arc<Mutex<Connection>>,
     /// Configuration for pagination controls.
-    pub pagination_config: PaginationConfig,
+    pagination_config: PaginationConfig,
 }
 
 impl FromRef<AppState> for TransactionsViewState {
@@ -44,9 +44,9 @@ impl FromRef<AppState> for TransactionsViewState {
 #[derive(Deserialize)]
 pub struct Pagination {
     /// The page number to display. Starts from 1.
-    pub page: Option<u64>,
+    page: Option<u64>,
     /// The maximum number of transactions to display per page.
-    pub per_page: Option<u64>,
+    per_page: Option<u64>,
 }
 
 /// Renders the dashboard page.
@@ -93,7 +93,10 @@ pub async fn get_transactions_page(
     let transactions =
         get_transaction_table_rows_paginated(limit, offset, SortOrder::Descending, &connection);
     let transactions = match transactions {
-        Ok(transactions) => transactions,
+        Ok(transactions) => transactions
+            .into_iter()
+            .map(TransactionTableRow::new_from_transaction)
+            .collect(),
         Err(error) => return error.into_response(),
     };
 
@@ -114,24 +117,50 @@ pub async fn get_transactions_page(
     )
 }
 
+#[derive(Debug, PartialEq)]
+struct Transaction {
+    /// The ID of the transaction.
+    id: TransactionId,
+    /// The amount of money spent or earned in this transaction.
+    amount: f64,
+    /// When the transaction happened.
+    date: Date,
+    /// A text description of what the transaction was for.
+    description: String,
+    /// The name of the transactions tag.
+    tag_name: Option<TagName>,
+}
+
 /// Renders a transaction with its tags as a table row.
 #[derive(Debug, Template, PartialEq)]
 #[template(path = "partials/transaction_table_row.html")]
-pub struct TransactionTableRow {
-    /// The ID of the transaction.
-    pub id: TransactionId,
+struct TransactionTableRow {
     /// The amount of money spent or earned in this transaction.
-    pub amount: f64,
+    amount: f64,
     /// When the transaction happened.
-    pub date: Date,
+    date: Date,
     /// A text description of what the transaction was for.
-    pub description: String,
+    description: String,
     /// The name of the transactions tag.
-    pub tag_name: Option<TagName>,
+    tag_name: Option<TagName>,
+    /// The API path to delete this transaction
+    delete_url: String,
+}
+
+impl TransactionTableRow {
+    fn new_from_transaction(transaction: Transaction) -> Self {
+        Self {
+            amount: transaction.amount,
+            date: transaction.date,
+            description: transaction.description,
+            tag_name: transaction.tag_name,
+            delete_url: endpoints::format_endpoint(endpoints::DELETE_TRANSACTION, transaction.id),
+        }
+    }
 }
 
 /// The order to sort transactions in a [TransactionQuery].
-pub enum SortOrder {
+enum SortOrder {
     /// Sort in order of increasing value.
     // TODO: Remove #[allow(dead_code)] once Ascending is used
     #[allow(dead_code)]
@@ -153,12 +182,12 @@ pub enum SortOrder {
 /// - Database connection fails
 /// - SQL query preparation or execution fails
 /// - Transaction row mapping fails
-pub fn get_transaction_table_rows_paginated(
+fn get_transaction_table_rows_paginated(
     limit: u64,
     offset: u64,
     sort_order: SortOrder,
     connection: &Connection,
-) -> Result<Vec<TransactionTableRow>, Error> {
+) -> Result<Vec<Transaction>, Error> {
     let order_clause = match sort_order {
         SortOrder::Ascending => "ORDER BY date ASC",
         SortOrder::Descending => "ORDER BY date DESC",
@@ -178,7 +207,7 @@ pub fn get_transaction_table_rows_paginated(
                 .get::<usize, Option<String>>(4)?
                 .map(|some_tag_name| TagName::new_unchecked(&some_tag_name));
 
-            Ok(TransactionTableRow {
+            Ok(Transaction {
                 id: row.get(0)?,
                 amount: row.get(1)?,
                 date: row.get(2)?,
@@ -582,19 +611,19 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(table_rows.len(), 3, "Should have 3 transaction rows");
 
-        // Check that each row has 5 columns (ID, Amount, Date, Description, Tags)
+        // Check that each row has 5 columns (Amount, Date, Description, Tags, Actions)
         for (i, row) in table_rows.iter().enumerate() {
             let cells = row
                 .select(&Selector::parse("th, td").unwrap())
                 .collect::<Vec<_>>();
             assert_eq!(
                 cells.len(),
-                4,
-                "Row {} should have 4 columns (Amount, Date, Description, Tags)",
+                5,
+                "Row {} should have 5 columns (Amount, Date, Description, Tags, Actions)",
                 i
             );
 
-            // The last cell should be the Tags column
+            // The second to last cell should be the Tags column
             let tags_cell = &cells[3];
             let tags_cell_html = tags_cell.html();
 
@@ -632,11 +661,12 @@ mod database_tests {
     use time::{Duration, OffsetDateTime, macros::date};
 
     use crate::{
+        database_id::TransactionId,
         db::initialize,
         transaction::{
             Transaction, create_transaction,
             transactions_page::{
-                SortOrder, TransactionTableRow, get_transaction_table_rows_paginated,
+                SortOrder, Transaction as TableTransaction, get_transaction_table_rows_paginated,
             },
         },
     };
@@ -681,8 +711,8 @@ mod database_tests {
                     .expect("Could not create transaction");
 
             if i > offset && i <= offset + limit {
-                want.push(TransactionTableRow {
-                    id: transaction.id,
+                want.push(TableTransaction {
+                    id: i as TransactionId,
                     amount: transaction.amount,
                     date: transaction.date,
                     description: transaction.description.clone(),

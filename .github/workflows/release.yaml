@@ -1,13 +1,7 @@
 name: Publish Image and Release
 
 on:
-  workflow_run:
-    workflows:
-      - "Build & Test"
-    types:
-      - completed
-    branches:
-      - main
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -17,8 +11,7 @@ jobs:
   get-version:
     name: Get Version
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-
+    if: github.ref == 'refs/heads/main'
     outputs:
       semver: ${{ steps.version.outputs.semver }}
     

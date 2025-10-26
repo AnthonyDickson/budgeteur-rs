@@ -2,8 +2,11 @@
 
 ## Stage One: Budgeting
 
-- Add edit and delete functionality for transactions.
+- Fix bug where you cannot create a transaction without a tag
+  - Get error `Failed to deserialize form body: tag_id: cannot parse integer from empty string`
+- Add edit functionality for transactions.
 - Add full CRUD functionality for balances
+- Move tagging buttons to top of page, they are hidden when there are many rules
 - Prompt user to add transactions on dashboard page if the user has no transactions.
 - Error alert if import fails
 - Port alerts system to other pages (other than rules page) for handling error messages

@@ -20,12 +20,12 @@ use crate::{
 
 /// The state needed to get or create a transaction.
 #[derive(Debug, Clone)]
-pub struct TransactionState {
+pub struct CreateTransactionState {
     /// The database connection for managing transactions.
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl FromRef<AppState> for TransactionState {
+impl FromRef<AppState> for CreateTransactionState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
@@ -53,7 +53,7 @@ pub struct TransactionForm {
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn create_transaction_endpoint(
-    State(state): State<TransactionState>,
+    State(state): State<CreateTransactionState>,
     Form(form): Form<TransactionForm>,
 ) -> impl IntoResponse {
     let transaction =
@@ -88,7 +88,7 @@ mod tests {
         tag::{TagName, create_tag},
         transaction::{
             Transaction, create_transaction_endpoint,
-            create_transaction_endpoint::{TransactionForm, TransactionState},
+            create_transaction_endpoint::{CreateTransactionState, TransactionForm},
             map_transaction_row,
         },
     };
@@ -102,7 +102,7 @@ mod tests {
     #[tokio::test]
     async fn can_create_transaction() {
         let conn = get_test_connection();
-        let state = TransactionState {
+        let state = CreateTransactionState {
             db_connection: Arc::new(Mutex::new(conn)),
         };
 
@@ -131,7 +131,7 @@ mod tests {
     async fn can_create_transaction_with_tags() {
         let conn = get_test_connection();
         let tag = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
-        let state = TransactionState {
+        let state = CreateTransactionState {
             db_connection: Arc::new(Mutex::new(conn)),
         };
 
