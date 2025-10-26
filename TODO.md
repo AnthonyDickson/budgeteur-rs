@@ -11,8 +11,24 @@
   - Alert for dashboard if excluded tag ops fail.
   - Extend to offer undo capabilities on delete/edit?
   - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
-- Split up `src/transaction.rs` into module `src/transaction/*.rs`
+- Log errors at source to make debugging easier
+- Render internal server error page for unexpected errors instead of returning text
+- Organise code into modules based on features
+  - dashboard
+  - auth
+    - log in
+    - log out
+    - cookies
+    - middleware
+    - password
+    - user
+  - tag
 - Create unique aliases of `i64` for each of the domain models, e.g., `Tag` -> `pub type TagID = i64;`.
+- On transactions page, group transactions by:
+  - tag
+  - day, week, fortnight, month, quarter, year
+- Add account info to transactions
+  - Set during import
 - Update values to use accounting formatting
   - Zero filled up to two decimal places for floats
   - Parantheses instead of minus symbol for negative values
@@ -25,6 +41,7 @@
   HTML templates.
   Refer to [v3.tailwindcss.com/docs/reusing-styles](https://v3.tailwindcss.com/docs/reusing-styles) and [v3.tailwindcss.com/docs/adding-custom-styles](https://v3.tailwindcss.com/docs/adding-custom-styles).
 - Refactor common testing functions into a separate module.
+- Ensure page layout fits on smartphone screen
 - Upgrade Rust and dependencies
 - Upgrade to Tailwind CSS 4
 
