@@ -59,6 +59,8 @@ pub const PUT_RULE: &str = "/api/rules/{rule_id}";
 pub const DELETE_RULE: &str = "/api/rules/{rule_id}";
 /// The route to access transactions.
 pub const TRANSACTIONS_API: &str = "/api/transactions";
+/// The route to delete transaction.
+pub const DELETE_TRANSACTION: &str = "/api/transactions/{transaction_id}";
 /// The route to upload CSV files for importing transactions.
 pub const IMPORT: &str = "/api/import";
 /// The route to apply auto-tagging to all transactions.
@@ -79,6 +81,11 @@ pub const DASHBOARD_EXCLUDED_TAGS: &str = "/api/dashboard/excluded-tags";
 ///
 /// If no parameter is found in `endpoint_path`, the function returns the
 /// the original `endpoint_path`.
+///
+/// # Example
+/// ```ignore
+/// assert_eq!(&format_endpoint("widgets/{widget_id}", 42), "widgets/42");
+/// ```
 pub fn format_endpoint(endpoint_path: &str, id: i64) -> String {
     let mut param_start = None;
     let mut param_end = None;
@@ -150,6 +157,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::PUT_RULE);
         assert_endpoint_is_valid_uri(endpoints::DELETE_RULE);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
+        assert_endpoint_is_valid_uri(endpoints::DELETE_TRANSACTION);
         assert_endpoint_is_valid_uri(endpoints::IMPORT);
         assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_ALL);
         assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_UNTAGGED);

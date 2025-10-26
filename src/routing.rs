@@ -34,7 +34,10 @@ use crate::{
         update_tag_endpoint,
     },
     tags_page::get_tags_page,
-    transaction::{create_transaction_endpoint, get_new_transaction_page, get_transactions_page},
+    transaction::{
+        create_transaction_endpoint, delete_transaction_endpoint, get_new_transaction_page,
+        get_transactions_page,
+    },
 };
 
 /// Return a router with all the app's routes.
@@ -79,6 +82,10 @@ pub fn build_router(state: AppState) -> Router {
             .route(
                 endpoints::TRANSACTIONS_API,
                 post(create_transaction_endpoint),
+            )
+            .route(
+                endpoints::DELETE_TRANSACTION,
+                delete(delete_transaction_endpoint),
             )
             .route(endpoints::POST_TAG, post(create_tag_endpoint))
             .route(endpoints::PUT_TAG, put(update_tag_endpoint))
