@@ -2,7 +2,11 @@
 
 ## Stage One: Budgeting
 
+- For transactions page, send pagination params to edit page so it can redirect back the same page.
+- Investigate why editing a transaction is slow on NAS (600ms-1,300ms per request)
+- For rules page, check whether its using `hx-swap="delete"`, avoid a page reload.
 - Add full CRUD functionality for balances
+- Page for quickly tagging untagged transactions
 - Prompt user to add transactions on dashboard page if the user has no transactions.
 - Port alerts system to other pages (other than rules page) for handling error messages
   - Use alerts for confirming deletion of items from tags and rules pages (and others when they get full CRUD).
@@ -11,7 +15,6 @@
   - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
 - Log errors at source to make debugging easier
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
-- Render internal server error page for unexpected errors instead of returning text
 - Organise code into modules based on features
   - dashboard
   - auth
