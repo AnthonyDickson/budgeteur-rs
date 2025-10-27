@@ -19,9 +19,9 @@ use crate::{
     timezone::get_local_offset,
 };
 
-/// Renders the new transaction page.
+/// Renders the create transaction page.
 #[derive(Template)]
-#[template(path = "views/new_transaction.html")]
+#[template(path = "views/transaction/create.html")]
 struct NewTransactionTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     create_transaction_route: &'a str,
@@ -29,16 +29,16 @@ struct NewTransactionTemplate<'a> {
     available_tags: Vec<Tag>,
 }
 
-/// The state needed for the new transaction page.
+/// The state needed for create new transaction page.
 #[derive(Debug, Clone)]
-pub struct NewTransactionPageState {
+pub struct CreateTransactionPageState {
     /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
     pub local_timezone: String,
     /// The database connection for accessing tags.
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl FromRef<AppState> for NewTransactionPageState {
+impl FromRef<AppState> for CreateTransactionPageState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             local_timezone: state.local_timezone.clone(),
@@ -52,7 +52,9 @@ impl FromRef<AppState> for NewTransactionPageState {
 /// # Panics
 ///
 /// Panics if the lock for the database connection is already held by the same thread.
-pub async fn get_new_transaction_page(State(state): State<NewTransactionPageState>) -> Response {
+pub async fn get_create_transaction_page(
+    State(state): State<CreateTransactionPageState>,
+) -> Response {
     let nav_bar = get_nav_bar(endpoints::NEW_TRANSACTION_VIEW);
 
     let connection = state
@@ -96,7 +98,7 @@ mod view_tests {
     use crate::{
         db::initialize,
         endpoints,
-        transaction::{get_new_transaction_page, new_transaction_page::NewTransactionPageState},
+        transaction::{create_page::CreateTransactionPageState, get_create_transaction_page},
     };
 
     fn get_test_connection() -> Connection {
@@ -108,11 +110,11 @@ mod view_tests {
     #[tokio::test]
     async fn new_transaction_returns_form() {
         let conn = get_test_connection();
-        let state = NewTransactionPageState {
+        let state = CreateTransactionPageState {
             local_timezone: "Etc/UTC".to_owned(),
             db_connection: Arc::new(Mutex::new(conn)),
         };
-        let response = get_new_transaction_page(State(state)).await;
+        let response = get_create_transaction_page(State(state)).await;
 
         assert_status_ok(&response);
         assert_html_content_type(&response);

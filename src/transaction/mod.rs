@@ -6,15 +6,21 @@
 //! - View handlers for transaction-related web pages
 
 mod core;
-mod create_transaction_endpoint;
-mod delete_transaction_endpoint;
-mod new_transaction_page;
+mod create_endpoint;
+mod create_page;
+mod delete_endpoint;
+mod edit_endpoint;
+mod edit_page;
 mod transactions_page;
 
-pub use core::{Transaction, TransactionBuilder, create_transaction_table, map_transaction_row};
-pub use create_transaction_endpoint::create_transaction_endpoint;
-pub use delete_transaction_endpoint::delete_transaction_endpoint;
-pub use new_transaction_page::get_new_transaction_page;
+pub use core::{
+    Transaction, TransactionBuilder, create_transaction_table, get_transaction, map_transaction_row,
+};
+pub use create_endpoint::create_transaction_endpoint;
+pub use create_page::get_create_transaction_page;
+pub use delete_endpoint::delete_transaction_endpoint;
+pub use edit_endpoint::edit_tranction_endpoint;
+pub use edit_page::get_edit_transaction_page;
 pub use transactions_page::get_transactions_page;
 
 #[cfg(test)]

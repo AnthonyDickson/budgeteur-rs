@@ -8,7 +8,11 @@ use time::Date;
 #[cfg(test)]
 use time::{OffsetDateTime, UtcOffset};
 
-use crate::{Error, database_id::DatabaseId, tag::TagId};
+use crate::{
+    Error,
+    database_id::{DatabaseId, TransactionId},
+    tag::TagId,
+};
 
 // ============================================================================
 // MODELS
@@ -37,11 +41,11 @@ impl Transaction {
     /// Create a new transaction.
     ///
     /// Shortcut for [TransactionBuilder] for discoverability.
-    pub fn build(amount: f64, date: Date, description: String) -> TransactionBuilder {
+    pub fn build(amount: f64, date: Date, description: &str) -> TransactionBuilder {
         TransactionBuilder {
             amount,
             date,
-            description,
+            description: description.to_owned(),
             import_id: None,
             tag_id: None,
         }
@@ -211,6 +215,22 @@ pub fn create_transaction(
     Ok(transaction)
 }
 
+/// Retrieve a transaction from the database by its `id`.
+///
+/// # Errors
+/// This function will return a:
+/// - [Error::NotFound] if `id` does not refer to a valid transaction,
+/// - or [Error::SqlError] there is some other SQL error.
+pub fn get_transaction(id: TransactionId, connection: &Connection) -> Result<Transaction, Error> {
+    let transaction = connection
+        .prepare(
+            "SELECT id, amount, date, description, import_id, tag_id FROM \"transaction\" WHERE id = :id",
+        )?
+        .query_one(&[(":id", &id)], map_transaction_row)?;
+
+    Ok(transaction)
+}
+
 /// Get the total number of transactions in the database.
 ///
 /// # Errors
@@ -355,7 +375,7 @@ mod transaction_builder_tests {
         let description = "Rust Pie".to_string();
         let import_id = Some(123456789);
 
-        let result = Transaction::build(amount, date, description.clone())
+        let result = Transaction::build(amount, date, &description)
             .import_id(import_id)
             .finalize(id, UtcOffset::UTC);
 
@@ -394,10 +414,8 @@ mod database_tests {
         let conn = get_test_connection();
         let amount = 12.3;
 
-        let result = create_transaction(
-            Transaction::build(amount, date!(2025 - 10 - 05), "".to_owned()),
-            &conn,
-        );
+        let result =
+            create_transaction(Transaction::build(amount, date!(2025 - 10 - 05), ""), &conn);
 
         match result {
             Ok(transaction) => assert_eq!(transaction.amount, amount),
@@ -411,13 +429,13 @@ mod database_tests {
         let import_id = Some(123456789);
         let today = date!(2025 - 10 - 04);
         create_transaction(
-            Transaction::build(123.45, today, "".to_owned()).import_id(import_id),
+            Transaction::build(123.45, today, "").import_id(import_id),
             &conn,
         )
         .expect("Could not create transaction");
 
         let duplicate_transaction = create_transaction(
-            Transaction::build(123.45, today, "".to_owned()).import_id(import_id),
+            Transaction::build(123.45, today, "").import_id(import_id),
             &conn,
         );
 
@@ -430,7 +448,7 @@ mod database_tests {
         let today = date!(2025 - 10 - 05);
         let want_count = 20;
         for i in 1..=want_count {
-            create_transaction(Transaction::build(i as f64, today, "".to_owned()), &conn)
+            create_transaction(Transaction::build(i as f64, today, ""), &conn)
                 .expect("Could not create transaction");
         }
 

@@ -59,7 +59,7 @@ pub async fn create_transaction_endpoint(
     Form(form): Form<TransactionForm>,
 ) -> impl IntoResponse {
     let transaction =
-        Transaction::build(form.amount, form.date, form.description).tag_id(form.tag_id);
+        Transaction::build(form.amount, form.date, &form.description).tag_id(form.tag_id);
 
     let connection = state.db_connection.lock().unwrap();
 
@@ -85,14 +85,11 @@ mod tests {
     use time::OffsetDateTime;
 
     use crate::{
-        Error,
-        database_id::DatabaseId,
         db::initialize,
         tag::{TagName, create_tag},
         transaction::{
-            Transaction, create_transaction_endpoint,
-            create_transaction_endpoint::{CreateTransactionState, TransactionForm},
-            map_transaction_row,
+            create_endpoint::{CreateTransactionState, TransactionForm},
+            create_transaction_endpoint, get_transaction,
         },
     };
 
@@ -165,21 +162,5 @@ mod tests {
             location, "/transactions",
             "got redirect to {location:?}, want redirect to /transactions"
         );
-    }
-
-    /// Retrieve a transaction from the database by its `id`.
-    ///
-    /// # Errors
-    /// This function will return a:
-    /// - [Error::NotFound] if `id` does not refer to a valid transaction,
-    /// - or [Error::SqlError] there is some other SQL error.
-    pub fn get_transaction(id: DatabaseId, connection: &Connection) -> Result<Transaction, Error> {
-        let transaction = connection
-        .prepare(
-            "SELECT id, amount, date, description, import_id, tag_id FROM \"transaction\" WHERE id = :id",
-        )?
-        .query_row(&[(":id", &id)], map_transaction_row)?;
-
-        Ok(transaction)
     }
 }

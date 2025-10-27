@@ -49,9 +49,9 @@ pub struct Pagination {
     per_page: Option<u64>,
 }
 
-/// Renders the dashboard page.
+/// Renders the transaction page.
 #[derive(Template)]
-#[template(path = "views/transactions.html")]
+#[template(path = "views/transaction/table.html")]
 struct TransactionsTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     /// The user's transactions for this week, as Askama templates.
@@ -143,6 +143,8 @@ struct TransactionTableRow {
     description: String,
     /// The name of the transactions tag.
     tag_name: Option<TagName>,
+    /// The API path to edit this transaction
+    edit_url: String,
     /// The API path to delete this transaction
     delete_url: String,
 }
@@ -154,6 +156,7 @@ impl TransactionTableRow {
             date: transaction.date,
             description: transaction.description,
             tag_name: transaction.tag_name,
+            edit_url: endpoints::format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction.id),
             delete_url: endpoints::format_endpoint(endpoints::DELETE_TRANSACTION, transaction.id),
         }
     }
@@ -193,10 +196,12 @@ fn get_transaction_table_rows_paginated(
         SortOrder::Descending => "ORDER BY date DESC",
     };
 
+    // Sort by date, and then ID to keep transaction order stable after updates
     let query = format!(
-        "SELECT \"transaction\".id, amount, date, description, tag.name FROM \"transaction\"
-        LEFT JOIN tag ON \"transaction\".tag_id = tag.id 
-        {} LIMIT {} OFFSET {}",
+        "SELECT \"transaction\".id, amount, date, description, tag.name FROM \"transaction\" \
+        LEFT JOIN tag ON \"transaction\".tag_id = tag.id \
+        {}, \"transaction\".id ASC \
+        LIMIT {} OFFSET {}",
         order_clause, limit, offset
     );
 
@@ -263,7 +268,7 @@ mod tests {
 
         // Create 30 transactions in the database
         for i in 1..=30 {
-            create_transaction(Transaction::build(i as f64, today, "".to_owned()), &conn).unwrap();
+            create_transaction(Transaction::build(i as f64, today, ""), &conn).unwrap();
         }
 
         let state = TransactionsViewState {
@@ -275,27 +280,26 @@ mod tests {
         };
         let per_page = 3;
         let page = 5;
-        // Transactions are sorted in reverse chronological order
         let want_transactions = [
             Transaction {
-                id: 18,
-                amount: 18.0,
+                id: 13,
+                amount: 13.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
                 tag_id: None,
             },
             Transaction {
-                id: 17,
-                amount: 17.0,
+                id: 14,
+                amount: 14.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
                 tag_id: None,
             },
             Transaction {
-                id: 16,
-                amount: 16.0,
+                id: 15,
+                amount: 15.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
@@ -559,17 +563,17 @@ mod tests {
 
         // Create transactions
         create_transaction(
-            Transaction::build(50.0, today, "Store purchase".to_owned()).tag_id(Some(tag2.id)),
+            Transaction::build(50.0, today, "Store purchase").tag_id(Some(tag2.id)),
             &conn,
         )
         .unwrap();
         create_transaction(
-            Transaction::build(25.0, today, "Restaurant".to_owned()).tag_id(Some(tag1.id)),
+            Transaction::build(25.0, today, "Restaurant").tag_id(Some(tag1.id)),
             &conn,
         )
         .unwrap();
         create_transaction(
-            Transaction::build(100.0, today, "No tags transaction".to_owned()),
+            Transaction::build(100.0, today, "No tags transaction"),
             &conn,
         )
         .unwrap();
@@ -687,7 +691,7 @@ mod database_tests {
             let transaction_builder = Transaction::build(
                 i as f64,
                 today - Duration::days(i),
-                format!("transaction #{i}"),
+                &format!("transaction #{i}"),
             );
 
             create_transaction(transaction_builder, &conn).unwrap();
@@ -706,9 +710,8 @@ mod database_tests {
         let today = date!(2025 - 10 - 05);
         let mut want = Vec::new();
         for i in 1..20 {
-            let transaction =
-                create_transaction(Transaction::build(i as f64, today, "".to_owned()), &conn)
-                    .expect("Could not create transaction");
+            let transaction = create_transaction(Transaction::build(i as f64, today, ""), &conn)
+                .expect("Could not create transaction");
 
             if i > offset && i <= offset + limit {
                 want.push(TableTransaction {

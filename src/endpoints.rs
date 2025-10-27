@@ -10,6 +10,8 @@ pub const DASHBOARD_VIEW: &str = "/dashboard";
 pub const TRANSACTIONS_VIEW: &str = "/transactions";
 /// The page for creating a new transaction.
 pub const NEW_TRANSACTION_VIEW: &str = "/transactions/new";
+/// The page for editing a transaction.
+pub const EDIT_TRANSACTION_VIEW: &str = "/transactions/{transaction_id}/edit";
 /// The page for creating a new tag.
 pub const NEW_TAG_VIEW: &str = "/tag/new";
 /// The page for editing an existing tag.
@@ -132,6 +134,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::ROOT);
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_VIEW);
         assert_endpoint_is_valid_uri(endpoints::NEW_TRANSACTION_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::EDIT_TRANSACTION_VIEW);
         assert_endpoint_is_valid_uri(endpoints::NEW_TAG_VIEW);
         assert_endpoint_is_valid_uri(endpoints::EDIT_TAG_VIEW);
         assert_endpoint_is_valid_uri(endpoints::TAGS_VIEW);

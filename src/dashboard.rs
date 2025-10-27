@@ -627,9 +627,9 @@ mod dashboard_route_tests {
         let today = OffsetDateTime::now_utc().date();
 
         // Create some test data
-        create_transaction(Transaction::build(100.0, today, "".to_owned()), &conn).unwrap();
+        create_transaction(Transaction::build(100.0, today, ""), &conn).unwrap();
         create_transaction(
-            Transaction::build(-50.0, today - Duration::days(15), "".to_owned()),
+            Transaction::build(-50.0, today - Duration::days(15), ""),
             &conn,
         )
         .unwrap();
@@ -748,13 +748,9 @@ mod get_transactions_in_date_range_tests {
         let end_date = date!(2024 - 01 - 31);
 
         // Create test transactions
-        create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn).unwrap();
-        create_transaction(
-            Transaction::build(-50.0, date!(2024 - 01 - 15), "".to_owned()),
-            &conn,
-        )
-        .unwrap();
-        create_transaction(Transaction::build(75.0, end_date, "".to_owned()), &conn).unwrap();
+        create_transaction(Transaction::build(100.0, start_date, ""), &conn).unwrap();
+        create_transaction(Transaction::build(-50.0, date!(2024 - 01 - 15), ""), &conn).unwrap();
+        create_transaction(Transaction::build(75.0, end_date, ""), &conn).unwrap();
 
         let transactions =
             get_transactions_in_date_range(start_date..=end_date, None, &conn).unwrap();
@@ -785,20 +781,12 @@ mod get_transactions_in_date_range_tests {
         let end_date = date!(2024 - 01 - 31);
 
         // Transactions within range
-        create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn).unwrap();
-        create_transaction(Transaction::build(-50.0, end_date, "".to_owned()), &conn).unwrap();
+        create_transaction(Transaction::build(100.0, start_date, ""), &conn).unwrap();
+        create_transaction(Transaction::build(-50.0, end_date, ""), &conn).unwrap();
 
         // Transactions outside range
-        create_transaction(
-            Transaction::build(200.0, date!(2023 - 12 - 31), "".to_owned()),
-            &conn,
-        )
-        .unwrap();
-        create_transaction(
-            Transaction::build(-100.0, date!(2024 - 02 - 01), "".to_owned()),
-            &conn,
-        )
-        .unwrap();
+        create_transaction(Transaction::build(200.0, date!(2023 - 12 - 31), ""), &conn).unwrap();
+        create_transaction(Transaction::build(-100.0, date!(2024 - 02 - 01), ""), &conn).unwrap();
 
         let transactions =
             get_transactions_in_date_range(start_date..=end_date, None, &conn).unwrap();
@@ -820,17 +808,17 @@ mod get_transactions_in_date_range_tests {
 
         // Create test transactions
         let _excluded_transaction = create_transaction(
-            Transaction::build(100.0, start_date, "".to_owned()).tag_id(Some(excluded_tag.id)),
+            Transaction::build(100.0, start_date, "").tag_id(Some(excluded_tag.id)),
             &conn,
         )
         .unwrap();
         let _included_transaction = create_transaction(
-            Transaction::build(50.0, start_date, "".to_owned()).tag_id(Some(included_tag.id)),
+            Transaction::build(50.0, start_date, "").tag_id(Some(included_tag.id)),
             &conn,
         )
         .unwrap();
         let _untagged_transaction =
-            create_transaction(Transaction::build(25.0, start_date, "".to_owned()), &conn).unwrap();
+            create_transaction(Transaction::build(25.0, start_date, ""), &conn).unwrap();
 
         // Get transactions excluding the excluded tag
         let excluded_tags = vec![excluded_tag.id];
@@ -854,12 +842,12 @@ mod get_transactions_in_date_range_tests {
 
         // Create test transactions
         let _tagged_transaction = create_transaction(
-            Transaction::build(100.0, start_date, "".to_owned()).tag_id(Some(tag.id)),
+            Transaction::build(100.0, start_date, "").tag_id(Some(tag.id)),
             &conn,
         )
         .unwrap();
         let _untagged_transaction =
-            create_transaction(Transaction::build(50.0, start_date, "".to_owned()), &conn).unwrap();
+            create_transaction(Transaction::build(50.0, start_date, ""), &conn).unwrap();
 
         // Get transactions with no exclusions
         let transactions =
@@ -877,7 +865,7 @@ mod get_transactions_in_date_range_tests {
         let end_date = date!(2024 - 01 - 31);
 
         // Create untagged transaction
-        create_transaction(Transaction::build(100.0, start_date, "".to_owned()), &conn).unwrap();
+        create_transaction(Transaction::build(100.0, start_date, ""), &conn).unwrap();
 
         let transactions =
             get_transactions_in_date_range(start_date..=end_date, None, &conn).unwrap();

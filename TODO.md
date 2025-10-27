@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Add edit functionality for transactions.
 - Add full CRUD functionality for balances
 - Move tagging buttons to top of page, they are hidden when there are many rules
 - Prompt user to add transactions on dashboard page if the user has no transactions.
@@ -13,6 +12,7 @@
   - Extend to offer undo capabilities on delete/edit?
   - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
 - Log errors at source to make debugging easier
+- Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
 - Render internal server error page for unexpected errors instead of returning text
 - Organise code into modules based on features
   - dashboard
@@ -30,6 +30,16 @@
   - day, week, fortnight, month, quarter, year
 - Add account info to transactions
   - Set during import
+- Add page/widget on dashboard where you can check the impact of spending a specified amount:
+  - Input for a positive amount, assume one-off
+  - Net income chart
+    - Actual net income for previous month
+    - Current month should be mean net income over last 12 months minus the specified amount
+    - Projections for the next ten months are the mean net income over the last 12 months
+  - Balance Chart
+    - Net balance for last month
+    - Current month is previous month's balance plus mean net income over the last 12 months minus the specified amount
+    - Projections for the next ten months are the above value plus the mean net income over the last 12 months
 - Update values to use accounting formatting
   - Zero filled up to two decimal places for floats
   - Parantheses instead of minus symbol for negative values
@@ -43,6 +53,8 @@
   Refer to [v3.tailwindcss.com/docs/reusing-styles](https://v3.tailwindcss.com/docs/reusing-styles) and [v3.tailwindcss.com/docs/adding-custom-styles](https://v3.tailwindcss.com/docs/adding-custom-styles).
 - Refactor common testing functions into a separate module.
 - Ensure page layout fits on smartphone screen
+- Consider merging "api" paths into root router
+  - For example, `DELETE api/transactions/{transaction_id}` -> `DELETE transactions/{transaction_id}`
 - Upgrade Rust and dependencies
 - Upgrade to Tailwind CSS 4
 

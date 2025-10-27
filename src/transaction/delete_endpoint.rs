@@ -77,15 +77,14 @@ fn delete_transaction(id: TransactionId, connection: &Connection) -> Result<Rows
 
 #[cfg(test)]
 mod tests {
-    use rusqlite::{Connection, params};
+    use rusqlite::Connection;
     use time::macros::date;
 
     use crate::{
-        database_id::TransactionId,
-        initialize_db,
+        Error, initialize_db,
         transaction::{
-            Transaction, TransactionBuilder, create_transaction,
-            delete_transaction_endpoint::delete_transaction, map_transaction_row,
+            TransactionBuilder, create_transaction, delete_endpoint::delete_transaction,
+            get_transaction,
         },
     };
 
@@ -110,18 +109,7 @@ mod tests {
         assert_eq!(rows_affected, 1);
         assert_eq!(
             get_transaction(transaction.id, &connection),
-            Err(rusqlite::Error::QueryReturnedNoRows)
-        )
-    }
-
-    fn get_transaction(
-        id: TransactionId,
-        connection: &Connection,
-    ) -> Result<Transaction, rusqlite::Error> {
-        connection.query_one(
-            "SELECT * FROM \"transaction\" WHERE id = ?1",
-            params![id],
-            map_transaction_row,
+            Err(Error::NotFound)
         )
     }
 }

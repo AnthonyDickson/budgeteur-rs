@@ -215,7 +215,7 @@ fn parse_asb_bank_csv(text: &str, local_timezone: UtcOffset) -> Result<ParseCSVR
                     ))
                 })?;
 
-                let transaction = Transaction::build(amount, date, description.to_owned())
+                let transaction = Transaction::build(amount, date, description)
                     .import_id(Some(create_import_id(line)));
 
                 transactions.push(transaction);
@@ -324,7 +324,7 @@ fn parse_asb_cc_csv(text: &str) -> Result<ParseCSVResult, Error> {
                 // which represent debits with negative numbers.
                 let amount = -amount;
 
-                let transaction = Transaction::build(amount, date, description.to_owned())
+                let transaction = Transaction::build(amount, date, description)
                     .import_id(Some(create_import_id(line)));
 
                 transactions.push(transaction);
@@ -414,7 +414,7 @@ fn parse_kiwibank_bank_simple_csv(
                     ))
                 })?;
 
-                let transaction = Transaction::build(amount, date, description)
+                let transaction = Transaction::build(amount, date, &description)
                     .import_id(Some(create_import_id(line)));
 
                 transactions.push(transaction);
@@ -519,27 +519,27 @@ mod parse_csv_tests {
     #[test]
     fn can_parse_asb_bank_statement() {
         let want_transactions = vec![
-            Transaction::build(1300.00, date!(2025 - 01 - 18),  "Credit Card".to_owned())
+            Transaction::build(1300.00, date!(2025 - 01 - 18),  "Credit Card")
                 .import_id(Some(create_import_id(
                     "2025/01/18,2025011801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",1300.00"
                 ))),
-            Transaction::build(-1300.00,date!(2025 - 01 - 18),  "TO CARD 5023  Credit Card".to_owned())
+            Transaction::build(-1300.00,date!(2025 - 01 - 18),  "TO CARD 5023  Credit Card")
                 .import_id(Some(create_import_id(
                     "2025/01/18,2025011802,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  Credit Card\",-1300.00"
                 ))),
-           Transaction::build(4400.00,  date!(2025 - 02 - 18), "Credit Card".to_owned())
+           Transaction::build(4400.00,  date!(2025 - 02 - 18), "Credit Card")
                 .import_id(Some(create_import_id(
                     "2025/02/18,2025021801,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",4400.00"
                 ))),
-            Transaction::build(-4400.00, date!(2025 - 02 - 19)  ,"TO CARD 5023  THANK YOU".to_owned())
+            Transaction::build(-4400.00, date!(2025 - 02 - 19)  ,"TO CARD 5023  THANK YOU")
                 .import_id(Some(create_import_id(
                     "2025/02/19,2025021901,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-4400.00"
                 ))),
-            Transaction::build(2750.00, date!(2025 - 03 - 20), "Credit Card".to_owned())
+            Transaction::build(2750.00, date!(2025 - 03 - 20), "Credit Card")
                 .import_id(Some(create_import_id(
                     "2025/03/20,2025032001,D/C,,\"D/C FROM A B Cat\",\"Credit Card\",2750.00"
                 ))),
-            Transaction::build(-2750.00, date!(2025 - 03 - 20),  "TO CARD 5023  THANK YOU".to_owned())
+            Transaction::build(-2750.00, date!(2025 - 03 - 20),  "TO CARD 5023  THANK YOU")
                 .import_id(Some(create_import_id(
                     "2025/03/20,2025032002,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-2750.00"
                 ))),

@@ -906,10 +906,8 @@ mod import_transaction_list_tests {
         let conn = get_test_connection();
         let amount = 12.3;
 
-        let result = create_transaction(
-            Transaction::build(amount, date!(2025 - 10 - 05), "".to_owned()),
-            &conn,
-        );
+        let result =
+            create_transaction(Transaction::build(amount, date!(2025 - 10 - 05), ""), &conn);
 
         match result {
             Ok(transaction) => assert_eq!(transaction.amount, amount),
@@ -922,8 +920,8 @@ mod import_transaction_list_tests {
         let conn = get_test_connection();
         let today = date!(2025 - 10 - 04);
         let want = vec![
-            Transaction::build(123.45, today, "".to_owned()).import_id(Some(123456789)),
-            Transaction::build(678.90, today, "".to_owned()).import_id(Some(101112131)),
+            Transaction::build(123.45, today, "").import_id(Some(123456789)),
+            Transaction::build(678.90, today, "").import_id(Some(101112131)),
         ];
 
         let imported_transactions =
@@ -951,13 +949,13 @@ mod import_transaction_list_tests {
         let import_id = Some(123456789);
         let today = date!(2025 - 10 - 04);
         let want = create_transaction(
-            Transaction::build(123.45, today, "".to_owned()).import_id(import_id),
+            Transaction::build(123.45, today, "").import_id(import_id),
             &conn,
         )
         .expect("Could not create transaction");
 
         let duplicate_transactions = import_transaction_list(
-            vec![Transaction::build(123.45, today, "".to_owned()).import_id(import_id)],
+            vec![Transaction::build(123.45, today, "").import_id(import_id)],
             &conn,
         )
         .expect("Could not import transactions");
@@ -1001,10 +999,8 @@ mod import_transaction_list_tests {
     async fn import_escapes_single_quotes() {
         let conn = get_test_connection();
         let today = date!(2025 - 10 - 05);
-        let want = vec![
-            Transaction::build(123.45, today, "Tom's Hardware".to_owned())
-                .import_id(Some(123456789)),
-        ];
+        let want =
+            vec![Transaction::build(123.45, today, "Tom's Hardware").import_id(Some(123456789))];
 
         let imported_transactions =
             import_transaction_list(want.clone(), &conn).expect("Could not create transaction");

@@ -2,6 +2,7 @@
 //! A tag is used for categorising and grouping transactions.
 
 use std::fmt::Display;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use askama::Template;
@@ -52,6 +53,14 @@ impl TagName {
 impl AsRef<str> for TagName {
     fn as_ref(&self) -> &str {
         &self.0
+    }
+}
+
+impl FromStr for TagName {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        TagName::new(s)
     }
 }
 
