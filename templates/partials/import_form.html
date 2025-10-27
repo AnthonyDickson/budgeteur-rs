@@ -1,4 +1,6 @@
-<form hx-post="{{ import_route }}" enctype="multipart/form-data" hx-disabled-elt="#files, #submit-button" hx-indicator="#indicator" hx-swap="none" class="space-y-4 md:space-y-6">
+<form hx-post="{{ import_route }}" enctype="multipart/form-data"
+  hx-disabled-elt="#files, #submit-button" hx-indicator="#indicator"
+  hx-swap="none" hx-target-error="#alert-container" class="space-y-4 md:space-y-6">
   <div>
     <label for="files" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Choose file(s) to upload</label>
 
