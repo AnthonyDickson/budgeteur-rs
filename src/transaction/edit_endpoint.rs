@@ -1,12 +1,8 @@
-// TODO: Form for updating a transaction
-// TODO: Endpoint to update a transaction
-// TODO: Tests
-
 use std::sync::{Arc, Mutex};
 
 use axum::{
     debug_handler,
-    extract::{FromRef, Path, State},
+    extract::{FromRef, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -44,10 +40,16 @@ pub struct EditTransactionForm {
     tag_id: Option<TagId>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct QueryParams {
+    redirect_url: Option<String>,
+}
+
 #[debug_handler]
 pub async fn edit_tranction_endpoint(
     State(state): State<EditTransactionState>,
     Path(transaction_id): Path<TransactionId>,
+    Query(query_params): Query<QueryParams>,
     Form(form): Form<EditTransactionForm>,
 ) -> Response {
     let connection = match state.db_connection.lock() {
@@ -84,11 +86,11 @@ pub async fn edit_tranction_endpoint(
         }
     }
 
-    (
-        HxRedirect(endpoints::TRANSACTIONS_VIEW.to_owned()),
-        StatusCode::SEE_OTHER,
-    )
-        .into_response()
+    let redirect_url = query_params
+        .redirect_url
+        .unwrap_or(endpoints::TRANSACTIONS_VIEW.to_owned());
+
+    (HxRedirect(redirect_url), StatusCode::SEE_OTHER).into_response()
 }
 
 type RowsAffected = usize;
@@ -123,7 +125,7 @@ mod test {
     use std::sync::{Arc, Mutex};
 
     use axum::{
-        extract::{Path, State},
+        extract::{Path, Query, State},
         http::{HeaderValue, StatusCode},
     };
     use axum_extra::extract::Form;
@@ -132,11 +134,13 @@ mod test {
     use time::macros::date;
 
     use crate::{
-        endpoints, initialize_db,
+        initialize_db,
         tag::create_tag,
         transaction::{
             Transaction, create_transaction,
-            edit_endpoint::{EditTransactionForm, EditTransactionState, edit_tranction_endpoint},
+            edit_endpoint::{
+                EditTransactionForm, EditTransactionState, QueryParams, edit_tranction_endpoint,
+            },
             get_transaction,
         },
     };
@@ -171,15 +175,22 @@ mod test {
             description: want_transaction.description.clone(),
             tag_id: want_transaction.tag_id,
         };
+        let redirect_url = "foo/bar?page=123&per_page=20".to_owned();
 
-        let response =
-            edit_tranction_endpoint(State(state.clone()), Path(want_transaction.id), Form(form))
-                .await;
+        let response = edit_tranction_endpoint(
+            State(state.clone()),
+            Path(want_transaction.id),
+            Query(QueryParams {
+                redirect_url: Some(redirect_url.clone()),
+            }),
+            Form(form),
+        )
+        .await;
 
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
         assert_eq!(
             response.headers().get(HX_REDIRECT),
-            Some(&HeaderValue::from_static(endpoints::TRANSACTIONS_VIEW))
+            Some(&HeaderValue::from_str(&redirect_url).unwrap())
         );
         let got_transaction = get_transaction(
             want_transaction.id,
