@@ -2,11 +2,12 @@ use std::sync::{Arc, Mutex};
 
 use askama::Template;
 use axum::{
-    extract::{FromRef, Path, State},
+    extract::{FromRef, Path, Query, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use rusqlite::Connection;
+use serde::Deserialize;
 use time::{Date, OffsetDateTime};
 
 use crate::{
@@ -27,7 +28,7 @@ use crate::{
 #[template(path = "views/transaction/edit.html")]
 struct EditTransactionPageTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
-    edit_transaction_endpoint: &'a str,
+    edit_transaction_url: &'a str,
     max_date: Date,
     transaction: Transaction,
     available_tags: Vec<Tag>,
@@ -51,6 +52,11 @@ impl FromRef<AppState> for EditTransactionPageState {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct QueryParams {
+    redirect_url: Option<String>,
+}
+
 /// Renders the page for editing a transaction.
 ///
 /// # Panics
@@ -59,13 +65,17 @@ impl FromRef<AppState> for EditTransactionPageState {
 pub async fn get_edit_transaction_page(
     State(state): State<EditTransactionPageState>,
     Path(transaction_id): Path<TransactionId>,
+    Query(query_params): Query<QueryParams>,
 ) -> Response {
     let nav_bar = get_nav_bar(endpoints::EDIT_TRANSACTION_VIEW);
 
-    let connection = state
-        .db_connection
-        .lock()
-        .expect("Could not acquire database lock");
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("Could not acquire database lock: {error}");
+            return render_internal_server_error(Default::default());
+        }
+    };
 
     let transaction = match get_transaction(transaction_id, &connection) {
         Ok(transaction) => transaction,
@@ -86,19 +96,22 @@ pub async fn get_edit_transaction_page(
         }
     };
 
-    let local_timezone = match get_local_offset(&state.local_timezone) {
-        Some(offset) => offset,
-        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+    let Some(local_timezone) = get_local_offset(&state.local_timezone) else {
+        tracing::error!("Failed to get local timezone offset");
+        return render_internal_server_error(Default::default());
+    };
+
+    let base_url = format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction_id);
+    let edit_transaction_url = match query_params.redirect_url {
+        Some(redirect_url) => format!("{base_url}?redirect_url={redirect_url}"),
+        None => base_url,
     };
 
     render(
         StatusCode::OK,
         EditTransactionPageTemplate {
             nav_bar,
-            edit_transaction_endpoint: &format_endpoint(
-                endpoints::EDIT_TRANSACTION_VIEW,
-                transaction_id,
-            ),
+            edit_transaction_url: &edit_transaction_url,
             max_date: OffsetDateTime::now_utc().to_offset(local_timezone).date(),
             transaction,
             available_tags,

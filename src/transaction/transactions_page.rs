@@ -90,12 +90,16 @@ pub async fn get_transactions_page(
         Err(error) => return error.into_response(),
     };
 
+    let redirect_url = get_redirect_url(current_page, per_page);
+
     let transactions =
         get_transaction_table_rows_paginated(limit, offset, SortOrder::Descending, &connection);
     let transactions = match transactions {
         Ok(transactions) => transactions
             .into_iter()
-            .map(TransactionTableRow::new_from_transaction)
+            .map(|transaction| {
+                TransactionTableRow::new_from_transaction(transaction, redirect_url.as_deref())
+            })
             .collect(),
         Err(error) => return error.into_response(),
     };
@@ -115,6 +119,21 @@ pub async fn get_transactions_page(
             per_page,
         },
     )
+}
+
+fn get_redirect_url(page: u64, per_page: u64) -> Option<String> {
+    let redirect_url = format!(
+        "{}?page={page}&per_page={per_page}",
+        endpoints::TRANSACTIONS_VIEW
+    );
+
+    serde_urlencoded::to_string([("redirect_url", &redirect_url)])
+        .inspect_err(|error| {
+            tracing::error!(
+                "Could not set redirect URL {redirect_url} due to encoding error: {error}"
+            );
+        })
+        .ok()
 }
 
 #[derive(Debug, PartialEq)]
@@ -150,13 +169,20 @@ struct TransactionTableRow {
 }
 
 impl TransactionTableRow {
-    fn new_from_transaction(transaction: Transaction) -> Self {
+    fn new_from_transaction(transaction: Transaction, redirect_url: Option<&str>) -> Self {
+        let mut edit_url =
+            endpoints::format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction.id);
+
+        if let Some(redirect_url) = redirect_url {
+            edit_url = format!("{edit_url}?{redirect_url}");
+        }
+
         Self {
             amount: transaction.amount,
             date: transaction.date,
             description: transaction.description,
             tag_name: transaction.tag_name,
-            edit_url: endpoints::format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction.id),
+            edit_url,
             delete_url: endpoints::format_endpoint(endpoints::DELETE_TRANSACTION, transaction.id),
         }
     }

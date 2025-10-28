@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "budgeteur_rs"
-version = "0.14.2"
+version = "0.15.0"
 dependencies = [
  "askama",
  "axum",
@@ -433,6 +433,7 @@ dependencies = [
  "serde",
  "serde_html_form",
  "serde_json",
+ "serde_urlencoded",
  "sha2",
  "thiserror 2.0.16",
  "time",
