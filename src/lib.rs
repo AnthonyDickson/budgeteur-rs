@@ -23,7 +23,7 @@ mod alert;
 mod app_state;
 mod auth_cookie;
 mod auth_middleware;
-mod balances;
+mod balance;
 mod csv_import;
 mod dashboard;
 mod dashboard_preferences;
@@ -32,6 +32,7 @@ mod db;
 mod endpoints;
 mod filters;
 mod forgot_password;
+mod internal_server_error;
 mod log_in;
 mod log_out;
 mod logging;
@@ -186,6 +187,10 @@ pub enum Error {
     /// An error occurred while getting the local timezone from a canonical timezone string.
     #[error("invalid timezone {0}")]
     InvalidTimezoneError(String),
+
+    /// The specified account name already exists in the database.
+    #[error("the account already exists in the database")]
+    DuplicateAccountName,
 }
 
 impl From<rusqlite::Error> for Error {

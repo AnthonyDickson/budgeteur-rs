@@ -2,11 +2,15 @@
 
 ## Stage One: Budgeting
 
-- Investigate why editing a transaction is slow on NAS (600ms-1,300ms per request)
-- For rules page, check whether its using `hx-swap="delete"`, avoid a page reload.
 - Add full CRUD functionality for balances
-- Page for quickly tagging untagged transactions
+  - [x] Create
+  - [x] Retrieve
+  - [ ] Update
+  - [ ] Delete
+- Resolve TODO comments
+- Move tagging buttons to top of page, they are hidden when there are many rules
 - Prompt user to add transactions on dashboard page if the user has no transactions.
+- Error alert if import fails
 - Port alerts system to other pages (other than rules page) for handling error messages
   - Use alerts for confirming deletion of items from tags and rules pages (and others when they get full CRUD).
   - Alert for dashboard if excluded tag ops fail.
@@ -14,7 +18,7 @@
   - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
 - Log errors at source to make debugging easier
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
-- Add resource IDs in edit page titles (e.g., tag page -> "Edit Tag #5")
+- Render internal server error page for unexpected errors instead of returning text
 - Organise code into modules based on features
   - dashboard
   - auth
@@ -54,8 +58,6 @@
   Refer to [v3.tailwindcss.com/docs/reusing-styles](https://v3.tailwindcss.com/docs/reusing-styles) and [v3.tailwindcss.com/docs/adding-custom-styles](https://v3.tailwindcss.com/docs/adding-custom-styles).
 - Refactor common testing functions into a separate module.
 - Ensure page layout fits on smartphone screen
-- Consider merging "api" paths into root router
-  - For example, `DELETE api/transactions/{transaction_id}` -> `DELETE transactions/{transaction_id}`
 - Upgrade Rust and dependencies
 - Upgrade to Tailwind CSS 4
 

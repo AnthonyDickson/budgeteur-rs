@@ -6,6 +6,12 @@
   <div class="relative overflow-x-auto">
     <div class="flex justify-between flex-wrap items-end">
       <h1 class="text-xl font-bold">Account Balances</h1>
+      <a
+        href="{{ create_account_balance_page_url }}"
+        class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+      >
+        Create Tag
+      </a>
     </div>
     <div class="dark:bg-gray-800">
       <table class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400">
@@ -40,7 +46,12 @@
           {% if balances.is_empty() %}
           <tr>
             <td colspan="3" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
-              No account balances found. <a href="{{ import_page_link }}" class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline">Import from CSV files</a> to add balances.
+              No account balances found.
+              Create an account balance
+              <a
+                href="{{ create_account_balance_page_url }}"
+                class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+              >here</a>.
             </td>
           </tr>
           {% endif %}

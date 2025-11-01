@@ -14,9 +14,9 @@ use crate::{
     AppState, Error,
     database_id::TransactionId,
     endpoints::{self, format_endpoint},
+    internal_server_error::render_internal_server_error,
     navigation::{NavbarTemplate, get_nav_bar},
     not_found::get_404_not_found_response,
-    routing::render_internal_server_error,
     shared_templates::render,
     tag::{Tag, get_all_tags},
     timezone::get_local_offset,
@@ -58,10 +58,6 @@ pub struct QueryParams {
 }
 
 /// Renders the page for editing a transaction.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_edit_transaction_page(
     State(state): State<EditTransactionPageState>,
     Path(transaction_id): Path<TransactionId>,

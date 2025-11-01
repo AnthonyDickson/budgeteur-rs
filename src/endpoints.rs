@@ -34,8 +34,10 @@ pub const LOG_IN_VIEW: &str = "/log_in";
 pub const FORGOT_PASSWORD_VIEW: &str = "/forgot_password";
 /// The page to display when an internal server error occurs.
 pub const INTERNAL_ERROR_VIEW: &str = "/error";
-/// The page to display account balances.
-pub const BALANCES_VIEW: &str = "/balances";
+/// The page to display account balances (GET) and create an account balance (POST).
+pub const BALANCES: &str = "/balances";
+/// The page to display a form for creating an account balance.
+pub const NEW_BALANCE_VIEW: &str = "/balances/new";
 /// The route for static files.
 pub const STATIC: &str = "/static";
 
@@ -146,7 +148,8 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
         assert_endpoint_is_valid_uri(endpoints::FORGOT_PASSWORD_VIEW);
         assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
-        assert_endpoint_is_valid_uri(endpoints::BALANCES_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::BALANCES);
+        assert_endpoint_is_valid_uri(endpoints::NEW_BALANCE_VIEW);
         assert_endpoint_is_valid_uri(endpoints::STATIC);
 
         assert_endpoint_is_valid_uri(endpoints::COFFEE);
