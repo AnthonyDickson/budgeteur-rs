@@ -187,6 +187,10 @@ pub enum Error {
     /// An error occurred while getting the local timezone from a canonical timezone string.
     #[error("invalid timezone {0}")]
     InvalidTimezoneError(String),
+
+    /// The specified account name already exists in the database.
+    #[error("the account already exists in the database")]
+    DuplicateAccountName,
 }
 
 impl From<rusqlite::Error> for Error {

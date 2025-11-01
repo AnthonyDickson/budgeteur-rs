@@ -58,10 +58,6 @@ pub struct QueryParams {
 }
 
 /// Renders the page for editing a transaction.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_edit_transaction_page(
     State(state): State<EditTransactionPageState>,
     Path(transaction_id): Path<TransactionId>,

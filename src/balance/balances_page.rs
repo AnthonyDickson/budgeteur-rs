@@ -31,9 +31,9 @@ pub async fn get_balances_page(State(state): State<BalanceState>) -> Response {
     };
 
     let template = BalancesTemplate {
-        nav_bar: get_nav_bar(endpoints::BALANCES_VIEW),
+        nav_bar: get_nav_bar(endpoints::BALANCES),
         balances: &balances,
-        import_page_link: endpoints::IMPORT_VIEW,
+        create_account_balance_page_url: endpoints::NEW_BALANCE_VIEW,
     };
 
     render(StatusCode::OK, template)
@@ -59,7 +59,7 @@ impl FromRef<AppState> for BalanceState {
 struct BalancesTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     balances: &'a [Balance],
-    import_page_link: &'a str,
+    create_account_balance_page_url: &'a str,
 }
 
 #[cfg(test)]
@@ -88,9 +88,9 @@ mod balances_template_tests {
         let balances = vec![want_balance];
 
         let rendered_template = BalancesTemplate {
-            nav_bar: get_nav_bar(endpoints::BALANCES_VIEW),
+            nav_bar: get_nav_bar(endpoints::BALANCES),
             balances: &balances,
-            import_page_link: endpoints::IMPORT_VIEW,
+            create_account_balance_page_url: endpoints::NEW_BALANCE_VIEW,
         }
         .render()
         .expect("Could not render template");
@@ -106,9 +106,9 @@ mod balances_template_tests {
         let balances = vec![];
 
         let rendered_template = BalancesTemplate {
-            nav_bar: get_nav_bar(endpoints::BALANCES_VIEW),
+            nav_bar: get_nav_bar(endpoints::BALANCES),
             balances: &balances,
-            import_page_link: endpoints::IMPORT_VIEW,
+            create_account_balance_page_url: endpoints::NEW_BALANCE_VIEW,
         }
         .render()
         .expect("Could not render template");
@@ -116,7 +116,7 @@ mod balances_template_tests {
         let html = Html::parse_document(&rendered_template);
         assert_valid_html(&html);
         let paragraph = must_get_no_data_paragraph(&html);
-        assert_paragraph_contains_link(paragraph, endpoints::IMPORT_VIEW);
+        assert_paragraph_contains_link(paragraph, endpoints::NEW_BALANCE_VIEW);
     }
 
     #[track_caller]

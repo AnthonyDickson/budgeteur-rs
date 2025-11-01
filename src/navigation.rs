@@ -39,9 +39,9 @@ pub fn get_nav_bar(active_endpoint: &str) -> NavbarTemplate<'_> {
             is_current: active_endpoint == endpoints::TRANSACTIONS_VIEW,
         },
         Link {
-            url: endpoints::BALANCES_VIEW,
+            url: endpoints::BALANCES,
             title: "Balances",
-            is_current: active_endpoint == endpoints::BALANCES_VIEW,
+            is_current: active_endpoint == endpoints::BALANCES,
         },
         Link {
             url: endpoints::TAGS_VIEW,
@@ -76,7 +76,7 @@ mod nav_bar_tests {
         let mut cases = HashMap::new();
         cases.insert(endpoints::DASHBOARD_VIEW, true);
         cases.insert(endpoints::TRANSACTIONS_VIEW, true);
-        cases.insert(endpoints::BALANCES_VIEW, true);
+        cases.insert(endpoints::BALANCES, true);
         cases.insert(endpoints::TAGS_VIEW, true);
         cases.insert(endpoints::RULES_VIEW, true);
 
