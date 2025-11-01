@@ -3,7 +3,7 @@
 use rusqlite::{Connection, Error, Transaction as SqlTransaction};
 
 use crate::{
-    balances::create_balance_table, dashboard_preferences::create_dashboard_excluded_tags_table,
+    balance::create_balance_table, dashboard_preferences::create_dashboard_excluded_tags_table,
     rule::create_rule_table, tag::create_tag_table, transaction::create_transaction_table,
     user::create_user_table,
 };

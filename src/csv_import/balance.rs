@@ -3,7 +3,7 @@ use time::Date;
 
 use crate::{
     Error,
-    balances::{Balance, map_row_to_balance},
+    balance::{Balance, map_row_to_balance},
 };
 
 /// An account and balance imported from a CSV.
@@ -61,7 +61,7 @@ mod upsert_balance_tests {
     use time::macros::date;
 
     use crate::{
-        balances::{Balance, create_balance_table},
+        balance::{Balance, create_balance_table},
         csv_import::balance::{ImportBalance, upsert_balance},
     };
 

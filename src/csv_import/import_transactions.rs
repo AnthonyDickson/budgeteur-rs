@@ -251,7 +251,7 @@ mod import_transactions_tests {
 
     use crate::{
         Error,
-        balances::{Balance, map_row_to_balance},
+        balance::{Balance, map_row_to_balance},
         csv_import::import_transactions::{ImportState, import_transactions},
         db::initialize,
         endpoints,

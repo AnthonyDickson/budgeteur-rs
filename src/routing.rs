@@ -14,7 +14,7 @@ use tower_http::services::ServeDir;
 use crate::{
     AppState,
     auth_middleware::{auth_guard, auth_guard_hx},
-    balances::get_balances_page,
+    balance::get_balances_page,
     csv_import::{get_import_page, import_transactions},
     dashboard::{get_dashboard_page, update_excluded_tags},
     endpoints,
