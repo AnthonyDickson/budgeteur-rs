@@ -11,7 +11,7 @@ use crate::{
     AppState, Error, alert::AlertTemplate, database_id::TransactionId, shared_templates::render,
 };
 
-/// The state needed to get or create a transaction.
+/// The state needed to delete a transaction.
 #[derive(Debug, Clone)]
 pub struct DeleteTransactionState {
     /// The database connection for managing transactions.
@@ -29,7 +29,7 @@ impl FromRef<AppState> for DeleteTransactionState {
 const EMPTY_TRANSACTION_TABLE_ROW: &str =
     include_str!("./../../templates/partials/transaction_table_row_empty.html");
 
-/// A route handler for deleting a transaction, redirects to transactions view on success.
+/// A route handler for deleting a transaction, responds with an alert.
 ///
 /// # Panics
 ///

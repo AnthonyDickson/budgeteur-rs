@@ -30,14 +30,6 @@ pub fn create_balance_table(connection: &rusqlite::Connection) -> Result<(), rus
     Ok(())
 }
 
-pub fn get_all_balances(connection: &Connection) -> Result<Vec<Balance>, Error> {
-    connection
-        .prepare("SELECT id, account, balance, date FROM balance ORDER BY account ASC;")?
-        .query_map([], map_row_to_balance)?
-        .map(|maybe_balance| maybe_balance.map_err(|error| error.into()))
-        .collect()
-}
-
 pub fn map_row_to_balance(row: &rusqlite::Row) -> Result<Balance, rusqlite::Error> {
     let id = row.get(0)?;
     let account = row.get(1)?;
@@ -81,65 +73,6 @@ mod create_balances_table_tests {
             Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
 
         assert_eq!(Ok(()), create_balance_table(&connection));
-    }
-}
-
-#[cfg(test)]
-mod get_all_balances_tests {
-    use rusqlite::Connection;
-    use time::macros::date;
-
-    use super::{Balance, create_balance_table, get_all_balances};
-
-    #[test]
-    fn returns_all_balances() {
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-        let want_balances = vec![
-            Balance {
-                id: 2,
-                account: "bar".to_owned(),
-                balance: 1.0,
-                date: date!(2025 - 07 - 20),
-            },
-            Balance {
-                id: 1,
-                account: "foo".to_owned(),
-                balance: 1.0,
-                date: date!(2025 - 07 - 20),
-            },
-        ];
-        want_balances.iter().for_each(|balance| {
-            connection
-                .execute(
-                    "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
-                    (
-                        balance.id,
-                        &balance.account,
-                        balance.balance,
-                        balance.date.to_string(),
-                    ),
-                )
-                .unwrap_or_else(|_| {
-                    panic!("Could not insert balance {balance:?} into the database")
-                });
-        });
-
-        let balances = get_all_balances(&connection);
-
-        assert_eq!(Ok(want_balances), balances);
-    }
-
-    #[test]
-    fn returns_error_on_no_balances() {
-        let connection =
-            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-
-        let balances = get_all_balances(&connection);
-
-        assert_eq!(Ok(vec![]), balances);
     }
 }
 
