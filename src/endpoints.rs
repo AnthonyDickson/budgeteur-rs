@@ -38,6 +38,8 @@ pub const INTERNAL_ERROR_VIEW: &str = "/error";
 pub const BALANCES: &str = "/balances";
 /// The page to display a form for creating an account balance.
 pub const NEW_BALANCE_VIEW: &str = "/balances/new";
+/// The endpoint for deleting an account balance.
+pub const DELETE_BALANCE: &str = "/balances/{balance_id}";
 /// The route for static files.
 pub const STATIC: &str = "/static";
 
@@ -150,6 +152,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
         assert_endpoint_is_valid_uri(endpoints::BALANCES);
         assert_endpoint_is_valid_uri(endpoints::NEW_BALANCE_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::DELETE_BALANCE);
         assert_endpoint_is_valid_uri(endpoints::STATIC);
 
         assert_endpoint_is_valid_uri(endpoints::COFFEE);

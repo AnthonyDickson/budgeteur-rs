@@ -12,7 +12,10 @@ use tower_http::services::ServeDir;
 use crate::{
     AppState,
     auth_middleware::{auth_guard, auth_guard_hx},
-    balance::{create_account_balance_endpoint, get_balances_page, get_create_balance_page},
+    balance::{
+        create_account_balance_endpoint, delete_account_endpoint, get_balances_page,
+        get_create_balance_page,
+    },
     csv_import::{get_import_page, import_transactions},
     dashboard::{get_dashboard_page, update_excluded_tags},
     endpoints,
@@ -95,6 +98,7 @@ pub fn build_router(state: AppState) -> Router {
                 put(edit_tranction_endpoint),
             )
             .route(endpoints::BALANCES, post(create_account_balance_endpoint))
+            .route(endpoints::DELETE_BALANCE, delete(delete_account_endpoint))
             .route(endpoints::POST_TAG, post(create_tag_endpoint))
             .route(endpoints::PUT_TAG, put(update_tag_endpoint))
             .route(endpoints::DELETE_TAG, delete(delete_tag_endpoint))

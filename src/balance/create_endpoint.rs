@@ -97,7 +97,7 @@ pub async fn create_account_balance_endpoint(
         .into_response()
 }
 
-fn create_account_balance(
+pub fn create_account_balance(
     form: &AccountBalanceForm,
     connection: &Connection,
 ) -> Result<Balance, Error> {

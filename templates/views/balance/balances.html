@@ -26,6 +26,9 @@
             <th scope="col" class="px-6 py-3">
               Date
             </th>
+            <th scope="col" class="px-6 py-3">
+              Actions
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -39,6 +42,20 @@
             </td>
             <td class="px-6 py-4">
               {{ balance.date }}
+            </td>
+            <td class="px-6 py-4">
+              <div class="flex gap-4">
+                <button
+                  hx-delete="{{ balance.delete_url }}"
+                  hx-confirm="Are you sure you want to delete the account '{{ balance.account }}'? This cannot be undone."
+                  hx-target="closest tr"
+                  hx-target-error="#alert-container"
+                  hx-swap="delete"
+                  class="text-red-600 hover:text-red-500 dark:text-red-500 dark:hover:text-red-400 underline bg-transparent border-none cursor-pointer"
+                >
+                  Delete
+                </button>
+              </div>
             </td>
           </tr>
           {% endfor %}

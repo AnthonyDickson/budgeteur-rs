@@ -6,38 +6,19 @@ use askama::Template;
 use axum::{
     extract::{FromRef, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use rusqlite::Connection;
+use time::Date;
 
 use crate::{
-    AppState,
-    balance::core::{Balance, get_all_balances},
-    endpoints, filters,
+    AppState, Error,
+    endpoints::{self, format_endpoint},
+    filters,
+    internal_server_error::render_internal_server_error,
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
 };
-
-/// Renders the balances page showing all account balances.
-pub async fn get_balances_page(State(state): State<BalanceState>) -> Response {
-    let connection = &state
-        .db_connection
-        .lock()
-        .expect("Could not allocate database connection lock");
-
-    let balances = match get_all_balances(connection) {
-        Ok(balances) => balances,
-        Err(error) => return error.into_response(),
-    };
-
-    let template = BalancesTemplate {
-        nav_bar: get_nav_bar(endpoints::BALANCES),
-        balances: &balances,
-        create_account_balance_page_url: endpoints::NEW_BALANCE_VIEW,
-    };
-
-    render(StatusCode::OK, template)
-}
 
 /// The state needed for the [get_balances_page](crate::balance::get_balances_page) route handler.
 #[derive(Debug, Clone)]
@@ -53,13 +34,144 @@ impl FromRef<AppState> for BalanceState {
     }
 }
 
+/// The account data to display in the view
+#[derive(Debug, PartialEq)]
+struct AccountTableRow {
+    account: String,
+    balance: f64,
+    date: Date,
+    delete_url: String,
+}
+
 /// Renders the balances page.
 #[derive(Template)]
 #[template(path = "views/balance/balances.html")]
 struct BalancesTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
-    balances: &'a [Balance],
+    balances: &'a [AccountTableRow],
     create_account_balance_page_url: &'a str,
+}
+
+/// Renders the balances page showing all account balances.
+pub async fn get_balances_page(State(state): State<BalanceState>) -> Response {
+    let connection = &state
+        .db_connection
+        .lock()
+        .expect("Could not allocate database connection lock");
+
+    let balances: Vec<AccountTableRow> = match get_all_balances(connection) {
+        Ok(balances) => balances,
+        Err(error) => {
+            tracing::error!("{error}");
+            return render_internal_server_error(Default::default());
+        }
+    };
+
+    let template = BalancesTemplate {
+        nav_bar: get_nav_bar(endpoints::BALANCES),
+        balances: &balances,
+        create_account_balance_page_url: endpoints::NEW_BALANCE_VIEW,
+    };
+
+    render(StatusCode::OK, template)
+}
+
+fn get_all_balances(connection: &Connection) -> Result<Vec<AccountTableRow>, Error> {
+    connection
+        .prepare("SELECT id, account, balance, date FROM balance ORDER BY account ASC;")?
+        .query_map([], |row| {
+            Ok(AccountTableRow {
+                account: row.get(1)?,
+                balance: row.get(2)?,
+                date: row.get(3)?,
+                delete_url: format_endpoint(endpoints::DELETE_BALANCE, row.get(0)?),
+            })
+        })?
+        .map(|maybe_balance| maybe_balance.map_err(Error::from))
+        .collect()
+}
+
+#[cfg(test)]
+mod get_all_balances_tests {
+    use rusqlite::Connection;
+    use time::macros::date;
+
+    use crate::{
+        balance::{
+            Balance,
+            balances_page::{AccountTableRow, get_all_balances},
+            create_balance_table,
+        },
+        endpoints::{self, format_endpoint},
+    };
+
+    #[test]
+    fn returns_all_balances() {
+        let connection =
+            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
+        create_balance_table(&connection).expect("Could not create balances table");
+        let balances = vec![
+            Balance {
+                id: 2,
+                account: "bar".to_owned(),
+                balance: 1.0,
+                date: date!(2025 - 07 - 20),
+            },
+            Balance {
+                id: 1,
+                account: "foo".to_owned(),
+                balance: 1.0,
+                date: date!(2025 - 07 - 20),
+            },
+        ];
+        let want_balances = balances
+            .clone()
+            .into_iter()
+            .map(
+                |Balance {
+                     id,
+                     account,
+                     balance,
+                     date,
+                 }| AccountTableRow {
+                    account,
+                    balance,
+                    date,
+                    delete_url: format_endpoint(endpoints::DELETE_BALANCE, id),
+                },
+            )
+            .collect();
+        balances.iter().for_each(|balance| {
+            connection
+                .execute(
+                    "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
+                    (
+                        balance.id,
+                        &balance.account,
+                        balance.balance,
+                        balance.date.to_string(),
+                    ),
+                )
+                .unwrap_or_else(|_| {
+                    panic!("Could not insert balance {balance:?} into the database")
+                });
+        });
+
+        let balances = get_all_balances(&connection);
+
+        assert_eq!(Ok(want_balances), balances);
+    }
+
+    #[test]
+    fn returns_error_on_no_balances() {
+        let connection =
+            Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
+        create_balance_table(&connection).expect("Could not create balances table");
+
+        let balances = get_all_balances(&connection);
+
+        assert_eq!(Ok(vec![]), balances);
+    }
 }
 
 #[cfg(test)]
@@ -71,8 +183,11 @@ mod balances_template_tests {
     use time::macros::date;
 
     use crate::{
-        balance::{Balance, balances_page::BalancesTemplate},
-        endpoints,
+        balance::{
+            Balance,
+            balances_page::{AccountTableRow, BalancesTemplate},
+        },
+        endpoints::{self, format_endpoint},
         filters::currency,
         navigation::get_nav_bar,
     };
@@ -85,7 +200,12 @@ mod balances_template_tests {
             balance: 1234.56,
             date: date!(2025 - 05 - 31),
         };
-        let balances = vec![want_balance];
+        let balances = vec![AccountTableRow {
+            account: want_balance.account,
+            balance: want_balance.balance,
+            date: want_balance.date,
+            delete_url: format_endpoint(endpoints::DELETE_BALANCE, want_balance.id),
+        }];
 
         let rendered_template = BalancesTemplate {
             nav_bar: get_nav_bar(endpoints::BALANCES),
@@ -143,10 +263,11 @@ mod balances_template_tests {
     }
 
     #[track_caller]
-    fn assert_table_contains_balances(table: ElementRef<'_>, balances: &[Balance]) {
+    fn assert_table_contains_balances(table: ElementRef<'_>, balances: &[AccountTableRow]) {
         let table_rows = must_get_table_rows(table, balances.len());
         let row_header_selector = Selector::parse("th").unwrap();
         let row_cell_selector = Selector::parse("td").unwrap();
+        let button_selector = Selector::parse("button").unwrap();
 
         for (row, (table_row, want)) in zip(table_rows, balances).enumerate() {
             let got_account: String = table_row
@@ -159,9 +280,9 @@ mod balances_template_tests {
                 .to_string();
             let columns: Vec<ElementRef<'_>> = table_row.select(&row_cell_selector).collect();
             assert_eq!(
-                2,
+                3,
                 columns.len(),
-                "Want 2 table cells <td> in table row {row}, got {}",
+                "Want 3 table cells <td> in table row {row}, got {}",
                 columns.len()
             );
             let got_balance: String = columns[0].text().collect::<String>().trim().to_string();
@@ -182,6 +303,23 @@ mod balances_template_tests {
                 got_date,
                 "want date {}, got {got_date}",
                 want.date
+            );
+
+            // Check delete URL
+            let got_actions: Vec<ElementRef<'_>> = columns[2].select(&button_selector).collect();
+            assert_eq!(
+                1,
+                got_actions.len(),
+                "Want 1 delete button per table row, got {} for table row {row}",
+                got_actions.len()
+            );
+            let got_delete_url = got_actions[0].attr("hx-delete").unwrap_or_else(|| {
+                panic!("hx-delete attribute not set for button in table row {row}")
+            });
+            assert_eq!(
+                want.delete_url, got_delete_url,
+                "want edit URL {}, got {got_delete_url}",
+                want.delete_url
             );
         }
     }
@@ -233,7 +371,12 @@ mod get_balances_page_tests {
     use time::macros::date;
 
     use crate::{
-        balance::{Balance, balances_page::BalanceState, create_balance_table, get_balances_page},
+        balance::{
+            Balance,
+            balances_page::{AccountTableRow, BalanceState},
+            create_balance_table, get_balances_page,
+        },
+        endpoints::{self, format_endpoint},
         filters::currency,
     };
 
@@ -259,7 +402,12 @@ mod get_balances_page_tests {
                 ),
             )
             .expect("Could not insert test data into database");
-        let balances = vec![want_balance];
+        let balances = vec![AccountTableRow {
+            account: want_balance.account,
+            balance: want_balance.balance,
+            date: want_balance.date,
+            delete_url: format_endpoint(endpoints::DELETE_BALANCE, want_balance.id),
+        }];
 
         let state = BalanceState {
             db_connection: Arc::new(Mutex::new(connection)),
@@ -299,10 +447,11 @@ mod get_balances_page_tests {
     }
 
     #[track_caller]
-    fn assert_table_contains_balances(table: ElementRef<'_>, balances: &[Balance]) {
+    fn assert_table_contains_balances(table: ElementRef<'_>, balances: &[AccountTableRow]) {
         let table_rows = must_get_table_rows(table, balances.len());
         let row_header_selector = Selector::parse("th").unwrap();
         let row_cell_selector = Selector::parse("td").unwrap();
+        let button_selector = Selector::parse("button").unwrap();
 
         for (row, (table_row, want)) in zip(table_rows, balances).enumerate() {
             let got_account: String = table_row
@@ -315,9 +464,9 @@ mod get_balances_page_tests {
                 .to_string();
             let columns: Vec<ElementRef<'_>> = table_row.select(&row_cell_selector).collect();
             assert_eq!(
-                2,
+                3,
                 columns.len(),
-                "Want 2 table cells <td> in table row {row}, got {}",
+                "Want 3 table cells <td> in table row {row}, got {}",
                 columns.len()
             );
             let got_balance: String = columns[0].text().collect::<String>().trim().to_string();
@@ -338,6 +487,23 @@ mod get_balances_page_tests {
                 got_date,
                 "want date {}, got {got_date}",
                 want.date
+            );
+
+            // Check delete URL
+            let got_actions: Vec<ElementRef<'_>> = columns[2].select(&button_selector).collect();
+            assert_eq!(
+                1,
+                got_actions.len(),
+                "Want 1 delete button per table row, got {} for table row {row}",
+                got_actions.len()
+            );
+            let got_delete_url = got_actions[0].attr("hx-delete").unwrap_or_else(|| {
+                panic!("hx-delete attribute not set for button in table row {row}")
+            });
+            assert_eq!(
+                want.delete_url, got_delete_url,
+                "want edit URL {}, got {got_delete_url}",
+                want.delete_url
             );
         }
     }

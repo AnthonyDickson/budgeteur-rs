@@ -7,6 +7,7 @@
   - [x] Retrieve
   - [ ] Update
   - [ ] Delete
+- Refactor `Balances` to `Accounts`
 - Resolve TODO comments
 - Move tagging buttons to top of page, they are hidden when there are many rules
 - Prompt user to add transactions on dashboard page if the user has no transactions.
