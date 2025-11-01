@@ -14,7 +14,7 @@ use time::Date;
 
 use crate::{
     AppState, Error, alert::AlertTemplate, database_id::TransactionId, endpoints,
-    routing::render_internal_server_error, shared_templates::render, tag::TagId,
+    internal_server_error::render_internal_server_error, shared_templates::render, tag::TagId,
 };
 
 /// The state needed to get or create a transaction.

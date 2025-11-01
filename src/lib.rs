@@ -32,6 +32,7 @@ mod db;
 mod endpoints;
 mod filters;
 mod forgot_password;
+mod internal_server_error;
 mod log_in;
 mod log_out;
 mod logging;

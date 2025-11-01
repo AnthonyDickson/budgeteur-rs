@@ -19,7 +19,7 @@ use crate::{
     app_state::create_cookie_key,
     auth_cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
     endpoints,
-    routing::get_internal_server_error_redirect,
+    internal_server_error::get_internal_server_error_redirect,
     shared_templates::{PasswordInputTemplate, render},
     timezone::get_local_offset,
     user::{count_users, create_user},
