@@ -1,26 +1,28 @@
 use rusqlite::Connection;
 use time::Date;
 
-use crate::{Error, database_id::DatabaseId};
+use crate::Error;
+
+pub type AccountId = i64;
 
 /// The amount of money available for a bank account or credit card.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Balance {
-    /// The id for the account balance.
-    pub id: DatabaseId,
-    /// The account with which to associate the balance.
-    pub account: String,
+pub struct Account {
+    /// The id for the account.
+    pub id: AccountId,
+    /// The name of the account with which to associate the balance.
+    pub name: String,
     /// The balance.
     pub balance: f64,
     /// When the balance was updated.
     pub date: Date,
 }
 
-pub fn create_balance_table(connection: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
+pub fn create_account_table(connection: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
     connection.execute(
-        "CREATE TABLE IF NOT EXISTS balance (
+        "CREATE TABLE IF NOT EXISTS account (
             id INTEGER PRIMARY KEY,
-            account TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL UNIQUE,
             balance REAL NOT NULL,
             date TEXT NOT NULL
         )",
@@ -30,15 +32,15 @@ pub fn create_balance_table(connection: &rusqlite::Connection) -> Result<(), rus
     Ok(())
 }
 
-pub fn map_row_to_balance(row: &rusqlite::Row) -> Result<Balance, rusqlite::Error> {
+pub fn map_row_to_account(row: &rusqlite::Row) -> Result<Account, rusqlite::Error> {
     let id = row.get(0)?;
-    let account = row.get(1)?;
+    let name = row.get(1)?;
     let balance = row.get(2)?;
     let date = row.get(3)?;
 
-    Ok(Balance {
+    Ok(Account {
         id,
-        account,
+        name,
         balance,
         date,
     })
@@ -54,7 +56,7 @@ pub fn map_row_to_balance(row: &rusqlite::Row) -> Result<Balance, rusqlite::Erro
 /// - Database connection fails
 /// - SQL query preparation or execution fails
 pub fn get_total_account_balance(connection: &Connection) -> Result<f64, Error> {
-    let mut stmt = connection.prepare("SELECT COALESCE(SUM(balance), 0) FROM balance")?;
+    let mut stmt = connection.prepare("SELECT COALESCE(SUM(balance), 0) FROM account")?;
 
     let total: f64 = stmt.query_row([], |row| row.get(0))?;
 
@@ -62,17 +64,17 @@ pub fn get_total_account_balance(connection: &Connection) -> Result<f64, Error> 
 }
 
 #[cfg(test)]
-mod create_balances_table_tests {
+mod create_table_tests {
     use rusqlite::Connection;
 
-    use super::create_balance_table;
+    use super::create_account_table;
 
     #[test]
     fn sql_is_valid() {
         let connection =
             Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
 
-        assert_eq!(Ok(()), create_balance_table(&connection));
+        assert_eq!(Ok(()), create_account_table(&connection));
     }
 }
 
@@ -81,33 +83,33 @@ mod get_total_account_balance_tests {
     use rusqlite::Connection;
     use time::macros::date;
 
-    use super::{create_balance_table, get_total_account_balance};
+    use super::{create_account_table, get_total_account_balance};
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        create_balance_table(&conn).unwrap();
+        create_account_table(&conn).unwrap();
         conn
     }
 
     #[test]
-    fn returns_sum_of_all_balances() {
+    fn returns_sum_of_all_accounts() {
         let conn = get_test_connection();
 
-        // Insert test balances
+        // Insert test accounts
         conn.execute(
-            "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO account (id, name, balance, date) VALUES (?1, ?2, ?3, ?4)",
             (1, "Account 1", 100.50, date!(2024 - 01 - 01).to_string()),
         )
         .unwrap();
 
         conn.execute(
-            "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO account (id, name, balance, date) VALUES (?1, ?2, ?3, ?4)",
             (2, "Account 2", 250.75, date!(2024 - 01 - 01).to_string()),
         )
         .unwrap();
 
         conn.execute(
-            "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO account (id, name, balance, date) VALUES (?1, ?2, ?3, ?4)",
             (3, "Account 3", -50.25, date!(2024 - 01 - 01).to_string()),
         )
         .unwrap();
@@ -118,7 +120,7 @@ mod get_total_account_balance_tests {
     }
 
     #[test]
-    fn returns_zero_for_no_balances() {
+    fn returns_zero_for_no_accounts() {
         let conn = get_test_connection();
 
         let result = get_total_account_balance(&conn).unwrap();
@@ -130,15 +132,15 @@ mod get_total_account_balance_tests {
     fn handles_negative_balances() {
         let conn = get_test_connection();
 
-        // Insert test balances with negative total
+        // Insert test account with negative total
         conn.execute(
-            "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO account (id, name, balance, date) VALUES (?1, ?2, ?3, ?4)",
             (1, "Account 1", -200.0, date!(2024 - 01 - 01).to_string()),
         )
         .unwrap();
 
         conn.execute(
-            "INSERT INTO balance (id, account, balance, date) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO account (id, name, balance, date) VALUES (?1, ?2, ?3, ?4)",
             (2, "Account 2", 100.0, date!(2024 - 01 - 01).to_string()),
         )
         .unwrap();

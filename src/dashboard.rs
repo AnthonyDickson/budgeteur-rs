@@ -27,7 +27,7 @@ use time::{Date, Duration, OffsetDateTime};
 
 use crate::{
     AppState, Error,
-    balance::get_total_account_balance,
+    account::get_total_account_balance,
     dashboard_preferences::{get_excluded_tags, save_excluded_tags},
     database_id::DatabaseId,
     endpoints,

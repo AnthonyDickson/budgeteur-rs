@@ -2,8 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Refactor `Balances` to `Accounts`
-  - Rename account field to "name"
 - Resolve TODO comments
 - Prompt user to add transactions on dashboard page if the user has no transactions.
 - Error alert if import fails

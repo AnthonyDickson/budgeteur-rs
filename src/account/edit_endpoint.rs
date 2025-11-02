@@ -67,7 +67,7 @@ pub async fn edit_account_endpoint(
     }
 
     (
-        HxRedirect(endpoints::BALANCES.to_owned()),
+        HxRedirect(endpoints::ACCOUNTS.to_owned()),
         StatusCode::SEE_OTHER,
     )
         .into_response()
@@ -92,9 +92,9 @@ fn update_account(
 ) -> Result<RowsAffected, Error> {
     connection
         .execute(
-            "UPDATE balance
+            "UPDATE account
         SET \
-            account = ?1, \
+            name = ?1, \
             balance = ?2, \
             date = ?3 \
         WHERE id = ?4;",
@@ -117,12 +117,12 @@ mod test {
     use time::macros::date;
 
     use crate::{
-        balance::{
-            Balance,
-            create_endpoint::{AccountBalanceForm, create_account_balance},
+        account::{
+            Account,
+            create_endpoint::{AccountForm, create_account},
             edit_account_endpoint,
             edit_endpoint::{EditAccountForm, EditAccountState},
-            map_row_to_balance,
+            map_row_to_account,
         },
         database_id::DatabaseId,
         endpoints, initialize_db,
@@ -136,8 +136,8 @@ mod test {
             balance: 1.23,
             date: date!(2025 - 11 - 02),
         };
-        let want_account = create_account_balance(
-            &AccountBalanceForm {
+        let want_account = create_account(
+            &AccountForm {
                 name: form.name.clone(),
                 balance: form.balance,
                 date: form.date,
@@ -155,7 +155,7 @@ mod test {
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
         assert_eq!(
             response.headers().get(HX_REDIRECT),
-            Some(&HeaderValue::from_str(endpoints::BALANCES).unwrap())
+            Some(&HeaderValue::from_str(endpoints::ACCOUNTS).unwrap())
         );
         let got_account = must_get_account(
             want_account.id,
@@ -174,12 +174,12 @@ mod test {
     }
 
     #[track_caller]
-    fn must_get_account(account_id: DatabaseId, connection: &Connection) -> Balance {
+    fn must_get_account(account_id: DatabaseId, connection: &Connection) -> Account {
         connection
             .query_one(
-                "SELECT id, account, balance, date FROM balance WHERE id = ?1",
+                "SELECT id, name, balance, date FROM account WHERE id = ?1",
                 params![account_id],
-                map_row_to_balance,
+                map_row_to_account,
             )
             .unwrap()
     }

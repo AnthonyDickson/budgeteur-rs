@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use crate::{
     AppState, Error,
     alert::AlertTemplate,
-    csv_import::{alert::ImportMessageBuilder, balance::upsert_balance, csv::parse_csv},
+    csv_import::{account::upsert_account, alert::ImportMessageBuilder, csv::parse_csv},
     rule::{TaggingMode, TaggingResult, apply_rules_to_transactions},
     shared_templates::render,
     timezone::get_local_offset,
@@ -37,7 +37,7 @@ impl FromRef<AppState> for ImportState {
 
 /// Route handler for importing transactions from CSV files.
 ///
-/// This function processes uploaded CSV files, imports transactions and balances,
+/// This function processes uploaded CSV files, imports transactions and accounts,
 /// and applies auto-tagging rules to the newly imported transactions.
 ///
 /// # Panics
@@ -54,7 +54,7 @@ pub async fn import_transactions(
 
     let start_time = std::time::Instant::now();
     let mut transactions = Vec::new();
-    let mut balances = Vec::new();
+    let mut accounts = Vec::new();
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         let csv_data = match parse_multipart_field(field).await {
@@ -80,8 +80,8 @@ pub async fn import_transactions(
             Ok(parse_result) => {
                 transactions.extend(parse_result.transactions);
 
-                if let Some(balance) = parse_result.balance {
-                    balances.push(balance);
+                if let Some(account) = parse_result.account {
+                    accounts.push(account);
                 }
             }
             Err(e) => {
@@ -119,19 +119,19 @@ pub async fn import_transactions(
         Ok(TaggingResult::empty())
     };
 
-    for balance in balances {
-        if let Err(error) = upsert_balance(&balance, &connection) {
+    for account in accounts {
+        if let Err(error) = upsert_account(&account, &connection) {
             let duration = start_time.elapsed();
             tracing::error!(
-                "Failed to import account balances after {:.1}ms: {error:#?}",
+                "Failed to import accounts after {:.1}ms: {error:#?}",
                 duration.as_millis()
             );
             return render(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 AlertTemplate::error(
-                    "Balance import failed",
+                    "Account import failed",
                     &format!(
-                        "Transactions were imported but account balances could not be updated after {:.1}ms.",
+                        "Transactions were imported but accounts could not be updated after {:.1}ms.",
                         duration.as_millis()
                     ),
                 ),
@@ -251,7 +251,7 @@ mod import_transactions_tests {
 
     use crate::{
         Error,
-        balance::{Balance, map_row_to_balance},
+        account::{Account, map_row_to_account},
         csv_import::import_transactions::{ImportState, import_transactions},
         db::initialize,
         endpoints,
@@ -363,17 +363,17 @@ mod import_transactions_tests {
         )
         .await;
 
-        let balances =
-            get_all_balances(&connection.lock().unwrap()).expect("Could not get balances");
+        let accounts =
+            get_all_accounts(&connection.lock().unwrap()).expect("Could not get balances");
         assert_eq!(response.status(), StatusCode::CREATED);
         assert_eq!(
-            balances.len(),
+            accounts.len(),
             1,
             "want 1 balance, but got {}",
-            balances.len()
+            accounts.len()
         );
-        let got = &balances[0];
-        assert_eq!(want_account, got.account);
+        let got = &accounts[0];
+        assert_eq!(want_account, got.name);
         assert_eq!(want_balance, got.balance);
         assert_eq!(want_date, got.date);
 
@@ -381,11 +381,11 @@ mod import_transactions_tests {
         assert_alert_success_message(response, "Import completed successfully!").await;
     }
 
-    fn get_all_balances(connection: &Connection) -> Result<Vec<Balance>, Error> {
+    fn get_all_accounts(connection: &Connection) -> Result<Vec<Account>, Error> {
         connection
-            .prepare("SELECT id, account, balance, date FROM balance;")?
-            .query_map([], map_row_to_balance)?
-            .map(|maybe_balance| maybe_balance.map_err(|error| error.into()))
+            .prepare("SELECT id, name, balance, date FROM account;")?
+            .query_map([], map_row_to_account)?
+            .map(|maybe_account| maybe_account.map_err(|error| error.into()))
             .collect()
     }
 
@@ -404,14 +404,14 @@ mod import_transactions_tests {
         )
         .await;
 
-        let balances =
-            get_all_balances(&connection.lock().unwrap()).expect("Could not get balances");
+        let accounts =
+            get_all_accounts(&connection.lock().unwrap()).expect("Could not get accounts");
         assert_eq!(response.status(), StatusCode::CREATED);
         assert_eq!(
-            balances.len(),
+            accounts.len(),
             0,
-            "want 0 balance, but got {}",
-            balances.len()
+            "want 0 accounts, but got {}",
+            accounts.len()
         );
 
         // Validate success alert message

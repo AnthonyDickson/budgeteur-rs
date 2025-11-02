@@ -1,4 +1,4 @@
-//! Defines the endpoint for deleting an account balance.
+//! Defines the endpoint for deleting an account.
 
 use std::sync::{Arc, Mutex};
 
@@ -13,10 +13,10 @@ use crate::{
     AppState, Error, alert::AlertTemplate, database_id::DatabaseId, shared_templates::render,
 };
 
-/// The state needed to delete an account balance.
+/// The state needed to delete an account.
 #[derive(Debug, Clone)]
 pub struct DeleteAccountState {
-    /// The database connection for managing account balances.
+    /// The database connection for managing account.
     db_connection: Arc<Mutex<Connection>>,
 }
 
@@ -28,7 +28,7 @@ impl FromRef<AppState> for DeleteAccountState {
     }
 }
 
-/// A route handler for deleting an account balance, responds with an alert.
+/// A route handler for deleting an account, responds with an alert.
 ///
 /// # Panics
 ///
@@ -82,7 +82,7 @@ type RowsAffected = usize;
 
 fn delete_account(id: DatabaseId, connection: &Connection) -> Result<RowsAffected, Error> {
     connection
-        .execute("DELETE FROM balance WHERE id = :id", &[(":id", &id)])
+        .execute("DELETE FROM account WHERE id = :id", &[(":id", &id)])
         .map_err(Error::from)
 }
 
@@ -93,11 +93,11 @@ mod tests {
 
     use crate::{
         Error,
-        balance::{
-            Balance,
-            create_endpoint::{AccountBalanceForm, create_account_balance},
+        account::{
+            Account,
+            create_endpoint::{AccountForm, create_account},
             delete_endpoint::delete_account,
-            map_row_to_balance,
+            map_row_to_account,
         },
         database_id::DatabaseId,
         initialize_db,
@@ -107,8 +107,8 @@ mod tests {
     fn test_deletes_account() {
         let connection = Connection::open_in_memory().unwrap();
         initialize_db(&connection).unwrap();
-        let account = create_account_balance(
-            &AccountBalanceForm {
+        let account = create_account(
+            &AccountForm {
                 name: "foo".to_owned(),
                 balance: 420.69,
                 date: date!(2025 - 11 - 01),
@@ -124,12 +124,12 @@ mod tests {
     }
 
     #[track_caller]
-    fn get_account(id: DatabaseId, connection: &Connection) -> Result<Balance, Error> {
+    fn get_account(id: DatabaseId, connection: &Connection) -> Result<Account, Error> {
         connection
             .query_one(
-                "SELECT id, account, balance, date FROM balance WHERE id = ?1",
+                "SELECT id, name, balance, date FROM account WHERE id = ?1",
                 params![id],
-                map_row_to_balance,
+                map_row_to_account,
             )
             .map_err(Error::from)
     }

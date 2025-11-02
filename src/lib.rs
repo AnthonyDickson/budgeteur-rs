@@ -19,11 +19,11 @@ use axum::{
 use axum_server::Handle;
 use tokio::signal;
 
+mod account;
 mod alert;
 mod app_state;
 mod auth_cookie;
 mod auth_middleware;
-mod balance;
 mod csv_import;
 mod dashboard;
 mod dashboard_preferences;

@@ -1,4 +1,4 @@
-//! Defines the endpoint for creating a new account balance.
+//! Defines the endpoint for creating a new account.
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -13,17 +13,17 @@ use serde::Deserialize;
 use time::Date;
 
 use crate::{
-    AppState, Error, alert::AlertTemplate, balance::Balance, endpoints, shared_templates::render,
+    AppState, Error, account::Account, alert::AlertTemplate, endpoints, shared_templates::render,
 };
 
-/// The state needed to get or create an account balance.
+/// The state needed to get or create an account.
 #[derive(Debug, Clone)]
-pub struct CreateBalanceState {
-    /// The database connection for managing account balances.
+pub struct CreateAccountState {
+    /// The database connection for managing accounts.
     pub db_connection: Arc<Mutex<Connection>>,
 }
 
-impl FromRef<AppState> for CreateBalanceState {
+impl FromRef<AppState> for CreateAccountState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
@@ -31,21 +31,21 @@ impl FromRef<AppState> for CreateBalanceState {
     }
 }
 
-/// The form data for creating an account balance.
+/// The form data for creating an account.
 #[derive(Debug, Deserialize)]
-pub struct AccountBalanceForm {
+pub struct AccountForm {
     /// The account name (number)
     pub name: String,
     /// The balance in dollars.
     pub balance: f64,
-    /// The date when the balance was last checked/updated.
+    /// The date when the account was last checked/updated.
     pub date: Date,
 }
 
-/// A route handler for creating a new account balance, redirects to balances view on success.
-pub async fn create_account_balance_endpoint(
-    State(state): State<CreateBalanceState>,
-    Form(form): Form<AccountBalanceForm>,
+/// A route handler for creating a new account, redirects to accounts view on success.
+pub async fn create_account_endpoint(
+    State(state): State<CreateAccountState>,
+    Form(form): Form<AccountForm>,
 ) -> impl IntoResponse {
     let connection = match state.db_connection.lock() {
         Ok(connection) => connection,
@@ -61,7 +61,7 @@ pub async fn create_account_balance_endpoint(
         }
     };
 
-    match create_account_balance(&form, &connection) {
+    match create_account(&form, &connection) {
         Ok(_) => {}
         Err(Error::DuplicateAccountName) => {
             return render(
@@ -70,7 +70,7 @@ pub async fn create_account_balance_endpoint(
                     "Duplicate Account Name",
                     &format!(
                         "The account {} already exists in the database. \
-                        Choose a different account name, or edit or delete the existing account balance.",
+                        Choose a different account name, or edit or delete the existing account.",
                         form.name
                     ),
                 ),
@@ -78,7 +78,7 @@ pub async fn create_account_balance_endpoint(
         }
         Err(error) => {
             tracing::error!(
-                "Could not create account balance with {form:?}, got an unexpected error: {error}"
+                "Could not create account with {form:?}, got an unexpected error: {error}"
             );
             return render(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -91,19 +91,16 @@ pub async fn create_account_balance_endpoint(
     }
 
     (
-        HxRedirect(endpoints::BALANCES.to_owned()),
+        HxRedirect(endpoints::ACCOUNTS.to_owned()),
         StatusCode::SEE_OTHER,
     )
         .into_response()
 }
 
-pub fn create_account_balance(
-    form: &AccountBalanceForm,
-    connection: &Connection,
-) -> Result<Balance, Error> {
+pub fn create_account(form: &AccountForm, connection: &Connection) -> Result<Account, Error> {
     connection
         .execute(
-            "INSERT INTO balance (account, balance, date) VALUES (?1, ?2, ?3)",
+            "INSERT INTO account (name, balance, date) VALUES (?1, ?2, ?3)",
             params![form.name, form.balance, form.date],
         )
         .map_err(|error| match error {
@@ -116,9 +113,9 @@ pub fn create_account_balance(
 
     let id = connection.last_insert_rowid();
 
-    Ok(Balance {
+    Ok(Account {
         id,
-        account: form.name.clone(),
+        name: form.name.clone(),
         balance: form.balance,
         date: form.date,
     })
@@ -134,10 +131,10 @@ mod tests {
     use time::OffsetDateTime;
 
     use crate::{
-        balance::{
-            Balance, create_account_balance_endpoint,
-            create_endpoint::{AccountBalanceForm, CreateBalanceState},
-            map_row_to_balance,
+        account::{
+            Account, create_account_endpoint,
+            create_endpoint::{AccountForm, CreateAccountState},
+            map_row_to_account,
         },
         database_id::DatabaseId,
         db::initialize,
@@ -151,59 +148,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn can_create_balance() {
+    async fn can_create_account() {
         let conn = get_test_connection();
-        let state = CreateBalanceState {
+        let state = CreateAccountState {
             db_connection: Arc::new(Mutex::new(conn)),
         };
-        let want_balance = Balance {
+        let want_account = Account {
             id: 1,
-            account: "test account".to_owned(),
+            name: "test account".to_owned(),
             balance: 123.45,
             date: OffsetDateTime::now_utc().date(),
         };
 
-        let form = AccountBalanceForm {
-            name: want_balance.account.clone(),
-            balance: want_balance.balance,
-            date: want_balance.date,
+        let form = AccountForm {
+            name: want_account.name.clone(),
+            balance: want_account.balance,
+            date: want_account.date,
         };
 
-        let response = create_account_balance_endpoint(State(state.clone()), Form(form))
+        let response = create_account_endpoint(State(state.clone()), Form(form))
             .await
             .into_response();
 
-        assert_redirects_to_balances_view(response);
+        assert_redirects_to_accounts_view(response);
 
-        // Verify the transaction was actually created by getting it by ID
-        // We know the first transaction will have ID 1
+        // Verify the account was actually created by getting it by ID
+        // We know the first account will have ID 1
         let connection = state.db_connection.lock().unwrap();
-        let got_balance = must_get_balance(1, &connection);
-        assert_eq!(want_balance, got_balance);
+        let got_account = must_get_account(1, &connection);
+        assert_eq!(want_account, got_account);
     }
 
     #[track_caller]
-    fn must_get_balance(id: DatabaseId, connection: &Connection) -> Balance {
+    fn must_get_account(id: DatabaseId, connection: &Connection) -> Account {
         connection
             .query_one(
-                "SELECT id, account, balance, date FROM balance WHERE id = ?1",
+                "SELECT id, name, balance, date FROM account WHERE id = ?1",
                 params![id],
-                map_row_to_balance,
+                map_row_to_account,
             )
-            .expect("could not get balance from database")
+            .expect("could not get account from database")
     }
 
     #[track_caller]
-    fn assert_redirects_to_balances_view(response: Response<Body>) {
+    fn assert_redirects_to_accounts_view(response: Response<Body>) {
         let location = response
             .headers()
             .get(HX_REDIRECT)
             .expect("expected response to have the header hx-redirect");
         assert_eq!(
             location,
-            endpoints::BALANCES,
+            endpoints::ACCOUNTS,
             "got redirect to {location:?}, want redirect to {}",
-            endpoints::BALANCES
+            endpoints::ACCOUNTS
         );
     }
 }

@@ -3,7 +3,7 @@
 use rusqlite::{Connection, Error, Transaction as SqlTransaction};
 
 use crate::{
-    balance::create_balance_table, dashboard_preferences::create_dashboard_excluded_tags_table,
+    account::create_account_table, dashboard_preferences::create_dashboard_excluded_tags_table,
     rule::create_rule_table, tag::create_tag_table, transaction::create_transaction_table,
     user::create_user_table,
 };
@@ -21,7 +21,7 @@ pub fn initialize(connection: &Connection) -> Result<(), Error> {
         SqlTransaction::new_unchecked(connection, rusqlite::TransactionBehavior::Exclusive)?;
 
     create_user_table(&transaction)?;
-    create_balance_table(&transaction)?;
+    create_account_table(&transaction)?;
     create_tag_table(&transaction)?;
     create_rule_table(&transaction)?;
     create_transaction_table(&transaction)?;

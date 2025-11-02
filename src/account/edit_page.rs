@@ -11,7 +11,7 @@ use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error,
-    balance::{Balance, map_row_to_balance},
+    account::{Account, map_row_to_account},
     database_id::DatabaseId,
     endpoints::{self, format_endpoint},
     internal_server_error::render_internal_server_error,
@@ -23,12 +23,12 @@ use crate::{
 
 /// Renders the edit account page.
 #[derive(Template)]
-#[template(path = "views/balance/edit.html")]
+#[template(path = "views/account/edit.html")]
 struct EditAccountPageTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
     edit_url: String,
     max_date: Date,
-    account: Balance,
+    account: Account,
 }
 
 /// The state needed for the edit account page.
@@ -54,7 +54,7 @@ pub async fn get_edit_account_page(
     State(state): State<EditAccountPageState>,
     Path(account_id): Path<DatabaseId>,
 ) -> Response {
-    let nav_bar = get_nav_bar(endpoints::EDIT_BALANCE_VIEW);
+    let nav_bar = get_nav_bar(endpoints::EDIT_ACCOUNT_VIEW);
 
     let connection = match state.db_connection.lock() {
         Ok(connection) => connection,
@@ -80,7 +80,7 @@ pub async fn get_edit_account_page(
         return render_internal_server_error(Default::default());
     };
 
-    let edit_url = format_endpoint(endpoints::EDIT_BALANCE, account_id);
+    let edit_url = format_endpoint(endpoints::EDIT_ACCOUNT, account_id);
 
     render(
         StatusCode::OK,
@@ -99,15 +99,50 @@ pub async fn get_edit_account_page(
 /// This function will return a:
 /// - [Error::NotFound] if `id` does not refer to a valid account,
 /// - or [Error::SqlError] there is some other SQL error.
-fn get_account(id: DatabaseId, connection: &Connection) -> Result<Balance, Error> {
+fn get_account(id: DatabaseId, connection: &Connection) -> Result<Account, Error> {
     let account = connection
-        .prepare("SELECT id, account, balance, date FROM balance WHERE id = :id")?
-        .query_one(&[(":id", &id)], map_row_to_balance)?;
+        .prepare("SELECT id, name, balance, date FROM account WHERE id = :id")?
+        .query_one(&[(":id", &id)], map_row_to_account)?;
 
     Ok(account)
 }
 
 #[cfg(test)]
 mod tests {
-    // TODO: test get_account
+    use rusqlite::Connection;
+    use time::macros::date;
+
+    use crate::{
+        account::{
+            create_endpoint::{AccountForm, create_account},
+            edit_page::get_account,
+        },
+        initialize_db,
+    };
+
+    #[test]
+    fn test_get_account() {
+        let connection = must_create_test_connection();
+        let want_account = create_account(
+            &AccountForm {
+                name: "foo".to_owned(),
+                balance: 1.23,
+                date: date!(2025 - 11 - 02),
+            },
+            &connection,
+        );
+
+        let got_account = get_account(1, &connection);
+
+        assert_eq!(want_account, got_account);
+    }
+
+    #[track_caller]
+    fn must_create_test_connection() -> Connection {
+        let connection =
+            Connection::open_in_memory().expect("could not create in-memory SQLite database");
+        initialize_db(&connection).expect("could not initialize test DB");
+
+        connection
+    }
 }

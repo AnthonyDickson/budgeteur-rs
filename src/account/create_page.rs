@@ -1,4 +1,4 @@
-//! Defines the route handler for the page for creating an account balance.
+//! Defines the route handler for the page for creating an account.
 
 use askama::Template;
 use axum::{
@@ -16,23 +16,23 @@ use crate::{
     timezone::get_local_offset,
 };
 
-/// Renders the create balance page.
+/// Renders the create account page.
 #[derive(Template)]
-#[template(path = "views/balance/create.html")]
-struct CreateBalanceTemplate<'a> {
+#[template(path = "views/account/create.html")]
+struct CreateAccountTemplate<'a> {
     nav_bar: NavbarTemplate<'a>,
-    create_balance_route: &'a str,
+    create_account_route: &'a str,
     max_date: Date,
 }
 
-/// The state needed for create balance page.
+/// The state needed for create page.
 #[derive(Debug, Clone)]
-pub struct CreateBalancePageState {
+pub struct CreateAccountPageState {
     /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
     pub local_timezone: String,
 }
 
-impl FromRef<AppState> for CreateBalancePageState {
+impl FromRef<AppState> for CreateAccountPageState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             local_timezone: state.local_timezone.clone(),
@@ -40,9 +40,9 @@ impl FromRef<AppState> for CreateBalancePageState {
     }
 }
 
-/// Renders the page for creating an account balance.
-pub async fn get_create_balance_page(State(state): State<CreateBalancePageState>) -> Response {
-    let nav_bar = get_nav_bar(endpoints::NEW_BALANCE_VIEW);
+/// Renders the page for creating an account.
+pub async fn get_create_account_page(State(state): State<CreateAccountPageState>) -> Response {
+    let nav_bar = get_nav_bar(endpoints::NEW_ACCOUNT_VIEW);
 
     let local_timezone = match get_local_offset(&state.local_timezone) {
         Some(offset) => offset,
@@ -61,9 +61,9 @@ pub async fn get_create_balance_page(State(state): State<CreateBalancePageState>
 
     render(
         StatusCode::OK,
-        CreateBalanceTemplate {
+        CreateAccountTemplate {
             nav_bar,
-            create_balance_route: endpoints::BALANCES,
+            create_account_route: endpoints::ACCOUNTS,
             max_date: OffsetDateTime::now_utc().to_offset(local_timezone).date(),
         },
     )
