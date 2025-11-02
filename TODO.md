@@ -2,14 +2,9 @@
 
 ## Stage One: Budgeting
 
-- Add full CRUD functionality for balances
-  - [x] Create
-  - [x] Retrieve
-  - [ ] Update
-  - [ ] Delete
 - Refactor `Balances` to `Accounts`
+  - Rename account field to "name"
 - Resolve TODO comments
-- Move tagging buttons to top of page, they are hidden when there are many rules
 - Prompt user to add transactions on dashboard page if the user has no transactions.
 - Error alert if import fails
 - Port alerts system to other pages (other than rules page) for handling error messages

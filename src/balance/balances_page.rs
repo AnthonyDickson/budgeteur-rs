@@ -40,6 +40,7 @@ struct AccountTableRow {
     account: String,
     balance: f64,
     date: Date,
+    edit_url: String,
     delete_url: String,
 }
 
@@ -80,11 +81,14 @@ fn get_all_balances(connection: &Connection) -> Result<Vec<AccountTableRow>, Err
     connection
         .prepare("SELECT id, account, balance, date FROM balance ORDER BY account ASC;")?
         .query_map([], |row| {
+            let id = row.get(0)?;
+
             Ok(AccountTableRow {
                 account: row.get(1)?,
                 balance: row.get(2)?,
                 date: row.get(3)?,
-                delete_url: format_endpoint(endpoints::DELETE_BALANCE, row.get(0)?),
+                edit_url: format_endpoint(endpoints::EDIT_BALANCE_VIEW, id),
+                delete_url: format_endpoint(endpoints::DELETE_BALANCE, id),
             })
         })?
         .map(|maybe_balance| maybe_balance.map_err(Error::from))
@@ -137,6 +141,7 @@ mod get_all_balances_tests {
                     account,
                     balance,
                     date,
+                    edit_url: format_endpoint(endpoints::EDIT_BALANCE_VIEW, id),
                     delete_url: format_endpoint(endpoints::DELETE_BALANCE, id),
                 },
             )
@@ -204,6 +209,7 @@ mod balances_template_tests {
             account: want_balance.account,
             balance: want_balance.balance,
             date: want_balance.date,
+            edit_url: format_endpoint(endpoints::EDIT_BALANCE_VIEW, want_balance.id),
             delete_url: format_endpoint(endpoints::DELETE_BALANCE, want_balance.id),
         }];
 
@@ -406,6 +412,7 @@ mod get_balances_page_tests {
             account: want_balance.account,
             balance: want_balance.balance,
             date: want_balance.date,
+            edit_url: format_endpoint(endpoints::EDIT_BALANCE_VIEW, want_balance.id),
             delete_url: format_endpoint(endpoints::DELETE_BALANCE, want_balance.id),
         }];
 

@@ -14,10 +14,10 @@ use time::Date;
 
 use crate::{
     AppState, Error, alert::AlertTemplate, database_id::TransactionId, endpoints,
-    internal_server_error::render_internal_server_error, shared_templates::render, tag::TagId,
+    shared_templates::render, tag::TagId,
 };
 
-/// The state needed to get or create a transaction.
+/// The state needed to edit a transaction.
 #[derive(Debug, Clone)]
 pub struct EditTransactionState {
     /// The database connection for managing transactions.
@@ -56,7 +56,7 @@ pub async fn edit_tranction_endpoint(
         Ok(connection) => connection,
         Err(error) => {
             tracing::error!("Could not aqcuire database lock: {error}");
-            return render_internal_server_error(Default::default());
+            return render_error_alert();
         }
     };
 
@@ -65,24 +65,12 @@ pub async fn edit_tranction_endpoint(
             tracing::error!(
                 "Could not update transaction {transaction_id}: update returned zero rows affected"
             );
-            return render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Could not update transaction",
-                    "Try again or check the server logs.",
-                ),
-            );
+            return render_error_alert();
         }
         Ok(_) => {}
         Err(error) => {
             tracing::error!("Could not update transaction {transaction_id}: {error}");
-            return render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Could not update transaction",
-                    "Try again or check the server logs.",
-                ),
-            );
+            return render_error_alert();
         }
     }
 
@@ -91,6 +79,16 @@ pub async fn edit_tranction_endpoint(
         .unwrap_or(endpoints::TRANSACTIONS_VIEW.to_owned());
 
     (HxRedirect(redirect_url), StatusCode::SEE_OTHER).into_response()
+}
+
+fn render_error_alert() -> Response {
+    render(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        AlertTemplate::error(
+            "Could not update transaction",
+            "Try again or check the server logs.",
+        ),
+    )
 }
 
 type RowsAffected = usize;

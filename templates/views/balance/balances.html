@@ -45,6 +45,12 @@
             </td>
             <td class="px-6 py-4">
               <div class="flex gap-4">
+                <a
+                  href="{{ balance.edit_url }}"
+                  class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+                >
+                  Edit
+                </a>
                 <button
                   hx-delete="{{ balance.delete_url }}"
                   hx-confirm="Are you sure you want to delete the account '{{ balance.account }}'? This cannot be undone."

@@ -40,6 +40,10 @@ pub const BALANCES: &str = "/balances";
 pub const NEW_BALANCE_VIEW: &str = "/balances/new";
 /// The endpoint for deleting an account balance.
 pub const DELETE_BALANCE: &str = "/balances/{balance_id}";
+/// The page for editing an account balance.
+pub const EDIT_BALANCE_VIEW: &str = "/balances/{balance_id}/edit";
+/// The endpoint for editing an account balance.
+pub const EDIT_BALANCE: &str = DELETE_BALANCE;
 /// The route for static files.
 pub const STATIC: &str = "/static";
 
@@ -153,6 +157,8 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::BALANCES);
         assert_endpoint_is_valid_uri(endpoints::NEW_BALANCE_VIEW);
         assert_endpoint_is_valid_uri(endpoints::DELETE_BALANCE);
+        assert_endpoint_is_valid_uri(endpoints::EDIT_BALANCE_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::EDIT_BALANCE);
         assert_endpoint_is_valid_uri(endpoints::STATIC);
 
         assert_endpoint_is_valid_uri(endpoints::COFFEE);

@@ -13,8 +13,8 @@ use crate::{
     AppState,
     auth_middleware::{auth_guard, auth_guard_hx},
     balance::{
-        create_account_balance_endpoint, delete_account_endpoint, get_balances_page,
-        get_create_balance_page,
+        create_account_balance_endpoint, delete_account_endpoint, edit_account_endpoint,
+        get_balances_page, get_create_balance_page, get_edit_account_page,
     },
     csv_import::{get_import_page, import_transactions},
     dashboard::{get_dashboard_page, update_excluded_tags},
@@ -80,6 +80,7 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::IMPORT_VIEW, get(get_import_page))
         .route(endpoints::BALANCES, get(get_balances_page))
         .route(endpoints::NEW_BALANCE_VIEW, get(get_create_balance_page))
+        .route(endpoints::EDIT_BALANCE_VIEW, get(get_edit_account_page))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
 
     // These POST/PUT routes need to use the HX-REDIRECT header for auth redirects to work properly for HTMX requests.
@@ -99,6 +100,7 @@ pub fn build_router(state: AppState) -> Router {
             )
             .route(endpoints::BALANCES, post(create_account_balance_endpoint))
             .route(endpoints::DELETE_BALANCE, delete(delete_account_endpoint))
+            .route(endpoints::EDIT_BALANCE, put(edit_account_endpoint))
             .route(endpoints::POST_TAG, post(create_tag_endpoint))
             .route(endpoints::PUT_TAG, put(update_tag_endpoint))
             .route(endpoints::DELETE_TAG, delete(delete_tag_endpoint))
