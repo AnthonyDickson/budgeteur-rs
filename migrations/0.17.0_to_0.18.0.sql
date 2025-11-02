@@ -1,0 +1,6 @@
+BEGIN TRANSACTION;
+
+ALTER TABLE balance RENAME TO account;
+ALTER TABLE account RENAME COLUMN account TO name;
+
+COMMIT;

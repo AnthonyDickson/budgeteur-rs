@@ -11,11 +11,11 @@ use tower_http::services::ServeDir;
 
 use crate::{
     AppState,
-    auth_middleware::{auth_guard, auth_guard_hx},
-    balance::{
-        create_account_balance_endpoint, delete_account_endpoint, get_balances_page,
-        get_create_balance_page,
+    account::{
+        create_account_endpoint, delete_account_endpoint, edit_account_endpoint, get_accounts_page,
+        get_create_account_page, get_edit_account_page,
     },
+    auth_middleware::{auth_guard, auth_guard_hx},
     csv_import::{get_import_page, import_transactions},
     dashboard::{get_dashboard_page, update_excluded_tags},
     endpoints,
@@ -78,8 +78,9 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::EDIT_RULE_VIEW, get(get_edit_rule_page))
         .route(endpoints::RULES_VIEW, get(get_rules_page))
         .route(endpoints::IMPORT_VIEW, get(get_import_page))
-        .route(endpoints::BALANCES, get(get_balances_page))
-        .route(endpoints::NEW_BALANCE_VIEW, get(get_create_balance_page))
+        .route(endpoints::ACCOUNTS, get(get_accounts_page))
+        .route(endpoints::NEW_ACCOUNT_VIEW, get(get_create_account_page))
+        .route(endpoints::EDIT_ACCOUNT_VIEW, get(get_edit_account_page))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
 
     // These POST/PUT routes need to use the HX-REDIRECT header for auth redirects to work properly for HTMX requests.
@@ -97,8 +98,9 @@ pub fn build_router(state: AppState) -> Router {
                 endpoints::EDIT_TRANSACTION_VIEW,
                 put(edit_tranction_endpoint),
             )
-            .route(endpoints::BALANCES, post(create_account_balance_endpoint))
-            .route(endpoints::DELETE_BALANCE, delete(delete_account_endpoint))
+            .route(endpoints::ACCOUNTS, post(create_account_endpoint))
+            .route(endpoints::DELETE_ACCOUNT, delete(delete_account_endpoint))
+            .route(endpoints::EDIT_ACCOUNT, put(edit_account_endpoint))
             .route(endpoints::POST_TAG, post(create_tag_endpoint))
             .route(endpoints::PUT_TAG, put(update_tag_endpoint))
             .route(endpoints::DELETE_TAG, delete(delete_tag_endpoint))

@@ -3,52 +3,52 @@ use time::Date;
 
 use crate::{
     Error,
-    balance::{Balance, map_row_to_balance},
+    account::{Account, map_row_to_account},
 };
 
-/// An account and balance imported from a CSV.
+/// An account imported from a CSV.
 #[derive(Debug, PartialEq)]
-pub struct ImportBalance {
+pub struct ImportAccount {
     /// The account name/number.
-    pub account: String,
+    pub name: String,
     /// The balance in the account.
     pub balance: f64,
     /// The date the balance is for.
     pub date: Date,
 }
 
-pub fn upsert_balance(
-    imported_balance: &ImportBalance,
+pub fn upsert_account(
+    imported_account: &ImportAccount,
     connection: &Connection,
-) -> Result<Balance, Error> {
+) -> Result<Account, Error> {
     // First, try the upsert with RETURNING
-    let maybe_balance = connection
+    let maybe_account = connection
         .prepare(
-            "INSERT INTO balance (account, balance, date)
+            "INSERT INTO account (name, balance, date)
              VALUES (?1, ?2, ?3)
-             ON CONFLICT(account) DO UPDATE SET
+             ON CONFLICT(name) DO UPDATE SET
                  balance = excluded.balance,
                  date = excluded.date
-             WHERE excluded.date > balance.date
-             RETURNING id, account, balance, date",
+             WHERE excluded.date > account.date
+             RETURNING id, name, balance, date",
         )?
         .query_row(
             (
-                &imported_balance.account,
-                imported_balance.balance,
-                imported_balance.date,
+                &imported_account.name,
+                imported_account.balance,
+                imported_account.date,
             ),
-            map_row_to_balance,
+            map_row_to_account,
         );
 
-    match maybe_balance {
-        Ok(balance) => Ok(balance),
+    match maybe_account {
+        Ok(account) => Ok(account),
         Err(rusqlite::Error::QueryReturnedNoRows) => {
             // No rows returned means the WHERE condition wasn't met
             // (trying to insert older data), so fetch the existing record
             connection
-                .prepare("SELECT id, account, balance, date FROM balance WHERE account = ?1")?
-                .query_row([&imported_balance.account], map_row_to_balance)
+                .prepare("SELECT id, name, balance, date FROM account WHERE name = ?1")?
+                .query_row([&imported_account.name], map_row_to_account)
                 .map_err(Error::from)
         }
         Err(error) => Err(Error::from(error)),
@@ -56,195 +56,195 @@ pub fn upsert_balance(
 }
 
 #[cfg(test)]
-mod upsert_balance_tests {
+mod upsert_account_tests {
     use rusqlite::Connection;
     use time::macros::date;
 
     use crate::{
-        balance::{Balance, create_balance_table},
-        csv_import::balance::{ImportBalance, upsert_balance},
+        account::{Account, create_account_table},
+        csv_import::account::{ImportAccount, upsert_account},
     };
 
     #[tokio::test]
-    async fn can_upsert_balance() {
+    async fn can_upsert_account() {
         let connection =
             Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
-        let want = Balance {
+        create_account_table(&connection).expect("Could not create account table");
+        let want = Account {
             id: 1,
-            account: "1234-5678-9101-012".to_owned(),
+            name: "1234-5678-9101-012".to_owned(),
             balance: 37_337_252_784.63,
             date: date!(2025 - 05 - 31),
         };
 
-        let got = upsert_balance(
-            &ImportBalance {
-                account: want.account.clone(),
+        let got = upsert_account(
+            &ImportAccount {
+                name: want.name.clone(),
                 balance: want.balance,
                 date: want.date,
             },
             &connection,
         )
-        .expect("Could not create account balance");
+        .expect("Could not create account");
 
-        assert_eq!(want, got, "want balance {want:?}, got {got:?}");
+        assert_eq!(want, got, "want account {want:?}, got {got:?}");
     }
 
     /// This test detects a bug with upsert when the same CSV, and therefore the
-    /// same balances, are imported twice.
+    /// same account, are imported twice.
     ///
-    /// When using the last inserted row id to fetch the balance row, if there
+    /// When using the last inserted row id to fetch the account row, if there
     /// was a conflict which resulted in no rows being inserted/updated the row
     /// id would either be zero if the database connection was reset, or the
     /// last successfully inserted row otherwise. In the first case, this
     /// resulted in an error 'NotFound: the requested resource could not be
-    /// found', and in the second case it would result in an unrelated balance
+    /// found', and in the second case it would result in an unrelated account
     /// being returned.
     #[tokio::test]
-    async fn upsert_balances_twice() {
+    async fn upsert_accounts_twice() {
         let want = vec![
-            Balance {
+            Account {
                 id: 1,
-                account: "1234-5678-9101-012".to_owned(),
+                name: "1234-5678-9101-012".to_owned(),
                 balance: 123.45,
                 date: date!(2025 - 05 - 31),
             },
-            Balance {
+            Account {
                 id: 2,
-                account: "1234-5678-9101-013".to_owned(),
+                name: "1234-5678-9101-013".to_owned(),
                 balance: 234.56,
                 date: date!(2025 - 05 - 31),
             },
-            Balance {
+            Account {
                 id: 3,
-                account: "1234-5678-9101-014".to_owned(),
+                name: "1234-5678-9101-014".to_owned(),
                 balance: 345.67,
                 date: date!(2025 - 05 - 27),
             },
-            Balance {
+            Account {
                 id: 4,
-                account: "1234-5678-9101-015".to_owned(),
+                name: "1234-5678-9101-015".to_owned(),
                 balance: 567.89,
                 date: date!(2025 - 06 - 06),
             },
         ];
         let connection =
             Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
+        create_account_table(&connection).expect("Could not create account table");
 
-        for balance in &want {
-            upsert_balance(
-                &ImportBalance {
-                    account: balance.account.clone(),
-                    balance: balance.balance,
-                    date: balance.date,
+        for account in &want {
+            upsert_account(
+                &ImportAccount {
+                    name: account.name.clone(),
+                    balance: account.balance,
+                    date: account.date,
                 },
                 &connection,
             )
-            .expect("Could not create account balance");
+            .expect("Could not create account");
         }
 
         let mut got = Vec::new();
-        for balance in &want {
-            let got_balance = upsert_balance(
-                &ImportBalance {
-                    account: balance.account.clone(),
-                    balance: balance.balance,
-                    date: balance.date,
+        for account in &want {
+            let got_account = upsert_account(
+                &ImportAccount {
+                    name: account.name.clone(),
+                    balance: account.balance,
+                    date: account.date,
                 },
                 &connection,
             )
-            .expect("Could not create account balance");
-            got.push(got_balance);
+            .expect("Could not create account");
+            got.push(got_account);
         }
 
-        assert_eq!(want, got, "want balance {want:?}, got {got:?}");
+        assert_eq!(want, got, "want account {want:?}, got {got:?}");
     }
 
     #[tokio::test]
-    async fn upsert_balance_increments_id() {
+    async fn upsert_account_increments_id() {
         let want = vec![
-            Balance {
+            Account {
                 id: 1,
-                account: "1234-5678-9101-012".to_owned(),
+                name: "1234-5678-9101-012".to_owned(),
                 balance: 37_337_252_784.63,
                 date: date!(2025 - 05 - 31),
             },
-            Balance {
+            Account {
                 id: 2,
-                account: "2345-6789-1011-123".to_owned(),
+                name: "2345-6789-1011-123".to_owned(),
                 balance: 37_337_252_784.63,
                 date: date!(2025 - 05 - 31),
             },
         ];
         let connection =
             Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
+        create_account_table(&connection).expect("Could not create accounts table");
 
         let mut got = Vec::new();
 
-        for balance in &want {
-            let got_balance = upsert_balance(
-                &ImportBalance {
-                    account: balance.account.clone(),
-                    balance: balance.balance,
-                    date: balance.date,
+        for account in &want {
+            let got_account = upsert_account(
+                &ImportAccount {
+                    name: account.name.clone(),
+                    balance: account.balance,
+                    date: account.date,
                 },
                 &connection,
             )
-            .expect("Could not create account balance");
-            got.push(got_balance);
+            .expect("Could not create account");
+            got.push(got_account);
         }
 
-        assert_eq!(want, got, "want balance {want:?}, got {got:?}");
+        assert_eq!(want, got, "want accunt {want:?}, got {got:?}");
     }
 
     #[tokio::test]
-    async fn upsert_takes_balance_with_latest_date() {
+    async fn use_account_with_latest_date() {
         let connection =
             Connection::open_in_memory().expect("Could not initialise in-memory SQLite database");
-        create_balance_table(&connection).expect("Could not create balances table");
+        create_account_table(&connection).expect("Could not create account table");
         let account = "1234-5678-9101-112";
-        let test_balances = vec![
+        let test_accounts = vec![
             // This entry should be accepted in the first upsert
-            Balance {
+            Account {
                 id: 1,
-                account: account.to_owned(),
+                name: account.to_owned(),
                 balance: 73_254.89,
                 date: date!(2025 - 05 - 30),
             },
             // This entry should overwrite the balance from the first upsert
             // because it is newer
-            Balance {
+            Account {
                 id: 1,
-                account: account.to_owned(),
+                name: account.to_owned(),
                 balance: 37_337_252_784.63,
                 date: date!(2025 - 05 - 31),
             },
             // This entry should be ignored because it is older.
-            Balance {
+            Account {
                 id: 1,
-                account: account.to_owned(),
+                name: account.to_owned(),
                 balance: 2_727_843.43,
                 date: date!(2025 - 05 - 29),
             },
         ];
         let want = vec![
-            Balance {
+            Account {
                 id: 1,
-                account: account.to_owned(),
+                name: account.to_owned(),
                 balance: 73_254.89,
                 date: date!(2025 - 05 - 30),
             },
-            Balance {
+            Account {
                 id: 1,
-                account: account.to_owned(),
+                name: account.to_owned(),
                 balance: 37_337_252_784.63,
                 date: date!(2025 - 05 - 31),
             },
-            Balance {
+            Account {
                 id: 1,
-                account: account.to_owned(),
+                name: account.to_owned(),
                 balance: 37_337_252_784.63,
                 date: date!(2025 - 05 - 31),
             },
@@ -252,17 +252,17 @@ mod upsert_balance_tests {
 
         let mut got = Vec::new();
 
-        for balance in test_balances {
-            let got_balance = upsert_balance(
-                &ImportBalance {
-                    account: balance.account.clone(),
-                    balance: balance.balance,
-                    date: balance.date,
+        for account in test_accounts {
+            let got_account = upsert_account(
+                &ImportAccount {
+                    name: account.name.clone(),
+                    balance: account.balance,
+                    date: account.date,
                 },
                 &connection,
             )
-            .expect("Could not create account balance");
-            got.push(got_balance);
+            .expect("Could not create account");
+            got.push(got_account);
         }
 
         assert_eq!(want, got, "want left");

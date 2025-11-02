@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Create Account Balance{% endblock %}
+{% block title %}Create Account{% endblock %}
 {% block scripts %}
 <style>
   .input-wrapper {
@@ -23,8 +23,8 @@
 {{ nav_bar|safe }}
 <div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
   <div class="relative overflow-x-auto">
-    <form hx-post="{{ create_balance_route }}" hx-target-error="#alert-container" class="space-y-4 md:space-y-6">
-      <h2 class="text-xl font-bold">New Account Balance</h2>
+    <form hx-post="{{ create_account_route }}" hx-target-error="#alert-container" class="space-y-4 md:space-y-6">
+      <h2 class="text-xl font-bold">New Account</h2>
 
       <div>
         <label for="name" class="{% include "styles/forms/label.html" %}">Account Name</label>
@@ -50,7 +50,7 @@
         <span id="indicator" class="inline htmx-indicator">
           {% include "components/spinner.html" %}
         </span>
-        Create Account Balance
+        Create Account
       </button>
     </form>
   </div>

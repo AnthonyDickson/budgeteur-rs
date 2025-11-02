@@ -1,5 +1,5 @@
+mod account;
 mod alert;
-mod balance;
 mod csv;
 mod import_page;
 mod import_transactions;

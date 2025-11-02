@@ -7,17 +7,17 @@ use time::{
 
 use crate::{
     Error,
-    csv_import::balance::ImportBalance,
+    csv_import::account::ImportAccount,
     transaction::{Transaction, TransactionBuilder},
 };
 
-/// The transactions and accounts balances found after parsing a CSV statement.
+/// The transactions and accounts found after parsing a CSV statement.
 pub struct ParseCSVResult {
     /// The transactions found in the CSV document, may be empty.
     pub transactions: Vec<TransactionBuilder>,
-    /// The account balance found in the CSV document, if found.
+    /// The account found in the CSV document, if found.
     /// ASB credit card CSVs do not provide the balance, for example.
-    pub balance: Option<ImportBalance>,
+    pub account: Option<ImportAccount>,
 }
 
 /// Parses CSV data from ASB and Kiwibank bank statements.
@@ -25,8 +25,7 @@ pub struct ParseCSVResult {
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
 /// Dates are assumed to be in local time, `local_timezone` is used for getting the current local time.
 ///
-/// Returns a `ParseCSVResult` which consists of the transactions and account
-/// balance found in the CSV data.
+/// Returns a `ParseCSVResult` which consists of the transactions and account found in the CSV data.
 /// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
 pub fn parse_csv(text: &str, local_timezone: UtcOffset) -> Result<ParseCSVResult, Error> {
     let parse_result = parse_asb_bank_csv(text, local_timezone);
@@ -72,8 +71,7 @@ pub fn parse_csv(text: &str, local_timezone: UtcOffset) -> Result<ParseCSVResult
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
 /// Dates are assumed to be in local time, `local_timezone` is used for getting the current local time.
 ///
-/// Returns a `ParseCSVResult` which consists of the transactions and account
-/// balances found in the CSV data.
+/// Returns a `ParseCSVResult` which consists of the transactions and account found in the CSV data.
 /// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
 fn parse_asb_bank_csv(text: &str, local_timezone: UtcOffset) -> Result<ParseCSVResult, Error> {
     // Header looks like:
@@ -226,8 +224,8 @@ fn parse_asb_bank_csv(text: &str, local_timezone: UtcOffset) -> Result<ParseCSVR
 
     Ok(ParseCSVResult {
         transactions,
-        balance: Some(ImportBalance {
-            account,
+        account: Some(ImportAccount {
+            name: account,
             balance,
             date,
         }),
@@ -238,8 +236,7 @@ fn parse_asb_bank_csv(text: &str, local_timezone: UtcOffset) -> Result<ParseCSVR
 ///
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
 ///
-/// Returns a `ParseCSVResult` which consists of the transactions and account
-/// balances found in the CSV data.
+/// Returns a `ParseCSVResult` which consists of the transactions and account found in the CSV data.
 /// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
 fn parse_asb_cc_csv(text: &str) -> Result<ParseCSVResult, Error> {
     // Header looks like:
@@ -335,7 +332,7 @@ fn parse_asb_cc_csv(text: &str) -> Result<ParseCSVResult, Error> {
 
     Ok(ParseCSVResult {
         transactions,
-        balance: None,
+        account: None,
     })
 }
 
@@ -344,8 +341,7 @@ fn parse_asb_cc_csv(text: &str) -> Result<ParseCSVResult, Error> {
 /// Expects `text` to be a string containing comma separated values with lines separated by `\n`.
 /// Dates are assumed to be in local time, `local_timezone` is used for getting the current local time.
 ///
-/// Returns a `ParseCSVResult` which consists of the transactions and account
-/// balances found in the CSV data.
+/// Returns a `ParseCSVResult` which consists of the transactions and account found in the CSV data.
 /// Returns `Error::InvalidCSV` if the CSV data is not in an accepted format.
 fn parse_kiwibank_bank_simple_csv(
     text: &str,
@@ -425,8 +421,8 @@ fn parse_kiwibank_bank_simple_csv(
 
     Ok(ParseCSVResult {
         transactions,
-        balance: Some(ImportBalance {
-            account: account_number,
+        account: Some(ImportAccount {
+            name: account_number,
             balance,
             date,
         }),
@@ -449,7 +445,7 @@ mod parse_csv_tests {
 
     use crate::{
         csv_import::csv::{
-            ImportBalance, ParseCSVResult, create_import_id, parse_asb_bank_csv,
+            ImportAccount, ParseCSVResult, create_import_id, parse_asb_bank_csv,
             parse_kiwibank_bank_simple_csv,
         },
         transaction::{Transaction, TransactionBuilder},
@@ -544,15 +540,15 @@ mod parse_csv_tests {
                     "2025/03/20,2025032002,TFR OUT,,\"MB TRANSFER\",\"TO CARD 5023  THANK YOU\",-2750.00"
                 ))),
         ];
-        let want_balance = Some(ImportBalance {
-            account: "12-3405-0123456-50 (Streamline)".to_owned(),
+        let want_account = Some(ImportAccount {
+            name: "12-3405-0123456-50 (Streamline)".to_owned(),
             balance: 20.0,
             date: date!(2025 - 04 - 12),
         });
 
         let ParseCSVResult {
             transactions: got_transactions,
-            balance: got_balance,
+            account: got_account,
         } = parse_asb_bank_csv(ASB_BANK_STATEMENT_CSV, UtcOffset::UTC)
             .expect("Could not parse CSV");
 
@@ -564,7 +560,7 @@ mod parse_csv_tests {
             got_transactions.len()
         );
         assert_eq!(want_transactions, got_transactions);
-        assert_eq!(want_balance, got_balance);
+        assert_eq!(want_account, got_account);
     }
 
     #[test]
@@ -618,11 +614,11 @@ mod parse_csv_tests {
                 tag_id: None,
             },
         ];
-        let want_balance = None;
+        let want_account = None;
 
         let ParseCSVResult {
             transactions: got_transactions,
-            balance: got_balance,
+            account: got_account,
         } = parse_asb_cc_csv(ASB_CC_STATEMENT_CSV).expect("Could not parse CSV");
 
         assert_eq!(
@@ -633,7 +629,7 @@ mod parse_csv_tests {
             got_transactions.len()
         );
         assert_eq!(want_transactions, got_transactions);
-        assert_eq!(want_balance, got_balance);
+        assert_eq!(want_account, got_account);
     }
 
     #[test]
@@ -695,15 +691,15 @@ mod parse_csv_tests {
             },
         ];
 
-        let want_balance = Some(ImportBalance {
-            account: "47-8115-1482616-00".to_owned(),
+        let want_account = Some(ImportAccount {
+            name: "47-8115-1482616-00".to_owned(),
             balance: 200.00,
             date: date!(2025 - 01 - 26),
         });
 
         let ParseCSVResult {
             transactions: got_transactions,
-            balance: got_balance,
+            account: got_account,
         } = parse_kiwibank_bank_simple_csv(KIWIBANK_BANK_STATEMENT_SIMPLE_CSV, UtcOffset::UTC)
             .expect("Could not parse CSV");
 
@@ -718,6 +714,6 @@ mod parse_csv_tests {
             assert_eq!(want, got);
         }
         assert_eq!(want_transactions, got_transactions);
-        assert_eq!(want_balance, got_balance);
+        assert_eq!(want_account, got_account);
     }
 }

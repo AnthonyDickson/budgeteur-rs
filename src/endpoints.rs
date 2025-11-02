@@ -34,12 +34,16 @@ pub const LOG_IN_VIEW: &str = "/log_in";
 pub const FORGOT_PASSWORD_VIEW: &str = "/forgot_password";
 /// The page to display when an internal server error occurs.
 pub const INTERNAL_ERROR_VIEW: &str = "/error";
-/// The page to display account balances (GET) and create an account balance (POST).
-pub const BALANCES: &str = "/balances";
-/// The page to display a form for creating an account balance.
-pub const NEW_BALANCE_VIEW: &str = "/balances/new";
-/// The endpoint for deleting an account balance.
-pub const DELETE_BALANCE: &str = "/balances/{balance_id}";
+/// The page to display account (GET) and create an account (POST).
+pub const ACCOUNTS: &str = "/accounts";
+/// The page to display a form for creating an account.
+pub const NEW_ACCOUNT_VIEW: &str = "/accounts/new";
+/// The endpoint for deleting an account.
+pub const DELETE_ACCOUNT: &str = "/accounts/{account_id}";
+/// The page for editing an account.
+pub const EDIT_ACCOUNT_VIEW: &str = "/account/{account_id}/edit";
+/// The endpoint for editing an account.
+pub const EDIT_ACCOUNT: &str = DELETE_ACCOUNT;
 /// The route for static files.
 pub const STATIC: &str = "/static";
 
@@ -150,9 +154,11 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
         assert_endpoint_is_valid_uri(endpoints::FORGOT_PASSWORD_VIEW);
         assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
-        assert_endpoint_is_valid_uri(endpoints::BALANCES);
-        assert_endpoint_is_valid_uri(endpoints::NEW_BALANCE_VIEW);
-        assert_endpoint_is_valid_uri(endpoints::DELETE_BALANCE);
+        assert_endpoint_is_valid_uri(endpoints::ACCOUNTS);
+        assert_endpoint_is_valid_uri(endpoints::NEW_ACCOUNT_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::DELETE_ACCOUNT);
+        assert_endpoint_is_valid_uri(endpoints::EDIT_ACCOUNT_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::EDIT_ACCOUNT);
         assert_endpoint_is_valid_uri(endpoints::STATIC);
 
         assert_endpoint_is_valid_uri(endpoints::COFFEE);
