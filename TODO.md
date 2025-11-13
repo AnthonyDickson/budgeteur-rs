@@ -2,7 +2,14 @@
 
 ## Stage One: Budgeting
 
+- Fix accounts view to display negative balances' sign.
+- Fix inconsistent route paths for accounts: accounts, account
+- Rename "Create Account" link to "Add Account"
+- Select account name field in new account form on load.
 - Resolve TODO comments
+- Optimise imports
+  - [ ] Profile each section of code
+  - [ ] Merge SQL queries into single transaction/use prepared statements
 - Prompt user to add transactions on dashboard page if the user has no transactions.
 - Error alert if import fails
 - Port alerts system to other pages (other than rules page) for handling error messages
