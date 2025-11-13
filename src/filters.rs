@@ -4,10 +4,6 @@ use std::sync::OnceLock;
 
 use numfmt::{Formatter, Precision};
 
-pub fn abs(number: f64, _: &dyn askama::Values) -> askama::Result<f64> {
-    Ok(number.abs())
-}
-
 pub fn currency(number: f64, _: &dyn askama::Values) -> askama::Result<String> {
     static POSITIVE_FMT: OnceLock<Formatter> = OnceLock::new();
 
