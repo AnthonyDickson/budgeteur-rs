@@ -41,7 +41,7 @@ pub const NEW_ACCOUNT_VIEW: &str = "/accounts/new";
 /// The endpoint for deleting an account.
 pub const DELETE_ACCOUNT: &str = "/accounts/{account_id}";
 /// The page for editing an account.
-pub const EDIT_ACCOUNT_VIEW: &str = "/account/{account_id}/edit";
+pub const EDIT_ACCOUNT_VIEW: &str = "/accounts/{account_id}/edit";
 /// The endpoint for editing an account.
 pub const EDIT_ACCOUNT: &str = DELETE_ACCOUNT;
 /// The route for static files.
