@@ -98,7 +98,7 @@ jobs:
           fi
 
           exit_code=""
-          RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-version.outputs.semver }} 2>&1 || exit_code=$?)
+          RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-version.outputs.semver-head }} 2>&1 || exit_code=$?)
 
           if [[ -n $exit_code && $RESULT != "manifest unknown" ]]; then
             echo "❗Error $exit_code: $RESULT"
