@@ -63,9 +63,6 @@ jobs:
       packages: write
       id-token: write
 
-    outputs:
-      skip: ${{ steps.tag-check.outputs.skip }}
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -87,18 +84,20 @@ jobs:
         run: |
           ./scripts/check_source_changed.sh -b origin/main || exit_code=$?
 
+          TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-version.outputs.semver-head }}
+
           if [[ -z $exit_code ]]; then
             echo "✅ Source code is unchanged, skipping full check."
             exit 0
           elif [[ $exit_code -eq 1 ]]; then
-            echo "ℹ️ Checking tag is unique."
+            echo "ℹ️ Checking tag ${TAG} is unique."
           else
             echo "❗Unexpected exit code $exit_code"
             exit 1
           fi
 
           exit_code=""
-          RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-version.outputs.semver }} 2>&1 || exit_code=$?)
+          RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-version.outputs.semver-head }} 2>&1 || exit_code=$?)
 
           if [[ -n $exit_code && $RESULT != "manifest unknown" ]]; then
             echo "❗Error $exit_code: $RESULT"
