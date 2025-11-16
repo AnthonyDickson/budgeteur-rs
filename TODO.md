@@ -2,8 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Rename "Create Account" link to "Add Account"
-- Select account name field in new account form on load.
 - Resolve TODO comments
 - Optimise imports
   - [ ] Profile each section of code
