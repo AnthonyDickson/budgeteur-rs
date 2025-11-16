@@ -29,7 +29,8 @@
         <label for="amount" class="{% include "styles/forms/label.html" %}">Amount</label>
         <!-- w-full needed to ensure input takes the full width when prefilled with a value -->
         <div class="input-wrapper w-full">
-          <input name="amount" id="amount" type="number" step="0.01" placeholder="0.00" required class="{% include "styles/forms/input.html" %}" />
+          <input name="amount" id="amount" type="number" step="0.01" placeholder="0.00"
+            required autofocus class="{% include "styles/forms/input.html" %}" />
         </div>
       </div>
 
