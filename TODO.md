@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Fix inconsistent route paths for accounts: accounts, account
 - Rename "Create Account" link to "Add Account"
 - Select account name field in new account form on load.
 - Resolve TODO comments
