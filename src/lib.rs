@@ -233,6 +233,21 @@ impl IntoResponse for Error {
                     "Failed to update dashboard summaries. Please try again.",
                 )
             }
+            Error::InvalidTimezoneError(timezone) => {
+                tracing::error!("Invalid timezone {timezone}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Could not get local timezone. Check your server settings and \
+                    ensure the timezone has been set to valid, canonical timezone string",
+                )
+            }
+            Error::FutureDate => {
+                tracing::error!("Tried to perform an operation with a future date (e.g., create a transaction)");
+                (
+                    StatusCode::BAD_REQUEST,
+                    "Got a date in the future. Check your inputs and ensure all dates are set to at most today",
+                )
+            }
             // Any errors that are not handled above are not intended to be shown to the client.
             error => {
                 tracing::error!("An unexpected error occurred: {}", error);
