@@ -4,10 +4,6 @@ use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 use time::Date;
 
-// TODO: Remove once `TransactionBuilder::finalize` is removed
-#[cfg(test)]
-use time::{OffsetDateTime, UtcOffset};
-
 use crate::{
     Error,
     database_id::{DatabaseId, TransactionId},
@@ -146,29 +142,6 @@ impl TransactionBuilder {
         self.tag_id = tag_id;
         self
     }
-
-    /// Build the final [Transaction] instance.
-    ///
-    /// `local_timezone` is used to check that `.date` is not a future date.
-    ///
-    /// # Errors
-    /// This function will return an error if `date` is a date in the future.
-    // TODO: Move this functionality to `transaction::create_transaction`?
-    #[cfg(test)]
-    pub fn finalize(self, id: DatabaseId, local_timezone: UtcOffset) -> Result<Transaction, Error> {
-        if self.date > OffsetDateTime::now_utc().to_offset(local_timezone).date() {
-            return Err(Error::FutureDate);
-        }
-
-        Ok(Transaction {
-            id,
-            amount: self.amount,
-            date: self.date,
-            description: self.description,
-            import_id: self.import_id,
-            tag_id: self.tag_id,
-        })
-    }
 }
 
 // ============================================================================
@@ -298,99 +271,6 @@ pub fn map_transaction_row(row: &Row) -> Result<Transaction, rusqlite::Error> {
 // ============================================================================
 // TESTS
 // ============================================================================
-
-#[cfg(test)]
-mod transaction_builder_tests {
-    use std::f64::consts::PI;
-
-    use time::{Duration, OffsetDateTime, UtcOffset};
-
-    use super::{Error, Transaction, TransactionBuilder};
-
-    #[test]
-    fn finalize_fails_on_future_date() {
-        let tomorrow = OffsetDateTime::now_utc()
-            .date()
-            .checked_add(Duration::days(1))
-            .unwrap();
-
-        let result = TransactionBuilder {
-            amount: 123.45,
-            date: tomorrow,
-            description: "".to_owned(),
-            import_id: None,
-            tag_id: None,
-        }
-        .finalize(123, UtcOffset::UTC);
-
-        assert_eq!(result, Err(Error::FutureDate));
-    }
-
-    #[test]
-    fn finalize_succeeds_on_today() {
-        let today = OffsetDateTime::now_utc().date();
-
-        let transaction = TransactionBuilder {
-            amount: 123.45,
-            date: today,
-            description: "".to_owned(),
-            import_id: None,
-            tag_id: None,
-        }
-        .finalize(123, UtcOffset::UTC);
-
-        match transaction {
-            Ok(Transaction { date: got_date, .. }) => assert_eq!(today, got_date),
-            Err(error) => panic!("Got unexpected error {error}"),
-        }
-    }
-
-    #[test]
-    fn finalize_succeeds_on_past_date() {
-        let yesterday = OffsetDateTime::now_utc()
-            .date()
-            .checked_sub(Duration::days(1))
-            .unwrap();
-
-        let result = TransactionBuilder {
-            amount: 123.45,
-            date: yesterday,
-            description: "".to_owned(),
-            import_id: None,
-            tag_id: None,
-        }
-        .finalize(123, UtcOffset::UTC);
-
-        match result {
-            Ok(Transaction { date: got_date, .. }) => assert_eq!(yesterday, got_date),
-            Err(error) => panic!("Got unexpected error {error}"),
-        }
-    }
-
-    #[test]
-    fn insert_transaction_succeeds() {
-        let id = 123;
-        let amount = PI;
-        let date = OffsetDateTime::now_utc().date();
-        let description = "Rust Pie".to_string();
-        let import_id = Some(123456789);
-
-        let result = Transaction::build(amount, date, &description)
-            .import_id(import_id)
-            .finalize(id, UtcOffset::UTC);
-
-        match result {
-            Ok(transaction) => {
-                assert_eq!(transaction.id, id);
-                assert_eq!(transaction.amount, amount);
-                assert_eq!(transaction.date, date);
-                assert_eq!(transaction.description, description);
-                assert_eq!(transaction.import_id, import_id);
-            }
-            Err(error) => panic!("Unexpected error: {error}"),
-        }
-    }
-}
 
 #[cfg(test)]
 mod database_tests {

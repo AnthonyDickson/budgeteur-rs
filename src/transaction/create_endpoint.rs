@@ -12,11 +12,12 @@ use axum_extra::extract::Form;
 use axum_htmx::HxRedirect;
 use rusqlite::Connection;
 use serde::Deserialize;
-use time::Date;
+use time::{Date, OffsetDateTime};
 
 use crate::{
-    AppState, endpoints,
+    AppState, Error, endpoints,
     tag::TagId,
+    timezone::get_local_offset,
     transaction::{Transaction, core::create_transaction},
 };
 
@@ -25,12 +26,15 @@ use crate::{
 pub struct CreateTransactionState {
     /// The database connection for managing transactions.
     pub db_connection: Arc<Mutex<Connection>>,
+    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
+    pub local_timezone: String,
 }
 
 impl FromRef<AppState> for CreateTransactionState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
+            local_timezone: state.local_timezone.clone(),
         }
     }
 }
@@ -58,6 +62,16 @@ pub async fn create_transaction_endpoint(
     State(state): State<CreateTransactionState>,
     Form(form): Form<TransactionForm>,
 ) -> impl IntoResponse {
+    let local_timezone = match get_local_offset(&state.local_timezone) {
+        Some(offset) => offset,
+        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+    };
+    let now_local_time = OffsetDateTime::now_utc().to_offset(local_timezone);
+
+    if form.date > now_local_time.date() {
+        return Error::FutureDate.into_response();
+    }
+
     let transaction =
         Transaction::build(form.amount, form.date, &form.description).tag_id(form.tag_id);
 
@@ -104,6 +118,7 @@ mod tests {
         let conn = get_test_connection();
         let state = CreateTransactionState {
             db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         let form = TransactionForm {
@@ -133,6 +148,7 @@ mod tests {
         let tag = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
         let state = CreateTransactionState {
             db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         let form = TransactionForm {

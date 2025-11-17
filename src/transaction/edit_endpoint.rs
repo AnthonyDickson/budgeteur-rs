@@ -10,11 +10,11 @@ use axum_extra::extract::Form;
 use axum_htmx::HxRedirect;
 use rusqlite::{Connection, params};
 use serde::Deserialize;
-use time::Date;
+use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error, alert::AlertTemplate, database_id::TransactionId, endpoints,
-    shared_templates::render, tag::TagId,
+    shared_templates::render, tag::TagId, timezone::get_local_offset,
 };
 
 /// The state needed to edit a transaction.
@@ -22,12 +22,15 @@ use crate::{
 pub struct EditTransactionState {
     /// The database connection for managing transactions.
     pub db_connection: Arc<Mutex<Connection>>,
+    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
+    pub local_timezone: String,
 }
 
 impl FromRef<AppState> for EditTransactionState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
+            local_timezone: state.local_timezone.clone(),
         }
     }
 }
@@ -52,6 +55,36 @@ pub async fn edit_tranction_endpoint(
     Query(query_params): Query<QueryParams>,
     Form(form): Form<EditTransactionForm>,
 ) -> Response {
+    let local_timezone = match get_local_offset(&state.local_timezone) {
+        Some(offset) => offset,
+        None => {
+            tracing::error!("Invalid timezone {}", &state.local_timezone);
+            return render(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                AlertTemplate::error(
+                    "Could not get local timezone",
+                    "Check your server settings and ensure the timezone has been \
+                    set to valid, canonical timezone string",
+                ),
+            );
+        }
+    };
+    let now_local_time = OffsetDateTime::now_utc().to_offset(local_timezone);
+
+    if form.date > now_local_time.date() {
+        tracing::error!(
+            "Tried to set the date of a transaction to a future date {}",
+            form.date
+        );
+        return render(
+            StatusCode::BAD_REQUEST,
+            AlertTemplate::error(
+                "Got a date in the future.",
+                "Ensure all dates are set to today or earlier.",
+            ),
+        );
+    }
+
     let connection = match state.db_connection.lock() {
         Ok(connection) => connection,
         Err(error) => {
@@ -158,6 +191,7 @@ mod test {
         .expect("could not create test transaction");
         let state = EditTransactionState {
             db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
         };
         let want_transaction = Transaction {
             id: 1,
