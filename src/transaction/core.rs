@@ -177,11 +177,20 @@ pub fn create_transaction(
             map_transaction_row,
         )
         .map_err(|error| match error {
-            // TODO: Check how this handles tag_id constraint violation and write test
-            // Handle duplicate import_id constraint violation
-            rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 2067 => {
-                Error::DuplicateImportId
-            }
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error {
+                    code: _,
+                    extended_code: rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY,
+                },
+                _,
+            ) => Error::InvalidTag,
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error {
+                    code: _,
+                    extended_code: rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE,
+                },
+                _,
+            ) => Error::DuplicateImportId,
             error => error.into(),
         })?;
 
@@ -320,6 +329,18 @@ mod database_tests {
         );
 
         assert_eq!(duplicate_transaction, Err(Error::DuplicateImportId));
+    }
+
+    #[test]
+    fn create_fails_on_invalid_tag_id() {
+        let conn = get_test_connection();
+        let tag_id = Some(42);
+        let today = date!(2025 - 10 - 04);
+
+        let result =
+            create_transaction(Transaction::build(123.45, today, "").tag_id(tag_id), &conn);
+
+        assert_eq!(result, Err(Error::InvalidTag));
     }
 
     #[test]
