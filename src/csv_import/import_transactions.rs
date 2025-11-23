@@ -241,6 +241,7 @@ mod import_transactions_tests {
     use std::sync::{Arc, Mutex};
 
     use axum::{
+        body,
         extract::{FromRequest, Multipart, State},
         http::{Request, StatusCode},
         response::Response,
@@ -293,21 +294,16 @@ mod import_transactions_tests {
         2025/04/10,2025/04/07,2025041002,DEBIT,5023,\"OFFSHORE SERVICE MARGINS\",0.22\n\
         2025/04/11,2025/04/10,2025041101,DEBIT,5023,\"Buckstars\",11.50";
 
-    const KIWIBANK_BANK_STATEMENT_SIMPLE_CSV: &str = "47-8115-1482616-00,,,,\n\
-            22 Jan 2025,TRANSFER TO A R DICKSON - 01 ;,,-353.46,200.00\n\
-            22 Jan 2025,POS W/D LOBSTER SEAFOO-19:47 ;,,-32.00,168.00\n\
-            22 Jan 2025,TRANSFER FROM A R DICKSON - 01 ;,,32.00,200.00\n\
-            26 Jan 2025,POS W/D BEAUTY CHINA -14:02 ;,,-18.00,182.00\n\
-            26 Jan 2025,POS W/D LEE HONG BBQ -14:20 ;,,-60.00,122.00\n\
-            26 Jan 2025,TRANSFER FROM A R DICKSON - 01 ;,,78.00,200.00";
-
-    // CSV with transactions that will match auto-tagging rules
-    const AUTO_TAG_TEST_CSV: &str = "38-1234-0123456-01,,,,\n\
-    15 Jan 2025,Starbucks Coffee Shop ;,,-5.50,100.00\n\
-    16 Jan 2025,Supermarket Groceries ;,,-45.20,54.80\n\
-    17 Jan 2025,Amazon Prime Subscription ;,,-12.99,41.81\n\
-    18 Jan 2025,Shell Gas Station ;,,-35.00,6.81\n\
-    19 Jan 2025,Random Transaction ;,,-25.00,-18.19";
+    const KIWIBANK_BANK_STATEMENT_CSV: &str = "\
+        Account number,Effective Date,Transaction Date,Description,Transaction Code,\
+        Particulars,Code,Reference,Other Party Name,Other Party Account Number,\
+        Other Party Particulars,Other Party Code,Other Party Reference,Amount,Balance\n\
+        38-8106-0601663-00,2025-08-21,2025-08-22,Sushi,EFTPOS PURCHASE,,,,,,,,,-9.00,895.69\n\
+        38-8106-0601663-00,2025-08-22,2025-08-22,PAY Alice The Bar Drinks Bob,\
+        DIRECT DEBIT,The Bar,Drinks,Bob,Alice,01-2345-1080543-00,The Bar,Drinks,Bob,-15.00,880.69\n\
+        38-8106-0601663-00,2025-08-23,2025-08-23,PAY Alice Pool Bob,\
+        DIRECT DEBIT,Pool,,Bob,Alice,01-2345-1080543-00,Pool,,Bob,-3.15,877.54\n\
+        38-8106-0601663-00,2025-08-23,2025-08-23,PAK N SAVE SYLVIA PARK AUCKLAND,EFTPOS PURCHASE,,,,,,,,,-42.02,835.52";
 
     #[tokio::test]
     async fn post_multiple_bank_csv() {
@@ -316,14 +312,14 @@ mod import_transactions_tests {
             db_connection: Arc::new(Mutex::new(conn)),
             local_timezone: "Etc/UTC".to_owned(),
         };
-        let want_transaction_count = 17;
+        let want_transaction_count = 15;
 
         let response = import_transactions(
             State(state.clone()),
             must_make_multipart_csv(&[
                 ASB_BANK_STATEMENT_CSV,
                 ASB_CC_STATEMENT_CSV,
-                KIWIBANK_BANK_STATEMENT_SIMPLE_CSV,
+                KIWIBANK_BANK_STATEMENT_CSV,
             ])
             .await,
         )
@@ -665,6 +661,17 @@ mod import_transactions_tests {
 
     // Auto-tagging integration tests
 
+    // CSV with transactions that will match auto-tagging rules
+    const AUTO_TAG_TEST_CSV: &str = "\
+            Account number,Effective Date,Transaction Date,Description,Transaction Code,\
+        Particulars,Code,Reference,Other Party Name,Other Party Account Number,\
+        Other Party Particulars,Other Party Code,Other Party Reference,Amount,Balance\n\
+        38-8106-0601663-00,2025-01-15,2025-01-15,Buckstars Coffee Shop,EFTPOS PURCHASE,,,,,,,,,-5.50,100.00\n\
+        38-8106-0601663-00,2025-01-15,2025-01-15,Supermarket Groceries,EFTPOS PURCHASE,,,,,,,,,-45.20,54.80\n\
+        38-8106-0601663-00,2025-01-15,2025-01-15,Amazon Prime Subscription,EFTPOS PURCHASE,,,,,,,,,-12.99,41.81\n\
+        38-8106-0601663-00,2025-01-15,2025-01-15,Shell Gas Station,EFTPOS PURCHASE,,,,,,,,,-35.00,6.81\n\
+        38-8106-0601663-00,2025-01-15,2025-01-15,Random Transaction,EFTPOS PURCHASE,,,,,,,,,-25.00,-18.19";
+
     #[tokio::test]
     async fn import_with_auto_tagging_success() {
         let conn = get_test_connection();
@@ -680,7 +687,7 @@ mod import_transactions_tests {
             let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &conn).unwrap();
             let grocery_tag = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
 
-            create_rule("Starbucks", coffee_tag.id, &conn).unwrap();
+            create_rule("Buckstars", coffee_tag.id, &conn).unwrap();
             create_rule("Supermarket", grocery_tag.id, &conn).unwrap();
         }
 
@@ -768,7 +775,7 @@ mod import_transactions_tests {
         {
             let conn = connection.lock().unwrap();
             let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &conn).unwrap();
-            create_rule("Starbucks", coffee_tag.id, &conn).unwrap();
+            create_rule("Buckstars", coffee_tag.id, &conn).unwrap();
             // No rule for "Supermarket", so only coffee transactions will be tagged
         }
 
@@ -814,7 +821,7 @@ mod import_transactions_tests {
             let coffee_tag = create_tag(TagName::new_unchecked("Coffee"), &conn).unwrap();
             let grocery_tag = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
 
-            create_rule("Starbucks", coffee_tag.id, &conn).unwrap();
+            create_rule("Buckstars", coffee_tag.id, &conn).unwrap();
             create_rule("Supermarket", grocery_tag.id, &conn).unwrap();
 
             (coffee_tag.id, grocery_tag.id)
@@ -826,7 +833,19 @@ mod import_transactions_tests {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(
+            response.status(),
+            StatusCode::CREATED,
+            "Unexpected status code {}, body: {}",
+            response.status(),
+            String::from_utf8(
+                body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap()
+                    .to_vec()
+            )
+            .unwrap()
+        );
 
         // Verify specific transactions have correct tags
         let conn = connection.lock().unwrap();
@@ -849,13 +868,13 @@ mod import_transactions_tests {
         // Find Starbucks transaction and verify it has coffee tag
         let starbucks_tx = all_transactions
             .iter()
-            .find(|(_, desc, _)| desc.contains("Starbucks"))
-            .expect("Should find Starbucks transaction");
+            .find(|(_, desc, _)| desc.contains("Buckstars"))
+            .expect("Should find Buckstars transaction");
 
         assert_eq!(
             starbucks_tx.2,
             Some(coffee_tag_id),
-            "Starbucks should have coffee tag"
+            "Buckstars should have coffee tag"
         );
 
         // Find Supermarket transaction and verify it has grocery tag

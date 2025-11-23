@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Resolve TODO comments
 - Optimise imports
   - [ ] Profile each section of code
   - [ ] Merge SQL queries into single transaction/use prepared statements
