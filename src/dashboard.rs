@@ -3,7 +3,7 @@
 use askama::Template;
 use axum::{
     extract::{FromRef, State},
-    http::StatusCode,
+    http::{StatusCode, Uri},
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Form;
@@ -169,6 +169,15 @@ struct DashboardTemplate<'a> {
     charts: DashboardChartsTemplate<'a>,
 }
 
+/// Renders the dashboard page when there is no data to display.
+#[derive(Template)]
+#[template(path = "views/dashboard_empty.html")]
+struct DashboardNoDataTemplate<'a> {
+    nav_bar: NavbarTemplate<'a>,
+    create_transaction_url: Uri,
+    import_transaction_url: Uri,
+}
+
 /// Display a page with an overview of the user's data.
 pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response {
     let nav_bar = get_nav_bar(endpoints::DASHBOARD_VIEW);
@@ -216,6 +225,17 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
         Ok(summary) => summary,
         Err(error) => return error.into_response(),
     };
+
+    if transactions.len() == 0 {
+        return render(
+            StatusCode::OK,
+            DashboardNoDataTemplate {
+                nav_bar,
+                create_transaction_url: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
+                import_transaction_url: Uri::from_static(endpoints::IMPORT_VIEW),
+            },
+        );
+    }
 
     // Get total account balance
     let total_account_balance = match get_total_account_balance(&connection) {
