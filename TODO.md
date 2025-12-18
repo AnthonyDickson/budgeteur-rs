@@ -2,11 +2,9 @@
 
 ## Stage One: Budgeting
 
-- Optimise imports
-  - [ ] Profile each section of code
-  - [ ] Merge SQL queries into single transaction/use prepared statements
-- Prompt user to add transactions on dashboard page if the user has no transactions.
-- Error alert if import fails
+- Update HTMX and other JS bundles
+- Update Rust and dependencies
+- Set default date for editing accounts to the current date
 - Port alerts system to other pages (other than rules page) for handling error messages
   - Use alerts for confirming deletion of items from tags and rules pages (and others when they get full CRUD).
   - Alert for dashboard if excluded tag ops fail.

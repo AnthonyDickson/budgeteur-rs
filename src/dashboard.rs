@@ -3,7 +3,7 @@
 use askama::Template;
 use axum::{
     extract::{FromRef, State},
-    http::StatusCode,
+    http::{StatusCode, Uri},
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Form;
@@ -169,6 +169,15 @@ struct DashboardTemplate<'a> {
     charts: DashboardChartsTemplate<'a>,
 }
 
+/// Renders the dashboard page when there is no data to display.
+#[derive(Template)]
+#[template(path = "views/dashboard_empty.html")]
+struct DashboardNoDataTemplate<'a> {
+    nav_bar: NavbarTemplate<'a>,
+    create_transaction_url: Uri,
+    import_transaction_url: Uri,
+}
+
 /// Display a page with an overview of the user's data.
 pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response {
     let nav_bar = get_nav_bar(endpoints::DASHBOARD_VIEW);
@@ -216,6 +225,17 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
         Ok(summary) => summary,
         Err(error) => return error.into_response(),
     };
+
+    if transactions.is_empty() {
+        return render(
+            StatusCode::OK,
+            DashboardNoDataTemplate {
+                nav_bar,
+                create_transaction_url: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
+                import_transaction_url: Uri::from_static(endpoints::IMPORT_VIEW),
+            },
+        );
+    }
 
     // Get total account balance
     let total_account_balance = match get_total_account_balance(&connection) {
@@ -653,13 +673,8 @@ mod dashboard_route_tests {
     }
 
     #[tokio::test]
-    async fn dashboard_displays_tag_exclusion_controls() {
+    async fn displays_prompt_text_on_no_data() {
         let conn = get_test_connection();
-
-        // Create test tags
-        create_tag(TagName::new("Food").unwrap(), &conn).unwrap();
-        create_tag(TagName::new("Transport").unwrap(), &conn).unwrap();
-
         let state = DashboardState {
             db_connection: Arc::new(Mutex::new(conn)),
             local_timezone: "Etc/UTC".to_owned(),
@@ -669,12 +684,46 @@ mod dashboard_route_tests {
         assert_eq!(response.status(), StatusCode::OK);
 
         let html = parse_html(response).await;
+        assert_tag_exclusion_controls_hidden(&html);
+    }
 
-        // Check that tag checkboxes are present
+    fn assert_tag_exclusion_controls_hidden(html: &Html) {
+        assert_tag_exclusion_controls_visible(html, 0);
+    }
+
+    #[tokio::test]
+    async fn displays_tag_exclusion_controls() {
+        let conn = get_test_connection();
+        // Need to add dummy transaction, otherwise the tag exclusions controls are hidden
+        create_transaction(
+            Transaction::build(1.00, OffsetDateTime::now_utc().date(), "test"),
+            &conn,
+        )
+        .unwrap();
+        create_tag(TagName::new("Food").unwrap(), &conn).unwrap();
+        create_tag(TagName::new("Transport").unwrap(), &conn).unwrap();
+        let state = DashboardState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_dashboard_page(State(state)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let html = parse_html(response).await;
+        assert_tag_exclusion_controls_visible(&html, 2);
+    }
+
+    fn assert_tag_exclusion_controls_visible(html: &Html, expected_count: usize) {
         let checkbox_selector =
             Selector::parse("input[type='checkbox'][name='excluded_tags']").unwrap();
         let checkboxes: Vec<_> = html.select(&checkbox_selector).collect();
-        assert_eq!(checkboxes.len(), 2, "Should have 2 tag checkboxes");
+        assert_eq!(
+            checkboxes.len(),
+            expected_count,
+            "Should have {expected_count} tag checkboxes in {}",
+            html.html()
+        );
     }
 
     async fn parse_html(response: Response<Body>) -> Html {
