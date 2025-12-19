@@ -10,7 +10,7 @@
 
 #![warn(missing_docs)]
 
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 use axum::{
     http::StatusCode,
@@ -61,7 +61,7 @@ pub use user::{User, UserID, get_user_by_id};
 /// then signals the server to shut down gracefully.
 ///
 /// `handle` is a handle to an Axum `Server`.
-pub async fn graceful_shutdown(handle: Handle) {
+pub async fn graceful_shutdown(handle: Handle<SocketAddr>) {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
