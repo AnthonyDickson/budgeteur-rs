@@ -342,10 +342,12 @@ fn create_expenses_chart(transactions: &[Transaction]) -> Chart {
         .title(
             Title::new()
                 .text("Monthly Expenses")
-                .subtext("Last twelve months, grouped by tag"),
+                .subtext("Last twelve months, grouped by tag")
+                .left(20)
+                .top("1%"),
         )
         .tooltip(create_currency_tooltip())
-        .legend(Legend::new().left(230).top(0))
+        .legend(Legend::new().left(250).top("1%"))
         .grid(
             Grid::new()
                 .left("3%")
