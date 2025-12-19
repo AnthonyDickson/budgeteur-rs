@@ -1,4 +1,4 @@
-FROM rust:1.90.0-alpine3.22 AS build
+FROM rust:1.92.0-alpine3.23 AS build
 
 RUN apk update
 RUN apk add --no-cache musl-dev 
@@ -14,7 +14,7 @@ RUN cargo build --verbose --release --bin server --bin reset_password
 
 #==============================================================================#
  
-FROM alpine:3.22 AS tailwind
+FROM alpine:3.23 AS tailwind
 
 RUN apk update
 RUN apk add --no-cache curl libgcc libstdc++
@@ -30,7 +30,7 @@ RUN tailwindcss --input templates/source.css --output static/main.css --minify
 
 #==============================================================================#
 
-FROM alpine:3.22 AS deploy
+FROM alpine:3.23 AS deploy
 
 WORKDIR /app
 
