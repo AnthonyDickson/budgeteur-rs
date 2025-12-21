@@ -19,7 +19,7 @@ use time::Duration;
 use crate::{
     AppState, Error,
     app_state::create_cookie_key,
-    auth_cookie::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
+    auth::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
     endpoints,
     shared_templates::{PasswordInputTemplate, render},
     timezone::get_local_offset,
@@ -423,7 +423,7 @@ mod log_in_tests {
 
     use crate::{
         PasswordHash, ValidatedPassword,
-        auth_cookie::{COOKIE_EXPIRY, COOKIE_USER_ID},
+        auth::COOKIE_TOKEN,
         endpoints,
         user::{User, UserID, create_user_table},
     };
@@ -522,9 +522,9 @@ mod log_in_tests {
 
         assert_eq!(response.status_code(), StatusCode::SEE_OTHER);
 
-        let auth_cookie = response.cookie(COOKIE_USER_ID);
+        let token_cookie = response.cookie(COOKIE_TOKEN);
         assert_date_time_close!(
-            auth_cookie.expires_datetime().unwrap(),
+            token_cookie.expires_datetime().unwrap(),
             OffsetDateTime::now_utc() + REMEMBER_ME_COOKIE_DURATION
         );
     }
@@ -608,7 +608,7 @@ mod log_in_tests {
             let cookie = Cookie::parse(cookie_string).unwrap();
 
             match cookie.name() {
-                COOKIE_USER_ID | COOKIE_EXPIRY => {
+                COOKIE_TOKEN => {
                     assert!(cookie.expires_datetime() > Some(OffsetDateTime::now_utc()));
                     found_cookies.insert(cookie.name().to_string());
                 }
@@ -617,16 +617,9 @@ mod log_in_tests {
         }
 
         assert!(
-            found_cookies.contains(COOKIE_USER_ID),
+            found_cookies.contains(COOKIE_TOKEN),
             "could not find cookie '{}' in {:?}",
-            COOKIE_USER_ID,
-            found_cookies
-        );
-
-        assert!(
-            found_cookies.contains(COOKIE_EXPIRY),
-            "could not find cookie '{}' in {:?}",
-            COOKIE_EXPIRY,
+            COOKIE_TOKEN,
             found_cookies
         );
     }

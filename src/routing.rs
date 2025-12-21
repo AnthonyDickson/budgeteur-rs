@@ -15,7 +15,7 @@ use crate::{
         create_account_endpoint, delete_account_endpoint, edit_account_endpoint, get_accounts_page,
         get_create_account_page, get_edit_account_page,
     },
-    auth_middleware::{auth_guard, auth_guard_hx},
+    auth::{auth_guard, auth_guard_hx},
     csv_import::{get_import_page, import_transactions},
     dashboard::{get_dashboard_page, update_excluded_tags},
     endpoints,

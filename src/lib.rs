@@ -22,8 +22,7 @@ use tokio::signal;
 mod account;
 mod alert;
 mod app_state;
-mod auth_cookie;
-mod auth_middleware;
+mod auth;
 mod csv_import;
 mod dashboard;
 mod dashboard_preferences;
@@ -191,6 +190,10 @@ pub enum Error {
     /// The specified account name already exists in the database.
     #[error("the account already exists in the database")]
     DuplicateAccountName,
+
+    /// An error occurred while serializing a struct as JSON
+    #[error("could not serialize as JSON: {0}")]
+    JSONSerializationError(String),
 }
 
 impl From<rusqlite::Error> for Error {

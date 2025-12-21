@@ -3,7 +3,7 @@
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::PrivateCookieJar;
 
-use crate::{auth_cookie::invalidate_auth_cookie, endpoints};
+use crate::{auth::invalidate_auth_cookie, endpoints};
 
 /// Invalidate the auth cookie and redirect the client to the log-in page.
 pub async fn get_log_out(jar: PrivateCookieJar) -> Response {
@@ -26,7 +26,7 @@ mod log_out_tests {
     use time::{Duration, OffsetDateTime, UtcOffset};
 
     use crate::{
-        auth_cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
+        auth::{COOKIE_TOKEN, DEFAULT_COOKIE_DURATION, set_auth_cookie},
         endpoints,
         log_out::get_log_out,
         user::UserID,
@@ -65,7 +65,7 @@ mod log_out_tests {
             let cookie_string = cookie_header.to_str().unwrap();
             let cookie = Cookie::parse(cookie_string).unwrap();
 
-            if cookie.name() != COOKIE_USER_ID && cookie.name() != COOKIE_EXPIRY {
+            if cookie.name() != COOKIE_TOKEN {
                 continue;
             }
 
