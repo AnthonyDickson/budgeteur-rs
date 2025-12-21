@@ -12,7 +12,7 @@ use time::Duration;
 
 use crate::{
     AppState,
-    auth_cookie::{extend_auth_cookie_duration_if_needed, get_user_id_from_auth_cookie},
+    auth::cookie::{extend_auth_cookie_duration_if_needed, get_token_from_cookies},
     endpoints,
     timezone::get_local_offset,
 };
@@ -74,8 +74,8 @@ async fn auth_guard_internal(
             return get_redirect();
         }
     };
-    let user_id = match get_user_id_from_auth_cookie(&jar) {
-        Ok(user_id) => user_id,
+    let user_id = match get_token_from_cookies(&jar) {
+        Ok(token) => token.user_id,
         Err(_) => return get_redirect(),
     };
 
@@ -159,8 +159,7 @@ mod auth_guard_tests {
 
     use crate::{
         Error,
-        auth_cookie::{COOKIE_EXPIRY, COOKIE_USER_ID, DEFAULT_COOKIE_DURATION, set_auth_cookie},
-        auth_middleware::{AuthState, auth_guard},
+        auth::{AuthState, COOKIE_TOKEN, DEFAULT_COOKIE_DURATION, auth_guard, set_auth_cookie},
         endpoints::{self, format_endpoint},
         timezone::get_local_offset,
         user::UserID,
@@ -207,13 +206,11 @@ mod auth_guard_tests {
             .await;
 
         response.assert_status_ok();
-        let auth_cookie = response.cookie(COOKIE_USER_ID);
-        let expiry_cookie = response.cookie(COOKIE_EXPIRY);
+        let token_cookie = response.cookie(COOKIE_TOKEN);
 
         server
             .get(TEST_PROTECTED_ROUTE)
-            .add_cookie(auth_cookie)
-            .add_cookie(expiry_cookie)
+            .add_cookie(token_cookie)
             .await
             .assert_status_ok();
     }
@@ -231,28 +228,19 @@ mod auth_guard_tests {
         let response = server.get(TEST_PROTECTED_ROUTE).add_cookies(jar).await;
         let jar = response.cookies();
         assert!(
-            jar.get(COOKIE_USER_ID).is_some(),
-            "expected user ID cookie to be set by auth guard"
-        );
-        assert!(
-            jar.get(COOKIE_EXPIRY).is_some(),
-            "expected expiry cookie to be set by auth guard"
+            jar.get(COOKIE_TOKEN).is_some(),
+            "expected token cookie to be set by auth guard"
         );
     }
 
-    /// Test helper macro to assert that two date times are within one second
-    /// of each other. Used instead of a function so that the file and line
-    /// number of the caller is included in the error message instead of the
-    /// helper.
-    macro_rules! assert_date_time_close {
-        ($left:expr, $right:expr$(,)?) => {
-            assert!(
-                ($left - $right).abs() < Duration::seconds(1),
-                "got date time {:?}, want {:?}",
-                $left,
-                $right
-            );
-        };
+    #[track_caller]
+    fn assert_date_time_close(left: OffsetDateTime, right: OffsetDateTime) {
+        assert!(
+            (left - right).abs() < Duration::seconds(1),
+            "got date time {:?}, want {:?}",
+            left,
+            right
+        );
     }
 
     #[tokio::test]
@@ -265,15 +253,15 @@ mod auth_guard_tests {
         response.assert_status_ok();
         let response_time = OffsetDateTime::now_utc();
         let jar = response.cookies();
-        assert_date_time_close!(
-            jar.get(COOKIE_USER_ID).unwrap().expires_datetime().unwrap(),
+        assert_date_time_close(
+            jar.get(COOKIE_TOKEN).unwrap().expires_datetime().unwrap(),
             response_time + Duration::seconds(5),
         );
 
         let response = server.get(TEST_PROTECTED_ROUTE).add_cookies(jar).await;
 
-        let auth_cookie = response.cookie(COOKIE_USER_ID);
-        assert_date_time_close!(
+        let auth_cookie = response.cookie(COOKIE_TOKEN);
+        assert_date_time_close(
             auth_cookie.expires_datetime().unwrap(),
             response_time + Duration::minutes(5),
         );
@@ -296,7 +284,7 @@ mod auth_guard_tests {
         let server = get_test_server(DEFAULT_COOKIE_DURATION);
         let response = server
             .get(TEST_PROTECTED_ROUTE)
-            .add_cookie(Cookie::build((COOKIE_USER_ID, "1")).build())
+            .add_cookie(Cookie::build((COOKIE_TOKEN, "FOOBAR")).build())
             .await;
 
         response.assert_status_see_other();
@@ -311,12 +299,12 @@ mod auth_guard_tests {
             .await;
 
         response.assert_status_ok();
-        let mut auth_cookie = response.cookie(COOKIE_USER_ID);
-        auth_cookie.set_expires(OffsetDateTime::UNIX_EPOCH);
+        let mut token_cookie = response.cookie(COOKIE_TOKEN);
+        token_cookie.set_expires(OffsetDateTime::UNIX_EPOCH);
 
         server
             .get(TEST_PROTECTED_ROUTE)
-            .add_cookie(auth_cookie)
+            .add_cookie(token_cookie)
             .await
             .assert_status_see_other();
     }

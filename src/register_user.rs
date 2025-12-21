@@ -17,7 +17,7 @@ use time::Duration;
 use crate::{
     AppState, Error, PasswordHash, ValidatedPassword,
     app_state::create_cookie_key,
-    auth_cookie::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
+    auth::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
     endpoints,
     internal_server_error::get_internal_server_error_redirect,
     shared_templates::{PasswordInputTemplate, render},

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use sha2::{Digest, Sha512};
 use time::Duration;
 
-use crate::{auth_cookie::DEFAULT_COOKIE_DURATION, pagination::PaginationConfig};
+use crate::{auth::DEFAULT_COOKIE_DURATION, pagination::PaginationConfig};
 
 /// The state of the REST server.
 #[derive(Debug, Clone)]
