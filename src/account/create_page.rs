@@ -9,8 +9,7 @@ use axum::{
 use time::{Date, OffsetDateTime};
 
 use crate::{
-    AppState, endpoints,
-    internal_server_error::{InternalServerErrorPageTemplate, render_internal_server_error},
+    AppState, Error, endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
     timezone::get_local_offset,
@@ -41,30 +40,25 @@ impl FromRef<AppState> for CreateAccountPageState {
 }
 
 /// Renders the page for creating an account.
-pub async fn get_create_account_page(State(state): State<CreateAccountPageState>) -> Response {
+pub async fn get_create_account_page(
+    State(state): State<CreateAccountPageState>,
+) -> Result<Response, Error> {
     let nav_bar = get_nav_bar(endpoints::NEW_ACCOUNT_VIEW);
 
-    let local_timezone = match get_local_offset(&state.local_timezone) {
-        Some(offset) => offset,
-        None => {
-            tracing::error!(
-                "Could not get local time offset from timezone {}",
-                &state.local_timezone
-            );
-            return render_internal_server_error(InternalServerErrorPageTemplate {
-                description: "Could not get local timezone",
-                fix: "Check your server settings and ensure the timezone has \
-                been set to valid, canonical timezone string",
-            });
-        }
-    };
+    let local_timezone = get_local_offset(&state.local_timezone).ok_or_else(|| {
+        tracing::error!(
+            "could not get local time offset from timezone {}",
+            &state.local_timezone
+        );
+        Error::InvalidTimezoneError(state.local_timezone)
+    })?;
 
-    render(
+    Ok(render(
         StatusCode::OK,
         CreateAccountTemplate {
             nav_bar,
             create_account_route: endpoints::ACCOUNTS,
             max_date: OffsetDateTime::now_utc().to_offset(local_timezone).date(),
         },
-    )
+    ))
 }

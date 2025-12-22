@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use axum::{
     extract::{FromRef, Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::Response,
 };
 use rusqlite::Connection;
 
@@ -36,44 +36,25 @@ impl FromRef<AppState> for DeleteAccountState {
 pub async fn delete_account_endpoint(
     State(state): State<DeleteAccountState>,
     Path(account_id): Path<DatabaseId>,
-) -> impl IntoResponse {
+) -> Response {
     let connection = match state.db_connection.lock() {
         Ok(connection) => connection,
         Err(error) => {
-            tracing::error!("Could not acquire database lock: {error}");
-            return render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Could not delete account",
-                    "An unexpected error occured. Try again later or check the logs on the server.",
-                ),
-            );
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
         }
     };
 
     match delete_account(account_id, &connection) {
-        Ok(0) => render(
-            StatusCode::NOT_FOUND,
-            AlertTemplate::error(
-                "Could not delete account",
-                "The account could not be found. \
-                Try refreshing the page to see if the account has already been deleted.",
-            ),
-        ),
         // The status code has to be 200 OK or HTMX will not delete the table row.
-        Ok(_) => render(
+        Ok(row_affected) if row_affected != 0 => render(
             StatusCode::OK,
             AlertTemplate::success("Account deleted successfully", ""),
         ),
+        Ok(_) => Error::DeleteMissingAccount.into_alert_response(),
         Err(error) => {
             tracing::error!("Could not delete account {account_id}: {error}");
-            render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Could not delete account",
-                    "An unexpected error occured. Try again later or check the logs on the server.",
-                ),
-            )
+            error.into_alert_response()
         }
     }
 }

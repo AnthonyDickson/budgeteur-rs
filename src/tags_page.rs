@@ -1,11 +1,7 @@
 use std::collections::HashMap;
 
 use askama::Template;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
+use axum::{extract::State, http::StatusCode, response::Response};
 use rusqlite::Connection;
 
 use crate::{
@@ -33,32 +29,18 @@ struct TagsTemplate<'a> {
 }
 
 /// Route handler for the tags listing page.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
-pub async fn get_tags_page(State(state): State<TagsPageState>) -> Response {
+pub async fn get_tags_page(State(state): State<TagsPageState>) -> Result<Response, Error> {
     let connection = state
         .db_connection
         .lock()
-        .expect("Could not acquire database lock");
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
 
-    let tags = match get_all_tags(&connection) {
-        Ok(tags) => tags,
+    let tags = get_all_tags(&connection)
+        .inspect_err(|error| tracing::error!("Failed to retrieve tags: {error}"))?;
 
-        Err(error) => {
-            tracing::error!("Failed to retrieve tags: {error}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response();
-        }
-    };
-
-    let transactions_per_tag = match count_transactions_per_tag(&connection) {
-        Ok(transactions_per_tag) => transactions_per_tag,
-        Err(error) => {
-            tracing::error!("Could not count transactions per tag: {error}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response();
-        }
-    };
+    let transactions_per_tag = count_transactions_per_tag(&connection)
+        .inspect_err(|error| tracing::error!("Could not count transactions per tag: {error}"))?;
 
     let tags_with_edit_urls = tags
         .into_iter()
@@ -73,14 +55,14 @@ pub async fn get_tags_page(State(state): State<TagsPageState>) -> Response {
         })
         .collect();
 
-    render(
+    Ok(render(
         StatusCode::OK,
         TagsTemplate {
             nav_bar: get_nav_bar(endpoints::TAGS_VIEW),
             tags: tags_with_edit_urls,
             new_tag_route: endpoints::NEW_TAG_VIEW,
         },
-    )
+    ))
 }
 
 fn count_transactions_per_tag(connection: &Connection) -> Result<HashMap<TagId, u64>, Error> {

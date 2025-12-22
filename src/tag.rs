@@ -16,6 +16,7 @@ use axum_htmx::HxRedirect;
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
+use crate::alert::AlertTemplate;
 use crate::{
     AppState, Error, endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
@@ -31,7 +32,7 @@ impl TagName {
     ///
     /// # Errors
     ///
-    /// This function will return an error if `name` is an empty string.
+    /// This function will return an [Error::EmptyTagName] if `name` is an empty string.
     pub fn new(name: &str) -> Result<Self, Error> {
         if name.is_empty() {
             Err(Error::EmptyTagName)
@@ -113,13 +114,6 @@ struct EditTagTemplate<'a> {
 pub struct NewTagFormTemplate<'a> {
     pub create_tag_endpoint: &'a str,
     pub error_message: &'a str,
-}
-
-/// Renders an error message for tag operations.
-#[derive(Template)]
-#[template(path = "partials/tag_error.html")]
-struct TagErrorTemplate<'a> {
-    error_message: &'a str,
 }
 
 pub async fn get_new_tag_page() -> Response {
@@ -211,10 +205,6 @@ pub struct TagFormData {
 }
 
 /// A route handler for creating a new tag.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn create_tag_endpoint(
     State(state): State<CreateTagEndpointState>,
     Form(new_tag): Form<TagFormData>,
@@ -232,15 +222,15 @@ pub async fn create_tag_endpoint(
         }
     };
 
-    let tag_result = create_tag(
-        name,
-        &state
-            .db_connection
-            .lock()
-            .expect("Could not acquire database lock"),
-    );
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
 
-    match tag_result {
+    match create_tag(name, &connection) {
         Ok(_) => (
             HxRedirect(endpoints::TAGS_VIEW.to_owned()),
             StatusCode::SEE_OTHER,
@@ -249,36 +239,27 @@ pub async fn create_tag_endpoint(
         Err(error) => {
             tracing::error!("An unexpected error occurred while creating a tag: {error}");
 
-            render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                NewTagFormTemplate {
-                    create_tag_endpoint: endpoints::POST_TAG,
-                    error_message: "An unexpected error occurred. Please try again.",
-                },
-            )
+            error.into_alert_response()
         }
     }
 }
 
 /// Route handler for the edit tag page.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_edit_tag_page(
     Path(tag_id): Path<TagId>,
     State(state): State<EditTagPageState>,
-) -> Response {
+) -> Result<Response, Error> {
     let connection = state
         .db_connection
         .lock()
-        .expect("Could not acquire database lock");
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
 
     let edit_endpoint = endpoints::format_endpoint(endpoints::EDIT_TAG_VIEW, tag_id);
     let update_endpoint = endpoints::format_endpoint(endpoints::PUT_TAG, tag_id);
 
     match get_tag(tag_id, &connection) {
-        Ok(tag) => render(
+        Ok(tag) => Ok(render(
             StatusCode::OK,
             EditTagTemplate {
                 nav_bar: get_nav_bar(&edit_endpoint),
@@ -288,7 +269,7 @@ pub async fn get_edit_tag_page(
                     error_message: "",
                 },
             },
-        ),
+        )),
         Err(error) => {
             let error_message = match error {
                 Error::NotFound => "Tag not found",
@@ -298,7 +279,7 @@ pub async fn get_edit_tag_page(
                 }
             };
 
-            render(
+            Ok(render(
                 StatusCode::OK,
                 EditTagTemplate {
                     nav_bar: get_nav_bar(&edit_endpoint),
@@ -308,25 +289,24 @@ pub async fn get_edit_tag_page(
                         error_message,
                     },
                 },
-            )
+            ))
         }
     }
 }
 
 /// A route handler for updating a tag.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn update_tag_endpoint(
     Path(tag_id): Path<TagId>,
     State(state): State<UpdateTagEndpointState>,
     Form(form_data): Form<TagFormData>,
-) -> impl IntoResponse {
-    let connection = state
-        .db_connection
-        .lock()
-        .expect("Could not acquire database lock");
+) -> Response {
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
 
     let update_endpoint = endpoints::format_endpoint(endpoints::PUT_TAG, tag_id);
 
@@ -344,63 +324,43 @@ pub async fn update_tag_endpoint(
         }
     };
 
-    if let Err(error) = update_tag(tag_id, name, &connection) {
-        let (status, error_message) = if error == Error::NotFound {
-            (StatusCode::NOT_FOUND, "Tag not found")
-        } else {
-            tracing::error!("An unexpected error occurred while updating tag {tag_id}: {error}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "An unexpected error occurred. Please try again.",
-            )
-        };
-
-        render(
-            status,
-            EditTagFormTemplate {
-                update_tag_endpoint: &update_endpoint,
-                tag_name: &form_data.name,
-                error_message,
-            },
-        )
-    } else {
-        (
+    match update_tag(tag_id, name, &connection) {
+        Ok(_) => (
             HxRedirect(endpoints::TAGS_VIEW.to_owned()),
             StatusCode::SEE_OTHER,
         )
-            .into_response()
+            .into_response(),
+        Err(Error::UpdateMissingTag) => Error::UpdateMissingTag.into_alert_response(),
+        Err(error) => {
+            tracing::error!("An unexpected error occurred while updating tag {tag_id}: {error}");
+            error.into_alert_response()
+        }
     }
 }
 
 /// A route handler for deleting a tag.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn delete_tag_endpoint(
     Path(tag_id): Path<TagId>,
     State(state): State<DeleteTagEndpointState>,
-) -> impl IntoResponse {
-    let connection = state
-        .db_connection
-        .lock()
-        .expect("Could not acquire database lock");
+) -> Response {
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
 
-    if let Err(error) = delete_tag(tag_id, &connection) {
-        let error_message = if error == Error::NotFound {
-            "Tag not found"
-        } else {
+    match delete_tag(tag_id, &connection) {
+        Ok(_) => render(
+            StatusCode::OK,
+            AlertTemplate::success("Tag deleted successfully", ""),
+        ),
+        Err(Error::DeleteMissingTag) => Error::DeleteMissingTag.into_alert_response(),
+        Err(error) => {
             tracing::error!("An unexpected error occurred while deleting tag {tag_id}: {error}");
-            "An unexpected error occurred. Please try again."
-        };
-
-        render(StatusCode::OK, TagErrorTemplate { error_message })
-    } else {
-        (
-            HxRedirect(endpoints::TAGS_VIEW.to_owned()),
-            StatusCode::SEE_OTHER,
-        )
-            .into_response()
+            error.into_alert_response()
+        }
     }
 }
 
@@ -438,7 +398,7 @@ pub fn update_tag(tag_id: TagId, new_name: TagName, connection: &Connection) -> 
     )?;
 
     if rows_affected == 0 {
-        return Err(Error::NotFound);
+        return Err(Error::UpdateMissingTag);
     }
 
     Ok(())
@@ -452,7 +412,7 @@ pub fn delete_tag(tag_id: TagId, connection: &Connection) -> Result<(), Error> {
     let rows_affected = connection.execute("DELETE FROM tag WHERE id = ?1", [tag_id])?;
 
     if rows_affected == 0 {
-        return Err(Error::NotFound);
+        return Err(Error::DeleteMissingTag);
     }
 
     Ok(())
@@ -602,7 +562,7 @@ mod tag_query_tests {
 
         let result = update_tag(invalid_id, new_name, &connection);
 
-        assert_eq!(result, Err(Error::NotFound));
+        assert_eq!(result, Err(Error::UpdateMissingTag));
     }
 
     #[test]
@@ -626,7 +586,7 @@ mod tag_query_tests {
 
         let result = delete_tag(invalid_id, &connection);
 
-        assert_eq!(result, Err(Error::NotFound));
+        assert_eq!(result, Err(Error::DeleteMissingTag));
     }
 }
 
@@ -916,7 +876,7 @@ mod edit_tag_endpoint_tests {
         let tag = create_tag(tag_name.clone(), &state.db_connection.lock().unwrap())
             .expect("Could not create test tag");
 
-        let response = get_edit_tag_page(Path(tag.id), State(state)).await;
+        let response = get_edit_tag_page(Path(tag.id), State(state)).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
@@ -945,7 +905,9 @@ mod edit_tag_endpoint_tests {
         let state = get_edit_tag_state();
         let invalid_id = 999999;
 
-        let response = get_edit_tag_page(Path(invalid_id), State(state)).await;
+        let response = get_edit_tag_page(Path(invalid_id), State(state))
+            .await
+            .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
 
@@ -988,12 +950,6 @@ mod edit_tag_endpoint_tests {
             .into_response();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-
-        let html = parse_fragment_html(response).await;
-        assert_valid_html(&html);
-
-        let form = must_get_form(&html);
-        assert_error_message(&form, "Tag not found");
     }
 
     #[tokio::test]
@@ -1169,10 +1125,7 @@ mod delete_tag_endpoint_tests {
     use rusqlite::Connection;
     use scraper::Html;
 
-    use crate::{
-        endpoints,
-        tag::{TagName, create_tag, delete_tag_endpoint},
-    };
+    use crate::tag::{TagName, create_tag, delete_tag_endpoint};
 
     use super::{DeleteTagEndpointState, create_tag_table};
 
@@ -1197,8 +1150,7 @@ mod delete_tag_endpoint_tests {
             .await
             .into_response();
 
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        assert_hx_redirect(&response, endpoints::TAGS_VIEW);
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -1210,7 +1162,7 @@ mod delete_tag_endpoint_tests {
             .await
             .into_response();
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
         assert_eq!(
             get_header(&response, "content-type"),
             "text/html; charset=utf-8"
@@ -1218,12 +1170,7 @@ mod delete_tag_endpoint_tests {
 
         let html = parse_fragment_html(response).await;
         assert_valid_html(&html);
-        assert_error_content(&html, "Tag not found");
-    }
-
-    #[track_caller]
-    fn assert_hx_redirect(response: &Response, endpoint: &str) {
-        assert_eq!(get_header(response, "hx-redirect"), endpoint);
+        assert_error_content(&html, "Could not delete tag");
     }
 
     #[track_caller]

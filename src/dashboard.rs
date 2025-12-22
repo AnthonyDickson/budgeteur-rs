@@ -4,7 +4,7 @@ use askama::Template;
 use axum::{
     extract::{FromRef, State},
     http::{StatusCode, Uri},
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use axum_extra::extract::Form;
 use charming::{
@@ -179,26 +179,20 @@ struct DashboardNoDataTemplate<'a> {
 }
 
 /// Display a page with an overview of the user's data.
-pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response {
+pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Result<Response, Error> {
+    let connection = state
+        .db_connection
+        .lock()
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
+
     let nav_bar = get_nav_bar(endpoints::DASHBOARD_VIEW);
 
-    let local_timezone = match get_local_offset(&state.local_timezone) {
-        Some(offset) => offset,
-        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
-    };
-    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
-    let connection = state.db_connection.lock().unwrap();
-
     // Get available tags and excluded tags for dashboard summaries
-    let available_tags = match get_all_tags(&connection) {
-        Ok(tags) => tags,
-        Err(error) => return error.into_response(),
-    };
-
-    let excluded_tag_ids = match get_excluded_tags(&connection) {
-        Ok(tags) => tags,
-        Err(error) => return error.into_response(),
-    };
+    let available_tags = get_all_tags(&connection)
+        .inspect_err(|error| tracing::error!("could not get tags: {error}"))?;
+    let excluded_tag_ids = get_excluded_tags(&connection)
+        .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
 
     // Create tags with exclusion status
     let tags_with_status: Vec<TagWithExclusion> = available_tags
@@ -209,6 +203,11 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
         })
         .collect();
 
+    let local_timezone = get_local_offset(&state.local_timezone).ok_or_else(|| {
+        tracing::error!("Invalid timezone {}", state.local_timezone);
+        Error::InvalidTimezoneError(state.local_timezone)
+    })?;
+
     let excluded_tags_slice = if excluded_tag_ids.is_empty() {
         None
     } else {
@@ -216,58 +215,54 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Response
     };
 
     // Calculate yearly summary (last 365 days)
+    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
     let one_year_ago = today - Duration::days(YEARLY_PERIOD_DAYS);
-    let transactions = match get_transactions_in_date_range(
-        one_year_ago..=today,
-        excluded_tags_slice,
-        &connection,
-    ) {
-        Ok(summary) => summary,
-        Err(error) => return error.into_response(),
-    };
+    let transactions =
+        get_transactions_in_date_range(one_year_ago..=today, excluded_tags_slice, &connection)
+            .inspect_err(|error| {
+                tracing::error!("Could not get transactions for last year: {error}")
+            })?;
 
     if transactions.is_empty() {
-        return render(
+        return Ok(render(
             StatusCode::OK,
             DashboardNoDataTemplate {
                 nav_bar,
                 create_transaction_url: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
                 import_transaction_url: Uri::from_static(endpoints::IMPORT_VIEW),
             },
-        );
+        ));
     }
 
     // Get total account balance
-    let total_account_balance = match get_total_account_balance(&connection) {
-        Ok(total) => total,
-        Err(error) => return error.into_response(),
-    };
+    let total_account_balance = get_total_account_balance(&connection).inspect_err(|error| {
+        tracing::error!("Could not calcuatle total account balance: {error}")
+    })?;
 
-    render(
+    let charts = [
+        DashboardChart {
+            id: "net-income-chart",
+            options: &create_net_income_chart(&transactions).to_string(),
+        },
+        DashboardChart {
+            id: "balances-chart",
+            options: &create_balances_chart(total_account_balance, &transactions).to_string(),
+        },
+        DashboardChart {
+            id: "expenses-chart",
+            options: &create_expenses_chart(&transactions).to_string(),
+        },
+    ];
+
+    Ok(render(
         StatusCode::OK,
         DashboardTemplate {
             nav_bar,
             tags_with_status,
             excluded_tags_endpoint: endpoints::DASHBOARD_EXCLUDED_TAGS,
-            charts: DashboardChartsTemplate {
-                charts: &[
-                    DashboardChart {
-                        id: "net-income-chart",
-                        options: &create_net_income_chart(&transactions).to_string(),
-                    },
-                    DashboardChart {
-                        id: "balances-chart",
-                        options: &create_balances_chart(total_account_balance, &transactions)
-                            .to_string(),
-                    },
-                    DashboardChart {
-                        id: "expenses-chart",
-                        options: &create_expenses_chart(&transactions).to_string(),
-                    },
-                ],
-            },
+            charts: DashboardChartsTemplate { charts: &charts },
         },
-    )
+    ))
 }
 
 // ============================================================================
@@ -552,62 +547,76 @@ pub async fn update_excluded_tags(
     State(state): State<DashboardState>,
     Form(form): Form<ExcludedTagsForm>,
 ) -> Response {
-    let connection = state.db_connection.lock().unwrap();
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
 
     // Save the excluded tags
-    let excluded_tags = form.excluded_tags;
-    if save_excluded_tags(excluded_tags.clone(), &connection).is_err() {
-        return Error::DashboardPreferencesSaveError.into_response();
-    }
+    let excluded_tags = form.excluded_tags.clone();
+
+    match save_excluded_tags(form.excluded_tags.clone(), &connection) {
+        Ok(_) => {}
+        Err(error) => {
+            tracing::error!("Failed to save dashboard preferences: {error}");
+            return Error::DashboardPreferencesSaveError.into_alert_response();
+        }
+    };
 
     // Get updated charts
-    let local_timezone = match get_local_offset(&state.local_timezone) {
-        Some(offset) => offset,
-        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+    let Some(local_timezone) = get_local_offset(&state.local_timezone) else {
+        tracing::error!("Invalid timezone {}", state.local_timezone);
+        return Error::InvalidTimezoneError(state.local_timezone).into_alert_response();
     };
-    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
+
     let excluded_tags_slice = if excluded_tags.is_empty() {
         None
     } else {
         Some(excluded_tags.as_slice())
     };
 
+    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
     let one_year_ago = today - Duration::days(YEARLY_PERIOD_DAYS);
     let transactions = match get_transactions_in_date_range(
         one_year_ago..=today,
         excluded_tags_slice,
         &connection,
     ) {
-        Ok(summary) => summary,
-        Err(error) => return error.into_response(),
+        Ok(transactions) => transactions,
+        Err(error) => {
+            tracing::error!("Could not get transactions for last year: {error}");
+            return error.into_alert_response();
+        }
     };
 
     // Get total account balance
     let total_account_balance = match get_total_account_balance(&connection) {
-        Ok(total) => total,
-        Err(error) => return error.into_response(),
+        Ok(total_account_balance) => total_account_balance,
+        Err(error) => {
+            tracing::error!("could not calculate total account balance: {error}");
+            return error.into_alert_response();
+        }
     };
 
-    render(
-        StatusCode::OK,
-        DashboardChartsTemplate {
-            charts: &[
-                DashboardChart {
-                    id: "net-income-chart",
-                    options: &create_net_income_chart(&transactions).to_string(),
-                },
-                DashboardChart {
-                    id: "balances-chart",
-                    options: &create_balances_chart(total_account_balance, &transactions)
-                        .to_string(),
-                },
-                DashboardChart {
-                    id: "expenses-chart",
-                    options: &create_expenses_chart(&transactions).to_string(),
-                },
-            ],
+    let charts = [
+        DashboardChart {
+            id: "net-income-chart",
+            options: &create_net_income_chart(&transactions).to_string(),
         },
-    )
+        DashboardChart {
+            id: "balances-chart",
+            options: &create_balances_chart(total_account_balance, &transactions).to_string(),
+        },
+        DashboardChart {
+            id: "expenses-chart",
+            options: &create_expenses_chart(&transactions).to_string(),
+        },
+    ];
+
+    render(StatusCode::OK, DashboardChartsTemplate { charts: &charts })
 }
 
 // ============================================================================
@@ -661,7 +670,7 @@ mod dashboard_route_tests {
             local_timezone: "Etc/UTC".to_owned(),
         };
 
-        let response = get_dashboard_page(State(state)).await;
+        let response = get_dashboard_page(State(state)).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
 
@@ -682,7 +691,7 @@ mod dashboard_route_tests {
             local_timezone: "Etc/UTC".to_owned(),
         };
 
-        let response = get_dashboard_page(State(state)).await;
+        let response = get_dashboard_page(State(state)).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
         let html = parse_html(response).await;
@@ -709,9 +718,9 @@ mod dashboard_route_tests {
             local_timezone: "Etc/UTC".to_owned(),
         };
 
-        let response = get_dashboard_page(State(state)).await;
-        assert_eq!(response.status(), StatusCode::OK);
+        let response = get_dashboard_page(State(state)).await.unwrap();
 
+        assert_eq!(response.status(), StatusCode::OK);
         let html = parse_html(response).await;
         assert_tag_exclusion_controls_visible(&html, 2);
     }

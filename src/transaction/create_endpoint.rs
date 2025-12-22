@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use axum::{
     extract::{FromRef, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 // Must use axum_extra's Form since that parses an empty string as None instead
 // of crashing like axum::Form.
@@ -54,31 +54,40 @@ pub struct TransactionForm {
 }
 
 /// A route handler for creating a new transaction, redirects to transactions view on success.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn create_transaction_endpoint(
     State(state): State<CreateTransactionState>,
     Form(form): Form<TransactionForm>,
-) -> impl IntoResponse {
-    let local_timezone = match get_local_offset(&state.local_timezone) {
-        Some(offset) => offset,
-        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+) -> Response {
+    let Some(local_timezone) = get_local_offset(&state.local_timezone) else {
+        tracing::error!("Invalid timezone {}", state.local_timezone);
+        return Error::InvalidTimezoneError(state.local_timezone).into_alert_response();
     };
+
     let now_local_time = OffsetDateTime::now_utc().to_offset(local_timezone);
 
     if form.date > now_local_time.date() {
-        return Error::FutureDate.into_response();
+        tracing::error!(
+            "Tried to perform an operation with a future date (e.g., create a transaction)"
+        );
+
+        return Error::FutureDate(form.date).into_alert_response();
     }
 
     let transaction =
         Transaction::build(form.amount, form.date, &form.description).tag_id(form.tag_id);
 
-    let connection = state.db_connection.lock().unwrap();
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
 
     if let Err(error) = create_transaction(transaction, &connection) {
-        return error.into_response();
+        tracing::error!("could not create transaction: {error}");
+
+        return error.into_alert_response();
     }
 
     (

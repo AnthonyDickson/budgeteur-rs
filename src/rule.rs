@@ -11,7 +11,7 @@ use axum::{
     Form,
     extract::{FromRef, Path, State},
     http::StatusCode,
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
 use rusqlite::{Connection, Row};
@@ -23,7 +23,6 @@ use crate::{
     database_id::{DatabaseId, TransactionId},
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
-    not_found::NotFoundTemplate,
     shared_templates::render,
     tag::{Tag, TagId, TagName, get_all_tags},
     transaction::Transaction,
@@ -103,13 +102,6 @@ struct EditRuleFormTemplate<'a> {
     error_message: &'a str,
 }
 
-/// Renders an error message for rule operations.
-#[derive(Template)]
-#[template(path = "partials/rule_error.html")]
-struct RuleErrorTemplate<'a> {
-    error_message: &'a str,
-}
-
 /// Unified state for all rule-related operations.
 #[derive(Debug, Clone)]
 pub struct RuleState {
@@ -134,25 +126,18 @@ pub struct RuleFormData {
 }
 
 /// Route handler for the new rule page.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
-pub async fn get_new_rule_page(State(state): State<RuleState>) -> Response {
+pub async fn get_new_rule_page(State(state): State<RuleState>) -> Result<Response, Error> {
     let connection = state
         .db_connection
         .lock()
-        .expect("Could not acquire database lock");
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
 
-    let available_tags = match get_all_tags(&connection) {
-        Ok(tags) => tags,
-        Err(error) => {
-            tracing::error!("Failed to retrieve tags for new rule page: {error}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response();
-        }
-    };
+    let available_tags = get_all_tags(&connection).inspect_err(|error| {
+        tracing::error!("Failed to retrieve tags for new rule page: {error}")
+    })?;
 
-    render(
+    Ok(render(
         StatusCode::OK,
         NewRuleTemplate {
             nav_bar: get_nav_bar(endpoints::NEW_RULE_VIEW),
@@ -162,30 +147,21 @@ pub async fn get_new_rule_page(State(state): State<RuleState>) -> Response {
                 error_message: "",
             },
         },
-    )
+    ))
 }
 
 /// Route handler for the rules listing page.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
-pub async fn get_rules_page(State(state): State<RuleState>) -> Response {
+pub async fn get_rules_page(State(state): State<RuleState>) -> Result<Response, Error> {
     let connection = state
         .db_connection
         .lock()
-        .expect("Could not acquire database lock");
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
 
-    let rules = match get_all_rules_with_tags(&connection) {
-        Ok(rules) => rules,
+    let rules = get_all_rules_with_tags(&connection)
+        .inspect_err(|error| tracing::error!("Failed to retrieve rules: {error}"))?;
 
-        Err(error) => {
-            tracing::error!("Failed to retrieve rules: {error}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load rules").into_response();
-        }
-    };
-
-    render(
+    Ok(render(
         StatusCode::OK,
         RulesTemplate {
             nav_bar: get_nav_bar(endpoints::RULES_VIEW),
@@ -194,26 +170,25 @@ pub async fn get_rules_page(State(state): State<RuleState>) -> Response {
             auto_tag_all_route: endpoints::AUTO_TAG_ALL,
             auto_tag_untagged_route: endpoints::AUTO_TAG_UNTAGGED,
         },
-    )
+    ))
 }
 
 /// A route handler for creating a new rule.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn create_rule_endpoint(
     State(state): State<RuleState>,
     Form(new_rule): Form<RuleFormData>,
 ) -> Response {
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
+
+    let available_tags = get_all_tags(&connection).unwrap_or_default();
+
     if new_rule.pattern.trim().is_empty() {
-        let connection = state
-            .db_connection
-            .lock()
-            .expect("Could not acquire database lock");
-
-        let available_tags = get_all_tags(&connection).unwrap_or_default();
-
         return render(
             StatusCode::UNPROCESSABLE_ENTITY,
             NewRuleFormTemplate {
@@ -224,14 +199,7 @@ pub async fn create_rule_endpoint(
         );
     }
 
-    let rule_result = create_rule(
-        new_rule.pattern.trim(),
-        new_rule.tag_id,
-        &state
-            .db_connection
-            .lock()
-            .expect("Could not acquire database lock"),
-    );
+    let rule_result = create_rule(new_rule.pattern.trim(), new_rule.tag_id, &connection);
 
     match rule_result {
         Ok(_) => (
@@ -242,87 +210,64 @@ pub async fn create_rule_endpoint(
         Err(error) => {
             tracing::error!("An unexpected error occurred while creating a rule: {error}");
 
-            let connection = state
-                .db_connection
-                .lock()
-                .expect("Could not acquire database lock");
-
-            let available_tags = get_all_tags(&connection).unwrap_or_default();
-
-            render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                NewRuleFormTemplate {
-                    create_rule_endpoint: endpoints::POST_RULE,
-                    available_tags,
-                    error_message: "An unexpected error occurred. Please try again.",
-                },
-            )
+            error.into_alert_response()
         }
     }
 }
 
 /// Route handler for the edit rule page.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
-#[axum::debug_handler]
 pub async fn get_edit_rule_page(
     Path(rule_id): Path<DatabaseId>,
     State(state): State<RuleState>,
-) -> Response {
+) -> Result<Response, Error> {
     let connection = state
         .db_connection
         .lock()
-        .expect("Could not acquire database lock");
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
 
-    let available_tags = match get_all_tags(&connection) {
-        Ok(tags) => tags,
-        Err(error) => {
-            tracing::error!("Failed to retrieve tags for edit rule page: {error}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response();
-        }
-    };
+    let available_tags = get_all_tags(&connection).inspect_err(|error| {
+        tracing::error!("Failed to retrieve tags for edit rule page: {error}")
+    })?;
 
     let edit_endpoint = endpoints::format_endpoint(endpoints::EDIT_RULE_VIEW, rule_id);
     let update_endpoint = endpoints::format_endpoint(endpoints::PUT_RULE, rule_id);
 
-    match get_rule(rule_id, &connection) {
-        Ok(rule) => render(
-            StatusCode::OK,
-            EditRuleTemplate {
-                nav_bar: get_nav_bar(&edit_endpoint),
-                form: EditRuleFormTemplate {
-                    update_rule_endpoint: &update_endpoint,
-                    available_tags,
-                    rule_pattern: &rule.pattern,
-                    selected_tag_id: rule.tag_id,
-                    error_message: "",
-                },
-            },
-        ),
-        Err(Error::NotFound) => render(StatusCode::NOT_FOUND, NotFoundTemplate),
-        Err(error) => {
+    let rule = get_rule(rule_id, &connection).inspect_err(|error| match error {
+        Error::NotFound => {}
+        error => {
             tracing::error!("An unexpected error ocurred when fetching rule #{rule_id}: {error}");
-            Redirect::to(endpoints::INTERNAL_ERROR_VIEW).into_response()
         }
-    }
+    })?;
+
+    Ok(render(
+        StatusCode::OK,
+        EditRuleTemplate {
+            nav_bar: get_nav_bar(&edit_endpoint),
+            form: EditRuleFormTemplate {
+                update_rule_endpoint: &update_endpoint,
+                available_tags,
+                rule_pattern: &rule.pattern,
+                selected_tag_id: rule.tag_id,
+                error_message: "",
+            },
+        },
+    ))
 }
 
 /// A route handler for updating a rule.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn update_rule_endpoint(
     Path(rule_id): Path<DatabaseId>,
     State(state): State<RuleState>,
     Form(form_data): Form<RuleFormData>,
-) -> impl IntoResponse {
-    let connection = state
-        .db_connection
-        .lock()
-        .expect("Could not acquire database lock");
+) -> Response {
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
 
     let update_endpoint = endpoints::format_endpoint(endpoints::PUT_RULE, rule_id);
 
@@ -341,88 +286,64 @@ pub async fn update_rule_endpoint(
         );
     }
 
-    if let Err(error) = update_rule(
+    let result = update_rule(
         rule_id,
         form_data.pattern.trim(),
         form_data.tag_id,
         &connection,
-    ) {
-        let (status, error_message) = if error == Error::NotFound {
-            (StatusCode::NOT_FOUND, "Rule not found")
-        } else {
-            tracing::error!("An unexpected error occurred while updating rule {rule_id}: {error}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "An unexpected error occurred. Please try again.",
-            )
-        };
+    );
 
-        let available_tags = get_all_tags(&connection).unwrap_or_default();
-
-        render(
-            status,
-            EditRuleFormTemplate {
-                update_rule_endpoint: &update_endpoint,
-                available_tags,
-                rule_pattern: &form_data.pattern,
-                selected_tag_id: form_data.tag_id,
-                error_message,
-            },
-        )
-    } else {
-        (
+    match result {
+        Ok(_) => (
             HxRedirect(endpoints::RULES_VIEW.to_owned()),
             StatusCode::SEE_OTHER,
         )
-            .into_response()
+            .into_response(),
+        Err(Error::UpdateMissingRule) => Error::UpdateMissingRule.into_alert_response(),
+        Err(error) => {
+            tracing::error!("An unexpected error occurred while updating rule {rule_id}: {error}");
+            error.into_alert_response()
+        }
     }
 }
 
 /// A route handler for deleting a rule.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn delete_rule_endpoint(
     Path(rule_id): Path<DatabaseId>,
     State(state): State<RuleState>,
-) -> impl IntoResponse {
-    let connection = state
-        .db_connection
-        .lock()
-        .expect("Could not acquire database lock");
+) -> Response {
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
 
-    if let Err(error) = delete_rule(rule_id, &connection) {
-        let error_message = if error == Error::NotFound {
-            "Rule not found"
-        } else {
+    match delete_rule(rule_id, &connection) {
+        Ok(_) => render(
+            StatusCode::OK,
+            AlertTemplate::success("Rule deleted successfully", ""),
+        ),
+        Err(Error::DeleteMissingRule) => Error::DeleteMissingRule.into_alert_response(),
+        Err(error) => {
             tracing::error!("An unexpected error occurred while deleting rule {rule_id}: {error}");
-            "An unexpected error occurred. Please try again."
-        };
-
-        render(StatusCode::OK, RuleErrorTemplate { error_message })
-    } else {
-        (
-            HxRedirect(endpoints::RULES_VIEW.to_owned()),
-            StatusCode::SEE_OTHER,
-        )
-            .into_response()
+            error.into_alert_response()
+        }
     }
 }
 
 /// A route handler for applying auto-tagging rules to all transactions.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
-pub async fn auto_tag_all_transactions_endpoint(
-    State(state): State<RuleState>,
-) -> impl IntoResponse {
+pub async fn auto_tag_all_transactions_endpoint(State(state): State<RuleState>) -> Response {
     let start_time = std::time::Instant::now();
-    let connection = state
-        .db_connection
-        .lock()
-        .expect("Could not acquire database lock");
+
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
 
     match apply_rules_to_transactions(TaggingMode::FetchAll, &connection) {
         Ok(result) => {
@@ -470,18 +391,16 @@ pub async fn auto_tag_all_transactions_endpoint(
 }
 
 /// A route handler for applying auto-tagging rules to untagged transactions only.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
-pub async fn auto_tag_untagged_transactions_endpoint(
-    State(state): State<RuleState>,
-) -> impl IntoResponse {
+pub async fn auto_tag_untagged_transactions_endpoint(State(state): State<RuleState>) -> Response {
     let start_time = std::time::Instant::now();
-    let connection = state
-        .db_connection
-        .lock()
-        .expect("Could not acquire database lock");
+
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
 
     match apply_rules_to_transactions(TaggingMode::FetchUntagged, &connection) {
         Ok(result) => {
@@ -578,7 +497,7 @@ pub fn update_rule(
     )?;
 
     if rows_affected == 0 {
-        return Err(Error::NotFound);
+        return Err(Error::UpdateMissingRule);
     }
 
     Ok(())
@@ -592,7 +511,7 @@ pub fn delete_rule(rule_id: DatabaseId, connection: &Connection) -> Result<(), E
     let rows_affected = connection.execute("DELETE FROM rule WHERE id = ?1", [rule_id])?;
 
     if rows_affected == 0 {
-        return Err(Error::NotFound);
+        return Err(Error::DeleteMissingRule);
     }
 
     Ok(())
@@ -744,7 +663,7 @@ fn batch_set_transaction_tags(
             .map_err(|error| match error {
                 // Code 787 occurs when a FOREIGN KEY constraint failed.
                 rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 787 => {
-                    Error::InvalidTag
+                    Error::InvalidTag(Some(*tag_id))
                 }
                 error => error.into(),
             })?;
@@ -978,7 +897,7 @@ mod rule_tests {
 
         let result = update_rule(invalid_id, new_pattern, tag.id, &connection);
 
-        assert_eq!(result, Err(Error::NotFound));
+        assert_eq!(result, Err(Error::UpdateMissingRule));
     }
 
     #[test]
@@ -1003,7 +922,7 @@ mod rule_tests {
 
         let result = delete_rule(invalid_id, &connection);
 
-        assert_eq!(result, Err(Error::NotFound));
+        assert_eq!(result, Err(Error::DeleteMissingRule));
     }
 
     #[test]

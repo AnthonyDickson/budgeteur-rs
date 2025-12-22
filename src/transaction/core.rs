@@ -154,8 +154,9 @@ impl TransactionBuilder {
 ///
 /// # Errors
 /// This function will return a:
-/// - [Error::SqlError] if there is some other SQL error,
-/// - or [Error::InternalError] if there was an unexpected error.
+/// - [Error::InvalidTag] if specified tag ID does not refer to a real tag ID,
+/// - or [Error::DuplicateImportId] if a transaction with the specified import ID already exists,
+/// - or [Error::SqlError] if there is some other SQL error.
 pub fn create_transaction(
     builder: TransactionBuilder,
     connection: &Connection,
@@ -183,7 +184,7 @@ pub fn create_transaction(
                     extended_code: rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY,
                 },
                 _,
-            ) => Error::InvalidTag,
+            ) => Error::InvalidTag(builder.tag_id),
             rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error {
                     code: _,
@@ -340,7 +341,7 @@ mod database_tests {
         let result =
             create_transaction(Transaction::build(123.45, today, "").tag_id(tag_id), &conn);
 
-        assert_eq!(result, Err(Error::InvalidTag));
+        assert_eq!(result, Err(Error::InvalidTag(tag_id)));
     }
 
     #[test]

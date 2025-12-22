@@ -14,9 +14,7 @@ use crate::{
     AppState, Error,
     database_id::TransactionId,
     endpoints::{self, format_endpoint},
-    internal_server_error::render_internal_server_error,
     navigation::{NavbarTemplate, get_nav_bar},
-    not_found::get_404_not_found_response,
     shared_templates::render,
     tag::{Tag, get_all_tags},
     timezone::get_local_offset,
@@ -62,40 +60,31 @@ pub async fn get_edit_transaction_page(
     State(state): State<EditTransactionPageState>,
     Path(transaction_id): Path<TransactionId>,
     Query(query_params): Query<QueryParams>,
-) -> Response {
+) -> Result<Response, Error> {
     let nav_bar = get_nav_bar(endpoints::EDIT_TRANSACTION_VIEW);
 
-    let connection = match state.db_connection.lock() {
-        Ok(connection) => connection,
-        Err(error) => {
-            tracing::error!("Could not acquire database lock: {error}");
-            return render_internal_server_error(Default::default());
-        }
-    };
+    let connection = state
+        .db_connection
+        .lock()
+        .inspect_err(|error| tracing::error!("Could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
 
-    let transaction = match get_transaction(transaction_id, &connection) {
-        Ok(transaction) => transaction,
-        Err(Error::NotFound) => {
-            return get_404_not_found_response();
-        }
-        Err(error) => {
-            tracing::error!("Failed to retrieve transaction {transaction_id}: {error}");
-            return render_internal_server_error(Default::default());
-        }
-    };
+    let transaction =
+        get_transaction(transaction_id, &connection).inspect_err(|error| match error {
+            Error::NotFound => {}
+            error => {
+                tracing::error!("Failed to retrieve transaction {transaction_id}: {error}")
+            }
+        })?;
 
-    let available_tags = match get_all_tags(&connection) {
-        Ok(tags) => tags,
-        Err(error) => {
-            tracing::error!("Failed to retrieve tags for new transaction page: {error}");
-            return render_internal_server_error(Default::default());
-        }
-    };
+    let available_tags = get_all_tags(&connection).inspect_err(|error| {
+        tracing::error!("Failed to retrieve tags for new transaction page: {error}")
+    })?;
 
-    let Some(local_timezone) = get_local_offset(&state.local_timezone) else {
-        tracing::error!("Failed to get local timezone offset");
-        return render_internal_server_error(Default::default());
-    };
+    let local_timezone = get_local_offset(&state.local_timezone).ok_or_else(|| {
+        tracing::error!("Invalid timezone {}", state.local_timezone);
+        Error::InvalidTimezoneError(state.local_timezone)
+    })?;
 
     let base_url = format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction_id);
     let edit_transaction_url = match query_params.redirect_url {
@@ -103,7 +92,7 @@ pub async fn get_edit_transaction_page(
         None => base_url,
     };
 
-    render(
+    Ok(render(
         StatusCode::OK,
         EditTransactionPageTemplate {
             nav_bar,
@@ -112,5 +101,5 @@ pub async fn get_edit_transaction_page(
             transaction,
             available_tags,
         },
-    )
+    ))
 }

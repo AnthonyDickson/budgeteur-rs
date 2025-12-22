@@ -17,6 +17,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_server::Handle;
+use time::Date;
 use tokio::signal;
 
 mod account;
@@ -55,6 +56,14 @@ pub use logging::{LOG_BODY_LENGTH_LIMIT, logging_middleware};
 pub use password::{PasswordHash, ValidatedPassword};
 pub use routing::build_router;
 pub use user::{User, UserID, get_user_by_id};
+
+use crate::{
+    alert::AlertTemplate,
+    internal_server_error::{InternalServerErrorPageTemplate, render_internal_server_error},
+    not_found::get_404_not_found_response,
+    shared_templates::render,
+    tag::TagId,
+};
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
 /// then signals the server to shut down gracefully.
@@ -124,7 +133,7 @@ pub enum Error {
 
     /// The tag ID used to create a transaction did not match a valid tag.
     #[error("the tag ID does not refer to a valid tag")]
-    InvalidTag,
+    InvalidTag(Option<TagId>),
 
     /// An empty string was used to create a tag name.
     #[error("Tag name cannot be empty")]
@@ -134,8 +143,8 @@ pub enum Error {
     ///
     /// Transactions record events that have already happened, therefore future
     /// dates are not allowed.
-    #[error("transaction dates must not be later than the current date")]
-    FutureDate,
+    #[error("{0} is a date in the future, which is not allowed")]
+    FutureDate(Date),
 
     /// The specified import ID already exists in the database.
     ///
@@ -167,10 +176,6 @@ pub enum Error {
     #[error("the requested resource could not be found")]
     NotFound,
 
-    /// An unexpected error occurred when hashing a password or parsing a password hash.
-    #[error("an unexpected error occurred: {0}")]
-    InternalError(String),
-
     /// An unhandled/unexpected SQL error.
     #[error("an unexpected SQL error occurred: {0}")]
     SqlError(rusqlite::Error),
@@ -179,21 +184,53 @@ pub enum Error {
     #[error("failed to save dashboard preferences")]
     DashboardPreferencesSaveError,
 
-    /// An error occurred while calculating dashboard summaries.
-    #[error("failed to calculate dashboard summaries")]
-    DashboardCalculationError,
-
     /// An error occurred while getting the local timezone from a canonical timezone string.
     #[error("invalid timezone {0}")]
     InvalidTimezoneError(String),
 
     /// The specified account name already exists in the database.
-    #[error("the account already exists in the database")]
-    DuplicateAccountName,
+    #[error("the account \"{0}\" already exists in the database")]
+    DuplicateAccountName(String),
 
     /// An error occurred while serializing a struct as JSON
     #[error("could not serialize as JSON: {0}")]
     JSONSerializationError(String),
+
+    /// Could not acquire the database lock
+    #[error("could not acquire the database lock")]
+    DatabaseLockError,
+
+    /// Tried to delete a transaction that does not exist
+    #[error("tried to delete a transaction that is not in the database")]
+    DeleteMissingTransaction,
+
+    /// Tried to update a transaction that does not exist
+    #[error("tried to update a transaction that is not in the database")]
+    UpdateMissingTransaction,
+
+    /// Tried to delete an account that does not exist
+    #[error("tried to delete an account that is not in the database")]
+    DeleteMissingAccount,
+
+    /// Tried to update an account that does not exist
+    #[error("tried to update an account that is not in the database")]
+    UpdateMissingAccount,
+
+    /// Tried to update a tag that does not exist
+    #[error("tried to update a tag that is not in the database")]
+    UpdateMissingTag,
+
+    /// Tried to delete a tag that does not exist
+    #[error("tried to delete a tag that is not in the database")]
+    DeleteMissingTag,
+
+    /// Tried to update a rule that does not exist
+    #[error("tried to update a rule that is not in the database")]
+    UpdateMissingRule,
+
+    /// Tried to delete a rule that does not exist
+    #[error("tried to delete a rule that is not in the database")]
+    DeleteMissingRule,
 }
 
 impl From<rusqlite::Error> for Error {
@@ -217,46 +254,132 @@ impl From<rusqlite::Error> for Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
-            Error::NotFound => (StatusCode::NOT_FOUND, "Resource not found"),
-            Error::InternalError(err) => {
-                tracing::error!("An unexpected error occurred: {}", err);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
-            }
+            Error::NotFound => get_404_not_found_response(),
             Error::DashboardPreferencesSaveError => {
-                tracing::error!("Failed to save dashboard preferences");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to save your preferences. Please try again.",
-                )
-            }
-            Error::DashboardCalculationError => {
-                tracing::error!("Failed to calculate dashboard summaries");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to update dashboard summaries. Please try again.",
-                )
+                render_internal_server_error(InternalServerErrorPageTemplate {
+                    description: "Save Failed",
+                    fix: "Failed to save your preferences. Please try again.",
+                })
             }
             Error::InvalidTimezoneError(timezone) => {
-                tracing::error!("Invalid timezone {timezone}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Could not get local timezone. Check your server settings and \
-                    ensure the timezone has been set to valid, canonical timezone string",
-                )
+                render_internal_server_error(InternalServerErrorPageTemplate {
+                    description: "Invalid Timezone Settings",
+                    fix: &format!(
+                        "Could not get local timezone \"{timezone}\". Check your server settings and \
+                    ensure the timezone has been set to valid, canonical timezone string"
+                    ),
+                })
             }
-            Error::FutureDate => {
-                tracing::error!("Tried to perform an operation with a future date (e.g., create a transaction)");
-                (
-                    StatusCode::BAD_REQUEST,
-                    "Got a date in the future. Check your inputs and ensure all dates are set to at most today",
-                )
-            }
+            Error::DatabaseLockError => render_internal_server_error(Default::default()),
             // Any errors that are not handled above are not intended to be shown to the client.
             error => {
                 tracing::error!("An unexpected error occurred: {}", error);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+                render_internal_server_error(Default::default())
             }
         }
-        .into_response()
+    }
+}
+
+impl Error {
+    fn into_alert_response(self) -> Response {
+        match self {
+            Error::InvalidTimezoneError(timezone) => render(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                AlertTemplate::error(
+                    "Invalid Timezone Settings",
+                    &format!(
+                        "Could not get local timezone \"{timezone}\". Check your server settings and \
+                    ensure the timezone has been set to valid, canonical timezone string"
+                    ),
+                ),
+            ),
+            Error::FutureDate(date) => render(
+                StatusCode::BAD_REQUEST,
+                AlertTemplate::error(
+                    "Invalid transaction date",
+                    &format!(
+                        "{date} is a date in the future, which is not allowed. Change the date to"
+                    ),
+                ),
+            ),
+            Error::InvalidTag(tag_id) => render(
+                StatusCode::BAD_REQUEST,
+                AlertTemplate::error(
+                    "Invalid tag ID",
+                    &format!("Could not find a tag with the ID {tag_id:?}"),
+                ),
+            ),
+            Error::UpdateMissingTransaction => render(
+                StatusCode::NOT_FOUND,
+                AlertTemplate::error(
+                    "Could not update transaction",
+                    "The transaction could not be found.",
+                ),
+            ),
+            Error::DeleteMissingTransaction => render(
+                StatusCode::NOT_FOUND,
+                AlertTemplate::error(
+                    "Could not delete transaction",
+                    "The transaction could not be found. \
+                    Try refreshing the page to see if the transaction has already been deleted.",
+                ),
+            ),
+            Error::UpdateMissingAccount => render(
+                StatusCode::NOT_FOUND,
+                AlertTemplate::error(
+                    "Could not update account",
+                    "The account could not be found.",
+                ),
+            ),
+            Error::DeleteMissingAccount => render(
+                StatusCode::NOT_FOUND,
+                AlertTemplate::error(
+                    "Could not delete account",
+                    "The account could not be found. \
+                    Try refreshing the page to see if the account has already been deleted.",
+                ),
+            ),
+            Error::UpdateMissingTag => render(
+                StatusCode::NOT_FOUND,
+                AlertTemplate::error("Could not update tag", "The tag could not be found."),
+            ),
+            Error::DeleteMissingTag => render(
+                StatusCode::NOT_FOUND,
+                AlertTemplate::error(
+                    "Could not delete tag",
+                    "The tag could not be found. \
+                    Try refreshing the page to see if the tag has already been deleted.",
+                ),
+            ),
+            Error::UpdateMissingRule => render(
+                StatusCode::NOT_FOUND,
+                AlertTemplate::error("Could not update rule", "The rule could not be found."),
+            ),
+            Error::DeleteMissingRule => render(
+                StatusCode::NOT_FOUND,
+                AlertTemplate::error(
+                    "Could not delete rule",
+                    "The rule could not be found. \
+                    Try refreshing the page to see if the rule has already been deleted.",
+                ),
+            ),
+            Error::DuplicateAccountName(name) => render(
+                StatusCode::BAD_REQUEST,
+                AlertTemplate::error(
+                    "Duplicate Account Name",
+                    &format!(
+                        "The account {name} already exists in the database. \
+                        Choose a different account name, or edit or delete the existing account.",
+                    ),
+                ),
+            ),
+            _ => render(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                AlertTemplate::error(
+                    "Something went wrong",
+                    "An unexpected error occurred, check the server logs for more details.",
+                ),
+            ),
+        }
     }
 }
