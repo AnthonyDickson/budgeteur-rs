@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Move `Error` and related code to own module `error`
 - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
 - Add server-side validation to reject empty tag names (a string consisting of zero or more whitespaces and nothing else)
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
