@@ -15,7 +15,6 @@ use crate::{
     AppState, Error,
     endpoints::{self, format_endpoint},
     filters,
-    internal_server_error::render_internal_server_error,
     navigation::{NavbarTemplate, get_nav_bar},
     shared_templates::render,
 };
@@ -54,19 +53,15 @@ struct AccountsTemplate<'a> {
 }
 
 /// Renders the accounts page showing all accounts.
-pub async fn get_accounts_page(State(state): State<AccountState>) -> Response {
-    let connection = &state
+pub async fn get_accounts_page(State(state): State<AccountState>) -> Result<Response, Error> {
+    let connection = state
         .db_connection
         .lock()
-        .expect("Could not allocate database connection lock");
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
 
-    let accounts: Vec<AccountTableRow> = match get_all_accounts(connection) {
-        Ok(accounts) => accounts,
-        Err(error) => {
-            tracing::error!("{error}");
-            return render_internal_server_error(Default::default());
-        }
-    };
+    let accounts: Vec<AccountTableRow> = get_all_accounts(&connection)
+        .inspect_err(|error| tracing::error!("could not get all accounts: {error}"))?;
 
     let template = AccountsTemplate {
         nav_bar: get_nav_bar(endpoints::ACCOUNTS),
@@ -74,7 +69,7 @@ pub async fn get_accounts_page(State(state): State<AccountState>) -> Response {
         create_account_page_url: endpoints::NEW_ACCOUNT_VIEW,
     };
 
-    render(StatusCode::OK, template)
+    Ok(render(StatusCode::OK, template))
 }
 
 fn get_all_accounts(connection: &Connection) -> Result<Vec<AccountTableRow>, Error> {
@@ -420,7 +415,7 @@ mod get_accounts_page_tests {
             db_connection: Arc::new(Mutex::new(connection)),
         };
 
-        let response = get_accounts_page(State(state)).await;
+        let response = get_accounts_page(State(state)).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");

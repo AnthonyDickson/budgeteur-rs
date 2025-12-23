@@ -13,8 +13,7 @@ use serde::Deserialize;
 use time::{Date, OffsetDateTime};
 
 use crate::{
-    AppState, Error, alert::AlertTemplate, database_id::TransactionId, endpoints,
-    shared_templates::render, tag::TagId, timezone::get_local_offset,
+    AppState, Error, database_id::TransactionId, endpoints, tag::TagId, timezone::get_local_offset,
 };
 
 /// The state needed to edit a transaction.
@@ -55,19 +54,10 @@ pub async fn edit_tranction_endpoint(
     Query(query_params): Query<QueryParams>,
     Form(form): Form<EditTransactionForm>,
 ) -> Response {
-    let local_timezone = match get_local_offset(&state.local_timezone) {
-        Some(offset) => offset,
-        None => {
-            tracing::error!("Invalid timezone {}", &state.local_timezone);
-            return render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Could not get local timezone",
-                    "Check your server settings and ensure the timezone has been \
-                    set to valid, canonical timezone string",
-                ),
-            );
-        }
+    let Some(local_timezone) = get_local_offset(&state.local_timezone) else {
+        tracing::error!("Invalid timezone {}", state.local_timezone);
+
+        return Error::InvalidTimezoneError(state.local_timezone).into_alert_response();
     };
     let now_local_time = OffsetDateTime::now_utc().to_offset(local_timezone);
 
@@ -76,52 +66,37 @@ pub async fn edit_tranction_endpoint(
             "Tried to set the date of a transaction to a future date {}",
             form.date
         );
-        return render(
-            StatusCode::BAD_REQUEST,
-            AlertTemplate::error(
-                "Got a date in the future.",
-                "Ensure all dates are set to today or earlier.",
-            ),
-        );
+        return Error::FutureDate(form.date).into_alert_response();
     }
 
     let connection = match state.db_connection.lock() {
         Ok(connection) => connection,
         Err(error) => {
-            tracing::error!("Could not aqcuire database lock: {error}");
-            return render_error_alert();
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
         }
     };
 
     match update_transaction(transaction_id, &form, &connection) {
-        Ok(0) => {
+        // The status code has to be 200 OK or HTMX will not delete the table row.
+        Ok(row_affected) if row_affected != 0 => {}
+        Ok(_) => {
             tracing::error!(
                 "Could not update transaction {transaction_id}: update returned zero rows affected"
             );
-            return render_error_alert();
+            return Error::UpdateMissingTransaction.into_alert_response();
         }
-        Ok(_) => {}
         Err(error) => {
-            tracing::error!("Could not update transaction {transaction_id}: {error}");
-            return render_error_alert();
+            tracing::error!("Could not delete transaction {transaction_id}: {error}");
+            return error.into_alert_response();
         }
-    }
+    };
 
     let redirect_url = query_params
         .redirect_url
         .unwrap_or(endpoints::TRANSACTIONS_VIEW.to_owned());
 
     (HxRedirect(redirect_url), StatusCode::SEE_OTHER).into_response()
-}
-
-fn render_error_alert() -> Response {
-    render(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        AlertTemplate::error(
-            "Could not update transaction",
-            "Try again or check the server logs.",
-        ),
-    )
 }
 
 type RowsAffected = usize;

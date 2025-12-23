@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use axum::{
     extract::{FromRef, Multipart, State, multipart::Field},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use rusqlite::Connection;
 
@@ -47,9 +47,9 @@ pub async fn import_transactions(
     State(state): State<ImportState>,
     mut multipart: Multipart,
 ) -> Response {
-    let local_timezone = match get_local_offset(&state.local_timezone) {
-        Some(offset) => offset,
-        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+    let Some(local_timezone) = get_local_offset(&state.local_timezone) else {
+        tracing::error!("Invalid timezone {}", state.local_timezone);
+        return Error::InvalidTimezoneError(state.local_timezone).into_alert_response();
     };
 
     let start_time = std::time::Instant::now();
@@ -67,12 +67,7 @@ pub async fn import_transactions(
             }
             Err(error) => {
                 tracing::error!("Failed to parse multipart field: {}", error);
-                return render(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    AlertTemplate::error_simple(
-                        "An unexpected error occurred, please try again later.",
-                    ),
-                );
+                return error.into_alert_response();
             }
         };
 

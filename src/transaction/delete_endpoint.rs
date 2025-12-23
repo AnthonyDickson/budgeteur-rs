@@ -2,14 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{FromRef, Path, State},
-    http::StatusCode,
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Response},
 };
 use rusqlite::Connection;
 
-use crate::{
-    AppState, Error, alert::AlertTemplate, database_id::TransactionId, shared_templates::render,
-};
+use crate::{AppState, Error, database_id::TransactionId};
 
 /// The state needed to delete a transaction.
 #[derive(Debug, Clone)]
@@ -30,36 +27,25 @@ const EMPTY_TRANSACTION_TABLE_ROW: &str =
     include_str!("./../../templates/partials/transaction_table_row_empty.html");
 
 /// A route handler for deleting a transaction, responds with an alert.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn delete_transaction_endpoint(
     State(state): State<DeleteTransactionState>,
     Path(transaction_id): Path<TransactionId>,
-) -> impl IntoResponse {
-    let connection = state.db_connection.lock().unwrap();
+) -> Response {
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
 
     match delete_transaction(transaction_id, &connection) {
-        Ok(0) => render(
-            StatusCode::NOT_FOUND,
-            AlertTemplate::error(
-                "Could not delete transaction",
-                "The transaction could not be found. \
-                Try refreshing the page to see if the transaction has already been deleted.",
-            ),
-        ),
         // The status code has to be 200 OK or HTMX will not delete the table row.
-        Ok(_) => Html(EMPTY_TRANSACTION_TABLE_ROW).into_response(),
+        Ok(row_affected) if row_affected != 0 => Html(EMPTY_TRANSACTION_TABLE_ROW).into_response(),
+        Ok(_) => Error::DeleteMissingTransaction.into_alert_response(),
         Err(error) => {
             tracing::error!("Could not delete transaction {transaction_id}: {error}");
-            render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Could not delete transaction",
-                    "An unexpected error occured. Try again later or check the logs on the server.",
-                ),
-            )
+            error.into_alert_response()
         }
     }
 }

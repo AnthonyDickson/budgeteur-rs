@@ -2,12 +2,8 @@
 
 ## Stage One: Budgeting
 
-- Port alerts system to other pages (other than rules page) for handling error messages
-  - Use alerts for confirming deletion of items from tags and rules pages (and others when they get full CRUD).
-  - Alert for dashboard if excluded tag ops fail.
-  - Extend to offer undo capabilities on delete/edit?
-  - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
-- Log errors at source to make debugging easier
+- Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
+- Add server-side validation to reject empty tag names (a string consisting of zero or more whitespaces and nothing else)
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
 - Render internal server error page for unexpected errors instead of returning text
 - Organise code into modules based on features

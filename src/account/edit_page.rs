@@ -14,9 +14,7 @@ use crate::{
     account::{Account, map_row_to_account},
     database_id::DatabaseId,
     endpoints::{self, format_endpoint},
-    internal_server_error::render_internal_server_error,
     navigation::{NavbarTemplate, get_nav_bar},
-    not_found::get_404_not_found_response,
     shared_templates::render,
     timezone::get_local_offset,
 };
@@ -53,36 +51,28 @@ impl FromRef<AppState> for EditAccountPageState {
 pub async fn get_edit_account_page(
     State(state): State<EditAccountPageState>,
     Path(account_id): Path<DatabaseId>,
-) -> Response {
+) -> Result<Response, Error> {
     let nav_bar = get_nav_bar(endpoints::EDIT_ACCOUNT_VIEW);
 
-    let connection = match state.db_connection.lock() {
-        Ok(connection) => connection,
-        Err(error) => {
-            tracing::error!("Could not acquire database lock: {error}");
-            return render_internal_server_error(Default::default());
-        }
-    };
+    let connection = state
+        .db_connection
+        .lock()
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
 
-    let account = match get_account(account_id, &connection) {
-        Ok(transaction) => transaction,
-        Err(Error::NotFound) => {
-            return get_404_not_found_response();
-        }
-        Err(error) => {
-            tracing::error!("Failed to retrieve transaction {account_id}: {error}");
-            return render_internal_server_error(Default::default());
-        }
-    };
+    let account = get_account(account_id, &connection).inspect_err(|error| match error {
+        Error::NotFound => {}
+        error => tracing::error!("Failed to retrieve transaction {account_id}: {error}"),
+    })?;
 
-    let Some(local_timezone) = get_local_offset(&state.local_timezone) else {
-        tracing::error!("Failed to get local timezone offset");
-        return render_internal_server_error(Default::default());
-    };
+    let local_timezone = get_local_offset(&state.local_timezone).ok_or_else(|| {
+        tracing::error!("Invalid timezone {}", state.local_timezone);
+        Error::InvalidTimezoneError(state.local_timezone)
+    })?;
 
     let edit_url = format_endpoint(endpoints::EDIT_ACCOUNT, account_id);
 
-    render(
+    Ok(render(
         StatusCode::OK,
         EditAccountPageTemplate {
             nav_bar,
@@ -90,7 +80,7 @@ pub async fn get_edit_account_page(
             max_date: OffsetDateTime::now_utc().to_offset(local_timezone).date(),
             account,
         },
-    )
+    ))
 }
 
 /// Retrieve an account from the database by its `id`.

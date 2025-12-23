@@ -5,7 +5,7 @@ use askama::Template;
 use axum::{
     extract::{FromRef, Query, State},
     http::{StatusCode, Uri},
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use rusqlite::Connection;
 use serde::Deserialize;
@@ -72,7 +72,7 @@ struct TransactionsTemplate<'a> {
 pub async fn get_transactions_page(
     State(state): State<TransactionsViewState>,
     Query(query_params): Query<Pagination>,
-) -> Response {
+) -> Result<Response, Error> {
     let nav_bar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
 
     let current_page = query_params
@@ -85,29 +85,27 @@ pub async fn get_transactions_page(
     let limit = per_page;
     let offset = (current_page - 1) * per_page;
     let connection = state.db_connection.lock().unwrap();
-    let page_count = match count_transactions(&connection) {
-        Ok(transaction_count) => (transaction_count as f64 / per_page as f64).ceil() as u64,
-        Err(error) => return error.into_response(),
+    let page_count = {
+        let transaction_count = count_transactions(&connection)
+            .inspect_err(|error| tracing::error!("could not count transactions: {error}"))?;
+        (transaction_count as f64 / per_page as f64).ceil() as u64
     };
 
     let redirect_url = get_redirect_url(current_page, per_page);
 
     let transactions =
-        get_transaction_table_rows_paginated(limit, offset, SortOrder::Descending, &connection);
-    let transactions = match transactions {
-        Ok(transactions) => transactions
+        get_transaction_table_rows_paginated(limit, offset, SortOrder::Descending, &connection)
+            .inspect_err(|error| tracing::error!("could not get transaction table rows: {error}"))?
             .into_iter()
             .map(|transaction| {
                 TransactionTableRow::new_from_transaction(transaction, redirect_url.as_deref())
             })
-            .collect(),
-        Err(error) => return error.into_response(),
-    };
+            .collect();
 
     let max_pages = state.pagination_config.max_pages;
     let pagination_indicators = create_pagination_indicators(current_page, page_count, max_pages);
 
-    render(
+    Ok(render(
         StatusCode::OK,
         TransactionsTemplate {
             nav_bar,
@@ -118,7 +116,7 @@ pub async fn get_transactions_page(
             pagination: &pagination_indicators,
             per_page,
         },
-    )
+    ))
 }
 
 fn get_redirect_url(page: u64, per_page: u64) -> Option<String> {
@@ -353,7 +351,8 @@ mod tests {
                 per_page: Some(per_page),
             }),
         )
-        .await;
+        .await
+        .unwrap();
 
         let html = parse_html(response).await;
         assert_valid_html(&html);
@@ -616,7 +615,8 @@ mod tests {
                 per_page: Some(10),
             }),
         )
-        .await;
+        .await
+        .unwrap();
 
         let html = parse_html(response).await;
         assert_valid_html(&html);

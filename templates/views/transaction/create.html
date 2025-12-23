@@ -23,7 +23,7 @@
 {{ nav_bar|safe }}
 <div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
   <div class="relative overflow-x-auto">
-    <form hx-post="{{ create_transaction_route }}" class="space-y-4 md:space-y-6">
+    <form hx-post="{{ create_transaction_route }}" hx-target-error="#alert-container" class="space-y-4 md:space-y-6">
       <h2 class="text-xl font-bold">New Transaction</h2>
       <div>
         <label for="amount" class="{% include "styles/forms/label.html" %}">Amount</label>

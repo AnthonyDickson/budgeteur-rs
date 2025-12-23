@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "budgeteur_rs"
-version = "0.20.2"
+version = "0.21.0"
 dependencies = [
  "askama",
  "axum",

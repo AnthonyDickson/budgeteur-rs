@@ -5,16 +5,14 @@ use axum::{
     Form,
     extract::{FromRef, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
 use rusqlite::{Connection, params};
 use serde::Deserialize;
 use time::Date;
 
-use crate::{
-    AppState, Error, account::Account, alert::AlertTemplate, endpoints, shared_templates::render,
-};
+use crate::{AppState, Error, account::Account, endpoints};
 
 /// The state needed to get or create an account.
 #[derive(Debug, Clone)]
@@ -46,48 +44,18 @@ pub struct AccountForm {
 pub async fn create_account_endpoint(
     State(state): State<CreateAccountState>,
     Form(form): Form<AccountForm>,
-) -> impl IntoResponse {
+) -> Response {
     let connection = match state.db_connection.lock() {
         Ok(connection) => connection,
         Err(error) => {
-            tracing::error!("Could not acquire database lock: {error}");
-            return render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Something went wrong",
-                    "Try again later or check the server logs",
-                ),
-            );
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
         }
     };
 
-    match create_account(&form, &connection) {
-        Ok(_) => {}
-        Err(Error::DuplicateAccountName) => {
-            return render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Duplicate Account Name",
-                    &format!(
-                        "The account {} already exists in the database. \
-                        Choose a different account name, or edit or delete the existing account.",
-                        form.name
-                    ),
-                ),
-            );
-        }
-        Err(error) => {
-            tracing::error!(
-                "Could not create account with {form:?}, got an unexpected error: {error}"
-            );
-            return render(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Something went wrong",
-                    "Try again later or check the server logs",
-                ),
-            );
-        }
+    if let Err(error) = create_account(&form, &connection) {
+        tracing::error!("Could not create account with {form:?} error: {error}");
+        return error.into_alert_response();
     }
 
     (
@@ -106,7 +74,7 @@ pub fn create_account(form: &AccountForm, connection: &Connection) -> Result<Acc
         .map_err(|error| match error {
             // Handle unique account name constraint violation
             rusqlite::Error::SqliteFailure(error, Some(_)) if error.extended_code == 2067 => {
-                Error::DuplicateAccountName
+                Error::DuplicateAccountName(form.name.clone())
             }
             error => error.into(),
         })?;

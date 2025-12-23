@@ -6,7 +6,7 @@ use askama::Template;
 use axum::{
     extract::{FromRef, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use rusqlite::Connection;
 use time::{Date, OffsetDateTime};
@@ -48,34 +48,29 @@ impl FromRef<AppState> for CreateTransactionPageState {
 }
 
 /// Renders the page for creating a transaction.
-///
-/// # Panics
-///
-/// Panics if the lock for the database connection is already held by the same thread.
 pub async fn get_create_transaction_page(
     State(state): State<CreateTransactionPageState>,
-) -> Response {
+) -> Result<Response, Error> {
     let nav_bar = get_nav_bar(endpoints::NEW_TRANSACTION_VIEW);
 
-    let connection = state
-        .db_connection
-        .lock()
-        .expect("Could not acquire database lock");
+    let available_tags = {
+        let connection = state
+            .db_connection
+            .lock()
+            .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+            .map_err(|_| Error::DatabaseLockError)?;
 
-    let available_tags = match get_all_tags(&connection) {
-        Ok(tags) => tags,
-        Err(error) => {
-            tracing::error!("Failed to retrieve tags for new transaction page: {error}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load tags").into_response();
-        }
+        get_all_tags(&connection).inspect_err(|error| {
+            tracing::error!("Failed to retrieve tags for new transaction page: {error}")
+        })?
     };
 
-    let local_timezone = match get_local_offset(&state.local_timezone) {
-        Some(offset) => offset,
-        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
-    };
+    let local_timezone = get_local_offset(&state.local_timezone).ok_or_else(|| {
+        tracing::error!("Invalid timezone {}", state.local_timezone);
+        Error::InvalidTimezoneError(state.local_timezone)
+    })?;
 
-    render(
+    Ok(render(
         StatusCode::OK,
         NewTransactionTemplate {
             nav_bar,
@@ -83,7 +78,7 @@ pub async fn get_create_transaction_page(
             max_date: OffsetDateTime::now_utc().to_offset(local_timezone).date(),
             available_tags,
         },
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -114,7 +109,8 @@ mod view_tests {
             local_timezone: "Etc/UTC".to_owned(),
             db_connection: Arc::new(Mutex::new(conn)),
         };
-        let response = get_create_transaction_page(State(state)).await;
+
+        let response = get_create_transaction_page(State(state)).await.unwrap();
 
         assert_status_ok(&response);
         assert_html_content_type(&response);

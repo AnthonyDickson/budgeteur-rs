@@ -12,10 +12,7 @@ use rusqlite::{Connection, params};
 use serde::Deserialize;
 use time::Date;
 
-use crate::{
-    AppState, Error, alert::AlertTemplate, database_id::DatabaseId, endpoints,
-    shared_templates::render,
-};
+use crate::{AppState, Error, database_id::DatabaseId, endpoints};
 
 /// The state needed to edit an account.
 #[derive(Debug, Clone)]
@@ -47,40 +44,24 @@ pub async fn edit_account_endpoint(
     let connection = match state.db_connection.lock() {
         Ok(connection) => connection,
         Err(error) => {
-            tracing::error!("Could not aqcuire database lock: {error}");
-            return render_error_alert();
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
         }
     };
 
     match update_account(account_id, &form, &connection) {
-        Ok(0) => {
-            tracing::error!(
-                "Could not update account {account_id}: update returned zero rows affected"
-            );
-            return render_error_alert();
-        }
-        Ok(_) => {}
+        // The status code has to be 200 OK or HTMX will not delete the table row.
+        Ok(row_affected) if row_affected != 0 => (
+            HxRedirect(endpoints::ACCOUNTS.to_owned()),
+            StatusCode::SEE_OTHER,
+        )
+            .into_response(),
+        Ok(_) => Error::UpdateMissingAccount.into_alert_response(),
         Err(error) => {
-            tracing::error!("Could not update account{account_id}: {error}");
-            return render_error_alert();
+            tracing::error!("Could not update account {account_id}: {error}");
+            error.into_alert_response()
         }
     }
-
-    (
-        HxRedirect(endpoints::ACCOUNTS.to_owned()),
-        StatusCode::SEE_OTHER,
-    )
-        .into_response()
-}
-
-fn render_error_alert() -> Response {
-    render(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        AlertTemplate::error(
-            "Could not update account",
-            "Try again or check the server logs.",
-        ),
-    )
 }
 
 type RowsAffected = usize;
