@@ -2,9 +2,10 @@
 
 ## Stage One: Budgeting
 
+- Use bar charts for net income and net balance.
+- For large screens, show charts in grid?
 - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
-- Render internal server error page for unexpected errors instead of returning text
 - Organise code into modules based on features
   - dashboard
   - auth

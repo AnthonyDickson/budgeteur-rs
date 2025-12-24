@@ -12,10 +12,18 @@
             const option = {{ chart.options|safe }};
             chart.setOption(option);
             
-            window.addEventListener('resize', function() {
-                chart.resize();
-            });
+            window.addEventListener('resize', chart.resize);
+
+            const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+            const updateTheme = () => {
+              const isDarkMode = darkModeMediaQuery.matches;
+              chart.setTheme(isDarkMode ? 'dark' : 'default');
+            }
+            darkModeMediaQuery.addEventListener('change', updateTheme);
+            // Run updateTheme manually to sync with initial browser settings
+            updateTheme();
         })();
     {% endfor %}
+
     </script>
   </section>
