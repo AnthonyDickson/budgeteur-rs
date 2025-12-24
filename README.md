@@ -14,7 +14,7 @@ This app aims to provide two services:
 
 This application is intended for a single user and to be self-hosted on a home server.
 
-![Screenshot of the dashboard page of Budgeteur](./assets/dashboard_sample.jpeg)
+![Screenshot of the dashboard page of Budgeteur](./assets/dashboard_sample.png)
 
 ## Why?
 
