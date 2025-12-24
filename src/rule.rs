@@ -190,7 +190,7 @@ pub async fn create_rule_endpoint(
 
     if new_rule.pattern.trim().is_empty() {
         return render(
-            StatusCode::UNPROCESSABLE_ENTITY,
+            StatusCode::OK,
             NewRuleFormTemplate {
                 create_rule_endpoint: endpoints::POST_RULE,
                 available_tags,
@@ -275,7 +275,7 @@ pub async fn update_rule_endpoint(
         let available_tags = get_all_tags(&connection).unwrap_or_default();
 
         return render(
-            StatusCode::UNPROCESSABLE_ENTITY,
+            StatusCode::OK,
             EditRuleFormTemplate {
                 update_rule_endpoint: &update_endpoint,
                 available_tags,

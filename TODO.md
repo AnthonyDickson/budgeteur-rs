@@ -2,8 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Only use one method of error handling per route. Prioritise checking forms
-  - [ ] New tag form, inline form errors do not work because of `hx-target-error="#alert-container"`.
 - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
 - Render internal server error page for unexpected errors instead of returning text
