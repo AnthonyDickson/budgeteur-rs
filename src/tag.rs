@@ -215,7 +215,7 @@ pub async fn create_tag_endpoint(
         Ok(name) => name,
         Err(error) => {
             return render(
-                StatusCode::UNPROCESSABLE_ENTITY,
+                StatusCode::OK,
                 NewTagFormTemplate {
                     create_tag_endpoint: endpoints::POST_TAG,
                     error_message: &format!("Error: {error}"),
@@ -316,7 +316,7 @@ pub async fn update_tag_endpoint(
         Ok(name) => name,
         Err(error) => {
             return render(
-                StatusCode::UNPROCESSABLE_ENTITY,
+                StatusCode::OK,
                 EditTagFormTemplate {
                     update_tag_endpoint: &update_endpoint,
                     tag_name: &form_data.name,
@@ -768,7 +768,7 @@ mod create_tag_endpoint_tests {
             .await
             .into_response();
 
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             get_header(&response, CONTENT_TYPE.as_str()),
             "text/html; charset=utf-8"
@@ -976,7 +976,7 @@ mod edit_tag_endpoint_tests {
             .await
             .into_response();
 
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(response.status(), StatusCode::OK);
 
         let html = parse_fragment_html(response).await;
         assert_valid_html(&html);
