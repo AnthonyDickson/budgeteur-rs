@@ -34,6 +34,8 @@ impl TagName {
     ///
     /// This function will return an [Error::EmptyTagName] if `name` is an empty string.
     pub fn new(name: &str) -> Result<Self, Error> {
+        let name = name.trim();
+
         if name.is_empty() {
             Err(Error::EmptyTagName)
         } else {
@@ -458,6 +460,13 @@ mod tag_name_tests {
     #[test]
     fn new_fails_on_empty_string() {
         let tag_name = TagName::new("");
+
+        assert_eq!(tag_name, Err(Error::EmptyTagName));
+    }
+
+    #[test]
+    fn new_fails_on_just_whitespace() {
+        let tag_name = TagName::new("\n\t \r");
 
         assert_eq!(tag_name, Err(Error::EmptyTagName));
     }
