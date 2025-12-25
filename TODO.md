@@ -2,8 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Use bar charts for net income and net balance.
-- For large screens, show charts in grid?
 - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
 - Organise code into modules based on features
@@ -45,8 +43,6 @@
   Refer to [v3.tailwindcss.com/docs/reusing-styles](https://v3.tailwindcss.com/docs/reusing-styles) and [v3.tailwindcss.com/docs/adding-custom-styles](https://v3.tailwindcss.com/docs/adding-custom-styles).
 - Refactor common testing functions into a separate module.
 - Ensure page layout fits on smartphone screen
-- Upgrade Rust and dependencies
-- Upgrade to Tailwind CSS 4
 
 ## Stage Two: Tracking Net Worth
 

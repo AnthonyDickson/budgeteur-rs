@@ -63,13 +63,13 @@
               {% when PaginationIndicator::Page(page) %}
                 <a
                   href="{{ transactions_page_route }}?page={{ page }}&per_page={{ per_page }}"
-                  class="block px-3 py-2 rounded text-blue-600 hover:underline"
+                  class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
                 >
                   {{ page }}
                 </a>
               {% when PaginationIndicator::CurrPage(page) %}
                 <p aria-current="page"
-                   class="block px-3 py-2 rounded font-bold text-black dark:text-white">
+                   class="block px-3 py-2 rounded-sm font-bold text-black dark:text-white">
                   {{ page }}
                 </p>
               {%- when PaginationIndicator::Ellipsis -%}
@@ -77,13 +77,13 @@
               {%- when PaginationIndicator::BackButton(page) -%}
                 <a href="{{ transactions_page_route }}?page={{ page }}&per_page={{ per_page }}"
                    role="button"
-                   class="block px-3 py-2 rounded text-blue-600 hover:underline">
+                   class="block px-3 py-2 rounded-sm text-blue-600 hover:underline">
                   Back
                 </a>
               {%- when PaginationIndicator::NextButton(page) -%}
                 <a href="{{ transactions_page_route }}?page={{ page }}&per_page={{ per_page }}"
                    role="button"
-                   class="block px-3 py-2 rounded text-blue-600 hover:underline">
+                   class="block px-3 py-2 rounded-sm text-blue-600 hover:underline">
                   Next
                 </a>
             {% endmatch %}

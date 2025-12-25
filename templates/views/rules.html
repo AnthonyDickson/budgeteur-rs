@@ -30,7 +30,7 @@
         hx-confirm="Apply all rules to every transaction? This may take a moment for large datasets."
         hx-indicator="#loading-all-indicator"
         hx-swap="none"
-        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center"
+        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center"
       >
         <span class="htmx-indicator" id="loading-all-indicator" style="display: none;">
           {% include "components/spinner.html" %}
@@ -42,7 +42,7 @@
         hx-confirm="Apply rules only to transactions that currently have no tags?"
         hx-indicator="#loading-untagged-indicator"
         hx-swap="none"
-        class="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center"
+        class="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors focus:outline-hidden focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center"
       >
         <span class="htmx-indicator" id="loading-untagged-indicator" style="display: none;">
           {% include "components/spinner.html" %}
@@ -90,7 +90,7 @@
           {% for rule_with_tag in rules %}
           <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
             <td class="px-6 py-4">
-              <code class="bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 rounded text-xs">{{ rule_with_tag.rule.pattern }}</code>
+              <code class="bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 rounded-sm text-xs">{{ rule_with_tag.rule.pattern }}</code>
             </td>
             <td class="px-6 py-4">
               <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-300">
