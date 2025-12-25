@@ -25,7 +25,8 @@
           packages = with pkgs; [
             bacon
             dockerfile-language-server
-            tailwindcss
+            tailwindcss-language-server
+            tailwindcss_4
           ];
 
           # environment variable for running dev server.

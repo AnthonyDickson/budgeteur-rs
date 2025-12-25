@@ -1,29 +1,31 @@
-  <!-- Chart container -->
-  <section id="charts" class="w-full max-w-4xl">
+<!-- Chart container -->
+<section id="charts" class="w-full mx-auto mb-4">
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
     {% for chart in charts %}
-    <div id="{{ chart.id }}" class="w-full max-w-4xl min-h-[380px] my-4 rounded dark:bg-gray-100"></div>
+    <div id="{{ chart.id }}" class="min-h-[380px] rounded dark:bg-gray-100"></div>
     {% endfor %}
+  </div>
 
-    <script type="text/javascript">
-    {% for chart in charts %}
-      (function() {
-            const chartDom = document.getElementById('{{ chart.id }}');
-            const chart = echarts.init(chartDom);
-            const option = {{ chart.options|safe }};
-            chart.setOption(option);
-            
-            window.addEventListener('resize', chart.resize);
+  <script type="text/javascript">
+  {% for chart in charts %}
+    (function() {
+          const chartDom = document.getElementById('{{ chart.id }}');
+          const chart = echarts.init(chartDom);
+          const option = {{ chart.options|safe }};
+          chart.setOption(option);
 
-            const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-            const updateTheme = () => {
-              const isDarkMode = darkModeMediaQuery.matches;
-              chart.setTheme(isDarkMode ? 'dark' : 'default');
-            }
-            darkModeMediaQuery.addEventListener('change', updateTheme);
-            // Run updateTheme manually to sync with initial browser settings
-            updateTheme();
-        })();
-    {% endfor %}
+          window.addEventListener('resize', chart.resize);
 
-    </script>
-  </section>
+          const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+          const updateTheme = () => {
+            const isDarkMode = darkModeMediaQuery.matches;
+            chart.setTheme(isDarkMode ? 'dark' : 'default');
+          }
+          darkModeMediaQuery.addEventListener('change', updateTheme);
+          // Run updateTheme manually to sync with initial browser settings
+          updateTheme();
+      })();
+  {% endfor %}
+
+  </script>
+</section>

@@ -6,14 +6,15 @@
   <script src="/static/echarts-gl.2.0.9.min.js"></script>
 {% endblock %}
 {% block content %}
+
 {{ nav_bar|safe }}
-<div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
+<div class="flex flex-col items-center px-2 lg:px-6 lg:py-8 mx-auto max-w-screen-xl text-gray-900 dark:text-white">
 
   {{ charts|safe }}
 
   <!-- Tag Exclusion Filter -->
   {% if !tags_with_status.is_empty() %}
-  <div class="mb-8 w-full max-w-4xl">
+  <div class="mb-8 w-full">
     <h3 class="text-xl font-semibold mb-4">Filter Out Tags</h3>
     <form 
       hx-post="{{ excluded_tags_endpoint }}" 
@@ -34,7 +35,7 @@
             name="excluded_tags" 
             value="{{ tag_status.tag.id }}"
             {% if tag_status.is_excluded %}checked{% endif %}
-            class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+            class="rounded-sm border-gray-300 text-blue-600 shadow-xs focus:border-blue-300 focus:ring-3 focus:ring-blue-200/50"
           >
           <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-300">
             {{ tag_status.tag.name }}
