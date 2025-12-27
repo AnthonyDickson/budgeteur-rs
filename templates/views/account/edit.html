@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends"base.html" %}
 {% block title %}Edit Account #{{ account.id }}{% endblock %}
 {% block scripts %}
 <style>
@@ -21,50 +21,49 @@
 {% endblock %}
 {% block content %}
 {{ nav_bar|safe }}
-<div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
-  <div class="relative overflow-x-auto">
-    <form hx-put="{{ edit_url }}" hx-target-error="#alert-container" class="space-y-4 md:space-y-6">
-      <h2 class="text-xl font-bold">Edit Account</h2>
+<div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md text-gray-900 dark:text-white">
+  <form hx-put="{{ edit_url }}" hx-target-error="#alert-container" class="w-full space-y-4 md:space-y-6">
+    <h2 class="text-xl font-bold">Edit Account</h2>
 
-      <div>
-        <label for="name" class="{% include "styles/forms/label.html" %}">Name</label>
-        <input name="name" id="name" type="text" placeholder="{{ account.name }}" value="{{ account.name }}" class="{% include "styles/forms/input.html" %}" />
+    <div>
+      <label for="name" class="{% include"styles/forms/label.html" %}">Name</label>
+      <input name="name" id="name" type="text" placeholder="{{ account.name }}" value="{{ account.name }}" class="{% include"styles/forms/input.html" %}" />
+    </div>
+
+    <div>
+      <label for="balance" class="{% include"styles/forms/label.html" %}">Balance</label>
+      <!-- w-full needed to ensure input takes the full width when prefilled with a value -->
+      <div class="input-wrapper w-full">
+        {% let balance = account.balance | fmt("{:.2}") %}
+        <input name="balance" id="balance" type="number" step="0.01" placeholder="{{ balance }}" value="{{ balance }}" required class="{% include"styles/forms/input.html" %}" />
       </div>
+    </div>
 
-      <div>
-        <label for="balance" class="{% include "styles/forms/label.html" %}">Balance</label>
-        <!-- w-full needed to ensure input takes the full width when prefilled with a value -->
-        <div class="input-wrapper w-full">
-          {% let balance = account.balance | fmt("{:.2}") %}
-          <input name="balance" id="balance" type="number" step="0.01" placeholder="{{ balance }}" value="{{ balance }}" required class="{% include "styles/forms/input.html" %}" />
-        </div>
-      </div>
+    <div>
+      <label for="date" class="{% include"styles/forms/label.html" %}">Date</label>
+      <input name="date" id="date" type="date" max="{{ max_date }}" value="{{ account.date }}" required class="{% include"styles/forms/input.html" %}" />
+    </div>
 
-      <div>
-        <label for="date" class="{% include "styles/forms/label.html" %}">Date</label>
-        <input name="date" id="date" type="date" max="{{ max_date }}" value="{{ account.date }}" required class="{% include "styles/forms/input.html" %}" />
-      </div>
+    <button
+      onclick="history.back()"
+      type="button"
+      class="w-full py-2.5 px-5 mb-2 text-sm font-medium text-gray-900
+        bg-white rounded border border-gray-200
+        hover:bg-gray-100 hover:text-blue-700 focus:z-10 dark:bg-gray-800
+        dark:text-gray-400 dark:border-gray-600 dark:hover:text-white
+        dark:hover:bg-gray-700"
+    >
+      Cancel
+    </button>
 
-      <button
-        onclick="history.back()"
-        type="button"
-        class="w-full py-2.5 px-5 mb-2 text-sm font-medium text-gray-900
-          focus:outline-hidden bg-white rounded-lg border border-gray-200
-          hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4
-          focus:ring-gray-100 dark:focus:ring-gray-700 dark:bg-gray-800
-          dark:text-gray-400 dark:border-gray-600 dark:hover:text-white
-          dark:hover:bg-gray-700"
-      >
-        Cancel
-      </button>
-
-      <button type="submit" id="submit-button" tabindex="0" class="{% include "styles/forms/button.html" %}" >
-        <span id="indicator" class="inline htmx-indicator">
-          {% include "components/spinner.html" %}
-        </span>
-        Edit Account
-      </button>
-    </form>
-  </div>
+    <button type="submit" id="submit-button" tabindex="0"
+      class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+      hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded">
+      <span id="indicator" class="inline htmx-indicator">
+        {% include"components/spinner.html" %}
+      </span>
+      Edit Account
+    </button>
+  </form>
 </div>
 {% endblock %}

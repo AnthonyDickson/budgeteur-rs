@@ -2,6 +2,16 @@
 
 ## Stage One: Budgeting
 
+- Add table to dashboard that looks like:
+  |            |    Jan |    Feb | ... |    Dec |   Total |
+  | :--------- | -----: | -----: | --- | -----: | ------: |
+  | Income     | $4,000 | $4,000 |     | $4,000 | $48,000 |
+  | Expenses   | $3,000 | $4,500 |     | $3,000 | $45,000 |
+  | Net Income | $1,000 |  -$500 |     | $1,000 |  $3,000 |
+  | Balance    | $1,000 |   $500 |     | $1,000 |  $3,000 |
+
+  For all rows, the total is the sum of all columns except for the balance which is simply the last value.
+  Round all values to nearest dollar (banker's rounding?)
 - Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
 - Organise code into modules based on features

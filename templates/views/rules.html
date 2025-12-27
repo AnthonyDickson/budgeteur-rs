@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends"base.html" %}
 {% block title %}Rules{% endblock %}
 {% block scripts %}
 <style>
@@ -20,7 +20,7 @@
 {{ nav_bar|safe }}
 
 <div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-5 text-gray-900 dark:text-white">
-  <div class="relative overflow-x-auto space-y-4">
+  <div class="relative  space-y-4">
     <h1 class="text-xl font-bold">Auto-Tagging Rules</h1>
     {% if !rules.is_empty() %}
     <!-- Auto-tagging buttons -->
@@ -30,10 +30,10 @@
         hx-confirm="Apply all rules to every transaction? This may take a moment for large datasets."
         hx-indicator="#loading-all-indicator"
         hx-swap="none"
-        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center"
+        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded transition-colors focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center"
       >
         <span class="htmx-indicator" id="loading-all-indicator" style="display: none;">
-          {% include "components/spinner.html" %}
+          {% include"components/spinner.html" %}
         </span>
         <span class="button-text">Tag All Transactions</span>
       </button>
@@ -42,10 +42,10 @@
         hx-confirm="Apply rules only to transactions that currently have no tags?"
         hx-indicator="#loading-untagged-indicator"
         hx-swap="none"
-        class="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors focus:outline-hidden focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center"
+        class="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded transition-colors focus:outline-hidden focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center"
       >
         <span class="htmx-indicator" id="loading-untagged-indicator" style="display: none;">
-          {% include "components/spinner.html" %}
+          {% include"components/spinner.html" %}
         </span>
         <span class="button-text">Tag Untagged Transactions</span>
       </button>
@@ -53,12 +53,12 @@
     {% endif %}
 
     <!-- How Rules Work section -->
-    <div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+    <div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded">
       <h3 class="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">How Rules Work</h3>
       <p class="text-xs text-blue-700 dark:text-blue-300">
         Rules automatically tag transactions whose descriptions start with the
         specified pattern (case-insensitive) when importing from a CSV. 
-        For example, a rule with pattern "starbucks" will match "Starbucks Downtown" or "STARBUCKS #1234".
+        For example, a rule with pattern"starbucks" will match "Starbucks Downtown" or "STARBUCKS #1234".
         Use the buttons above to manually apply all rules to your transactions.
       </p>
     </div>
