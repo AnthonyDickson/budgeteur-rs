@@ -1,12 +1,11 @@
-<form hx-post="{{ create_tag_endpoint}}" hx-target-error="#alert-container" class="space-y-4 md:space-y-6">
+<form hx-post="{{ create_tag_endpoint}}" hx-target-error="#alert-container" class="w-full space-y-4 md:space-y-6">
   <div>
     <label for="name" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Tag Name</label>
 
     <input id="name" type="text" name="name" placeholder="Tag Name" required autofocus
-      class=" block w-full p-2.5 rounded-lg text-sm text-gray-900 dark:text-white
-disabled:text-gray-500 bg-gray-50 dark:bg-gray-700 border border-gray-300
-dark:border-gray-600 dark:placeholder-gray-400 focus:ring-blue-600
-focus:border-blue-600 focus:dark:border-blue-500 focus:dark:ring-blue-500"/>
+      class="w-full py-2.5 px-5 mb-2 text-sm font-medium text-gray-900 dark:text-white
+          bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-600
+          focus:z-10 "/>
   </div>
 
   {% if !error_message.is_empty() %}
@@ -16,11 +15,8 @@ focus:border-blue-600 focus:dark:border-blue-500 focus:dark:ring-blue-500"/>
   {% endif %}
 
   <button type="submit"
-    class=" w-full px-5 py-2.5 rounded-lg text-sm text-center text-white font-medium
-      disabled:text-gray-300 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
-      hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 border dark:border-none
-      border-gray-300 focus:ring-4 focus:outline-hidden focus:ring-primary-300
-      focus:dark:ring-primary-800"
+    class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+        hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
   >
     Create Tag
   </button>

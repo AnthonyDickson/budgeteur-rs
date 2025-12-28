@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends"base.html" %}
 {% block title %}Add Account{% endblock %}
 {% block scripts %}
 <style>
@@ -21,38 +21,38 @@
 {% endblock %}
 {% block content %}
 {{ nav_bar|safe }}
-<div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 text-gray-900 dark:text-white">
-  <div class="relative overflow-x-auto">
-    <form hx-post="{{ create_account_route }}" hx-target-error="#alert-container" class="space-y-4 md:space-y-6">
-      <h2 class="text-xl font-bold">Add Account</h2>
+<div class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md text-gray-900 dark:text-white">
+  <form hx-post="{{ create_account_route }}" hx-target-error="#alert-container" class="w-full space-y-4 md:space-y-6">
+    <h2 class="text-xl font-bold">Add Account</h2>
 
-      <div>
-        <label for="name" class="{% include "styles/forms/label.html" %}">Account Name</label>
-        <input name="name" id="name" type="text" placeholder="12-3456-7891011-12" autofocus class="{% include "styles/forms/input.html" %}" />
+    <div>
+      <label for="name" class="{% include"styles/forms/label.html" %}">Account Name</label>
+      <input name="name" id="name" type="text" placeholder="12-3456-7891011-12" autofocus class="{% include"styles/forms/input.html" %}" />
+    </div>
+
+    <div>
+      <label for="balance" class="{% include"styles/forms/label.html" %}">Balance</label>
+      <!-- w-full needed to ensure input takes the full width when prefilled with a value -->
+      <div class="input-wrapper w-full">
+        <input name="balance" id="balance" type="number" step="0.01" placeholder="0.00" required class="{% include"styles/forms/input.html" %}" />
       </div>
+    </div>
 
-      <div>
-        <label for="balance" class="{% include "styles/forms/label.html" %}">Balance</label>
-        <!-- w-full needed to ensure input takes the full width when prefilled with a value -->
-        <div class="input-wrapper w-full">
-          <input name="balance" id="balance" type="number" step="0.01" placeholder="0.00" required class="{% include "styles/forms/input.html" %}" />
-        </div>
-      </div>
+    <div>
+      <label for="date" class="{% include"styles/forms/label.html" %}">
+        Date <span title="The date for when the balance was last checked"class="text-blue-500">ⓘ</span>
+      </label>
+      <input name="date" id="date" type="date" max="{{ max_date }}" required value="{{ max_date }}" class="{% include"styles/forms/input.html" %}" />
+    </div>
 
-      <div>
-        <label for="date" class="{% include "styles/forms/label.html" %}">
-          Date <span title="The date for when the balance was last checked"class="text-blue-500">ⓘ</span>
-        </label>
-        <input name="date" id="date" type="date" max="{{ max_date }}" required value="{{ max_date }}" class="{% include "styles/forms/input.html" %}" />
-      </div>
-
-      <button type="submit" id="submit-button" tabindex="0" class="{% include "styles/forms/button.html" %}" >
-        <span id="indicator" class="inline htmx-indicator">
-          {% include "components/spinner.html" %}
-        </span>
-        Add Account
-      </button>
-    </form>
-  </div>
+    <button type="submit" id="submit-button" tabindex="0"
+      class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+        hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded">
+      <span id="indicator" class="inline htmx-indicator">
+        {% include"components/spinner.html" %}
+      </span>
+      Add Account
+    </button>
+  </form>
 </div>
 {% endblock %}
