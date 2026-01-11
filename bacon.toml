@@ -79,7 +79,7 @@ command = [
   "static/main.css",
 ]
 need_stdout = true
-watch = ["templates/"]
+watch = ["templates/", "src/"]
 
 # Run tailwindcss and then start the server
 [jobs.run]

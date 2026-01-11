@@ -2,6 +2,63 @@
 
 ## Stage One: Budgeting
 
+- Migrate to Maud:
+  - [ ] Rewrite askama templates to maud:
+    - [x] templates/base.html
+    - [ ] templates/components/nav_link.html
+    - [x] templates/components/spinner.html
+    - [ ] templates/macros/amount_display.html
+    - [ ] templates/macros/transaction_summary.html
+    - [ ] templates/partials/alert.html
+    - [ ] templates/partials/dashboard_charts.html
+    - [ ] templates/partials/edit_rule_form.html
+    - [ ] templates/partials/edit_tag_form.html
+    - [ ] templates/partials/error_page.html
+    - [ ] templates/partials/import_form.html
+    - [x] templates/partials/log_in/form.html
+    - [ ] templates/partials/nav_bar.html
+    - [ ] templates/partials/new_rule_form.html
+    - [ ] templates/partials/new_tag_form.html
+    - [ ] templates/partials/register/form.html
+    - [ ] templates/partials/register/inputs/confirm_password.html
+    - [ ] templates/partials/register/inputs/password.html
+    - [ ] templates/partials/transaction_table_row.html
+    - [ ] templates/partials/transaction_table_row_empty.html
+    - [x] templates/styles/forms/input.html
+    - [x] templates/styles/forms/label.html
+    - [ ] templates/styles/text/plain.html
+    - [ ] templates/views/account/accounts.html
+    - [ ] templates/views/account/create.html
+    - [ ] templates/views/account/edit.html
+    - [ ] templates/views/dashboard.html
+    - [ ] templates/views/dashboard_empty.html
+    - [ ] templates/views/edit_rule.html
+    - [ ] templates/views/edit_tag.html
+    - [ ] templates/views/forgot_password.html
+    - [ ] templates/views/import.html
+    - [ ] templates/views/internal_server_error_500.html
+    - [x] templates/views/log_in.html
+    - [x] templates/views/log_in_register_base.html
+    - [ ] templates/views/new_rule.html
+    - [ ] templates/views/new_tag.html
+    - [ ] templates/views/not_found_404.html
+    - [ ] templates/views/register.html
+    - [ ] templates/views/rules.html
+    - [ ] templates/views/tags.html
+    - [ ] templates/views/transaction/create.html
+    - [ ] templates/views/transaction/edit.html
+    - [ ] templates/views/transaction/table.html
+  - [ ] Remove Askama from dependencies
+  - [ ] Delete templates folder
+  - PR description:
+    ```text
+    This PR replaces Askama with Maud. Nesting, inheriting templates and sharing
+    styles/components is awkward in Askama. I want something like Gleam's
+    Lustre which allows me to write pure functions that generate the HTML in
+    the host language (in this case, Rust). Maud also has the benefit that
+    rendering is unfallible, removing the need for the `render` helper.
+    ```
+
 - Add table to dashboard that looks like:
   |            |    Jan |    Feb | ... |    Dec |   Total |
   | :--------- | -----: | -----: | --- | -----: | ------: |

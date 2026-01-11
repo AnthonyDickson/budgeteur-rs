@@ -12,6 +12,7 @@ use axum::{
 };
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
+use maud::{Markup, html};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::Duration;
@@ -24,7 +25,71 @@ use crate::{
     shared_templates::{PasswordInputTemplate, render},
     timezone::get_local_offset,
     user::{User, UserID, get_user_by_id},
+    view_templates::{base, loading_spinner, log_in_register, password_input},
 };
+
+fn log_in_form(password: &str, error_message: Option<&str>) -> Markup {
+    html! {
+        form
+            hx-post=(endpoints::LOG_IN_API)
+            hx-indicator="#indicator"
+            hx-disabled-elt="#password, #submit-button"
+            class="space-y-4 md:space-y-6"
+        {
+            (password_input(password, 0, error_message))
+
+            div class="flex items-center gap-x-3"
+            {
+                input
+                    type="checkbox"
+                    name="remember_me"
+                    id="remember_me"
+                    tabindex="0"
+                    class="rounded-xs";
+
+                label
+                    for="remember_me"
+                    class="block text-sm font-medium text-gray-900 dark:text-white"
+                {
+                    "Keep me logged in for one week"
+                }
+            }
+            button
+                type="submit" id="submit-button" tabindex="0"
+                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+            {
+                span class="inline htmx-indicator" id="indicator"
+                {
+                    (loading_spinner())
+                }
+                "Log in"
+            }
+
+            p class="text-sm font-light text-gray-500 dark:text-gray-400"
+            {
+                "Forgot your password? "
+
+                a
+                    href=(endpoints::FORGOT_PASSWORD_VIEW) tabindex="0"
+                    class="font-semibold leading-6 text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400"
+                {
+                  "Reset it here"
+                }
+            }
+
+            p class="text-sm font-light text-gray-500 dark:text-gray-400" {
+                "Don't have a password? "
+                a
+                    href=(endpoints::REGISTER_VIEW) tabindex="0"
+                    class="font-semibold leading-6 text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400"
+                {
+                  "Register here"
+                }
+            }
+        }
+    }
+}
 
 /// Renders a log-in form with client-side and server-side validation.
 #[derive(Template)]
@@ -47,16 +112,11 @@ impl Default for LogInFormTemplate<'_> {
     }
 }
 
-///  Renders the full log-in page.
-#[derive(Template, Default)]
-#[template(path = "views/log_in.html")]
-struct LogInTemplate<'a> {
-    log_in_form: LogInFormTemplate<'a>,
-}
-
 /// Display the log-in page.
 pub async fn get_log_in_page() -> Response {
-    render(StatusCode::OK, LogInTemplate::default())
+    let log_in_form = log_in_form("", None);
+    let content = log_in_register("Log in to your account", &log_in_form);
+    base("Log In", &[], &content).into_response()
 }
 
 /// How long the auth cookie should last if the user selects "remember me" at log-in.

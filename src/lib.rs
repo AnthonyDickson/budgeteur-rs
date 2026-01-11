@@ -45,6 +45,7 @@ mod tags_page;
 mod timezone;
 mod transaction;
 mod user;
+mod view_templates;
 
 pub use app_state::AppState;
 pub use db::initialize as initialize_db;
