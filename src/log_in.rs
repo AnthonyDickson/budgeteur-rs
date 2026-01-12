@@ -54,6 +54,7 @@ fn log_in_form(password: &str, error_message: Option<&str>) -> Markup {
                     "Keep me logged in for one week"
                 }
             }
+
             button
                 type="submit" id="submit-button" tabindex="0"
                 class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700

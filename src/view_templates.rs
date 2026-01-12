@@ -56,6 +56,7 @@ pub fn base(title: &str, head_elements: &[HeadElement], content: &Markup) -> Mar
 
                 script src="/static/app.js" defer {}
             }
+
             body
                 hx-ext="response-targets"
                 class="container max-w-full min-h-screen bg-gray-50 dark:bg-gray-900"
@@ -82,6 +83,7 @@ pub fn log_in_register(form_title: &str, form: &Markup) -> Markup {
                 img class="w-8 h-8 mr-2" src="/static/favicon-128x128.png" alt="logo";
                 "Budgeteur"
             }
+
             div class="w-full bg-white rounded-lg shadow dark:border md:mt-0 sm:max-w-md xl:p-0 dark:bg-gray-800 dark:border-gray-700"
             {
                 div class="p-6 space-y-4 md:space-y-6 sm:p-8"
@@ -98,8 +100,8 @@ pub fn log_in_register(form_title: &str, form: &Markup) -> Markup {
     }
 }
 
-const FORM_LABEL_STYLE: &str = "block mb-2 text-sm font-medium text-gray-900 dark:text-white";
-const FORM_TEXT_INPUT_STYLE: &str =
+pub const FORM_LABEL_STYLE: &str = "block mb-2 text-sm font-medium text-gray-900 dark:text-white";
+pub const FORM_TEXT_INPUT_STYLE: &str =
     "block w-full p-2.5 rounded text-sm text-gray-900 dark:text-white
 disabled:text-gray-500 bg-gray-50 dark:bg-gray-700 border border-gray-300
 dark:border-gray-600 dark:placeholder-gray-400 focus:ring-blue-600
@@ -115,14 +117,15 @@ pub fn password_input(password: &str, min_length: u8, error_message: Option<&str
             {
                 "Password"
             }
+
             input
                 type="password"
                 name="password"
                 id="password"
                 placeholder="••••••••"
                 class=(FORM_TEXT_INPUT_STYLE)
-                required=""
-                autofocus=""
+                required
+                autofocus
                 value=(password)
                 minlength=(min_length);
 

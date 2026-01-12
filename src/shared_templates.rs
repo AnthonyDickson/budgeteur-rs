@@ -12,7 +12,7 @@ use crate::endpoints;
 #[template(path = "partials/register/inputs/password.html")]
 pub struct PasswordInputTemplate<'a> {
     pub value: &'a str,
-    pub min_length: usize,
+    pub min_length: u8,
     pub error_message: &'a str,
 }
 
