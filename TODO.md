@@ -34,7 +34,7 @@
     - [ ] templates/views/dashboard_empty.html
     - [ ] templates/views/edit_rule.html
     - [ ] templates/views/edit_tag.html
-    - [ ] templates/views/forgot_password.html
+    - [x] templates/views/forgot_password.html
     - [ ] templates/views/import.html
     - [ ] templates/views/internal_server_error_500.html
     - [x] templates/views/log_in.html
