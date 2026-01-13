@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AppState, Error,
-    alert::AlertTemplate,
+    alert::Alert,
     database_id::{DatabaseId, TransactionId},
     endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
@@ -321,10 +321,14 @@ pub async fn delete_rule_endpoint(
     };
 
     match delete_rule(rule_id, &connection) {
-        Ok(_) => render(
+        Ok(_) => (
             StatusCode::OK,
-            AlertTemplate::success("Rule deleted successfully", ""),
-        ),
+            Alert::SuccessSimple {
+                message: "Rule deleted successfully".to_owned(),
+            }
+            .into_html(),
+        )
+            .into_response(),
         Err(Error::DeleteMissingRule) => Error::DeleteMissingRule.into_alert_response(),
         Err(error) => {
             tracing::error!("An unexpected error occurred while deleting rule {rule_id}: {error}");
@@ -356,9 +360,9 @@ pub async fn auto_tag_all_transactions_endpoint(State(state): State<RuleState>) 
             );
 
             let message = if result.transactions_tagged > 0 {
-                "Auto-tagging completed successfully!"
+                "Auto-tagging completed successfully!".to_owned()
             } else {
-                "Auto-tagging completed - no transactions were processed."
+                "Auto-tagging completed - no transactions were processed.".to_owned()
             };
 
             let details = format!(
@@ -368,7 +372,11 @@ pub async fn auto_tag_all_transactions_endpoint(State(state): State<RuleState>) 
                 duration.as_millis()
             );
 
-            render(StatusCode::OK, AlertTemplate::success(message, &details))
+            (
+                StatusCode::OK,
+                Alert::Success { message, details }.into_html(),
+            )
+                .into_response()
         }
         Err(error) => {
             let duration = start_time.elapsed();
@@ -382,10 +390,15 @@ pub async fn auto_tag_all_transactions_endpoint(State(state): State<RuleState>) 
                 duration.as_millis()
             );
 
-            render(
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error("Auto-tagging failed", &details),
+                Alert::Error {
+                    message: "Auto-tagging failed".to_owned(),
+                    details,
+                }
+                .into_html(),
             )
+                .into_response()
         }
     }
 }
@@ -413,9 +426,9 @@ pub async fn auto_tag_untagged_transactions_endpoint(State(state): State<RuleSta
             );
 
             let message = if result.transactions_tagged > 0 {
-                "Auto-tagging untagged transactions completed successfully!"
+                "Auto-tagging untagged transactions completed successfully!".to_owned()
             } else {
-                "Auto-tagging completed - no untagged transactions were processed."
+                "Auto-tagging completed - no untagged transactions were processed.".to_owned()
             };
 
             let details = format!(
@@ -425,7 +438,7 @@ pub async fn auto_tag_untagged_transactions_endpoint(State(state): State<RuleSta
                 duration.as_millis()
             );
 
-            render(StatusCode::OK, AlertTemplate::success(message, &details))
+            Alert::Success { message, details }.into_response()
         }
         Err(error) => {
             let duration = start_time.elapsed();
@@ -439,10 +452,15 @@ pub async fn auto_tag_untagged_transactions_endpoint(State(state): State<RuleSta
                 duration.as_millis()
             );
 
-            render(
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error("Auto-tagging failed", &details),
+                Alert::Error {
+                    message: "Auto-tagging failed".to_owned(),
+                    details,
+                }
+                .into_html(),
             )
+                .into_response()
         }
     }
 }

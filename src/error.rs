@@ -6,10 +6,9 @@ use axum::{
 use time::Date;
 
 use crate::{
-    alert::AlertTemplate,
+    alert::Alert,
     internal_server_error::{InternalServerErrorPageTemplate, render_internal_server_error},
     not_found::get_404_not_found_response,
-    shared_templates::render,
     tag::TagId,
 };
 
@@ -197,104 +196,118 @@ impl IntoResponse for Error {
 impl Error {
     /// Convert the error into an HTTP response with an HTML alert.
     pub fn into_alert_response(self) -> Response {
-        match self {
-            Error::InvalidTimezoneError(timezone) => render(
+        let (status_code, alert) = match self {
+            Error::InvalidTimezoneError(timezone) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Invalid Timezone Settings",
-                    &format!(
+                Alert::Error {
+                    message: "Invalid Timezone Settings".to_owned(),
+                    details: format!(
                         "Could not get local timezone \"{timezone}\". Check your server settings and \
                     ensure the timezone has been set to valid, canonical timezone string"
                     ),
-                ),
+                },
             ),
-            Error::FutureDate(date) => render(
+            Error::FutureDate(date) => (
                 StatusCode::BAD_REQUEST,
-                AlertTemplate::error(
-                    "Invalid transaction date",
-                    &format!(
+                Alert::Error {
+                    message: "Invalid transaction date".to_owned(),
+                    details: format!(
                         "{date} is a date in the future, which is not allowed. Change the date to"
                     ),
-                ),
+                },
             ),
-            Error::InvalidTag(tag_id) => render(
+            Error::InvalidTag(tag_id) => (
                 StatusCode::BAD_REQUEST,
-                AlertTemplate::error(
-                    "Invalid tag ID",
-                    &format!("Could not find a tag with the ID {tag_id:?}"),
-                ),
+                Alert::Error {
+                    message: "Invalid tag ID".to_owned(),
+                    details: format!("Could not find a tag with the ID {tag_id:?}"),
+                },
             ),
-            Error::UpdateMissingTransaction => render(
+            Error::UpdateMissingTransaction => (
                 StatusCode::NOT_FOUND,
-                AlertTemplate::error(
-                    "Could not update transaction",
-                    "The transaction could not be found.",
-                ),
+                Alert::Error {
+                    message: "Could not update transaction".to_owned(),
+                    details: "The transaction could not be found.".to_owned(),
+                },
             ),
-            Error::DeleteMissingTransaction => render(
+            Error::DeleteMissingTransaction => (
                 StatusCode::NOT_FOUND,
-                AlertTemplate::error(
-                    "Could not delete transaction",
-                    "The transaction could not be found. \
-                    Try refreshing the page to see if the transaction has already been deleted.",
-                ),
+                Alert::Error {
+                    message: "Could not delete transaction".to_owned(),
+                    details: "The transaction could not be found. \
+                    Try refreshing the page to see if the transaction has already been deleted."
+                        .to_owned(),
+                },
             ),
-            Error::UpdateMissingAccount => render(
+            Error::UpdateMissingAccount => (
                 StatusCode::NOT_FOUND,
-                AlertTemplate::error(
-                    "Could not update account",
-                    "The account could not be found.",
-                ),
+                Alert::Error {
+                    message: "Could not update account".to_owned(),
+                    details: "The account could not be found.".to_owned(),
+                },
             ),
-            Error::DeleteMissingAccount => render(
+            Error::DeleteMissingAccount => (
                 StatusCode::NOT_FOUND,
-                AlertTemplate::error(
-                    "Could not delete account",
-                    "The account could not be found. \
-                    Try refreshing the page to see if the account has already been deleted.",
-                ),
+                Alert::Error {
+                    message: "Could not delete account".to_owned(),
+                    details: "The account could not be found. \
+                    Try refreshing the page to see if the account has already been deleted."
+                        .to_owned(),
+                },
             ),
-            Error::UpdateMissingTag => render(
+            Error::UpdateMissingTag => (
                 StatusCode::NOT_FOUND,
-                AlertTemplate::error("Could not update tag", "The tag could not be found."),
+                Alert::Error {
+                    message: "Could not update tag".to_owned(),
+                    details: "The tag could not be found.".to_owned(),
+                },
             ),
-            Error::DeleteMissingTag => render(
+            Error::DeleteMissingTag => (
                 StatusCode::NOT_FOUND,
-                AlertTemplate::error(
-                    "Could not delete tag",
-                    "The tag could not be found. \
-                    Try refreshing the page to see if the tag has already been deleted.",
-                ),
+                Alert::Error {
+                    message: "Could not delete tag".to_owned(),
+                    details: "The tag could not be found. \
+                    Try refreshing the page to see if the tag has already been deleted."
+                        .to_owned(),
+                },
             ),
-            Error::UpdateMissingRule => render(
+            Error::UpdateMissingRule => (
                 StatusCode::NOT_FOUND,
-                AlertTemplate::error("Could not update rule", "The rule could not be found."),
+                Alert::Error {
+                    message: "Could not update rule".to_owned(),
+                    details: "The rule could not be found.".to_owned(),
+                },
             ),
-            Error::DeleteMissingRule => render(
+            Error::DeleteMissingRule => (
                 StatusCode::NOT_FOUND,
-                AlertTemplate::error(
-                    "Could not delete rule",
-                    "The rule could not be found. \
-                    Try refreshing the page to see if the rule has already been deleted.",
-                ),
+                Alert::Error {
+                    message: "Could not delete rule".to_owned(),
+                    details: "The rule could not be found. \
+                    Try refreshing the page to see if the rule has already been deleted."
+                        .to_owned(),
+                },
             ),
-            Error::DuplicateAccountName(name) => render(
+            Error::DuplicateAccountName(name) => (
                 StatusCode::BAD_REQUEST,
-                AlertTemplate::error(
-                    "Duplicate Account Name",
-                    &format!(
+                Alert::Error {
+                    message: "Duplicate Account Name".to_owned(),
+                    details: format!(
                         "The account {name} already exists in the database. \
                         Choose a different account name, or edit or delete the existing account.",
                     ),
-                ),
+                },
             ),
-            _ => render(
+            _ => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Something went wrong",
-                    "An unexpected error occurred, check the server logs for more details.",
-                ),
+                Alert::Error {
+                    message: "Something went wrong".to_owned(),
+                    details:
+                        "An unexpected error occurred, check the server logs for more details."
+                            .to_owned(),
+                },
             ),
-        }
+        };
+
+        (status_code, alert.into_html()).into_response()
     }
 }

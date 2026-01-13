@@ -16,7 +16,7 @@ use axum_htmx::HxRedirect;
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
-use crate::alert::AlertTemplate;
+use crate::alert::Alert;
 use crate::{
     AppState, Error, endpoints,
     navigation::{NavbarTemplate, get_nav_bar},
@@ -354,13 +354,13 @@ pub async fn delete_tag_endpoint(
     };
 
     match delete_tag(tag_id, &connection) {
-        Ok(_) => render(
-            StatusCode::OK,
-            AlertTemplate::success("Tag deleted successfully", ""),
-        ),
+        Ok(_) => Alert::SuccessSimple {
+            message: "Tag deleted successfully".to_owned(),
+        }
+        .into_response(),
         Err(Error::DeleteMissingTag) => Error::DeleteMissingTag.into_alert_response(),
         Err(error) => {
-            tracing::error!("An unexpected error occurred while deleting tag {tag_id}: {error}");
+            tracing::error!("An unexpected error occurred wkile deleting tag {tag_id}: {error}");
             error.into_alert_response()
         }
     }

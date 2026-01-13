@@ -9,7 +9,7 @@
     - [x] templates/components/spinner.html
     - [ ] templates/macros/amount_display.html
     - [ ] templates/macros/transaction_summary.html
-    - [ ] templates/partials/alert.html
+    - [x] templates/partials/alert.html
     - [ ] templates/partials/dashboard_charts.html
     - [ ] templates/partials/edit_rule_form.html
     - [ ] templates/partials/edit_tag_form.html
@@ -52,6 +52,7 @@
   - [ ] Review whether `view_templates.rs` should be broken up.
   - [ ] Remove Askama from dependencies
   - [ ] Delete templates folder
+  - [ ] Delete `shared_templates.rs`
   - PR description:
     ```text
     This PR replaces Askama with Maud. Nesting, inheriting templates and sharing

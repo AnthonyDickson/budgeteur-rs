@@ -4,14 +4,11 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{FromRef, Path, State},
-    http::StatusCode,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use rusqlite::Connection;
 
-use crate::{
-    AppState, Error, alert::AlertTemplate, database_id::DatabaseId, shared_templates::render,
-};
+use crate::{AppState, Error, alert::Alert, database_id::DatabaseId};
 
 /// The state needed to delete an account.
 #[derive(Debug, Clone)]
@@ -47,10 +44,10 @@ pub async fn delete_account_endpoint(
 
     match delete_account(account_id, &connection) {
         // The status code has to be 200 OK or HTMX will not delete the table row.
-        Ok(row_affected) if row_affected != 0 => render(
-            StatusCode::OK,
-            AlertTemplate::success("Account deleted successfully", ""),
-        ),
+        Ok(row_affected) if row_affected != 0 => Alert::SuccessSimple {
+            message: "Account deleted successfully".to_owned(),
+        }
+        .into_response(),
         Ok(_) => Error::DeleteMissingAccount.into_alert_response(),
         Err(error) => {
             tracing::error!("Could not delete account {account_id}: {error}");
