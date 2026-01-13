@@ -3,7 +3,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use askama::Template;
 use axum::{
     Form,
     extract::{FromRef, State},
@@ -22,7 +21,6 @@ use crate::{
     app_state::create_cookie_key,
     auth::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
     endpoints,
-    shared_templates::{PasswordInputTemplate, render},
     timezone::get_local_offset,
     user::{User, UserID, get_user_by_id},
     view_templates::{base, loading_spinner, log_in_register, password_input},
@@ -92,27 +90,6 @@ fn log_in_form(password: &str, error_message: Option<&str>) -> Markup {
     }
 }
 
-/// Renders a log-in form with client-side and server-side validation.
-#[derive(Template)]
-#[template(path = "partials/log_in/form.html")]
-pub struct LogInFormTemplate<'a> {
-    pub password_input: PasswordInputTemplate<'a>,
-    pub log_in_route: &'a str,
-    pub forgot_password_route: &'a str,
-    pub register_route: &'a str,
-}
-
-impl Default for LogInFormTemplate<'_> {
-    fn default() -> Self {
-        Self {
-            password_input: Default::default(),
-            log_in_route: endpoints::LOG_IN_API,
-            forgot_password_route: endpoints::FORGOT_PASSWORD_VIEW,
-            register_route: endpoints::REGISTER_VIEW,
-        }
-    }
-}
-
 /// Display the log-in page.
 pub async fn get_log_in_page() -> Response {
     let log_in_form = log_in_form("", None);
@@ -169,6 +146,8 @@ impl FromRef<LoginState> for Key {
     }
 }
 
+pub const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect password.";
+
 /// Handler for log-in requests via the POST method.
 ///
 /// On a successful log-in request, the auth cookie set and the client is redirected to the dashboard page.
@@ -197,19 +176,19 @@ pub async fn post_log_in(
     ) {
         Ok(user) => user,
         Err(Error::NotFound) => {
-            return render(
-                StatusCode::OK,
-                create_log_in_error_response(
-                    "Password not set, go to the registration page and set your password",
-                ),
-            );
+            return log_in_form(
+                "",
+                Some("Password not set, go to the registration page and set your password"),
+            )
+            .into_response();
         }
         Err(error) => {
             tracing::error!("Unhandled error while verifying credentials: {error}");
-            return render(
-                StatusCode::OK,
-                create_log_in_error_response("An internal error occurred. Please try again later."),
-            );
+            return log_in_form(
+                "",
+                Some("An internal error occurred. Please try again later."),
+            )
+            .into_response();
         }
     };
 
@@ -217,18 +196,16 @@ pub async fn post_log_in(
         Ok(is_password_valid) => is_password_valid,
         Err(error) => {
             tracing::error!("Unhandled error while verifying credentials: {error}");
-            return render(
-                StatusCode::OK,
-                create_log_in_error_response("An internal error occurred. Please try again later."),
-            );
+            return log_in_form(
+                "",
+                Some("An internal error occurred. Please try again later."),
+            )
+            .into_response();
         }
     };
 
     if !is_password_valid {
-        return render(
-            StatusCode::OK,
-            create_log_in_error_response(INVALID_CREDENTIALS_ERROR_MSG),
-        );
+        return log_in_form("", Some(INVALID_CREDENTIALS_ERROR_MSG)).into_response();
     }
 
     let cookie_duration = if user_data.remember_me.is_some() {
@@ -260,19 +237,6 @@ pub async fn post_log_in(
         })
         .into_response()
 }
-
-fn create_log_in_error_response<'a>(error_message: &'a str) -> LogInFormTemplate<'a> {
-    LogInFormTemplate {
-        password_input: PasswordInputTemplate {
-            value: "",
-            min_length: 0,
-            error_message,
-        },
-        ..Default::default()
-    }
-}
-
-pub const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect password.";
 
 /// The raw data entered by the user in the log-in form.
 ///

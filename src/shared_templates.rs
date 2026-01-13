@@ -8,14 +8,6 @@ use axum::{
 
 use crate::endpoints;
 
-#[derive(Template, Default)]
-#[template(path = "partials/register/inputs/password.html")]
-pub struct PasswordInputTemplate<'a> {
-    pub value: &'a str,
-    pub min_length: u8,
-    pub error_message: &'a str,
-}
-
 #[inline]
 pub fn render(status_code: StatusCode, template: impl Template) -> Response {
     match template.render() {
