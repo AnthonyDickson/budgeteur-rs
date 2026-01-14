@@ -1,10 +1,8 @@
 //! This file defines the dashboard route and its handlers.
 
-use askama::Template;
 use axum::{
     extract::{FromRef, State},
-    http::{StatusCode, Uri},
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use axum_extra::extract::Form;
 use charming::{
@@ -16,6 +14,7 @@ use charming::{
     },
     series::{Line, bar},
 };
+use maud::{Markup, PreEscaped, html};
 use rusqlite::{Connection, params_from_iter};
 use serde::Deserialize;
 use std::{
@@ -31,10 +30,10 @@ use crate::{
     dashboard_preferences::{get_excluded_tags, save_excluded_tags},
     database_id::DatabaseId,
     endpoints,
-    navigation::{NavbarTemplate, get_nav_bar},
-    shared_templates::render,
+    navigation::NavBar,
     tag::{Tag, get_all_tags},
     timezone::get_local_offset,
+    view_templates::{HeadElement, base},
 };
 
 // ============================================================================
@@ -148,34 +147,170 @@ struct DashboardChart<'a> {
     options: &'a str,
 }
 
-/// Renders the dashboard charts section.
-#[derive(Template)]
-#[template(path = "partials/dashboard_charts.html")]
-struct DashboardChartsTemplate<'a> {
-    charts: &'a [DashboardChart<'a>],
+fn charts_view<'a>(charts: &[DashboardChart<'a>]) -> Markup {
+    let chart_script = |chart: &DashboardChart<'_>| {
+        PreEscaped(format!(
+            r#"(function() {{
+                const chartDom = document.getElementById("{}");
+                const chart = echarts.init(chartDom);
+                const option = {};
+                chart.setOption(option);
+
+                window.addEventListener('resize', chart.resize);
+
+                const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+                const updateTheme = () => {{
+                    const isDarkMode = darkModeMediaQuery.matches;
+                    chart.setTheme(isDarkMode ? 'dark' : 'default');
+                }}
+                darkModeMediaQuery.addEventListener('change', updateTheme);
+                // Run updateTheme manually to sync with initial browser settings
+                updateTheme();
+           }})();"#,
+            chart.id, chart.options
+        ))
+    };
+
+    html!(
+        section
+            id="charts"
+            class="w-full mx-auto mb-4"
+        {
+            div class="grid grid-cols-1 xl:grid-cols-2 gap-4"
+            {
+                @for chart in charts {
+                    div
+                        id=(chart.id)
+                        class="min-h-[380px] rounded dark:bg-gray-100"
+                    {}
+                }
+            }
+
+            script type="text/javascript"
+            {
+                @for chart in charts {
+                    (chart_script(chart))
+                }
+            }
+        }
+    )
 }
 
-/// Renders the dashboard page.
-#[derive(Template)]
-#[template(path = "views/dashboard.html")]
-struct DashboardTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
+fn link_view(url: &str, text: &str) -> Markup {
+    html! (
+        a
+            href=(url)
+            class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+        {
+          (text)
+        }
 
-    /// All available tags with their exclusion status
-    tags_with_status: Vec<TagWithExclusion>,
-    /// API endpoint for updating excluded tags
-    excluded_tags_endpoint: &'a str,
-
-    charts: DashboardChartsTemplate<'a>,
+    )
 }
 
-/// Renders the dashboard page when there is no data to display.
-#[derive(Template)]
-#[template(path = "views/dashboard_empty.html")]
-struct DashboardNoDataTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    create_transaction_url: Uri,
-    import_transaction_url: Uri,
+fn dashboard_no_data_view(nav_bar: NavBar) -> Markup {
+    let nav_bar = nav_bar.into_html();
+    let new_transaction_link = link_view(endpoints::NEW_TRANSACTION_VIEW, "manually");
+    let import_transaction_link = link_view(endpoints::IMPORT_VIEW, "importing");
+
+    let content = html!(
+        (nav_bar)
+
+        div class="flex flex-col items-center px-6 py-8 mx-auto text-gray-900 dark:text-white"
+        {
+            h2 class="text-xl font-bold"
+            {
+                "Nothing here yet..."
+            }
+
+            p
+            {
+                "Charts will show up here once you add some transactions.
+                You can add transactions " (new_transaction_link) " or
+                by " (import_transaction_link) "."
+            }
+        }
+    );
+
+    base("Dashboard", &[], &content)
+}
+
+fn dashboard_view<'a>(
+    nav_bar: NavBar<'a>,
+    tags_with_status: &[TagWithExclusion],
+    charts: &[DashboardChart<'a>],
+) -> Markup {
+    let nav_bar = nav_bar.into_html();
+    let excluded_tags_endpoint = endpoints::DASHBOARD_EXCLUDED_TAGS;
+    let charts_view = charts_view(charts);
+
+    let content = html!(
+        (nav_bar)
+
+        div
+            class="flex flex-col items-center px-2 lg:px-6 lg:py-8 mx-auto
+                max-w-screen-xl text-gray-900 dark:text-white"
+        {
+            (charts_view)
+
+            @if !tags_with_status.is_empty() {
+                div class="mb-8 w-full"
+                {
+                    h3 class="text-xl font-semibold mb-4" { "Filter Out Tags" }
+
+                    form
+                        hx-post=(excluded_tags_endpoint)
+                        hx-target="#charts"
+                        hx-target-error="#alert-container"
+                        hx-swap="innerHTML"
+                        hx-trigger="change"
+                        class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg"
+                    {
+                        p class="text-sm text-gray-600 dark:text-gray-400 mb-3"
+                        {
+                            "Exclude transactions with these tags from the charts above:"
+                        }
+
+                        div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
+                        {
+                            @for tag_status in tags_with_status {
+                                label class="flex items-center space-x-2"
+                                {
+                                    input
+                                        type="checkbox"
+                                        name="excluded_tags"
+                                        value=(tag_status.tag.id)
+                                        checked[tag_status.is_excluded]
+                                        class="rounded-sm border-gray-300
+                                            text-blue-600 shadow-xs
+                                            focus:border-blue-300 focus:ring-3
+                                            focus:ring-blue-200/50"
+                                    ;
+
+                                    span
+                                        class="inline-flex items-center
+                                            px-2.5 py-0.5
+                                            text-xs font-semibold text-blue-800
+                                            bg-blue-100 rounded-full
+                                            dark:bg-blue-900 dark:text-blue-300"
+                                    {
+                                        (tag_status.tag.name)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    );
+
+    let scripts = [
+        HeadElement::ScriptLink("/static/echarts.6.0.0.min.js".to_owned()),
+        HeadElement::ScriptLink("/static/echarts-gl.2.0.9.min.js".to_owned()),
+    ];
+
+    base("Dashboard", &scripts, &content)
 }
 
 /// Display a page with an overview of the user's data.
@@ -186,7 +321,7 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Result<R
         .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
         .map_err(|_| Error::DatabaseLockError)?;
 
-    let nav_bar = get_nav_bar(endpoints::DASHBOARD_VIEW);
+    let nav_bar = NavBar::new(endpoints::DASHBOARD_VIEW);
 
     // Get available tags and excluded tags for dashboard summaries
     let available_tags = get_all_tags(&connection)
@@ -224,14 +359,7 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Result<R
             })?;
 
     if transactions.is_empty() {
-        return Ok(render(
-            StatusCode::OK,
-            DashboardNoDataTemplate {
-                nav_bar,
-                create_transaction_url: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
-                import_transaction_url: Uri::from_static(endpoints::IMPORT_VIEW),
-            },
-        ));
+        return Ok(dashboard_no_data_view(nav_bar).into_response());
     }
 
     // Get total account balance
@@ -254,15 +382,7 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Result<R
         },
     ];
 
-    Ok(render(
-        StatusCode::OK,
-        DashboardTemplate {
-            nav_bar,
-            tags_with_status,
-            excluded_tags_endpoint: endpoints::DASHBOARD_EXCLUDED_TAGS,
-            charts: DashboardChartsTemplate { charts: &charts },
-        },
-    ))
+    Ok(dashboard_view(nav_bar, &tags_with_status, &charts).into_response())
 }
 
 // ============================================================================
@@ -616,7 +736,7 @@ pub async fn update_excluded_tags(
         },
     ];
 
-    render(StatusCode::OK, DashboardChartsTemplate { charts: &charts })
+    charts_view(&charts).into_response()
 }
 
 // ============================================================================
