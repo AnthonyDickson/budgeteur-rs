@@ -1,7 +1,6 @@
 //! This file defines the templates and a convenience function for creating the navigation bar.
 
 use askama::Template;
-use axum::response::{IntoResponse, Response};
 use maud::{Markup, html};
 
 use crate::endpoints;
@@ -210,12 +209,6 @@ impl NavBar<'_> {
                 }
             }
         )
-    }
-}
-
-impl IntoResponse for NavBar<'_> {
-    fn into_response(self) -> Response {
-        self.into_html().into_response()
     }
 }
 

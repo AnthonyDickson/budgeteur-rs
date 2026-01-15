@@ -74,6 +74,53 @@ pub fn base(title: &str, head_elements: &[HeadElement], content: &Markup) -> Mar
     }
 }
 
+pub fn error_view(title: &str, header: &str, description: &str, fix: &str) -> Markup {
+    // Template adapted from https://flowbite.com/blocks/marketing/404/
+    let content = html!(
+        section class="bg-white dark:bg-gray-900"
+        {
+            div class="py-8 px-4 mx-auto max-w-screen-xl lg:py-16 lg:px-6"
+            {
+                div class="mx-auto max-w-screen-sm text-center"
+                {
+                    h1
+                        class="mb-4 text-7xl tracking-tight font-extrabold
+                            lg:text-9xl text-blue-600 dark:text-blue-500"
+                    {
+                        (header)
+                    }
+
+                    p
+                        class="mb-4 text-3xl md:text-4xl tracking-tight
+                            font-bold text-gray-900 dark:text-white"
+                    {
+                        (description)
+                    }
+
+                    p
+                        class="mb-4 text-1xl md:text-2xl tracking-tight
+                            text-gray-900 dark:text-white"
+                    {
+                        (fix)
+                    }
+
+                    a
+                        href="/"
+                        class="inline-flex text-white bg-blue-600
+                            hover:bg-blue-800 focus:ring-4 focus:outline-hidden
+                            focus:ring-blue-300 font-medium rounded text-sm px-5
+                            py-2.5 text-center dark:focus:ring-blue-900 my-4"
+                    {
+                        "Back to Homepage"
+                    }
+                }
+            }
+        }
+    );
+
+    base(title, &[], &content)
+}
+
 pub fn log_in_register(form_title: &str, form: &Markup) -> Markup {
     html! {
         div class="flex flex-col items-center justify-center px-6 py-8 mx-auto"

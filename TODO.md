@@ -8,7 +8,6 @@
     - [ ] templates/macros/transaction_summary.html
     - [ ] templates/partials/edit_rule_form.html
     - [ ] templates/partials/edit_tag_form.html
-    - [ ] templates/partials/error_page.html
     - [ ] templates/partials/import_form.html
     - [ ] templates/partials/new_rule_form.html
     - [ ] templates/partials/new_tag_form.html
@@ -21,10 +20,8 @@
     - [ ] templates/views/edit_rule.html
     - [ ] templates/views/edit_tag.html
     - [ ] templates/views/import.html
-    - [ ] templates/views/internal_server_error_500.html
     - [ ] templates/views/new_rule.html
     - [ ] templates/views/new_tag.html
-    - [ ] templates/views/not_found_404.html
     - [ ] templates/views/rules.html
     - [ ] templates/views/tags.html
     - [ ] templates/views/transaction/create.html
@@ -35,6 +32,7 @@
     - [x] templates/components/spinner.html
     - [x] templates/partials/alert.html
     - [x] templates/partials/dashboard_charts.html
+    - [x] templates/partials/error_page.html
     - [x] templates/partials/log_in/form.html
     - [x] templates/partials/nav_bar.html
     - [x] templates/partials/register/form.html
@@ -45,8 +43,10 @@
     - [x] templates/views/dashboard_empty.html
     - [x] templates/views/dashboard.html
     - [x] templates/views/forgot_password.html
+    - [x] templates/views/internal_server_error_500.html
     - [x] templates/views/log_in.html
     - [x] templates/views/log_in_register_base.html
+    - [x] templates/views/not_found_404.html
     - [x] templates/views/register.html
   - [ ] Standardise button styles via constants in `view_templates.rs`
   - [ ] Review whether `view_templates.rs` should be broken up.

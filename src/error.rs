@@ -6,10 +6,7 @@ use axum::{
 use time::Date;
 
 use crate::{
-    alert::Alert,
-    internal_server_error::{InternalServerErrorPageTemplate, render_internal_server_error},
-    not_found::get_404_not_found_response,
-    tag::TagId,
+    alert::Alert, internal_server_error::InternalServerError, not_found::NotFoundError, tag::TagId,
 };
 
 /// The errors that may occur in the application.
@@ -167,27 +164,25 @@ impl From<rusqlite::Error> for Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
-            Error::NotFound => get_404_not_found_response(),
-            Error::DashboardPreferencesSaveError => {
-                render_internal_server_error(InternalServerErrorPageTemplate {
-                    description: "Save Failed",
-                    fix: "Failed to save your preferences. Please try again.",
-                })
+            Error::NotFound => NotFoundError.into_response(),
+            Error::DashboardPreferencesSaveError => InternalServerError {
+                description: "Save Failed",
+                fix: "Failed to save your preferences. Please try again.",
             }
-            Error::InvalidTimezoneError(timezone) => {
-                render_internal_server_error(InternalServerErrorPageTemplate {
-                    description: "Invalid Timezone Settings",
-                    fix: &format!(
-                        "Could not get local timezone \"{timezone}\". Check your server settings and \
+            .into_response(),
+            Error::InvalidTimezoneError(timezone) => InternalServerError {
+                description: "Invalid Timezone Settings",
+                fix: &format!(
+                    "Could not get local timezone \"{timezone}\". Check your server settings and \
                     ensure the timezone has been set to valid, canonical timezone string"
-                    ),
-                })
+                ),
             }
-            Error::DatabaseLockError => render_internal_server_error(Default::default()),
+            .into_response(),
+            Error::DatabaseLockError => InternalServerError::default().into_response(),
             // Any errors that are not handled above are not intended to be shown to the client.
             error => {
                 tracing::error!("An unexpected error occurred: {}", error);
-                render_internal_server_error(Default::default())
+                InternalServerError::default().into_response()
             }
         }
     }
