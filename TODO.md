@@ -6,24 +6,14 @@
   - [ ] Rewrite askama templates to maud:
     - [ ] templates/macros/amount_display.html
     - [ ] templates/macros/transaction_summary.html
-    - [ ] templates/partials/edit_rule_form.html
-    - [ ] templates/partials/edit_tag_form.html
     - [ ] templates/partials/import_form.html
-    - [ ] templates/partials/new_rule_form.html
-    - [ ] templates/partials/new_tag_form.html
     - [ ] templates/partials/transaction_table_row_empty.html
     - [ ] templates/partials/transaction_table_row.html
     - [ ] templates/styles/text/plain.html
     - [ ] templates/views/account/accounts.html
     - [ ] templates/views/account/create.html
     - [ ] templates/views/account/edit.html
-    - [ ] templates/views/edit_rule.html
-    - [ ] templates/views/edit_tag.html
     - [ ] templates/views/import.html
-    - [ ] templates/views/new_rule.html
-    - [ ] templates/views/new_tag.html
-    - [ ] templates/views/rules.html
-    - [ ] templates/views/tags.html
     - [ ] templates/views/transaction/create.html
     - [ ] templates/views/transaction/edit.html
     - [ ] templates/views/transaction/table.html
@@ -32,9 +22,13 @@
     - [x] templates/components/spinner.html
     - [x] templates/partials/alert.html
     - [x] templates/partials/dashboard_charts.html
+    - [x] templates/partials/edit_rule_form.html
+    - [x] templates/partials/edit_tag_form.html
     - [x] templates/partials/error_page.html
     - [x] templates/partials/log_in/form.html
     - [x] templates/partials/nav_bar.html
+    - [x] templates/partials/new_rule_form.html
+    - [x] templates/partials/new_tag_form.html
     - [x] templates/partials/register/form.html
     - [x] templates/partials/register/inputs/confirm_password.html
     - [x] templates/partials/register/inputs/password.html
@@ -42,17 +36,24 @@
     - [x] templates/styles/forms/label.html
     - [x] templates/views/dashboard_empty.html
     - [x] templates/views/dashboard.html
+    - [x] templates/views/edit_rule.html
+    - [x] templates/views/edit_tag.html
     - [x] templates/views/forgot_password.html
     - [x] templates/views/internal_server_error_500.html
     - [x] templates/views/log_in.html
     - [x] templates/views/log_in_register_base.html
+    - [x] templates/views/new_rule.html
+    - [x] templates/views/new_tag.html
     - [x] templates/views/not_found_404.html
     - [x] templates/views/register.html
+    - [x] templates/views/rules.html
+    - [x] templates/views/tags.html
   - [ ] Standardise button styles via constants in `view_templates.rs`
   - [ ] Review whether `view_templates.rs` should be broken up.
   - [ ] Remove Askama from dependencies
   - [ ] Delete templates folder
   - [ ] Delete `shared_templates.rs`
+  - [ ] Test tailwind css still works (delete existing css bundle)
   - PR description:
     ```text
     This PR replaces Askama with Maud. Nesting, inheriting templates and sharing

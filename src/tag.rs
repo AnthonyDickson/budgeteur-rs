@@ -5,7 +5,6 @@ use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-use askama::Template;
 use axum::{
     Form,
     extract::{FromRef, Path, State},
@@ -13,14 +12,15 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
+use maud::{Markup, html};
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
 use crate::alert::Alert;
 use crate::{
     AppState, Error, endpoints,
-    navigation::{NavbarTemplate, get_nav_bar},
-    shared_templates::render,
+    navigation::NavBar,
+    view_templates::{FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base},
 };
 
 /// The name of a tag.
@@ -85,50 +85,139 @@ pub struct Tag {
     pub name: TagName,
 }
 
-/// Renders the new tag page.
-#[derive(Template)]
-#[template(path = "views/new_tag.html")]
-struct NewTagTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    form: NewTagFormTemplate<'a>,
+fn new_tag_form_view(error_message: &str) -> Markup {
+    let create_tag_endpoint = endpoints::POST_TAG;
+
+    html! {
+        form
+            hx-post=(create_tag_endpoint)
+            hx-target-error="#alert-container"
+            class="w-full space-y-4 md:space-y-6"
+        {
+            div
+            {
+                label
+                    for="name"
+                    class=(FORM_LABEL_STYLE)
+                {
+                    "Tag Name"
+                }
+
+                input
+                    id="name"
+                    type="text"
+                    name="name"
+                    placeholder="Tag Name"
+                    required
+                    autofocus
+                    class=(FORM_TEXT_INPUT_STYLE);
+            }
+
+            @if !error_message.is_empty() {
+                p class="text-red-600 dark:text-red-400"
+                {
+                    (error_message)
+                }
+            }
+
+            button
+                type="submit"
+                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+            {
+                "Create Tag"
+            }
+        }
+    }
 }
 
-/// Renders the form for editing a tag.
-#[derive(Template)]
-#[template(path = "partials/edit_tag_form.html")]
-struct EditTagFormTemplate<'a> {
-    update_tag_endpoint: &'a str,
-    tag_name: &'a str,
-    error_message: &'a str,
+fn new_tag_view() -> Markup {
+    let nav_bar = NavBar::new(endpoints::NEW_TAG_VIEW).into_html();
+    let form = new_tag_form_view("");
+
+    let content = html! {
+        (nav_bar)
+
+        div
+            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md
+            text-gray-900 dark:text-white"
+        {
+            (form)
+        }
+    };
+
+    base("Create Tag", &[], &content)
 }
 
-/// Renders the edit tag page.
-#[derive(Template)]
-#[template(path = "views/edit_tag.html")]
-struct EditTagTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    form: EditTagFormTemplate<'a>,
+fn edit_tag_form_view(update_tag_endpoint: &str, tag_name: &str, error_message: &str) -> Markup {
+    html! {
+        form
+            hx-put=(update_tag_endpoint)
+            class="w-full space-y-4 md:space-y-6"
+        {
+            div
+            {
+                label
+                    for="name"
+                    class=(FORM_LABEL_STYLE)
+                {
+                    "Tag Name"
+                }
+
+                input
+                    id="name"
+                    type="text"
+                    name="name"
+                    placeholder="Tag Name"
+                    value=(tag_name)
+                    required
+                    autofocus
+                    class=(FORM_TEXT_INPUT_STYLE);
+            }
+
+            @if !error_message.is_empty() {
+                p
+                {
+                    (error_message)
+                }
+            }
+
+            button
+                type="submit"
+                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+            {
+                "Update Tag"
+            }
+        }
+    }
 }
 
-/// Renders the form for creating a tag.
-#[derive(Template)]
-#[template(path = "partials/new_tag_form.html")]
-pub struct NewTagFormTemplate<'a> {
-    pub create_tag_endpoint: &'a str,
-    pub error_message: &'a str,
+fn edit_tag_view(
+    edit_endpoint: &str,
+    update_endpoint: &str,
+    tag_name: &str,
+    error_message: &str,
+) -> Markup {
+    let nav_bar = NavBar::new(edit_endpoint).into_html();
+    let form = edit_tag_form_view(update_endpoint, tag_name, error_message);
+
+    let content = html! {
+        (nav_bar)
+
+        div
+            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md
+            text-gray-900 dark:text-white"
+        {
+            (form)
+        }
+    };
+
+    base("Edit Tag", &[], &content)
 }
 
 pub async fn get_new_tag_page() -> Response {
-    render(
-        StatusCode::OK,
-        NewTagTemplate {
-            nav_bar: get_nav_bar(endpoints::NEW_TAG_VIEW),
-            form: NewTagFormTemplate {
-                create_tag_endpoint: endpoints::POST_TAG,
-                error_message: "",
-            },
-        },
-    )
+    new_tag_view().into_response()
 }
 
 /// The state needed for the tags listing page.
@@ -214,13 +303,7 @@ pub async fn create_tag_endpoint(
     let name = match TagName::new(&new_tag.name) {
         Ok(name) => name,
         Err(error) => {
-            return render(
-                StatusCode::OK,
-                NewTagFormTemplate {
-                    create_tag_endpoint: endpoints::POST_TAG,
-                    error_message: &format!("Error: {error}"),
-                },
-            );
+            return new_tag_form_view(&format!("Error: {error}")).into_response();
         }
     };
 
@@ -261,17 +344,9 @@ pub async fn get_edit_tag_page(
     let update_endpoint = endpoints::format_endpoint(endpoints::PUT_TAG, tag_id);
 
     match get_tag(tag_id, &connection) {
-        Ok(tag) => Ok(render(
-            StatusCode::OK,
-            EditTagTemplate {
-                nav_bar: get_nav_bar(&edit_endpoint),
-                form: EditTagFormTemplate {
-                    update_tag_endpoint: &update_endpoint,
-                    tag_name: tag.name.as_ref(),
-                    error_message: "",
-                },
-            },
-        )),
+        Ok(tag) => Ok(
+            edit_tag_view(&edit_endpoint, &update_endpoint, tag.name.as_ref(), "").into_response(),
+        ),
         Err(error) => {
             let error_message = match error {
                 Error::NotFound => "Tag not found",
@@ -281,17 +356,7 @@ pub async fn get_edit_tag_page(
                 }
             };
 
-            Ok(render(
-                StatusCode::OK,
-                EditTagTemplate {
-                    nav_bar: get_nav_bar(&edit_endpoint),
-                    form: EditTagFormTemplate {
-                        update_tag_endpoint: &update_endpoint,
-                        tag_name: "",
-                        error_message,
-                    },
-                },
-            ))
+            Ok(edit_tag_view(&edit_endpoint, &update_endpoint, "", error_message).into_response())
         }
     }
 }
@@ -315,14 +380,12 @@ pub async fn update_tag_endpoint(
     let name = match TagName::new(&form_data.name) {
         Ok(name) => name,
         Err(error) => {
-            return render(
-                StatusCode::OK,
-                EditTagFormTemplate {
-                    update_tag_endpoint: &update_endpoint,
-                    tag_name: &form_data.name,
-                    error_message: &format!("Error: {error}"),
-                },
-            );
+            return edit_tag_form_view(
+                &update_endpoint,
+                &form_data.name,
+                &format!("Error: {error}"),
+            )
+            .into_response();
         }
     };
 
@@ -360,7 +423,7 @@ pub async fn delete_tag_endpoint(
         .into_response(),
         Err(Error::DeleteMissingTag) => Error::DeleteMissingTag.into_alert_response(),
         Err(error) => {
-            tracing::error!("An unexpected error occurred wkile deleting tag {tag_id}: {error}");
+            tracing::error!("An unexpected error occurred while deleting tag {tag_id}: {error}");
             error.into_alert_response()
         }
     }
@@ -706,6 +769,7 @@ mod new_tag_page_tests {
         );
     }
 }
+
 #[cfg(test)]
 mod create_tag_endpoint_tests {
     use std::sync::{Arc, Mutex};

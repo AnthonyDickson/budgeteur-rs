@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 
-use askama::Template;
-use axum::{extract::State, http::StatusCode, response::Response};
+use axum::{
+    extract::State,
+    response::{IntoResponse, Response},
+};
+use maud::{Markup, html};
 use rusqlite::Connection;
 
 use crate::{
     Error, endpoints,
-    navigation::{NavbarTemplate, get_nav_bar},
-    shared_templates::render,
+    navigation::NavBar,
     tag::{Tag, TagId, TagsPageState, get_all_tags},
+    view_templates::base,
 };
 
 /// A tag with its formatted edit URL for template rendering.
@@ -19,13 +22,147 @@ struct TagWithEditUrl {
     pub transaction_count: u64,
 }
 
-/// Renders the tags listing page.
-#[derive(Template)]
-#[template(path = "views/tags.html")]
-struct TagsTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    tags: Vec<TagWithEditUrl>,
-    new_tag_route: &'a str,
+fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
+    let new_tag_route = endpoints::NEW_TAG_VIEW;
+    let delete_tag_route =
+        |tag: &TagWithEditUrl| endpoints::format_endpoint(endpoints::DELETE_TAG, tag.tag.id);
+    let nav_bar = NavBar::new(endpoints::TAGS_VIEW).into_html();
+
+    let table_row = |tag_with_url: &TagWithEditUrl| {
+        html!(
+            tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700"
+            {
+                td class="px-6 py-4"
+                {
+                    span
+                        class="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold text-blue-800
+                        bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-300"
+                    {
+                        (tag_with_url.tag.name)
+                    }
+                }
+
+                td class="px-6 py-4"
+                {
+                    (tag_with_url.transaction_count)
+                }
+
+                td class="px-6 py-4"
+                {
+                    div class="flex gap-4"
+                    {
+                        a
+                            href=(tag_with_url.edit_url)
+                            class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+                        {
+                            "Edit"
+                        }
+
+                        button
+                            hx-delete=(delete_tag_route(tag_with_url))
+                            hx-confirm={
+                                "Are you sure you want to delete '"
+                                (tag_with_url.tag.name) "'? This will remove it from "
+                                (tag_with_url.transaction_count) " transaction(s)."
+                            }
+                            hx-target="closest tr"
+                            hx-target-error="#alert-container"
+                            hx-swap="delete"
+                            class="text-red-600 hover:text-red-500 dark:text-red-500 dark:hover:text-red-400
+                               underline bg-transparent border-none cursor-pointer"
+                        {
+                           "Delete"
+                        }
+                    }
+                }
+            }
+        )
+    };
+
+    let content = html!(
+        (nav_bar)
+
+        div
+            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-5
+            text-gray-900 dark:text-white"
+        {
+            div class="relative"
+            {
+                div class="flex justify-between flex-wrap items-end"
+                {
+                    h1 class="text-xl font-bold" { "Tags" }
+
+                    a
+                        href=(new_tag_route)
+                        class="text-blue-600 hover:text-blue-500
+                            dark:text-blue-500 dark:hover:text-blue-400 underline"
+                    {
+                        "Create Tag"
+                    }
+                }
+
+                div class="dark:bg-gray-800"
+                {
+                    table class="w-full text-sm text-left rtl:text-right
+                        text-gray-500 dark:text-gray-400"
+                    {
+                        thead
+                            class="text-xs text-gray-700 uppercase bg-gray-50
+                            dark:bg-gray-700 dark:text-gray-400"
+                        {
+                            tr
+                            {
+                                th scope="col" class="px-6 py-3"
+                                {
+                                    "Name"
+                                }
+                                th scope="col" class="px-6 py-3"
+                                {
+                                    "Transactions"
+                                }
+                                th scope="col" class="px-6 py-3"
+                                {
+                                    "Actions"
+                                }
+                            }
+                        }
+
+                        tbody
+                        {
+                            @for tag_with_url in tags {
+                                (table_row(tag_with_url))
+                            }
+
+                            @if tags.is_empty() {
+                                tr
+                                {
+                                    td
+                                        colspan="4"
+                                        class="px-6 py-4 text-center
+                                            text-gray-500 dark:text-gray-400"
+                                    {
+                                        "No tags created yet. "
+                                        a
+                                            href=(new_tag_route)
+                                            class="text-blue-600
+                                                hover:text-blue-500
+                                                dark:text-blue-500
+                                                dark:hover:text-blue-400
+                                                underline"
+                                        {
+                                            "Create your first tag"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    );
+
+    base("Tags", &[], &content)
 }
 
 /// Route handler for the tags listing page.
@@ -53,16 +190,9 @@ pub async fn get_tags_page(State(state): State<TagsPageState>) -> Result<Respons
                 transaction_count,
             }
         })
-        .collect();
+        .collect::<Vec<_>>();
 
-    Ok(render(
-        StatusCode::OK,
-        TagsTemplate {
-            nav_bar: get_nav_bar(endpoints::TAGS_VIEW),
-            tags: tags_with_edit_urls,
-            new_tag_route: endpoints::NEW_TAG_VIEW,
-        },
-    ))
+    Ok(tags_view(&tags_with_edit_urls).into_response())
 }
 
 fn count_transactions_per_tag(connection: &Connection) -> Result<HashMap<TagId, u64>, Error> {
