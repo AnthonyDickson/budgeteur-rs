@@ -55,7 +55,7 @@
   - [ ] Review whether `view_templates.rs` should be broken up.
   - [ ] Remove Askama from dependencies
   - [ ] Delete templates folder
-  - [ ] Delete `shared_templates.rs`
+  - [x] Delete `shared_templates.rs`
   - [ ] Test tailwind css still works (delete existing css bundle)
   - PR description:
     ```text

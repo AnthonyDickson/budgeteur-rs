@@ -39,7 +39,6 @@ mod password;
 mod register_user;
 mod routing;
 mod rule;
-mod shared_templates;
 mod tag;
 mod tags_page;
 mod timezone;
