@@ -14,12 +14,12 @@ use time::Date;
 use crate::{
     AppState, Error,
     database_id::TransactionId,
-    endpoints, filters,
+    endpoints,
     navigation::NavBar,
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     tag::TagName,
     transaction::core::count_transactions,
-    view_templates::base,
+    view_templates::{base, format_currency},
 };
 
 /// The state needed for the transactions page.
@@ -100,8 +100,7 @@ impl TransactionTableRow {
     }
 
     fn into_html(self) -> Markup {
-        let amount_str =
-            filters::currency(self.amount, &()).unwrap_or_else(|_| self.amount.to_string());
+        let amount_str = format_currency(self.amount);
 
         html! {
             tr class="bg-white dark:bg-gray-800"

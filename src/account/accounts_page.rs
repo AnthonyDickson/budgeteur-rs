@@ -13,9 +13,8 @@ use time::Date;
 use crate::{
     AppState, Error,
     endpoints::{self, format_endpoint},
-    filters,
     navigation::NavBar,
-    view_templates::base,
+    view_templates::{base, format_currency},
 };
 
 /// The state needed for the [get_accounts_page](crate::account::get_accounts_page) route handler.
@@ -47,8 +46,7 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
     let nav_bar = NavBar::new(endpoints::ACCOUNTS).into_html();
 
     let table_row = |account: &AccountTableRow| {
-        let balance_str =
-            filters::currency(account.balance, &()).unwrap_or_else(|_| account.balance.to_string());
+        let balance_str = format_currency(account.balance);
 
         html!(
             tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700"
@@ -321,7 +319,7 @@ mod accounts_template_tests {
             accounts_page::{AccountTableRow, accounts_view},
         },
         endpoints::{self, format_endpoint},
-        filters::currency,
+        view_templates::format_currency,
     };
 
     #[test]
@@ -414,7 +412,7 @@ mod accounts_template_tests {
                 "want account '{}', got '{got_account}'.",
                 want.name
             );
-            let want_balance = currency(want.balance, &()).unwrap();
+            let want_balance = format_currency(want.balance);
             assert_eq!(
                 want_balance, got_acconunt,
                 "want balance {want_balance}, got {got_acconunt}."
@@ -499,7 +497,7 @@ mod get_accounts_page_tests {
             create_account_table, get_accounts_page,
         },
         endpoints::{self, format_endpoint},
-        filters::currency,
+        view_templates::format_currency,
     };
 
     #[tokio::test]
@@ -600,7 +598,7 @@ mod get_accounts_page_tests {
                 "want account '{}', got '{got_account}'.",
                 want.name
             );
-            let want_balance = currency(want.balance, &()).unwrap();
+            let want_balance = format_currency(want.balance);
             assert_eq!(
                 want_balance, got_balance,
                 "want balance {want_balance}, got {got_balance}."

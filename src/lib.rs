@@ -26,7 +26,6 @@ mod database_id;
 mod db;
 mod endpoints;
 mod error;
-mod filters;
 mod forgot_password;
 mod internal_server_error;
 mod log_in;
