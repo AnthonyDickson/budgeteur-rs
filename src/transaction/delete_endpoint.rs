@@ -2,8 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{FromRef, Path, State},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
 };
+use maud::{Markup, html};
 use rusqlite::Connection;
 
 use crate::{AppState, Error, database_id::TransactionId};
@@ -23,8 +24,21 @@ impl FromRef<AppState> for DeleteTransactionState {
     }
 }
 
-const EMPTY_TRANSACTION_TABLE_ROW: &str =
-    include_str!("./../../templates/partials/transaction_table_row_empty.html");
+fn empty_transaction_table_row() -> Markup {
+    html! {
+        tr class="bg-white dark:bg-gray-800"
+        {
+            td class="px-6 py-4 text-right" { "-" }
+            td class="px-6 py-4" { "-" }
+            td class="px-6 py-4" { em { "Deleted" } }
+            td class="px-6 py-4"
+            {
+                span class="text-gray-400 dark:text-gray-500" { "-" }
+            }
+            td class="px-6 py-4" { "-" }
+        }
+    }
+}
 
 /// A route handler for deleting a transaction, responds with an alert.
 pub async fn delete_transaction_endpoint(
@@ -41,7 +55,7 @@ pub async fn delete_transaction_endpoint(
 
     match delete_transaction(transaction_id, &connection) {
         // The status code has to be 200 OK or HTMX will not delete the table row.
-        Ok(row_affected) if row_affected != 0 => Html(EMPTY_TRANSACTION_TABLE_ROW).into_response(),
+        Ok(row_affected) if row_affected != 0 => empty_transaction_table_row().into_response(),
         Ok(_) => Error::DeleteMissingTransaction.into_alert_response(),
         Err(error) => {
             tracing::error!("Could not delete transaction {transaction_id}: {error}");

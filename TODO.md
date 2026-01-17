@@ -4,16 +4,11 @@
 
 - Migrate to Maud:
   - [ ] Rewrite askama templates to maud:
-    - [ ] templates/macros/amount_display.html
-    - [ ] templates/macros/transaction_summary.html
-    - [ ] templates/partials/transaction_table_row_empty.html
-    - [ ] templates/partials/transaction_table_row.html
-    - [ ] templates/styles/text/plain.html
-    - [ ] templates/views/transaction/create.html
-    - [ ] templates/views/transaction/table.html
     - [x] templates/base.html
     - [x] templates/components/nav_link.html
     - [x] templates/components/spinner.html
+    - [x] templates/macros/amount_display.html
+    - [x] templates/macros/transaction_summary.html
     - [x] templates/partials/alert.html
     - [x] templates/partials/dashboard_charts.html
     - [x] templates/partials/edit_rule_form.html
@@ -27,8 +22,11 @@
     - [x] templates/partials/register/form.html
     - [x] templates/partials/register/inputs/confirm_password.html
     - [x] templates/partials/register/inputs/password.html
+    - [x] templates/partials/transaction_table_row_empty.html
+    - [x] templates/partials/transaction_table_row.html
     - [x] templates/styles/forms/input.html
     - [x] templates/styles/forms/label.html
+    - [x] templates/styles/text/plain.html
     - [x] templates/views/account/accounts.html
     - [x] templates/views/account/create.html
     - [x] templates/views/account/edit.html
@@ -47,7 +45,9 @@
     - [x] templates/views/register.html
     - [x] templates/views/rules.html
     - [x] templates/views/tags.html
+    - [x] templates/views/transaction/create.html
     - [x] templates/views/transaction/edit.html
+    - [x] templates/views/transaction/table.html
   - [ ] Standardise button styles via constants in `view_templates.rs`
   - [ ] Refactor import alerts to directly use `alerts::Alert` and use plain functions instead of OOP approach
   - [ ] Factor out common patterns

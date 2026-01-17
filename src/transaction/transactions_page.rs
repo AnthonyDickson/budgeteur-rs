@@ -1,12 +1,12 @@
 //! Defines the route handler for the page that displays transactions as a table.
 use std::sync::{Arc, Mutex};
 
-use askama::Template;
 use axum::{
     extract::{FromRef, Query, State},
-    http::{StatusCode, Uri},
-    response::Response,
+    http::Uri,
+    response::{IntoResponse, Response},
 };
+use maud::{Markup, html};
 use rusqlite::Connection;
 use serde::Deserialize;
 use time::Date;
@@ -15,11 +15,11 @@ use crate::{
     AppState, Error,
     database_id::TransactionId,
     endpoints, filters,
-    navigation::{NavbarTemplate, get_nav_bar},
+    navigation::NavBar,
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
-    shared_templates::render,
     tag::TagName,
     transaction::core::count_transactions,
+    view_templates::base,
 };
 
 /// The state needed for the transactions page.
@@ -49,91 +49,6 @@ pub struct Pagination {
     per_page: Option<u64>,
 }
 
-/// Renders the transaction page.
-#[derive(Template)]
-#[template(path = "views/transaction/table.html")]
-struct TransactionsTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    /// The user's transactions for this week, as Askama templates.
-    transactions: Vec<TransactionTableRow>,
-    /// The route for creating a new transaction for the current user.
-    create_transaction_route: Uri,
-    /// The route for importing transactions from CSV files.
-    import_transaction_route: Uri,
-    /// The route to the transactions (current) page.
-    transactions_page_route: Uri,
-    pagination: &'a [PaginationIndicator],
-    per_page: u64,
-    // HACK: ^ Use reference for current page since (de)referencing doesn't work
-    // in asakama template as expected.
-}
-
-/// Render an overview of the user's transactions.
-pub async fn get_transactions_page(
-    State(state): State<TransactionsViewState>,
-    Query(query_params): Query<Pagination>,
-) -> Result<Response, Error> {
-    let nav_bar = get_nav_bar(endpoints::TRANSACTIONS_VIEW);
-
-    let current_page = query_params
-        .page
-        .unwrap_or(state.pagination_config.default_page);
-    let per_page = query_params
-        .per_page
-        .unwrap_or(state.pagination_config.default_page_size);
-
-    let limit = per_page;
-    let offset = (current_page - 1) * per_page;
-    let connection = state.db_connection.lock().unwrap();
-    let page_count = {
-        let transaction_count = count_transactions(&connection)
-            .inspect_err(|error| tracing::error!("could not count transactions: {error}"))?;
-        (transaction_count as f64 / per_page as f64).ceil() as u64
-    };
-
-    let redirect_url = get_redirect_url(current_page, per_page);
-
-    let transactions =
-        get_transaction_table_rows_paginated(limit, offset, SortOrder::Descending, &connection)
-            .inspect_err(|error| tracing::error!("could not get transaction table rows: {error}"))?
-            .into_iter()
-            .map(|transaction| {
-                TransactionTableRow::new_from_transaction(transaction, redirect_url.as_deref())
-            })
-            .collect();
-
-    let max_pages = state.pagination_config.max_pages;
-    let pagination_indicators = create_pagination_indicators(current_page, page_count, max_pages);
-
-    Ok(render(
-        StatusCode::OK,
-        TransactionsTemplate {
-            nav_bar,
-            transactions,
-            create_transaction_route: Uri::from_static(endpoints::NEW_TRANSACTION_VIEW),
-            import_transaction_route: Uri::from_static(endpoints::IMPORT_VIEW),
-            transactions_page_route: Uri::from_static(endpoints::TRANSACTIONS_VIEW),
-            pagination: &pagination_indicators,
-            per_page,
-        },
-    ))
-}
-
-fn get_redirect_url(page: u64, per_page: u64) -> Option<String> {
-    let redirect_url = format!(
-        "{}?page={page}&per_page={per_page}",
-        endpoints::TRANSACTIONS_VIEW
-    );
-
-    serde_urlencoded::to_string([("redirect_url", &redirect_url)])
-        .inspect_err(|error| {
-            tracing::error!(
-                "Could not set redirect URL {redirect_url} due to encoding error: {error}"
-            );
-        })
-        .ok()
-}
-
 #[derive(Debug, PartialEq)]
 struct Transaction {
     /// The ID of the transaction.
@@ -149,8 +64,7 @@ struct Transaction {
 }
 
 /// Renders a transaction with its tags as a table row.
-#[derive(Debug, Template, PartialEq)]
-#[template(path = "partials/transaction_table_row.html")]
+#[derive(Debug, PartialEq)]
 struct TransactionTableRow {
     /// The amount of money spent or earned in this transaction.
     amount: f64,
@@ -184,6 +98,274 @@ impl TransactionTableRow {
             delete_url: endpoints::format_endpoint(endpoints::DELETE_TRANSACTION, transaction.id),
         }
     }
+
+    fn into_html(self) -> Markup {
+        let amount_str =
+            filters::currency(self.amount, &()).unwrap_or_else(|_| self.amount.to_string());
+
+        html! {
+            tr class="bg-white dark:bg-gray-800"
+            {
+                td class="px-6 py-4 text-right" { (amount_str) }
+                td class="px-6 py-4" { (self.date) }
+                td class="px-6 py-4" { (self.description) }
+                td class="px-6 py-4"
+                {
+                    @if let Some(tag_name) = &self.tag_name {
+                        span
+                            class="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold text-blue-800
+                            bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-300"
+                        {
+                            (tag_name)
+                        }
+                    } @else {
+                        span class="text-gray-400 dark:text-gray-500" { "-" }
+                    }
+                }
+                td class="px-6 py-4"
+                {
+                    div class="flex gap-4"
+                    {
+                        a
+                            href=(self.edit_url)
+                            class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+                        {
+                            "Edit"
+                        }
+
+                        button
+                            hx-delete=(self.delete_url)
+                            hx-confirm={
+                                "Are you sure you want to delete the transaction '"
+                                (self.description) "'? This cannot be undone."
+                            }
+                            hx-target="closest tr"
+                            hx-target-error="#alert-container"
+                            hx-swap="outerHTML"
+                            class="text-red-600 hover:text-red-500 dark:text-red-500 dark:hover:text-red-400
+                               underline bg-transparent border-none cursor-pointer"
+                        {
+                           "Delete"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn pagination_indicator_html(
+    indicator: &PaginationIndicator,
+    transactions_page_route: &Uri,
+    per_page: u64,
+) -> Markup {
+    html! {
+        li class="flex items-center"
+        {
+            @match indicator {
+                PaginationIndicator::Page(page) => {
+                    a
+                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
+                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
+                    {
+                        (page)
+                    }
+                }
+                PaginationIndicator::CurrPage(page) => {
+                    p
+                        aria-current="page"
+                        class="block px-3 py-2 rounded-sm font-bold text-black dark:text-white"
+                    {
+                        (page)
+                    }
+                }
+                PaginationIndicator::Ellipsis => {
+                    span class="px-3 py-2 text-gray-400 select-none" { "..." }
+                }
+                PaginationIndicator::BackButton(page) => {
+                    a
+                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
+                        role="button"
+                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
+                    {
+                        "Back"
+                    }
+                }
+                PaginationIndicator::NextButton(page) => {
+                    a
+                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
+                        role="button"
+                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
+                    {
+                        "Next"
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn transactions_view(
+    transactions: Vec<TransactionTableRow>,
+    pagination: &[PaginationIndicator],
+    per_page: u64,
+) -> Markup {
+    let create_transaction_route = Uri::from_static(endpoints::NEW_TRANSACTION_VIEW);
+    let import_transaction_route = Uri::from_static(endpoints::IMPORT_VIEW);
+    let transactions_page_route = Uri::from_static(endpoints::TRANSACTIONS_VIEW);
+    let nav_bar = NavBar::new(endpoints::TRANSACTIONS_VIEW).into_html();
+    // Cache this result so it can be accessed after `transactions` is moved by for loop.
+    let transactions_empty = transactions.is_empty();
+
+    let content = html! {
+        (nav_bar)
+
+        div
+            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-5
+            text-gray-900 dark:text-white"
+        {
+            div class="relative"
+            {
+                div class="flex justify-between flex-wrap items-end"
+                {
+                    h1 class="text-xl font-bold" { "Transactions" }
+
+                    a
+                        href=(import_transaction_route)
+                        class="text-blue-600 hover:text-blue-500
+                            dark:text-blue-500 dark:hover:text-blue-400 underline"
+                    {
+                        "Import Transactions"
+                    }
+
+                    a
+                        href=(create_transaction_route)
+                        class="text-blue-600 hover:text-blue-500
+                            dark:text-blue-500 dark:hover:text-blue-400 underline"
+                    {
+                        "Create Transaction"
+                    }
+                }
+
+                div class="dark:bg-gray-800"
+                {
+                    table class="w-full text-sm text-left rtl:text-right
+                        text-gray-500 dark:text-gray-400"
+                    {
+                        thead
+                            class="text-xs text-gray-700 uppercase bg-gray-50
+                            dark:bg-gray-700 dark:text-gray-400"
+                        {
+                            tr
+                            {
+                                th scope="col" class="px-6 py-3 text-right"
+                                {
+                                    "Amount"
+                                }
+                                th scope="col" class="px-6 py-3"
+                                {
+                                    "Date"
+                                }
+                                th scope="col" class="px-6 py-3"
+                                {
+                                    "Description"
+                                }
+                                th scope="col" class="px-6 py-3"
+                                {
+                                    "Tags"
+                                }
+                                th scope="col" class="px-6 py-3"
+                                {
+                                    "Actions"
+                                }
+                            }
+                        }
+
+                        tbody
+                        {
+                            @for transaction_row in transactions {
+                                (transaction_row.into_html())
+                            }
+
+                            @if transactions_empty {
+                                tr
+                                {
+                                    th { "Nothing here yet." }
+                                }
+                            }
+                        }
+                    }
+
+                    @if !transactions_empty {
+                        nav class="pagination flex justify-center my-8"
+                        {
+                            ul class="pagination flex list-none gap-2 p-0 m-0"
+                            {
+                                @for indicator in pagination {
+                                    (pagination_indicator_html(indicator, &transactions_page_route, per_page))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    base("Transactions", &[], &content)
+}
+
+/// Render an overview of the user's transactions.
+pub async fn get_transactions_page(
+    State(state): State<TransactionsViewState>,
+    Query(query_params): Query<Pagination>,
+) -> Result<Response, Error> {
+    let current_page = query_params
+        .page
+        .unwrap_or(state.pagination_config.default_page);
+    let per_page = query_params
+        .per_page
+        .unwrap_or(state.pagination_config.default_page_size);
+
+    let limit = per_page;
+    let offset = (current_page - 1) * per_page;
+    let connection = state.db_connection.lock().unwrap();
+    let page_count = {
+        let transaction_count = count_transactions(&connection)
+            .inspect_err(|error| tracing::error!("could not count transactions: {error}"))?;
+        (transaction_count as f64 / per_page as f64).ceil() as u64
+    };
+
+    let redirect_url = get_redirect_url(current_page, per_page);
+
+    let transactions =
+        get_transaction_table_rows_paginated(limit, offset, SortOrder::Descending, &connection)
+            .inspect_err(|error| tracing::error!("could not get transaction table rows: {error}"))?
+            .into_iter()
+            .map(|transaction| {
+                TransactionTableRow::new_from_transaction(transaction, redirect_url.as_deref())
+            })
+            .collect();
+
+    let max_pages = state.pagination_config.max_pages;
+    let pagination_indicators = create_pagination_indicators(current_page, page_count, max_pages);
+
+    Ok(transactions_view(transactions, &pagination_indicators, per_page).into_response())
+}
+
+fn get_redirect_url(page: u64, per_page: u64) -> Option<String> {
+    let redirect_url = format!(
+        "{}?page={page}&per_page={per_page}",
+        endpoints::TRANSACTIONS_VIEW
+    );
+
+    serde_urlencoded::to_string([("redirect_url", &redirect_url)])
+        .inspect_err(|error| {
+            tracing::error!(
+                "Could not set redirect URL {redirect_url} due to encoding error: {error}"
+            );
+        })
+        .ok()
 }
 
 /// The order to sort transactions in a [TransactionQuery].
