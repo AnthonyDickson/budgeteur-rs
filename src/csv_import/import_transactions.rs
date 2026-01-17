@@ -10,7 +10,11 @@ use rusqlite::Connection;
 use crate::{
     AppState, Error,
     alert::Alert,
-    csv_import::{account::upsert_account, alert::ImportMessageBuilder, csv::parse_csv},
+    csv_import::{
+        account::upsert_account,
+        alert::{error_with_partial_success, success_with_tagging},
+        csv::parse_csv,
+    },
     rule::{TaggingMode, TaggingResult, apply_rules_to_transactions},
     timezone::get_local_offset,
     transaction::{Transaction, TransactionBuilder, map_transaction_row},
@@ -144,33 +148,21 @@ pub async fn import_transactions(
     }
 
     let duration = start_time.elapsed();
-    let message_builder = ImportMessageBuilder::new(imported_transactions.len(), duration);
 
     // Generate success/error message based on auto-tagging result
     match auto_tagging_result {
         Ok(tagging_result) => {
-            let alert_msg = message_builder.success_with_tagging(&tagging_result);
-            (
-                StatusCode::CREATED,
-                Alert::Success {
-                    message: alert_msg.message,
-                    details: alert_msg.details,
-                }
-                .into_html(),
-            )
-                .into_response()
+            let alert =
+                success_with_tagging(&tagging_result, imported_transactions.len(), duration);
+            (StatusCode::CREATED, alert.into_html()).into_response()
         }
         Err(error) => {
-            let alert_msg = message_builder.error_with_partial_success(&error.to_string());
-            (
-                StatusCode::CREATED,
-                Alert::Error {
-                    message: alert_msg.message,
-                    details: alert_msg.details,
-                }
-                .into_html(),
-            )
-                .into_response()
+            let alert = error_with_partial_success(
+                &error.to_string(),
+                imported_transactions.len(),
+                duration,
+            );
+            (StatusCode::CREATED, alert.into_html()).into_response()
         }
     }
 }
