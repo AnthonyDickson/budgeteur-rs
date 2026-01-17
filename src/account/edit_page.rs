@@ -1,11 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use askama::Template;
 use axum::{
     extract::{FromRef, Path, State},
-    http::StatusCode,
-    response::Response,
+    response::{IntoResponse, Response},
 };
+use maud::{Markup, PreEscaped, html};
 use rusqlite::Connection;
 use time::{Date, OffsetDateTime};
 
@@ -14,19 +13,144 @@ use crate::{
     account::{Account, map_row_to_account},
     database_id::DatabaseId,
     endpoints::{self, format_endpoint},
-    navigation::{NavbarTemplate, get_nav_bar},
-    shared_templates::render,
+    navigation::NavBar,
     timezone::get_local_offset,
+    view_templates::{FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, HeadElement, base, loading_spinner},
 };
 
-/// Renders the edit account page.
-#[derive(Template)]
-#[template(path = "views/account/edit.html")]
-struct EditAccountPageTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    edit_url: String,
-    max_date: Date,
-    account: Account,
+fn edit_account_view(edit_url: &str, max_date: Date, account: &Account) -> Markup {
+    let nav_bar = NavBar::new(endpoints::EDIT_ACCOUNT_VIEW).into_html();
+    let spinner = loading_spinner();
+    let balance_str = format!("{:.2}", account.balance);
+
+    let content = html! {
+        (nav_bar)
+
+        div
+            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md
+            text-gray-900 dark:text-white"
+        {
+            form
+                hx-put=(edit_url)
+                hx-target-error="#alert-container"
+                class="w-full space-y-4 md:space-y-6"
+            {
+                h2 class="text-xl font-bold" { "Edit Account" }
+
+                div
+                {
+                    label
+                        for="name"
+                        class=(FORM_LABEL_STYLE)
+                    {
+                        "Name"
+                    }
+
+                    input
+                        name="name"
+                        id="name"
+                        type="text"
+                        placeholder=(account.name)
+                        value=(account.name)
+                        class=(FORM_TEXT_INPUT_STYLE);
+                }
+
+                div
+                {
+                    label
+                        for="balance"
+                        class=(FORM_LABEL_STYLE)
+                    {
+                        "Balance"
+                    }
+
+                    // w-full needed to ensure input takes the full width when prefilled with a value
+                    div class="input-wrapper w-full"
+                    {
+                        input
+                            name="balance"
+                            id="balance"
+                            type="number"
+                            step="0.01"
+                            placeholder=(balance_str)
+                            value=(balance_str)
+                            required
+                            class=(FORM_TEXT_INPUT_STYLE);
+                    }
+                }
+
+                div
+                {
+                    label
+                        for="date"
+                        class=(FORM_LABEL_STYLE)
+                    {
+                        "Date"
+                    }
+
+                    input
+                        name="date"
+                        id="date"
+                        type="date"
+                        max=(max_date)
+                        value=(account.date)
+                        required
+                        class=(FORM_TEXT_INPUT_STYLE);
+                }
+
+                button
+                    onclick="history.back()"
+                    type="button"
+                    class="w-full py-2.5 px-5 mb-2 text-sm font-medium text-gray-900
+                        bg-white rounded border border-gray-200
+                        hover:bg-gray-100 hover:text-blue-700 focus:z-10 dark:bg-gray-800
+                        dark:text-gray-400 dark:border-gray-600 dark:hover:text-white
+                        dark:hover:bg-gray-700"
+                {
+                    "Cancel"
+                }
+
+                button
+                    type="submit"
+                    id="submit-button"
+                    tabindex="0"
+                    class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+                        hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+                {
+                    span
+                        id="indicator"
+                        class="inline htmx-indicator"
+                    {
+                        (spinner)
+                    }
+                    " Edit Account"
+                }
+            }
+        }
+    };
+
+    let style = HeadElement::Style(PreEscaped(
+        r#"
+        .input-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        .input-wrapper input[type="number"] {
+            padding-left: 1.4rem;
+        }
+        .input-wrapper::before {
+            content: '$';
+            position: absolute;
+            left: 0.6rem;
+            top: 50%;
+            transform: translateY(-52%);
+            pointer-events: none;
+        }
+        "#
+        .to_owned(),
+    ));
+
+    base(&format!("Edit Account #{}", account.id), &[style], &content)
 }
 
 /// The state needed for the edit account page.
@@ -52,8 +176,6 @@ pub async fn get_edit_account_page(
     State(state): State<EditAccountPageState>,
     Path(account_id): Path<DatabaseId>,
 ) -> Result<Response, Error> {
-    let nav_bar = get_nav_bar(endpoints::EDIT_ACCOUNT_VIEW);
-
     let connection = state
         .db_connection
         .lock()
@@ -71,16 +193,9 @@ pub async fn get_edit_account_page(
     })?;
 
     let edit_url = format_endpoint(endpoints::EDIT_ACCOUNT, account_id);
+    let max_date = OffsetDateTime::now_utc().to_offset(local_timezone).date();
 
-    Ok(render(
-        StatusCode::OK,
-        EditAccountPageTemplate {
-            nav_bar,
-            edit_url,
-            max_date: OffsetDateTime::now_utc().to_offset(local_timezone).date(),
-            account,
-        },
-    ))
+    Ok(edit_account_view(&edit_url, max_date, &account).into_response())
 }
 
 /// Retrieve an account from the database by its `id`.

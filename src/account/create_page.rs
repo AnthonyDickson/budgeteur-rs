@@ -1,27 +1,145 @@
 //! Defines the route handler for the page for creating an account.
 
-use askama::Template;
 use axum::{
     extract::{FromRef, State},
-    http::StatusCode,
-    response::Response,
+    response::{IntoResponse, Response},
 };
+use maud::{Markup, PreEscaped, html};
 use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error, endpoints,
-    navigation::{NavbarTemplate, get_nav_bar},
-    shared_templates::render,
+    navigation::NavBar,
     timezone::get_local_offset,
+    view_templates::{FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, HeadElement, base, loading_spinner},
 };
 
-/// Renders the create account page.
-#[derive(Template)]
-#[template(path = "views/account/create.html")]
-struct CreateAccountTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    create_account_route: &'a str,
-    max_date: Date,
+fn create_account_view(max_date: Date) -> Markup {
+    let create_account_route = endpoints::ACCOUNTS;
+    let nav_bar = NavBar::new(endpoints::NEW_ACCOUNT_VIEW).into_html();
+    let spinner = loading_spinner();
+
+    let content = html! {
+        (nav_bar)
+
+        div
+            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md
+            text-gray-900 dark:text-white"
+        {
+            form
+                hx-post=(create_account_route)
+                hx-target-error="#alert-container"
+                class="w-full space-y-4 md:space-y-6"
+            {
+                h2 class="text-xl font-bold" { "Add Account" }
+
+                div
+                {
+                    label
+                        for="name"
+                        class=(FORM_LABEL_STYLE)
+                    {
+                        "Account Name"
+                    }
+
+                    input
+                        name="name"
+                        id="name"
+                        type="text"
+                        placeholder="12-3456-7891011-12"
+                        autofocus
+                        class=(FORM_TEXT_INPUT_STYLE);
+                }
+
+                div
+                {
+                    label
+                        for="balance"
+                        class=(FORM_LABEL_STYLE)
+                    {
+                        "Balance"
+                    }
+
+                    // w-full needed to ensure input takes the full width when prefilled with a value
+                    div class="input-wrapper w-full"
+                    {
+                        input
+                            name="balance"
+                            id="balance"
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            required
+                            class=(FORM_TEXT_INPUT_STYLE);
+                    }
+                }
+
+                div
+                {
+                    label
+                        for="date"
+                        class=(FORM_LABEL_STYLE)
+                    {
+                        "Date "
+                        span
+                            title="The date for when the balance was last checked"
+                            class="text-blue-500"
+                        {
+                            "ⓘ"
+                        }
+                    }
+
+                    input
+                        name="date"
+                        id="date"
+                        type="date"
+                        max=(max_date)
+                        required
+                        value=(max_date)
+                        class=(FORM_TEXT_INPUT_STYLE);
+                }
+
+                button
+                    type="submit"
+                    id="submit-button"
+                    tabindex="0"
+                    class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+                        hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+                {
+                    span
+                        id="indicator"
+                        class="inline htmx-indicator"
+                    {
+                        (spinner)
+                    }
+                    " Add Account"
+                }
+            }
+        }
+    };
+
+    let style = HeadElement::Style(PreEscaped(
+        r#"
+        .input-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        .input-wrapper input[type="number"] {
+            padding-left: 1.4rem;
+        }
+        .input-wrapper::before {
+            content: '$';
+            position: absolute;
+            left: 0.6rem;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+        }
+        "#
+        .to_owned(),
+    ));
+
+    base("Add Account", &[style], &content)
 }
 
 /// The state needed for create page.
@@ -43,8 +161,6 @@ impl FromRef<AppState> for CreateAccountPageState {
 pub async fn get_create_account_page(
     State(state): State<CreateAccountPageState>,
 ) -> Result<Response, Error> {
-    let nav_bar = get_nav_bar(endpoints::NEW_ACCOUNT_VIEW);
-
     let local_timezone = get_local_offset(&state.local_timezone).ok_or_else(|| {
         tracing::error!(
             "could not get local time offset from timezone {}",
@@ -53,12 +169,7 @@ pub async fn get_create_account_page(
         Error::InvalidTimezoneError(state.local_timezone)
     })?;
 
-    Ok(render(
-        StatusCode::OK,
-        CreateAccountTemplate {
-            nav_bar,
-            create_account_route: endpoints::ACCOUNTS,
-            max_date: OffsetDateTime::now_utc().to_offset(local_timezone).date(),
-        },
-    ))
+    let max_date = OffsetDateTime::now_utc().to_offset(local_timezone).date();
+
+    Ok(create_account_view(max_date).into_response())
 }

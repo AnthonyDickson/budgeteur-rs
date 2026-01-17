@@ -10,9 +10,6 @@
     - [ ] templates/partials/transaction_table_row_empty.html
     - [ ] templates/partials/transaction_table_row.html
     - [ ] templates/styles/text/plain.html
-    - [ ] templates/views/account/accounts.html
-    - [ ] templates/views/account/create.html
-    - [ ] templates/views/account/edit.html
     - [ ] templates/views/import.html
     - [ ] templates/views/transaction/create.html
     - [ ] templates/views/transaction/edit.html
@@ -34,6 +31,9 @@
     - [x] templates/partials/register/inputs/password.html
     - [x] templates/styles/forms/input.html
     - [x] templates/styles/forms/label.html
+    - [x] templates/views/account/accounts.html
+    - [x] templates/views/account/create.html
+    - [x] templates/views/account/edit.html
     - [x] templates/views/dashboard_empty.html
     - [x] templates/views/dashboard.html
     - [x] templates/views/edit_rule.html
@@ -49,6 +49,8 @@
     - [x] templates/views/rules.html
     - [x] templates/views/tags.html
   - [ ] Standardise button styles via constants in `view_templates.rs`
+  - [ ] Factor out common patterns
+  - [ ] Refactor currency filter to take a number and return a string
   - [ ] Review whether `view_templates.rs` should be broken up.
   - [ ] Remove Askama from dependencies
   - [ ] Delete templates folder
