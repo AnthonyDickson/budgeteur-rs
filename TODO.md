@@ -48,15 +48,15 @@
     - [x] templates/views/transaction/create.html
     - [x] templates/views/transaction/edit.html
     - [x] templates/views/transaction/table.html
-  - [ ] Standardise button styles via constants in `view_templates.rs`
-  - [ ] Refactor import alerts to directly use `alerts::Alert` and use plain functions instead of OOP approach
   - [ ] Factor out common patterns
   - [ ] Refactor currency filter to take a number and return a string
-  - [ ] Review whether `view_templates.rs` should be broken up.
   - [ ] Remove Askama from dependencies
-  - [ ] Delete templates folder
+  - [ ] Review whether `view_templates.rs` should be broken up.
+  - [ ] Standardise button styles via constants in `view_templates.rs`
   - [x] Delete `shared_templates.rs`
-  - [ ] Test tailwind css still works (delete existing css bundle)
+  - [x] Delete templates folder
+  - [x] Refactor import alerts to directly use `alerts::Alert` and use plain functions instead of OOP approach
+  - [x] Test tailwind css still works (delete existing css bundle)
   - PR description:
     ```text
     This PR replaces Askama with Maud. Nesting, inheriting templates and sharing

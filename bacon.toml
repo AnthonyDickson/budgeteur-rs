@@ -44,7 +44,6 @@ need_stdout = false
 [jobs.test]
 command = ["cargo", "test"]
 need_stdout = true
-watch = ["templates/"]
 
 [jobs.nextest]
 command = [
@@ -74,24 +73,22 @@ on_success = "back"                               # so that we don't open the br
 command = [
   "tailwindcss",
   "-i",
-  "templates/source.css",
+  "src/input.css",
   "-o",
   "static/main.css",
 ]
 need_stdout = true
-watch = ["templates/", "src/"]
 
 # Run tailwindcss and then start the server
 [jobs.run]
 command = [
   "tailwindcss",
   "-i",
-  "templates/source.css",
+  "src/input.css",
   "-o",
   "static/main.css",
 ]
 need_stdout = true
-watch = ["templates/"]
 on_success = "job:run-server"
 
 # You can run your application and have the result displayed in bacon,
@@ -117,7 +114,6 @@ command = [
 need_stdout = true
 allow_warnings = true
 background = false
-watch = ["templates/"]
 on_change_strategy = "kill_then_restart"
 
 # You may define here keybindings that would be specific to
