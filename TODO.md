@@ -10,7 +10,6 @@
     - [ ] templates/partials/transaction_table_row.html
     - [ ] templates/styles/text/plain.html
     - [ ] templates/views/transaction/create.html
-    - [ ] templates/views/transaction/edit.html
     - [ ] templates/views/transaction/table.html
     - [x] templates/base.html
     - [x] templates/components/nav_link.html
@@ -48,6 +47,7 @@
     - [x] templates/views/register.html
     - [x] templates/views/rules.html
     - [x] templates/views/tags.html
+    - [x] templates/views/transaction/edit.html
   - [ ] Standardise button styles via constants in `view_templates.rs`
   - [ ] Refactor import alerts to directly use `alerts::Alert` and use plain functions instead of OOP approach
   - [ ] Factor out common patterns
@@ -91,6 +91,7 @@
     - user
   - tag
 - Create unique aliases of `i64` for each of the domain models, e.g., `Tag` -> `pub type TagID = i64;`.
+- Truncate long transaction descriptions and show full description in a tooltip
 - On transactions page, group transactions by:
   - tag
   - day, week, fortnight, month, quarter, year
@@ -110,8 +111,7 @@
   - Zero filled up to two decimal places for floats
   - Parantheses instead of minus symbol for negative values
   - Align digits and decimal point
-- Use macro for transactions table rows instead of nested template? Same for form inputs?
-- Either inline HTML files that just contain CSS classes or find a better way of reusing styles
+- Use HTML5 elements where possible: https://dev.to/maxprilutskiy/html5-elements-you-didnt-know-you-need-gan
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
 - Refactor common testing functions into a separate module.
