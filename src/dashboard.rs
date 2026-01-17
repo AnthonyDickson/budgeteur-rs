@@ -148,29 +148,6 @@ struct DashboardChart<'a> {
 }
 
 fn charts_view<'a>(charts: &[DashboardChart<'a>]) -> Markup {
-    let chart_script = |chart: &DashboardChart<'_>| {
-        PreEscaped(format!(
-            r#"(function() {{
-                const chartDom = document.getElementById("{}");
-                const chart = echarts.init(chartDom);
-                const option = {};
-                chart.setOption(option);
-
-                window.addEventListener('resize', chart.resize);
-
-                const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-                const updateTheme = () => {{
-                    const isDarkMode = darkModeMediaQuery.matches;
-                    chart.setTheme(isDarkMode ? 'dark' : 'default');
-                }}
-                darkModeMediaQuery.addEventListener('change', updateTheme);
-                // Run updateTheme manually to sync with initial browser settings
-                updateTheme();
-           }})();"#,
-            chart.id, chart.options
-        ))
-    };
-
     html!(
         section
             id="charts"
@@ -185,15 +162,43 @@ fn charts_view<'a>(charts: &[DashboardChart<'a>]) -> Markup {
                     {}
                 }
             }
-
-            script type="text/javascript"
-            {
-                @for chart in charts {
-                    (chart_script(chart))
-                }
-            }
         }
     )
+}
+
+fn charts_script<'a>(charts: &[DashboardChart<'a>]) -> HeadElement {
+    let script_content = charts
+        .iter()
+        .map(|chart| {
+            format!(
+                r#"(function() {{
+                    const chartDom = document.getElementById("{}");
+                    const chart = echarts.init(chartDom);
+                    const option = {};
+                    chart.setOption(option);
+
+                    window.addEventListener('resize', chart.resize);
+
+                    const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+                    const updateTheme = () => {{
+                        const isDarkMode = darkModeMediaQuery.matches;
+                        chart.setTheme(isDarkMode ? 'dark' : 'default');
+                    }}
+                    darkModeMediaQuery.addEventListener('change', updateTheme);
+                    updateTheme();
+                }})();"#,
+                chart.id, chart.options
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let wrapped_script = format!(
+        "document.addEventListener('DOMContentLoaded', function() {{\n{}\n}});",
+        script_content
+    );
+
+    HeadElement::ScriptSource(PreEscaped(wrapped_script))
 }
 
 fn link_view(url: &str, text: &str) -> Markup {
@@ -308,6 +313,7 @@ fn dashboard_view<'a>(
     let scripts = [
         HeadElement::ScriptLink("/static/echarts.6.0.0.min.js".to_owned()),
         HeadElement::ScriptLink("/static/echarts-gl.2.0.9.min.js".to_owned()),
+        charts_script(charts),
     ];
 
     base("Dashboard", &scripts, &content)
