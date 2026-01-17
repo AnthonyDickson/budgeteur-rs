@@ -6,11 +6,9 @@
   - [ ] Rewrite askama templates to maud:
     - [ ] templates/macros/amount_display.html
     - [ ] templates/macros/transaction_summary.html
-    - [ ] templates/partials/import_form.html
     - [ ] templates/partials/transaction_table_row_empty.html
     - [ ] templates/partials/transaction_table_row.html
     - [ ] templates/styles/text/plain.html
-    - [ ] templates/views/import.html
     - [ ] templates/views/transaction/create.html
     - [ ] templates/views/transaction/edit.html
     - [ ] templates/views/transaction/table.html
@@ -22,6 +20,7 @@
     - [x] templates/partials/edit_rule_form.html
     - [x] templates/partials/edit_tag_form.html
     - [x] templates/partials/error_page.html
+    - [x] templates/partials/import_form.html
     - [x] templates/partials/log_in/form.html
     - [x] templates/partials/nav_bar.html
     - [x] templates/partials/new_rule_form.html
@@ -39,6 +38,7 @@
     - [x] templates/views/edit_rule.html
     - [x] templates/views/edit_tag.html
     - [x] templates/views/forgot_password.html
+    - [x] templates/views/import.html
     - [x] templates/views/internal_server_error_500.html
     - [x] templates/views/log_in.html
     - [x] templates/views/log_in_register_base.html
@@ -49,6 +49,7 @@
     - [x] templates/views/rules.html
     - [x] templates/views/tags.html
   - [ ] Standardise button styles via constants in `view_templates.rs`
+  - [ ] Refactor import alerts to directly use `alerts::Alert` and use plain functions instead of OOP approach
   - [ ] Factor out common patterns
   - [ ] Refactor currency filter to take a number and return a string
   - [ ] Review whether `view_templates.rs` should be broken up.
