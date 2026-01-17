@@ -4,14 +4,16 @@ use axum::{
     extract::{FromRef, State},
     response::{IntoResponse, Response},
 };
-use maud::{Markup, PreEscaped, html};
+use maud::{Markup, html};
 use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error, endpoints,
     navigation::NavBar,
     timezone::get_local_offset,
-    view_templates::{FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, HeadElement, base, loading_spinner},
+    view_templates::{
+        FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
+    },
 };
 
 fn create_account_view(max_date: Date) -> Markup {
@@ -118,28 +120,7 @@ fn create_account_view(max_date: Date) -> Markup {
         }
     };
 
-    let style = HeadElement::Style(PreEscaped(
-        r#"
-        .input-wrapper {
-            position: relative;
-            display: inline-block;
-        }
-        .input-wrapper input[type="number"] {
-            padding-left: 1.4rem;
-        }
-        .input-wrapper::before {
-            content: '$';
-            position: absolute;
-            left: 0.6rem;
-            top: 50%;
-            transform: translateY(-50%);
-            pointer-events: none;
-        }
-        "#
-        .to_owned(),
-    ));
-
-    base("Add Account", &[style], &content)
+    base("Add Account", &[dollar_input_styles()], &content)
 }
 
 /// The state needed for create page.

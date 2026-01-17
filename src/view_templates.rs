@@ -205,3 +205,28 @@ pub fn loading_spinner() -> Markup {
         }
     }
 }
+
+/// Returns the CSS styles for adding a dollar sign prefix to number inputs.
+/// Used for currency input fields across multiple forms.
+pub fn dollar_input_styles() -> HeadElement {
+    HeadElement::Style(PreEscaped(
+        r#"
+        .input-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        .input-wrapper input[type="number"] {
+            padding-left: 1.4rem;
+        }
+        .input-wrapper::before {
+            content: '$';
+            position: absolute;
+            left: 0.6rem;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+        }
+        "#
+        .to_owned(),
+    ))
+}

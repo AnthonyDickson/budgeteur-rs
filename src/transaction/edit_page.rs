@@ -4,7 +4,7 @@ use axum::{
     extract::{FromRef, Path, Query, State},
     response::{IntoResponse, Response},
 };
-use maud::{Markup, PreEscaped, html};
+use maud::{Markup, html};
 use rusqlite::Connection;
 use serde::Deserialize;
 use time::{Date, OffsetDateTime};
@@ -17,7 +17,9 @@ use crate::{
     tag::{Tag, get_all_tags},
     timezone::get_local_offset,
     transaction::{Transaction, get_transaction},
-    view_templates::{FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, HeadElement, base, loading_spinner},
+    view_templates::{
+        FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
+    },
 };
 
 fn edit_transaction_view(
@@ -163,30 +165,9 @@ fn edit_transaction_view(
         }
     };
 
-    let style = HeadElement::Style(PreEscaped(
-        r#"
-        .input-wrapper {
-            position: relative;
-            display: inline-block;
-        }
-        .input-wrapper input[type="number"] {
-            padding-left: 1.4rem;
-        }
-        .input-wrapper::before {
-            content: '$';
-            position: absolute;
-            left: 0.6rem;
-            top: 50%;
-            transform: translateY(-52%);
-            pointer-events: none;
-        }
-        "#
-        .to_owned(),
-    ));
-
     base(
         &format!("Edit Transaction #{}", transaction.id),
-        &[style],
+        &[dollar_input_styles()],
         &content,
     )
 }

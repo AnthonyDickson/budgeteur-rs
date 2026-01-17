@@ -4,7 +4,7 @@ use axum::{
     extract::{FromRef, Path, State},
     response::{IntoResponse, Response},
 };
-use maud::{Markup, PreEscaped, html};
+use maud::{Markup, html};
 use rusqlite::Connection;
 use time::{Date, OffsetDateTime};
 
@@ -15,7 +15,9 @@ use crate::{
     endpoints::{self, format_endpoint},
     navigation::NavBar,
     timezone::get_local_offset,
-    view_templates::{FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, HeadElement, base, loading_spinner},
+    view_templates::{
+        FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
+    },
 };
 
 fn edit_account_view(edit_url: &str, max_date: Date, account: &Account) -> Markup {
@@ -129,28 +131,11 @@ fn edit_account_view(edit_url: &str, max_date: Date, account: &Account) -> Marku
         }
     };
 
-    let style = HeadElement::Style(PreEscaped(
-        r#"
-        .input-wrapper {
-            position: relative;
-            display: inline-block;
-        }
-        .input-wrapper input[type="number"] {
-            padding-left: 1.4rem;
-        }
-        .input-wrapper::before {
-            content: '$';
-            position: absolute;
-            left: 0.6rem;
-            top: 50%;
-            transform: translateY(-52%);
-            pointer-events: none;
-        }
-        "#
-        .to_owned(),
-    ));
-
-    base(&format!("Edit Account #{}", account.id), &[style], &content)
+    base(
+        &format!("Edit Account #{}", account.id),
+        &[dollar_input_styles()],
+        &content,
+    )
 }
 
 /// The state needed for the edit account page.
