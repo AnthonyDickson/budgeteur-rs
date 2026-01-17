@@ -1,13 +1,19 @@
 use std::collections::HashMap;
 
-use askama::Template;
-use axum::{extract::State, http::StatusCode, response::Response};
+use axum::{
+    extract::State,
+    response::{IntoResponse, Response},
+};
+use maud::{Markup, html};
 use rusqlite::Connection;
 
 use crate::{
     Error, endpoints,
-    navigation::{NavbarTemplate, get_nav_bar},
-    shared_templates::render,
+    html::{
+        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
+        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base,
+    },
+    navigation::NavBar,
     tag::{Tag, TagId, TagsPageState, get_all_tags},
 };
 
@@ -19,13 +25,127 @@ struct TagWithEditUrl {
     pub transaction_count: u64,
 }
 
-/// Renders the tags listing page.
-#[derive(Template)]
-#[template(path = "views/tags.html")]
-struct TagsTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    tags: Vec<TagWithEditUrl>,
-    new_tag_route: &'a str,
+fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
+    let new_tag_route = endpoints::NEW_TAG_VIEW;
+    let nav_bar = NavBar::new(endpoints::TAGS_VIEW).into_html();
+
+    let table_row = |tag_with_url: &TagWithEditUrl| {
+        html!(
+            tr class=(TABLE_ROW_STYLE)
+            {
+                td class=(TABLE_CELL_STYLE)
+                {
+                    span class=(TAG_BADGE_STYLE)
+                    {
+                        (tag_with_url.tag.name)
+                    }
+                }
+
+                td class=(TABLE_CELL_STYLE)
+                {
+                    (tag_with_url.transaction_count)
+                }
+
+                td class=(TABLE_CELL_STYLE)
+                {
+                    div class="flex gap-4"
+                    {
+                        a href=(tag_with_url.edit_url) class=(LINK_STYLE)
+                        {
+                            "Edit"
+                        }
+
+                        button
+                            hx-delete={"/api/tags/" (tag_with_url.tag.id)}
+                            hx-confirm={
+                                "Are you sure you want to delete '"
+                                (tag_with_url.tag.name) "'? This will remove it from "
+                                (tag_with_url.transaction_count) " transaction(s)."
+                            }
+                            hx-target="closest tr"
+                            hx-target-error="#alert-container"
+                            hx-swap="delete"
+                            class=(BUTTON_DELETE_STYLE)
+                        {
+                           "Delete"
+                        }
+                    }
+                }
+            }
+        )
+    };
+
+    let content = html!(
+        (nav_bar)
+
+        div class=(PAGE_CONTAINER_STYLE)
+        {
+            div class="relative"
+            {
+                div class="flex justify-between flex-wrap items-end"
+                {
+                    h1 class="text-xl font-bold" { "Tags" }
+
+                    a href=(new_tag_route) class=(LINK_STYLE)
+                    {
+                        "Create Tag"
+                    }
+                }
+
+                div class="dark:bg-gray-800"
+                {
+                    table class="w-full text-sm text-left rtl:text-right
+                        text-gray-500 dark:text-gray-400"
+                    {
+                        thead class=(TABLE_HEADER_STYLE)
+                        {
+                            tr
+                            {
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Name"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Transactions"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Actions"
+                                }
+                            }
+                        }
+
+                        tbody
+                        {
+                            @for tag_with_url in tags {
+                                (table_row(tag_with_url))
+                            }
+
+                            @if tags.is_empty() {
+                                tr
+                                {
+                                    td
+                                        colspan="4"
+                                        class="px-6 py-4 text-center
+                                            text-gray-500 dark:text-gray-400"
+                                    {
+                                        "No tags created yet. "
+                                        a href=(new_tag_route) class=(LINK_STYLE)
+                                        {
+                                            "Create your first tag"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    );
+
+    base("Tags", &[], &content)
 }
 
 /// Route handler for the tags listing page.
@@ -53,16 +173,9 @@ pub async fn get_tags_page(State(state): State<TagsPageState>) -> Result<Respons
                 transaction_count,
             }
         })
-        .collect();
+        .collect::<Vec<_>>();
 
-    Ok(render(
-        StatusCode::OK,
-        TagsTemplate {
-            nav_bar: get_nav_bar(endpoints::TAGS_VIEW),
-            tags: tags_with_edit_urls,
-            new_tag_route: endpoints::NEW_TAG_VIEW,
-        },
-    ))
+    Ok(tags_view(&tags_with_edit_urls).into_response())
 }
 
 fn count_transactions_per_tag(connection: &Connection) -> Result<HashMap<TagId, u64>, Error> {

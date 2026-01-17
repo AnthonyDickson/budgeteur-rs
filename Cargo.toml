@@ -5,7 +5,6 @@ edition = "2024"
 default-run = "server"
 
 [dependencies]
-askama = "0.14.0"
 axum = { version = "0.8.7", features = ["form", "macros", "multipart"] }
 axum-extra = { version = "0.12.2", features = [
   "cookie-private",
@@ -17,6 +16,7 @@ axum-server = { version = "0.8.0" }
 bcrypt = "0.17.1"
 charming = "0.6.0"
 clap = { version = "4.5.53", features = ["derive"] }
+maud = { version = "0.27.0", features = ["axum"] }
 md5 = "0.8.0"
 numfmt = "1.2.0"
 rpassword = "7.4.0"

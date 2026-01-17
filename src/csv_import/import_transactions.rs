@@ -3,16 +3,19 @@ use std::sync::{Arc, Mutex};
 use axum::{
     extract::{FromRef, Multipart, State, multipart::Field},
     http::StatusCode,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use rusqlite::Connection;
 
 use crate::{
     AppState, Error,
-    alert::AlertTemplate,
-    csv_import::{account::upsert_account, alert::ImportMessageBuilder, csv::parse_csv},
+    alert::Alert,
+    csv_import::{
+        account::upsert_account,
+        alert::{error_with_partial_success, success_with_tagging},
+        csv::parse_csv,
+    },
     rule::{TaggingMode, TaggingResult, apply_rules_to_transactions},
-    shared_templates::render,
     timezone::get_local_offset,
     transaction::{Transaction, TransactionBuilder, map_transaction_row},
 };
@@ -60,10 +63,14 @@ pub async fn import_transactions(
         let csv_data = match parse_multipart_field(field).await {
             Ok(data) => data,
             Err(Error::NotCSV) => {
-                return render(
+                return (
                     StatusCode::BAD_REQUEST,
-                    AlertTemplate::error_simple("File type must be CSV."),
-                );
+                    Alert::ErrorSimple {
+                        message: "File type must be CSV.".to_owned(),
+                    }
+                    .into_html(),
+                )
+                    .into_response();
             }
             Err(error) => {
                 tracing::error!("Failed to parse multipart field: {}", error);
@@ -81,13 +88,17 @@ pub async fn import_transactions(
             }
             Err(e) => {
                 tracing::debug!("Failed to parse CSV: {}", e);
-                return render(
+                return (
                     StatusCode::BAD_REQUEST,
-                    AlertTemplate::error(
-                        "Failed to parse CSV",
-                        "Check that the provided file is a valid CSV from ASB or Kiwibank.",
-                    ),
-                );
+                    Alert::Error {
+                        message: "Failed to parse CSV".to_owned(),
+                        details:
+                            "Check that the provided file is a valid CSV from ASB or Kiwibank."
+                                .to_owned(),
+                    }
+                    .into_html(),
+                )
+                    .into_response();
             }
         }
     }
@@ -97,13 +108,15 @@ pub async fn import_transactions(
         Ok(transactions) => transactions,
         Err(error) => {
             tracing::error!("Failed to import transactions: {}", error);
-            return render(
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Import failed",
-                    "An unexpected error occurred, please try again later.",
-                ),
-            );
+                Alert::Error {
+                    message: "Import failed".to_owned(),
+                    details: "An unexpected error occurred, please try again later".to_owned(),
+                }
+                .into_html(),
+            )
+                .into_response();
         }
     };
 
@@ -121,37 +134,35 @@ pub async fn import_transactions(
                 "Failed to import accounts after {:.1}ms: {error:#?}",
                 duration.as_millis()
             );
-            return render(
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error(
-                    "Account import failed",
-                    &format!(
+                Alert::Error {
+                    message: "Account import failed".to_owned(),
+                    details: format!(
                         "Transactions were imported but accounts could not be updated after {:.1}ms.",
                         duration.as_millis()
                     ),
-                ),
-            );
+                }.into_html(),
+            ).into_response();
         }
     }
 
     let duration = start_time.elapsed();
-    let message_builder = ImportMessageBuilder::new(imported_transactions.len(), duration);
 
     // Generate success/error message based on auto-tagging result
     match auto_tagging_result {
         Ok(tagging_result) => {
-            let alert_msg = message_builder.success_with_tagging(&tagging_result);
-            render(
-                StatusCode::CREATED,
-                AlertTemplate::success(&alert_msg.message, &alert_msg.details),
-            )
+            let alert =
+                success_with_tagging(&tagging_result, imported_transactions.len(), duration);
+            (StatusCode::CREATED, alert.into_html()).into_response()
         }
         Err(error) => {
-            let alert_msg = message_builder.error_with_partial_success(&error.to_string());
-            render(
-                StatusCode::CREATED,
-                AlertTemplate::error(&alert_msg.message, &alert_msg.details),
-            )
+            let alert = error_with_partial_success(
+                &error.to_string(),
+                imported_transactions.len(),
+                duration,
+            );
+            (StatusCode::CREATED, alert.into_html()).into_response()
         }
     }
 }

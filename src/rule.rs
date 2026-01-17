@@ -6,7 +6,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use askama::Template;
 use axum::{
     Form,
     extract::{FromRef, Path, State},
@@ -14,16 +13,21 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
+use maud::{Markup, html};
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     AppState, Error,
-    alert::AlertTemplate,
+    alert::Alert,
     database_id::{DatabaseId, TransactionId},
     endpoints,
-    navigation::{NavbarTemplate, get_nav_bar},
-    shared_templates::render,
+    html::{
+        BUTTON_DELETE_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, LINK_STYLE,
+        PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE, TABLE_HEADER_STYLE, TABLE_ROW_STYLE,
+        TAG_BADGE_STYLE, base, dollar_input_styles, loading_spinner,
+    },
+    navigation::NavBar,
     tag::{Tag, TagId, TagName, get_all_tags},
     transaction::Transaction,
 };
@@ -55,51 +59,404 @@ pub struct RuleWithTag {
     pub delete_url: String,
 }
 
-/// Renders the rules listing page.
-#[derive(Template)]
-#[template(path = "views/rules.html")]
-struct RulesTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    rules: Vec<RuleWithTag>,
-    new_rule_route: &'a str,
-    auto_tag_all_route: &'a str,
-    auto_tag_untagged_route: &'a str,
+fn rules_view(rules: &[RuleWithTag]) -> Markup {
+    let auto_tag_all_route = endpoints::AUTO_TAG_ALL;
+    let auto_tag_untagged_route = endpoints::AUTO_TAG_UNTAGGED;
+    let new_rule_route = endpoints::NEW_RULE_VIEW;
+
+    let nav_bar = NavBar::new(endpoints::RULES_VIEW).into_html();
+    let spinner = loading_spinner();
+
+    let table_row = |rule: &RuleWithTag| {
+        html!(
+            tr class=(TABLE_ROW_STYLE)
+            {
+                td class=(TABLE_CELL_STYLE)
+                {
+                    code class="bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 rounded-sm text-xs"
+                    {
+                        (rule.rule.pattern)
+                    }
+                }
+
+                td class=(TABLE_CELL_STYLE)
+                {
+                    span class=(TAG_BADGE_STYLE)
+                    {
+                        (rule.tag.name)
+                    }
+                }
+
+                td class=(TABLE_CELL_STYLE)
+                {
+                    div class="flex gap-4"
+                    {
+                        a href=(rule.edit_url) class=(LINK_STYLE)
+                        {
+                            "Edit"
+                        }
+
+                        button
+                            hx-delete=(rule.delete_url)
+                            hx-confirm={
+                                "Are you sure you want to delete the rule '"
+                                (rule.rule.pattern) "' → '" (rule.tag.name) "'?"
+                            }
+                            hx-target="closest tr"
+                            hx-target-error="#alert-container"
+                            hx-swap="delete"
+                            class=(BUTTON_DELETE_STYLE)
+                        {
+                           "Delete"
+                        }
+                    }
+                }
+            }
+        )
+    };
+
+    let content = html!(
+        (nav_bar)
+
+        div class=(PAGE_CONTAINER_STYLE)
+        {
+            div class="relative space-y-4"
+            {
+                h1 class="text-xl font-bold" { "Auto-Tagging Rules" }
+
+                @if !rules.is_empty() {
+                    div class="flex gap-4"
+                    {
+                        button
+                            hx-post=(auto_tag_all_route)
+                            hx-confirm="Apply all rules to every transaction? This may take a moment for large datasets."
+                            hx-indicator="#loading-all-indicator"
+                            hx-swap="none"
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700
+                                disabled:opacity-50 text-white text-sm font-medium
+                                rounded transition-colors focus:outline-hidden
+                                focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+                                flex items-center"
+                        {
+                            span
+                                id="loading-all-indicator"
+                                class="htmx-indicator"
+                                style="display: none;"
+                            {
+                                (spinner)
+                            }
+
+                            span class="button-text" { "Tag All Transactions" }
+                        }
+
+                        button
+                            hx-post=(auto_tag_untagged_route)
+                            hx-confirm="Apply rules only to transactions that currently have no tags?"
+                            hx-indicator="#loading-untagged-indicator"
+                            hx-swap="none"
+                            class="px-4 py-2 bg-green-600 hover:bg-green-700
+                                disabled:opacity-50 text-white text-sm
+                                font-medium rounded transition-colors
+                                focus:outline-hidden focus:ring-2
+                                focus:ring-green-500 focus:ring-offset-2 flex
+                                items-center"
+                        {
+                            span
+                                id="loading-untagged-indicator"
+                                class="htmx-indicator"
+                                style="display: none;"
+                            {
+                                (spinner)
+                            }
+
+                            span class="button-text" { "Tag Untagged Transactions" }
+                        }
+                    }
+                }
+
+                div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded"
+                {
+                    h3 class="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2"
+                    {
+                        "How Rules Work"
+                    }
+
+                    p class="text-xs text-blue-700 dark:text-blue-300"
+                    {
+                        r#"Rules automatically tag transactions whose descriptions start with the
+                        specified pattern (case-insensitive) when importing from a CSV. 
+                        For example, a rule with pattern "starbucks" will match
+                        "Starbucks Downtown" or "STARBUCKS #1234".
+                        Use the buttons above to manually apply all rules to your transactions."#
+                    }
+                }
+
+                div class="flex justify-between flex-wrap items-end"
+                {
+                    a href=(new_rule_route) class=(LINK_STYLE)
+                    {
+                        "Create Rule"
+                    }
+                }
+
+                div class="dark:bg-gray-800"
+                {
+                    table class="w-full text-sm text-left rtl:text-right
+                        text-gray-500 dark:text-gray-400"
+                    {
+                        thead class=(TABLE_HEADER_STYLE)
+                        {
+                            tr
+                            {
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Pattern"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Tag"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Actions"
+                                }
+                            }
+                        }
+
+                        tbody
+                        {
+                            @for rule_with_tag in rules {
+                                (table_row(rule_with_tag))
+                            }
+
+                            @if rules.is_empty() {
+                                tr
+                                {
+                                    td
+                                        colspan="4"
+                                        class="px-6 py-4 text-center
+                                            text-gray-500 dark:text-gray-400"
+                                    {
+                                        "No rules created yet. "
+                                        a href=(new_rule_route) class=(LINK_STYLE)
+                                        {
+                                            "Create your first rule"
+                                        }
+                                        " to automatically tag transactions."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    );
+
+    base("Rules", &[dollar_input_styles()], &content)
 }
 
-/// Renders the new rule page.
-#[derive(Template)]
-#[template(path = "views/new_rule.html")]
-struct NewRuleTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    form: NewRuleFormTemplate<'a>,
+fn new_rule_form_view(available_tags: &[Tag], error_message: &str) -> Markup {
+    let create_rule_endpoint = endpoints::POST_RULE;
+
+    html! {
+        form
+            hx-post=(create_rule_endpoint)
+            hx-target-error="#alert-container"
+            class="w-full space-y-4 md:space-y-6"
+        {
+            div
+            {
+                label
+                    for="pattern"
+                    class=(FORM_LABEL_STYLE)
+                {
+                    "Pattern"
+                }
+
+                input
+                    id="pattern"
+                    type="text"
+                    name="pattern"
+                    placeholder="e.g., starbucks"
+                    required
+                    autofocus
+                    class=(FORM_TEXT_INPUT_STYLE);
+
+                p class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                {
+                    "Transaction descriptions starting with this pattern will be tagged (case-insensitive)"
+                }
+            }
+
+            div
+            {
+                label
+                    for="tag_id"
+                    class=(FORM_LABEL_STYLE)
+                {
+                    "Tag"
+                }
+
+                select
+                    id="tag_id"
+                    name="tag_id"
+                    required
+                    class=(FORM_TEXT_INPUT_STYLE)
+                {
+                    option value="" { "Select a tag" }
+
+                    @for tag in available_tags {
+                        option value=(tag.id) { (tag.name) }
+                    }
+                }
+            }
+
+            @if !error_message.is_empty() {
+                p class="text-red-600 dark:text-red-400"
+                {
+                    (error_message)
+                }
+            }
+
+            button
+                type="submit"
+                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+            {
+                "Create Rule"
+            }
+        }
+    }
 }
 
-/// Renders the form for creating a rule.
-#[derive(Template)]
-#[template(path = "partials/new_rule_form.html")]
-pub struct NewRuleFormTemplate<'a> {
-    pub create_rule_endpoint: &'a str,
-    pub available_tags: Vec<Tag>,
-    pub error_message: &'a str,
+fn new_rule_view(available_tags: &[Tag], error_message: &str) -> Markup {
+    let nav_bar = NavBar::new(endpoints::NEW_RULE_VIEW).into_html();
+    let form = new_rule_form_view(available_tags, error_message);
+
+    let content = html! {
+        (nav_bar)
+
+        div
+            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md
+            text-gray-900 dark:text-white"
+        {
+            (form)
+        }
+    };
+
+    base("Create Rule", &[], &content)
 }
 
-/// Renders the edit rule page.
-#[derive(Template)]
-#[template(path = "views/edit_rule.html")]
-struct EditRuleTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    form: EditRuleFormTemplate<'a>,
-}
-
-/// Renders the form for editing a rule.
-#[derive(Template)]
-#[template(path = "partials/edit_rule_form.html")]
-struct EditRuleFormTemplate<'a> {
-    update_rule_endpoint: &'a str,
-    available_tags: Vec<Tag>,
-    rule_pattern: &'a str,
+fn edit_rule_form_view(
+    update_rule_endpoint: &str,
+    available_tags: &[Tag],
+    rule_pattern: &str,
     selected_tag_id: DatabaseId,
-    error_message: &'a str,
+    error_message: &str,
+) -> Markup {
+    html! {
+        form
+            hx-put=(update_rule_endpoint)
+            hx-target-error="#alert-container"
+            class="w-full space-y-4 md:space-y-6"
+        {
+            div
+            {
+                label
+                    for="pattern"
+                    class=(FORM_LABEL_STYLE)
+                {
+                    "Pattern"
+                }
+
+                input
+                    id="pattern"
+                    type="text"
+                    name="pattern"
+                    value=(rule_pattern)
+                    required
+                    class=(FORM_TEXT_INPUT_STYLE);
+
+                p class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                {
+                    "Transaction descriptions starting with this pattern will be tagged (case-insensitive)"
+                }
+            }
+
+            div
+            {
+                label
+                    for="tag_id"
+                    class=(FORM_LABEL_STYLE)
+                {
+                    "Tag"
+                }
+
+                select
+                    id="tag_id"
+                    name="tag_id"
+                    required
+                    class=(FORM_TEXT_INPUT_STYLE)
+                {
+                    @for tag in available_tags {
+                        option
+                            value=(tag.id)
+                            selected[tag.id == selected_tag_id]
+                        {
+                            (tag.name)
+                        }
+                    }
+                }
+            }
+
+            @if !error_message.is_empty() {
+                p class="text-red-600 dark:text-red-400"
+                {
+                    (error_message)
+                }
+            }
+
+            button
+                type="submit"
+                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+            {
+                "Update Rule"
+            }
+        }
+    }
+}
+
+fn edit_rule_view(
+    edit_endpoint: &str,
+    update_endpoint: &str,
+    available_tags: &[Tag],
+    rule_pattern: &str,
+    selected_tag_id: DatabaseId,
+    error_message: &str,
+) -> Markup {
+    let nav_bar = NavBar::new(edit_endpoint).into_html();
+    let form = edit_rule_form_view(
+        update_endpoint,
+        available_tags,
+        rule_pattern,
+        selected_tag_id,
+        error_message,
+    );
+
+    let content = html! {
+        (nav_bar)
+
+        div
+            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md
+            text-gray-900 dark:text-white"
+        {
+            (form)
+        }
+    };
+
+    base("Edit Rule", &[], &content)
 }
 
 /// Unified state for all rule-related operations.
@@ -137,17 +494,7 @@ pub async fn get_new_rule_page(State(state): State<RuleState>) -> Result<Respons
         tracing::error!("Failed to retrieve tags for new rule page: {error}")
     })?;
 
-    Ok(render(
-        StatusCode::OK,
-        NewRuleTemplate {
-            nav_bar: get_nav_bar(endpoints::NEW_RULE_VIEW),
-            form: NewRuleFormTemplate {
-                create_rule_endpoint: endpoints::POST_RULE,
-                available_tags,
-                error_message: "",
-            },
-        },
-    ))
+    Ok(new_rule_view(&available_tags, "").into_response())
 }
 
 /// Route handler for the rules listing page.
@@ -161,16 +508,7 @@ pub async fn get_rules_page(State(state): State<RuleState>) -> Result<Response, 
     let rules = get_all_rules_with_tags(&connection)
         .inspect_err(|error| tracing::error!("Failed to retrieve rules: {error}"))?;
 
-    Ok(render(
-        StatusCode::OK,
-        RulesTemplate {
-            nav_bar: get_nav_bar(endpoints::RULES_VIEW),
-            rules,
-            new_rule_route: endpoints::NEW_RULE_VIEW,
-            auto_tag_all_route: endpoints::AUTO_TAG_ALL,
-            auto_tag_untagged_route: endpoints::AUTO_TAG_UNTAGGED,
-        },
-    ))
+    Ok(rules_view(&rules).into_response())
 }
 
 /// A route handler for creating a new rule.
@@ -189,14 +527,7 @@ pub async fn create_rule_endpoint(
     let available_tags = get_all_tags(&connection).unwrap_or_default();
 
     if new_rule.pattern.trim().is_empty() {
-        return render(
-            StatusCode::OK,
-            NewRuleFormTemplate {
-                create_rule_endpoint: endpoints::POST_RULE,
-                available_tags,
-                error_message: "Error: Pattern cannot be empty",
-            },
-        );
+        return new_rule_view(&available_tags, "Error: Pattern cannot be empty").into_response();
     }
 
     let rule_result = create_rule(new_rule.pattern.trim(), new_rule.tag_id, &connection);
@@ -240,19 +571,15 @@ pub async fn get_edit_rule_page(
         }
     })?;
 
-    Ok(render(
-        StatusCode::OK,
-        EditRuleTemplate {
-            nav_bar: get_nav_bar(&edit_endpoint),
-            form: EditRuleFormTemplate {
-                update_rule_endpoint: &update_endpoint,
-                available_tags,
-                rule_pattern: &rule.pattern,
-                selected_tag_id: rule.tag_id,
-                error_message: "",
-            },
-        },
-    ))
+    Ok(edit_rule_view(
+        &edit_endpoint,
+        &update_endpoint,
+        &available_tags,
+        &rule.pattern,
+        rule.tag_id,
+        "",
+    )
+    .into_response())
 }
 
 /// A route handler for updating a rule.
@@ -269,21 +596,21 @@ pub async fn update_rule_endpoint(
         }
     };
 
+    let edit_endpoint = endpoints::format_endpoint(endpoints::EDIT_RULE_VIEW, rule_id);
     let update_endpoint = endpoints::format_endpoint(endpoints::PUT_RULE, rule_id);
 
     if form_data.pattern.trim().is_empty() {
         let available_tags = get_all_tags(&connection).unwrap_or_default();
 
-        return render(
-            StatusCode::OK,
-            EditRuleFormTemplate {
-                update_rule_endpoint: &update_endpoint,
-                available_tags,
-                rule_pattern: &form_data.pattern,
-                selected_tag_id: form_data.tag_id,
-                error_message: "Error: Pattern cannot be empty",
-            },
-        );
+        return edit_rule_view(
+            &edit_endpoint,
+            &update_endpoint,
+            &available_tags,
+            &form_data.pattern,
+            form_data.tag_id,
+            "Error: Pattern cannot be empty",
+        )
+        .into_response();
     }
 
     let result = update_rule(
@@ -321,10 +648,14 @@ pub async fn delete_rule_endpoint(
     };
 
     match delete_rule(rule_id, &connection) {
-        Ok(_) => render(
+        Ok(_) => (
             StatusCode::OK,
-            AlertTemplate::success("Rule deleted successfully", ""),
-        ),
+            Alert::SuccessSimple {
+                message: "Rule deleted successfully".to_owned(),
+            }
+            .into_html(),
+        )
+            .into_response(),
         Err(Error::DeleteMissingRule) => Error::DeleteMissingRule.into_alert_response(),
         Err(error) => {
             tracing::error!("An unexpected error occurred while deleting rule {rule_id}: {error}");
@@ -356,9 +687,9 @@ pub async fn auto_tag_all_transactions_endpoint(State(state): State<RuleState>) 
             );
 
             let message = if result.transactions_tagged > 0 {
-                "Auto-tagging completed successfully!"
+                "Auto-tagging completed successfully!".to_owned()
             } else {
-                "Auto-tagging completed - no transactions were processed."
+                "Auto-tagging completed - no transactions were processed.".to_owned()
             };
 
             let details = format!(
@@ -368,7 +699,11 @@ pub async fn auto_tag_all_transactions_endpoint(State(state): State<RuleState>) 
                 duration.as_millis()
             );
 
-            render(StatusCode::OK, AlertTemplate::success(message, &details))
+            (
+                StatusCode::OK,
+                Alert::Success { message, details }.into_html(),
+            )
+                .into_response()
         }
         Err(error) => {
             let duration = start_time.elapsed();
@@ -382,10 +717,15 @@ pub async fn auto_tag_all_transactions_endpoint(State(state): State<RuleState>) 
                 duration.as_millis()
             );
 
-            render(
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error("Auto-tagging failed", &details),
+                Alert::Error {
+                    message: "Auto-tagging failed".to_owned(),
+                    details,
+                }
+                .into_html(),
             )
+                .into_response()
         }
     }
 }
@@ -413,9 +753,9 @@ pub async fn auto_tag_untagged_transactions_endpoint(State(state): State<RuleSta
             );
 
             let message = if result.transactions_tagged > 0 {
-                "Auto-tagging untagged transactions completed successfully!"
+                "Auto-tagging untagged transactions completed successfully!".to_owned()
             } else {
-                "Auto-tagging completed - no untagged transactions were processed."
+                "Auto-tagging completed - no untagged transactions were processed.".to_owned()
             };
 
             let details = format!(
@@ -425,7 +765,7 @@ pub async fn auto_tag_untagged_transactions_endpoint(State(state): State<RuleSta
                 duration.as_millis()
             );
 
-            render(StatusCode::OK, AlertTemplate::success(message, &details))
+            Alert::Success { message, details }.into_response()
         }
         Err(error) => {
             let duration = start_time.elapsed();
@@ -439,10 +779,15 @@ pub async fn auto_tag_untagged_transactions_endpoint(State(state): State<RuleSta
                 duration.as_millis()
             );
 
-            render(
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                AlertTemplate::error("Auto-tagging failed", &details),
+                Alert::Error {
+                    message: "Auto-tagging failed".to_owned(),
+                    details,
+                }
+                .into_html(),
             )
+                .into_response()
         }
     }
 }

@@ -1,21 +1,32 @@
-use askama::Template;
 use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
 
-#[derive(Template)]
-#[template(path = "views/not_found_404.html")]
-pub struct NotFoundTemplate;
+use crate::html::error_view;
 
-pub async fn get_404_not_found() -> Response {
-    get_404_not_found_response()
+pub struct NotFoundError;
+
+impl NotFoundError {
+    pub fn into_html(self) -> Html<String> {
+        Html(
+            error_view(
+                "Page Not Found",
+                "404",
+                "Sorry, we can't find that page.",
+                "You'll find lots to explore on the home page.",
+            )
+            .into_string(),
+        )
+    }
 }
 
-pub fn get_404_not_found_response() -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        Html(NotFoundTemplate.render().unwrap_or("Not found".to_owned())),
-    )
-        .into_response()
+impl IntoResponse for NotFoundError {
+    fn into_response(self) -> Response {
+        (StatusCode::NOT_FOUND, self.into_html()).into_response()
+    }
+}
+
+pub async fn get_404_not_found() -> Response {
+    NotFoundError.into_response()
 }

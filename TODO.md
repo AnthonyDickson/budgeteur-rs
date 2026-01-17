@@ -12,10 +12,12 @@
 
   For all rows, the total is the sum of all columns except for the balance which is simply the last value.
   Round all values to nearest dollar (banker's rounding?)
-- Review how HTML code is shared, `{{ foo|safe }}` vs `{% include foo.html %}` vs `{% call my_macro(...) %}`
+- Bring registration form in line with other pages re how to handle errors, in particular mutex locks.
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
 - Organise code into modules based on features
   - dashboard
+    - charts
+    - routes
   - auth
     - log in
     - log out
@@ -25,6 +27,7 @@
     - user
   - tag
 - Create unique aliases of `i64` for each of the domain models, e.g., `Tag` -> `pub type TagID = i64;`.
+- Truncate long transaction descriptions and show full description in a tooltip
 - On transactions page, group transactions by:
   - tag
   - day, week, fortnight, month, quarter, year
@@ -44,15 +47,15 @@
   - Zero filled up to two decimal places for floats
   - Parantheses instead of minus symbol for negative values
   - Align digits and decimal point
-- Use macro for transactions table rows instead of nested template? Same for form inputs?
-- Either inline HTML files that just contain CSS classes or find a better way of reusing styles
+- Use HTML5 elements where possible: https://dev.to/maxprilutskiy/html5-elements-you-didnt-know-you-need-gan
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
-- Reorganise tailwindcss code to use partials and/or custom styles instead of
-  HTML templates.
-  Refer to [v3.tailwindcss.com/docs/reusing-styles](https://v3.tailwindcss.com/docs/reusing-styles) and [v3.tailwindcss.com/docs/adding-custom-styles](https://v3.tailwindcss.com/docs/adding-custom-styles).
 - Refactor common testing functions into a separate module.
 - Ensure page layout fits on smartphone screen
+- Review UI design
+  - [ ] Button states, ensure there is visual feedback for both hover and click (active) states
+  - [ ] Rounded edge radii consistency---currently buttons use `rounded` but container uses `rounded-lg`
+  - [ ] Autofocus on registration form
 
 ## Stage Two: Tracking Net Worth
 

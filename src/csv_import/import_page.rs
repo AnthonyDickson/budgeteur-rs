@@ -1,38 +1,87 @@
-use askama::Template;
-use axum::{http::StatusCode, response::Response};
+use axum::response::{IntoResponse, Response};
+use maud::{Markup, html};
 
 use crate::{
     endpoints,
-    navigation::{NavbarTemplate, get_nav_bar},
-    shared_templates::render,
+    html::{BUTTON_PRIMARY_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner},
+    navigation::NavBar,
 };
 
-/// Renders the form for importing CSV files.
-#[derive(Template)]
-#[template(path = "partials/import_form.html")]
-pub struct ImportTransactionFormTemplate<'a> {
-    pub import_route: &'a str,
+fn import_form_view() -> Markup {
+    let import_route = endpoints::IMPORT;
+    let spinner = loading_spinner();
+
+    html! {
+        form
+            hx-post=(import_route)
+            enctype="multipart/form-data"
+            hx-disabled-elt="#files, #submit-button"
+            hx-indicator="#indicator"
+            hx-swap="none"
+            hx-target-error="#alert-container"
+            class="space-y-4 md:space-y-6"
+        {
+            div
+            {
+                label
+                    for="files"
+                    class="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
+                {
+                    "Choose file(s) to upload"
+                }
+
+                input
+                    id="files"
+                    type="file"
+                    name="files"
+                    accept="text/csv"
+                    placeholder="files"
+                    multiple
+                    required
+                    class=(FORM_TEXT_INPUT_STYLE);
+
+                p
+                {
+                    "Export and upload your bank statements in CSV format to automatically import your transactions."
+                }
+            }
+
+             button
+                type="submit"
+                id="submit-button"
+                class=(BUTTON_PRIMARY_STYLE)
+            {
+                span class="inline htmx-indicator" id="indicator" { (spinner) }
+                " Upload Files"
+            }
+        }
+    }
 }
 
-/// Renders the import CSV page.
-#[derive(Template)]
-#[template(path = "views/import.html")]
-struct ImportTransactionsTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    form: ImportTransactionFormTemplate<'a>,
+fn import_view() -> Markup {
+    let nav_bar = NavBar::new(endpoints::IMPORT_VIEW).into_html();
+    let form = import_form_view();
+
+    let content = html! {
+        (nav_bar)
+
+        div
+            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0
+            text-gray-900 dark:text-white"
+        {
+            div class="relative"
+            {
+                (form)
+            }
+        }
+    };
+
+    base("Import Transactions", &[], &content)
 }
 
 /// Route handler for the import CSV page.
 pub async fn get_import_page() -> Response {
-    render(
-        StatusCode::OK,
-        ImportTransactionsTemplate {
-            nav_bar: get_nav_bar(endpoints::IMPORT_VIEW),
-            form: ImportTransactionFormTemplate {
-                import_route: endpoints::IMPORT,
-            },
-        },
-    )
+    import_view().into_response()
 }
 
 #[cfg(test)]

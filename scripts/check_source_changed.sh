@@ -71,7 +71,7 @@ case $diff_mode in
     ;;
 esac
 
-SOURCE_FILES="src/ templates/ static/ Cargo.toml Cargo.lock Dockerfile"
+SOURCE_FILES="src/ static/ Cargo.toml Cargo.lock Dockerfile"
 CHANGE_FOUND=false
 
 echo "Looking for files equal to or starting with: $SOURCE_FILES"

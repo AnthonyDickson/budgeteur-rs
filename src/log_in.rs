@@ -3,7 +3,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use askama::Template;
 use axum::{
     Form,
     extract::{FromRef, State},
@@ -12,6 +11,7 @@ use axum::{
 };
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
+use maud::{Markup, html};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::Duration;
@@ -21,42 +21,80 @@ use crate::{
     app_state::create_cookie_key,
     auth::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
     endpoints,
-    shared_templates::{PasswordInputTemplate, render},
+    html::{base, loading_spinner, log_in_register, password_input},
     timezone::get_local_offset,
     user::{User, UserID, get_user_by_id},
 };
 
-/// Renders a log-in form with client-side and server-side validation.
-#[derive(Template)]
-#[template(path = "partials/log_in/form.html")]
-pub struct LogInFormTemplate<'a> {
-    pub password_input: PasswordInputTemplate<'a>,
-    pub log_in_route: &'a str,
-    pub forgot_password_route: &'a str,
-    pub register_route: &'a str,
-}
+fn log_in_form(password: &str, error_message: Option<&str>) -> Markup {
+    html! {
+        form
+            hx-post=(endpoints::LOG_IN_API)
+            hx-indicator="#indicator"
+            hx-disabled-elt="#password, #submit-button"
+            class="space-y-4 md:space-y-6"
+        {
+            (password_input(password, 0, error_message))
 
-impl Default for LogInFormTemplate<'_> {
-    fn default() -> Self {
-        Self {
-            password_input: Default::default(),
-            log_in_route: endpoints::LOG_IN_API,
-            forgot_password_route: endpoints::FORGOT_PASSWORD_VIEW,
-            register_route: endpoints::REGISTER_VIEW,
+            div class="flex items-center gap-x-3"
+            {
+                input
+                    type="checkbox"
+                    name="remember_me"
+                    id="remember_me"
+                    tabindex="0"
+                    class="rounded-xs";
+
+                label
+                    for="remember_me"
+                    class="block text-sm font-medium text-gray-900 dark:text-white"
+                {
+                    "Keep me logged in for one week"
+                }
+            }
+
+            button
+                type="submit" id="submit-button" tabindex="0"
+                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+            {
+                span class="inline htmx-indicator" id="indicator"
+                {
+                    (loading_spinner())
+                }
+                "Log in"
+            }
+
+            p class="text-sm font-light text-gray-500 dark:text-gray-400"
+            {
+                "Forgot your password? "
+
+                a
+                    href=(endpoints::FORGOT_PASSWORD_VIEW) tabindex="0"
+                    class="font-semibold leading-6 text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400"
+                {
+                  "Reset it here"
+                }
+            }
+
+            p class="text-sm font-light text-gray-500 dark:text-gray-400" {
+                "Don't have a password? "
+                a
+                    href=(endpoints::REGISTER_VIEW) tabindex="0"
+                    class="font-semibold leading-6 text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400"
+                {
+                  "Register here"
+                }
+            }
         }
     }
 }
 
-///  Renders the full log-in page.
-#[derive(Template, Default)]
-#[template(path = "views/log_in.html")]
-struct LogInTemplate<'a> {
-    log_in_form: LogInFormTemplate<'a>,
-}
-
 /// Display the log-in page.
 pub async fn get_log_in_page() -> Response {
-    render(StatusCode::OK, LogInTemplate::default())
+    let log_in_form = log_in_form("", None);
+    let content = log_in_register("Log in to your account", &log_in_form);
+    base("Log In", &[], &content).into_response()
 }
 
 /// How long the auth cookie should last if the user selects "remember me" at log-in.
@@ -108,6 +146,8 @@ impl FromRef<LoginState> for Key {
     }
 }
 
+pub const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect password.";
+
 /// Handler for log-in requests via the POST method.
 ///
 /// On a successful log-in request, the auth cookie set and the client is redirected to the dashboard page.
@@ -136,19 +176,19 @@ pub async fn post_log_in(
     ) {
         Ok(user) => user,
         Err(Error::NotFound) => {
-            return render(
-                StatusCode::OK,
-                create_log_in_error_response(
-                    "Password not set, go to the registration page and set your password",
-                ),
-            );
+            return log_in_form(
+                "",
+                Some("Password not set, go to the registration page and set your password"),
+            )
+            .into_response();
         }
         Err(error) => {
             tracing::error!("Unhandled error while verifying credentials: {error}");
-            return render(
-                StatusCode::OK,
-                create_log_in_error_response("An internal error occurred. Please try again later."),
-            );
+            return log_in_form(
+                "",
+                Some("An internal error occurred. Please try again later."),
+            )
+            .into_response();
         }
     };
 
@@ -156,18 +196,16 @@ pub async fn post_log_in(
         Ok(is_password_valid) => is_password_valid,
         Err(error) => {
             tracing::error!("Unhandled error while verifying credentials: {error}");
-            return render(
-                StatusCode::OK,
-                create_log_in_error_response("An internal error occurred. Please try again later."),
-            );
+            return log_in_form(
+                "",
+                Some("An internal error occurred. Please try again later."),
+            )
+            .into_response();
         }
     };
 
     if !is_password_valid {
-        return render(
-            StatusCode::OK,
-            create_log_in_error_response(INVALID_CREDENTIALS_ERROR_MSG),
-        );
+        return log_in_form("", Some(INVALID_CREDENTIALS_ERROR_MSG)).into_response();
     }
 
     let cookie_duration = if user_data.remember_me.is_some() {
@@ -199,19 +237,6 @@ pub async fn post_log_in(
         })
         .into_response()
 }
-
-fn create_log_in_error_response<'a>(error_message: &'a str) -> LogInFormTemplate<'a> {
-    LogInFormTemplate {
-        password_input: PasswordInputTemplate {
-            value: "",
-            min_length: 0,
-            error_message,
-        },
-        ..Default::default()
-    }
-}
-
-pub const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect password.";
 
 /// The raw data entered by the user in the log-in form.
 ///

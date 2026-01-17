@@ -7,7 +7,6 @@ WORKDIR /build
 
 COPY Cargo.toml /build/Cargo.toml
 COPY Cargo.lock /build/Cargo.lock
-COPY templates/ /build/templates/
 COPY src/ /build/src/
 
 RUN cargo build --verbose --release --bin server --bin reset_password
@@ -20,10 +19,10 @@ RUN apk update
 RUN apk add --no-cache curl libgcc libstdc++
 
 WORKDIR /build
-COPY templates/ /build/templates
+COPY src/ /build/src
 RUN curl -sL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.18/tailwindcss-linux-x64-musl -o tailwindcss && \
   chmod +x tailwindcss && \
-  ./tailwindcss --input templates/source.css --output static/main.css --minify
+  ./tailwindcss --input src/input.css --output static/main.css --minify
 
 #==============================================================================#
 

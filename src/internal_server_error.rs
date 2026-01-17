@@ -1,12 +1,11 @@
 //! Defines the templates and route handlers for the page to display for an internal server error.
-use askama::Template;
 use axum::{
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
 };
 use axum_htmx::HxRedirect;
 
-use crate::{endpoints, shared_templates::render};
+use crate::{endpoints, html::error_view};
 
 /// Get a response that will redirect the client to the internal server error 500 page.
 ///
@@ -20,14 +19,12 @@ pub(crate) fn get_internal_server_error_redirect() -> Response {
         .into_response()
 }
 
-#[derive(Template)]
-#[template(path = "views/internal_server_error_500.html")]
-pub struct InternalServerErrorPageTemplate<'a> {
+pub struct InternalServerError<'a> {
     pub description: &'a str,
     pub fix: &'a str,
 }
 
-impl Default for InternalServerErrorPageTemplate<'_> {
+impl Default for InternalServerError<'_> {
     fn default() -> Self {
         Self {
             description: "Sorry, something went wrong.",
@@ -36,10 +33,18 @@ impl Default for InternalServerErrorPageTemplate<'_> {
     }
 }
 
-pub async fn get_internal_server_error_page() -> Response {
-    render_internal_server_error(Default::default())
+impl InternalServerError<'_> {
+    pub fn into_html(self) -> Html<String> {
+        Html(error_view("Internal Server Error", "500", self.description, self.fix).into_string())
+    }
 }
 
-pub fn render_internal_server_error(template: InternalServerErrorPageTemplate) -> Response {
-    render(StatusCode::INTERNAL_SERVER_ERROR, template)
+impl IntoResponse for InternalServerError<'_> {
+    fn into_response(self) -> Response {
+        (StatusCode::INTERNAL_SERVER_ERROR, self.into_html()).into_response()
+    }
+}
+
+pub async fn get_internal_server_error_page() -> Response {
+    InternalServerError::default().into_response()
 }

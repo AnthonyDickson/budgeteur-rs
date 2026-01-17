@@ -2,21 +2,22 @@
 
 use std::sync::{Arc, Mutex};
 
-use askama::Template;
 use axum::{
     extract::{FromRef, State},
-    http::StatusCode,
-    response::Response,
+    response::{IntoResponse, Response},
 };
+use maud::{Markup, html};
 use rusqlite::Connection;
 use time::Date;
 
 use crate::{
     AppState, Error,
     endpoints::{self, format_endpoint},
-    filters,
-    navigation::{NavbarTemplate, get_nav_bar},
-    shared_templates::render,
+    html::{
+        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
+        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, base, format_currency,
+    },
+    navigation::NavBar,
 };
 
 /// The state needed for the [get_accounts_page](crate::account::get_accounts_page) route handler.
@@ -43,13 +44,137 @@ struct AccountTableRow {
     delete_url: String,
 }
 
-/// Renders the accounts page.
-#[derive(Template)]
-#[template(path = "views/account/accounts.html")]
-struct AccountsTemplate<'a> {
-    nav_bar: NavbarTemplate<'a>,
-    accounts: &'a [AccountTableRow],
-    create_account_page_url: &'a str,
+fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
+    let create_account_page_url = endpoints::NEW_ACCOUNT_VIEW;
+    let nav_bar = NavBar::new(endpoints::ACCOUNTS).into_html();
+
+    let table_row = |account: &AccountTableRow| {
+        let balance_str = format_currency(account.balance);
+
+        html!(
+            tr class=(TABLE_ROW_STYLE)
+            {
+                th
+                    scope="row"
+                    class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white"
+                {
+                    (account.name)
+                }
+
+                td class="px-6 py-4 text-right"
+                {
+                    (balance_str)
+                }
+
+                td class=(TABLE_CELL_STYLE)
+                {
+                    (account.date)
+                }
+
+                td class=(TABLE_CELL_STYLE)
+                {
+                    div class="flex gap-4"
+                    {
+                        a href=(account.edit_url) class=(LINK_STYLE)
+                        {
+                            "Edit"
+                        }
+
+                        button
+                            hx-delete=(account.delete_url)
+                            hx-confirm={
+                                "Are you sure you want to delete the account '"
+                                (account.name) "'? This cannot be undone."
+                            }
+                            hx-target="closest tr"
+                            hx-target-error="#alert-container"
+                            hx-swap="delete"
+                            class=(BUTTON_DELETE_STYLE)
+                        {
+                           "Delete"
+                        }
+                    }
+                }
+            }
+        )
+    };
+
+    let content = html!(
+        (nav_bar)
+
+        div class=(PAGE_CONTAINER_STYLE)
+        {
+            div class="relative"
+            {
+                div class="flex justify-between flex-wrap items-end"
+                {
+                    h1 class="text-xl font-bold" { "Accounts" }
+
+                    a href=(create_account_page_url) class=(LINK_STYLE)
+                    {
+                        "Add Account"
+                    }
+                }
+
+                div class="dark:bg-gray-800"
+                {
+                    table class="w-full text-sm text-left rtl:text-right
+                        text-gray-500 dark:text-gray-400"
+                    {
+                        thead class=(TABLE_HEADER_STYLE)
+                        {
+                            tr
+                            {
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Name"
+                                }
+                                th scope="col" class="px-6 py-3 text-right"
+                                {
+                                    "Balance"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Date"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Actions"
+                                }
+                            }
+                        }
+
+                        tbody
+                        {
+                            @for account in accounts {
+                                (table_row(account))
+                            }
+
+                            @if accounts.is_empty() {
+                                tr
+                                {
+                                    td
+                                        colspan="3"
+                                        class="px-6 py-4 text-center
+                                            text-gray-500 dark:text-gray-400"
+                                    {
+                                        "No accounts  found. Create an account "
+                                        a href=(create_account_page_url) class=(LINK_STYLE)
+                                        {
+                                            "here"
+                                        }
+                                        "."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    );
+
+    base("Accounts", &[], &content)
 }
 
 /// Renders the accounts page showing all accounts.
@@ -63,13 +188,7 @@ pub async fn get_accounts_page(State(state): State<AccountState>) -> Result<Resp
     let accounts: Vec<AccountTableRow> = get_all_accounts(&connection)
         .inspect_err(|error| tracing::error!("could not get all accounts: {error}"))?;
 
-    let template = AccountsTemplate {
-        nav_bar: get_nav_bar(endpoints::ACCOUNTS),
-        accounts: &accounts,
-        create_account_page_url: endpoints::NEW_ACCOUNT_VIEW,
-    };
-
-    Ok(render(StatusCode::OK, template))
+    Ok(accounts_view(&accounts).into_response())
 }
 
 fn get_all_accounts(connection: &Connection) -> Result<Vec<AccountTableRow>, Error> {
@@ -178,18 +297,16 @@ mod get_all_accounts_tests {
 mod accounts_template_tests {
     use std::iter::zip;
 
-    use askama::Template;
     use scraper::{ElementRef, Html, Selector};
     use time::macros::date;
 
     use crate::{
         account::{
             Account,
-            accounts_page::{AccountTableRow, AccountsTemplate},
+            accounts_page::{AccountTableRow, accounts_view},
         },
         endpoints::{self, format_endpoint},
-        filters::currency,
-        navigation::get_nav_bar,
+        html::format_currency,
     };
 
     #[test]
@@ -208,13 +325,7 @@ mod accounts_template_tests {
             delete_url: format_endpoint(endpoints::DELETE_ACCOUNT, want_account.id),
         }];
 
-        let rendered_template = AccountsTemplate {
-            nav_bar: get_nav_bar(endpoints::ACCOUNTS),
-            accounts: &accounts,
-            create_account_page_url: endpoints::NEW_ACCOUNT_VIEW,
-        }
-        .render()
-        .expect("Could not render template");
+        let rendered_template = accounts_view(&accounts).into_string();
 
         let html = scraper::Html::parse_document(&rendered_template);
         assert_valid_html(&html);
@@ -226,13 +337,7 @@ mod accounts_template_tests {
     fn test_no_data() {
         let accounts = vec![];
 
-        let rendered_template = AccountsTemplate {
-            nav_bar: get_nav_bar(endpoints::ACCOUNTS),
-            accounts: &accounts,
-            create_account_page_url: endpoints::NEW_ACCOUNT_VIEW,
-        }
-        .render()
-        .expect("Could not render template");
+        let rendered_template = accounts_view(&accounts).into_string();
 
         let html = Html::parse_document(&rendered_template);
         assert_valid_html(&html);
@@ -294,7 +399,7 @@ mod accounts_template_tests {
                 "want account '{}', got '{got_account}'.",
                 want.name
             );
-            let want_balance = currency(want.balance, &()).unwrap();
+            let want_balance = format_currency(want.balance);
             assert_eq!(
                 want_balance, got_acconunt,
                 "want balance {want_balance}, got {got_acconunt}."
@@ -332,6 +437,7 @@ mod accounts_template_tests {
             .next()
             .expect("Could not find table cell with colspan='3' in HTML")
     }
+
     #[track_caller]
     fn assert_paragraph_contains_link(paragraph: ElementRef<'_>, want_url: &str) {
         let link_selector = Selector::parse("a").unwrap();
@@ -378,7 +484,7 @@ mod get_accounts_page_tests {
             create_account_table, get_accounts_page,
         },
         endpoints::{self, format_endpoint},
-        filters::currency,
+        html::format_currency,
     };
 
     #[tokio::test]
@@ -479,7 +585,7 @@ mod get_accounts_page_tests {
                 "want account '{}', got '{got_account}'.",
                 want.name
             );
-            let want_balance = currency(want.balance, &()).unwrap();
+            let want_balance = format_currency(want.balance);
             assert_eq!(
                 want_balance, got_balance,
                 "want balance {want_balance}, got {got_balance}."

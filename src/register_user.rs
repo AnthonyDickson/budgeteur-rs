@@ -1,7 +1,6 @@
 //! The registration page for setting the password for accessing the app.
 use std::sync::{Arc, Mutex};
 
-use askama::Template;
 use axum::{
     Form,
     extract::{FromRef, State},
@@ -10,6 +9,7 @@ use axum::{
 };
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
+use maud::{Markup, html};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::Duration;
@@ -19,61 +19,96 @@ use crate::{
     app_state::create_cookie_key,
     auth::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
     endpoints,
+    html::{
+        FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner, log_in_register,
+        password_input,
+    },
     internal_server_error::get_internal_server_error_redirect,
-    shared_templates::{PasswordInputTemplate, render},
     timezone::get_local_offset,
     user::{count_users, create_user},
 };
 
-#[derive(Template, Default)]
-#[template(path = "partials/register/inputs/confirm_password.html")]
-pub struct ConfirmPasswordInputTemplate<'a> {
-    pub error_message: &'a str,
+/// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).
+const PASSWORD_INPUT_MIN_LENGTH: u8 = 14;
+
+pub fn confirm_password_input(min_length: u8, error_message: Option<&str>) -> Markup {
+    html! {
+        div
+        {
+            label
+                for="confirm-password"
+                class=(FORM_LABEL_STYLE)
+            {
+                "Confirm Password"
+            }
+
+            input
+                type="password"
+                name="confirm_password"
+                id="confirm-password"
+                placeholder="••••••••"
+                class=(FORM_TEXT_INPUT_STYLE)
+                required
+                minlength=(min_length)
+                autofocus[error_message.is_some()]
+            ;
+
+            @if let Some(error_message) = error_message
+            {
+                p class="text-red-500 text-base" { (error_message) }
+            }
+        }
+
+    }
 }
 
-#[derive(Template)]
-#[template(path = "partials/register/form.html")]
-pub struct RegisterFormTemplate<'a> {
-    pub log_in_route: &'a str,
-    pub create_user_route: &'a str,
-    pub password_input: PasswordInputTemplate<'a>,
-    pub confirm_password_input: ConfirmPasswordInputTemplate<'a>,
-}
+fn registration_form(
+    password: &str,
+    password_error_message: Option<&str>,
+    confirm_password_error_message: Option<&str>,
+) -> Markup {
+    html! {
+        form
+            hx-post=(endpoints::USERS)
+            hx-indicator="#indicator"
+            hx-disabled-elt="#password, #submit-button"
+            class="space-y-4 md:space-y-6"
+        {
+            (password_input(password, PASSWORD_INPUT_MIN_LENGTH, password_error_message))
+            (confirm_password_input(PASSWORD_INPUT_MIN_LENGTH, confirm_password_error_message))
 
-impl Default for RegisterFormTemplate<'_> {
-    fn default() -> Self {
-        Self {
-            log_in_route: endpoints::LOG_IN_VIEW,
-            create_user_route: endpoints::USERS,
-            password_input: PasswordInputTemplate::default(),
-            confirm_password_input: ConfirmPasswordInputTemplate::default(),
+            button
+                type="submit" id="submit-button" tabindex="0"
+                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
+                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+            {
+                span class="inline htmx-indicator" id="indicator"
+                {
+                    (loading_spinner())
+                }
+                "Create Password"
+            }
+
+            p class="text-sm font-light text-gray-500 dark:text-gray-400"
+            {
+                "Already have a password? "
+
+                a
+                    href=(endpoints::LOG_IN_VIEW) tabindex="0"
+                    class="font-semibold leading-6 text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400"
+                {
+                  "Log in here"
+                }
+            }
         }
     }
 }
 
-/// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).
-const PASSWORD_INPUT_MIN_LENGTH: usize = 14;
-
-#[derive(Template)]
-#[template(path = "views/register.html")]
-struct RegisterPageTemplate<'a> {
-    register_form: RegisterFormTemplate<'a>,
-}
-
 /// Display the registration page.
 pub async fn get_register_page() -> Response {
-    render(
-        StatusCode::OK,
-        RegisterPageTemplate {
-            register_form: RegisterFormTemplate {
-                password_input: PasswordInputTemplate {
-                    min_length: PASSWORD_INPUT_MIN_LENGTH,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        },
-    )
+    let registration_form = registration_form("", None, None);
+    let content = log_in_register("Create Password", &registration_form);
+    base("Register", &[], &content).into_response()
 }
 
 /// The state needed for creating a new user.
@@ -140,54 +175,26 @@ pub async fn register_user(
             .expect("Could not acquire database lock"),
     ) {
         Ok(count) if count >= 1 => {
-            return render(
-                StatusCode::OK,
-                RegisterFormTemplate {
-                    confirm_password_input: ConfirmPasswordInputTemplate {
-                        error_message: "A password has already been created, please log in with your existing password.",
-                    },
-                    ..Default::default()
-                },
-            );
+            return registration_form(
+                &user_data.password,
+                None,
+                Some("A password has already been created, please log in with your existing password."),
+            ).into_response();
         }
         _ => {}
     }
 
-    // Make templates ahead of time that preserve the user's input since they are used multiple times in this function.
-    let password_input = PasswordInputTemplate {
-        value: &user_data.password,
-        min_length: PASSWORD_INPUT_MIN_LENGTH,
-        ..Default::default()
-    };
-
     let validated_password = match ValidatedPassword::new(&user_data.password) {
         Ok(password) => password,
-        Err(e) => {
-            return render(
-                StatusCode::OK,
-                RegisterFormTemplate {
-                    password_input: PasswordInputTemplate {
-                        value: &user_data.password,
-                        min_length: PASSWORD_INPUT_MIN_LENGTH,
-                        error_message: e.to_string().as_ref(),
-                    },
-                    ..Default::default()
-                },
-            );
+        Err(error) => {
+            return registration_form(&user_data.password, Some(error.to_string().as_ref()), None)
+                .into_response();
         }
     };
 
     if user_data.password != user_data.confirm_password {
-        return render(
-            StatusCode::OK,
-            RegisterFormTemplate {
-                password_input,
-                confirm_password_input: ConfirmPasswordInputTemplate {
-                    error_message: "Passwords do not match",
-                },
-                ..Default::default()
-            },
-        );
+        return registration_form(&user_data.password, None, Some("Passwords do not match"))
+            .into_response();
     }
 
     let password_hash = match PasswordHash::new(validated_password, PasswordHash::DEFAULT_COST) {
