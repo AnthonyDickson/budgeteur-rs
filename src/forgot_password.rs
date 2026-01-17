@@ -1,7 +1,7 @@
 use axum::{response::IntoResponse, response::Response};
 use maud::{Markup, html};
 
-use crate::view_templates::base;
+use crate::html::base;
 
 fn forgot_password_template() -> Markup {
     let content = html! {

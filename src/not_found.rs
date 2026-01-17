@@ -3,7 +3,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 
-use crate::view_templates::error_view;
+use crate::html::error_view;
 
 pub struct NotFoundError;
 

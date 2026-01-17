@@ -12,13 +12,13 @@ use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error, endpoints,
-    navigation::NavBar,
-    tag::{Tag, get_all_tags},
-    timezone::get_local_offset,
-    view_templates::{
+    html::{
         BUTTON_PRIMARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base,
         dollar_input_styles, loading_spinner,
     },
+    navigation::NavBar,
+    tag::{Tag, get_all_tags},
+    timezone::get_local_offset,
 };
 
 fn create_transaction_view(max_date: Date, available_tags: &[Tag]) -> Markup {

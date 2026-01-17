@@ -3,8 +3,8 @@ use maud::{Markup, html};
 
 use crate::{
     endpoints,
+    html::{BUTTON_PRIMARY_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner},
     navigation::NavBar,
-    view_templates::{BUTTON_PRIMARY_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner},
 };
 
 fn import_form_view() -> Markup {

@@ -22,10 +22,10 @@ use crate::{
     AppState, Error,
     alert::Alert,
     endpoints,
-    navigation::NavBar,
-    view_templates::{
+    html::{
         BUTTON_PRIMARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base,
     },
+    navigation::NavBar,
 };
 
 /// The name of a tag.

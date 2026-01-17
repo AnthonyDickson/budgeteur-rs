@@ -13,14 +13,14 @@ use crate::{
     AppState, Error,
     database_id::TransactionId,
     endpoints::{self, format_endpoint},
+    html::{
+        BUTTON_PRIMARY_STYLE, BUTTON_SECONDARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE,
+        FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
+    },
     navigation::NavBar,
     tag::{Tag, get_all_tags},
     timezone::get_local_offset,
     transaction::{Transaction, get_transaction},
-    view_templates::{
-        BUTTON_PRIMARY_STYLE, BUTTON_SECONDARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE,
-        FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
-    },
 };
 
 fn edit_transaction_view(

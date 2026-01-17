@@ -19,13 +19,13 @@ use crate::{
     app_state::create_cookie_key,
     auth::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
     endpoints,
-    internal_server_error::get_internal_server_error_redirect,
-    timezone::get_local_offset,
-    user::{count_users, create_user},
-    view_templates::{
+    html::{
         FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner, log_in_register,
         password_input,
     },
+    internal_server_error::get_internal_server_error_redirect,
+    timezone::get_local_offset,
+    user::{count_users, create_user},
 };
 
 /// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).

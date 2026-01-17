@@ -30,10 +30,10 @@ use crate::{
     dashboard_preferences::{get_excluded_tags, save_excluded_tags},
     database_id::DatabaseId,
     endpoints,
+    html::{HeadElement, base},
     navigation::NavBar,
     tag::{Tag, get_all_tags},
     timezone::get_local_offset,
-    view_templates::{HeadElement, base},
 };
 
 // ============================================================================

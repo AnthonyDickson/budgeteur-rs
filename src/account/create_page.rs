@@ -9,12 +9,12 @@ use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error, endpoints,
-    navigation::NavBar,
-    timezone::get_local_offset,
-    view_templates::{
+    html::{
         BUTTON_PRIMARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base,
         dollar_input_styles, loading_spinner,
     },
+    navigation::NavBar,
+    timezone::get_local_offset,
 };
 
 fn create_account_view(max_date: Date) -> Markup {

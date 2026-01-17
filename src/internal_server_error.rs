@@ -5,7 +5,7 @@ use axum::{
 };
 use axum_htmx::HxRedirect;
 
-use crate::{endpoints, view_templates::error_view};
+use crate::{endpoints, html::error_view};
 
 /// Get a response that will redirect the client to the internal server error 500 page.
 ///

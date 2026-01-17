@@ -9,12 +9,12 @@ use rusqlite::Connection;
 
 use crate::{
     Error, endpoints,
-    navigation::NavBar,
-    tag::{Tag, TagId, TagsPageState, get_all_tags},
-    view_templates::{
+    html::{
         BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
         TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base,
     },
+    navigation::NavBar,
+    tag::{Tag, TagId, TagsPageState, get_all_tags},
 };
 
 /// A tag with its formatted edit URL for template rendering.

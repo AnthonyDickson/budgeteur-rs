@@ -21,9 +21,9 @@ use crate::{
     app_state::create_cookie_key,
     auth::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
     endpoints,
+    html::{base, loading_spinner, log_in_register, password_input},
     timezone::get_local_offset,
     user::{User, UserID, get_user_by_id},
-    view_templates::{base, loading_spinner, log_in_register, password_input},
 };
 
 fn log_in_form(password: &str, error_message: Option<&str>) -> Markup {

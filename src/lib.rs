@@ -27,6 +27,7 @@ mod db;
 mod endpoints;
 mod error;
 mod forgot_password;
+mod html;
 mod internal_server_error;
 mod log_in;
 mod log_out;
@@ -43,7 +44,6 @@ mod tags_page;
 mod timezone;
 mod transaction;
 mod user;
-mod view_templates;
 
 pub use app_state::AppState;
 pub use db::initialize as initialize_db;

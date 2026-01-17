@@ -13,11 +13,11 @@ use time::Date;
 use crate::{
     AppState, Error,
     endpoints::{self, format_endpoint},
-    navigation::NavBar,
-    view_templates::{
+    html::{
         BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
         TABLE_HEADER_STYLE, TABLE_ROW_STYLE, base, format_currency,
     },
+    navigation::NavBar,
 };
 
 /// The state needed for the [get_accounts_page](crate::account::get_accounts_page) route handler.
@@ -306,7 +306,7 @@ mod accounts_template_tests {
             accounts_page::{AccountTableRow, accounts_view},
         },
         endpoints::{self, format_endpoint},
-        view_templates::format_currency,
+        html::format_currency,
     };
 
     #[test]
@@ -484,7 +484,7 @@ mod get_accounts_page_tests {
             create_account_table, get_accounts_page,
         },
         endpoints::{self, format_endpoint},
-        view_templates::format_currency,
+        html::format_currency,
     };
 
     #[tokio::test]

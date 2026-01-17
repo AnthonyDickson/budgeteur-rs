@@ -22,14 +22,14 @@ use crate::{
     alert::Alert,
     database_id::{DatabaseId, TransactionId},
     endpoints,
-    navigation::NavBar,
-    tag::{Tag, TagId, TagName, get_all_tags},
-    transaction::Transaction,
-    view_templates::{
+    html::{
         BUTTON_DELETE_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, LINK_STYLE,
         PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE, TABLE_HEADER_STYLE, TABLE_ROW_STYLE,
         TAG_BADGE_STYLE, base, dollar_input_styles, loading_spinner,
     },
+    navigation::NavBar,
+    tag::{Tag, TagId, TagName, get_all_tags},
+    transaction::Transaction,
 };
 
 /// A rule that automatically tags transactions whose descriptions start with a pattern.

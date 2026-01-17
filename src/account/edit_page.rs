@@ -13,12 +13,12 @@ use crate::{
     account::{Account, map_row_to_account},
     database_id::DatabaseId,
     endpoints::{self, format_endpoint},
-    navigation::NavBar,
-    timezone::get_local_offset,
-    view_templates::{
+    html::{
         BUTTON_PRIMARY_STYLE, BUTTON_SECONDARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE,
         FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
     },
+    navigation::NavBar,
+    timezone::get_local_offset,
 };
 
 fn edit_account_view(edit_url: &str, max_date: Date, account: &Account) -> Markup {

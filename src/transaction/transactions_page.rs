@@ -15,14 +15,14 @@ use crate::{
     AppState, Error,
     database_id::TransactionId,
     endpoints,
+    html::{
+        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
+        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
+    },
     navigation::NavBar,
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     tag::TagName,
     transaction::core::count_transactions,
-    view_templates::{
-        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
-        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
-    },
 };
 
 /// The state needed for the transactions page.
