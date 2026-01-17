@@ -16,7 +16,8 @@ use crate::{
     tag::{Tag, get_all_tags},
     timezone::get_local_offset,
     view_templates::{
-        FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
+        BUTTON_PRIMARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base,
+        dollar_input_styles, loading_spinner,
     },
 };
 
@@ -28,9 +29,7 @@ fn create_transaction_view(max_date: Date, available_tags: &[Tag]) -> Markup {
     let content = html! {
         (nav_bar)
 
-        div
-            class="flex flex-col items-center px-6 py-8 mx-auto max-w-md lg:py-0
-            text-gray-900 dark:text-white"
+        div class=(FORM_CONTAINER_STYLE)
         {
             form
                 hx-post=(create_transaction_route)
@@ -123,12 +122,7 @@ fn create_transaction_view(max_date: Date, available_tags: &[Tag]) -> Markup {
                     }
                 }
 
-                button
-                    type="submit"
-                    id="submit-button"
-                    tabindex="0"
-                    class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
-                        hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+                button type="submit" id="submit-button" tabindex="0" class=(BUTTON_PRIMARY_STYLE)
                 {
                     span
                         id="indicator"

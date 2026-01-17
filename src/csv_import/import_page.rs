@@ -4,7 +4,7 @@ use maud::{Markup, html};
 use crate::{
     endpoints,
     navigation::NavBar,
-    view_templates::{FORM_TEXT_INPUT_STYLE, base, loading_spinner},
+    view_templates::{BUTTON_PRIMARY_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner},
 };
 
 fn import_form_view() -> Markup {
@@ -46,18 +46,12 @@ fn import_form_view() -> Markup {
                 }
             }
 
-            button
+             button
                 type="submit"
                 id="submit-button"
-                class="px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
-                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+                class=(BUTTON_PRIMARY_STYLE)
             {
-                span
-                    class="inline htmx-indicator"
-                    id="indicator"
-                {
-                    (spinner)
-                }
+                span class="inline htmx-indicator" id="indicator" { (spinner) }
                 " Upload Files"
             }
         }

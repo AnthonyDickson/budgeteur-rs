@@ -25,7 +25,11 @@ use crate::{
     navigation::NavBar,
     tag::{Tag, TagId, TagName, get_all_tags},
     transaction::Transaction,
-    view_templates::{FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner},
+    view_templates::{
+        BUTTON_DELETE_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, LINK_STYLE,
+        PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE, TABLE_HEADER_STYLE, TABLE_ROW_STYLE,
+        TAG_BADGE_STYLE, base, dollar_input_styles, loading_spinner,
+    },
 };
 
 /// A rule that automatically tags transactions whose descriptions start with a pattern.
@@ -65,9 +69,9 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
 
     let table_row = |rule: &RuleWithTag| {
         html!(
-            tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700"
+            tr class=(TABLE_ROW_STYLE)
             {
-                td class="px-6 py-4"
+                td class=(TABLE_CELL_STYLE)
                 {
                     code class="bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 rounded-sm text-xs"
                     {
@@ -75,23 +79,19 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                     }
                 }
 
-                td class="px-6 py-4"
+                td class=(TABLE_CELL_STYLE)
                 {
-                    span
-                        class="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold text-blue-800
-                        bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-300"
+                    span class=(TAG_BADGE_STYLE)
                     {
                         (rule.tag.name)
                     }
                 }
 
-                td class="px-6 py-4"
+                td class=(TABLE_CELL_STYLE)
                 {
                     div class="flex gap-4"
                     {
-                        a
-                            href=(rule.edit_url)
-                            class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+                        a href=(rule.edit_url) class=(LINK_STYLE)
                         {
                             "Edit"
                         }
@@ -105,8 +105,7 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                             hx-target="closest tr"
                             hx-target-error="#alert-container"
                             hx-swap="delete"
-                            class="text-red-600 hover:text-red-500 dark:text-red-500 dark:hover:text-red-400
-                               underline bg-transparent border-none cursor-pointer"
+                            class=(BUTTON_DELETE_STYLE)
                         {
                            "Delete"
                         }
@@ -119,9 +118,7 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
     let content = html!(
         (nav_bar)
 
-        div
-            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-5
-            text-gray-900 dark:text-white"
+        div class=(PAGE_CONTAINER_STYLE)
         {
             div class="relative space-y-4"
             {
@@ -196,10 +193,7 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
 
                 div class="flex justify-between flex-wrap items-end"
                 {
-                    a
-                        href=(new_rule_route)
-                        class="text-blue-600 hover:text-blue-500
-                            dark:text-blue-500 dark:hover:text-blue-400 underline"
+                    a href=(new_rule_route) class=(LINK_STYLE)
                     {
                         "Create Rule"
                     }
@@ -210,21 +204,19 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                     table class="w-full text-sm text-left rtl:text-right
                         text-gray-500 dark:text-gray-400"
                     {
-                        thead
-                            class="text-xs text-gray-700 uppercase bg-gray-50
-                            dark:bg-gray-700 dark:text-gray-400"
+                        thead class=(TABLE_HEADER_STYLE)
                         {
                             tr
                             {
-                                th scope="col" class="px-6 py-3"
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
                                     "Pattern"
                                 }
-                                th scope="col" class="px-6 py-3"
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
                                     "Tag"
                                 }
-                                th scope="col" class="px-6 py-3"
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
                                     "Actions"
                                 }
@@ -246,13 +238,7 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                                             text-gray-500 dark:text-gray-400"
                                     {
                                         "No rules created yet. "
-                                        a
-                                            href=(new_rule_route)
-                                            class="text-blue-600
-                                                hover:text-blue-500
-                                                dark:text-blue-500
-                                                dark:hover:text-blue-400
-                                                underline"
+                                        a href=(new_rule_route) class=(LINK_STYLE)
                                         {
                                             "Create your first rule"
                                         }
@@ -267,7 +253,7 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
         }
     );
 
-    base("Rules", &[], &content)
+    base("Rules", &[dollar_input_styles()], &content)
 }
 
 fn new_rule_form_view(available_tags: &[Tag], error_message: &str) -> Markup {

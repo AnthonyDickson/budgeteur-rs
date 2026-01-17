@@ -11,7 +11,10 @@ use crate::{
     Error, endpoints,
     navigation::NavBar,
     tag::{Tag, TagId, TagsPageState, get_all_tags},
-    view_templates::base,
+    view_templates::{
+        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
+        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base,
+    },
 };
 
 /// A tag with its formatted edit URL for template rendering.
@@ -24,42 +27,36 @@ struct TagWithEditUrl {
 
 fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
     let new_tag_route = endpoints::NEW_TAG_VIEW;
-    let delete_tag_route =
-        |tag: &TagWithEditUrl| endpoints::format_endpoint(endpoints::DELETE_TAG, tag.tag.id);
     let nav_bar = NavBar::new(endpoints::TAGS_VIEW).into_html();
 
     let table_row = |tag_with_url: &TagWithEditUrl| {
         html!(
-            tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700"
+            tr class=(TABLE_ROW_STYLE)
             {
-                td class="px-6 py-4"
+                td class=(TABLE_CELL_STYLE)
                 {
-                    span
-                        class="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold text-blue-800
-                        bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-300"
+                    span class=(TAG_BADGE_STYLE)
                     {
                         (tag_with_url.tag.name)
                     }
                 }
 
-                td class="px-6 py-4"
+                td class=(TABLE_CELL_STYLE)
                 {
                     (tag_with_url.transaction_count)
                 }
 
-                td class="px-6 py-4"
+                td class=(TABLE_CELL_STYLE)
                 {
                     div class="flex gap-4"
                     {
-                        a
-                            href=(tag_with_url.edit_url)
-                            class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+                        a href=(tag_with_url.edit_url) class=(LINK_STYLE)
                         {
                             "Edit"
                         }
 
                         button
-                            hx-delete=(delete_tag_route(tag_with_url))
+                            hx-delete={"/api/tags/" (tag_with_url.tag.id)}
                             hx-confirm={
                                 "Are you sure you want to delete '"
                                 (tag_with_url.tag.name) "'? This will remove it from "
@@ -68,8 +65,7 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
                             hx-target="closest tr"
                             hx-target-error="#alert-container"
                             hx-swap="delete"
-                            class="text-red-600 hover:text-red-500 dark:text-red-500 dark:hover:text-red-400
-                               underline bg-transparent border-none cursor-pointer"
+                            class=(BUTTON_DELETE_STYLE)
                         {
                            "Delete"
                         }
@@ -82,9 +78,7 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
     let content = html!(
         (nav_bar)
 
-        div
-            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-5
-            text-gray-900 dark:text-white"
+        div class=(PAGE_CONTAINER_STYLE)
         {
             div class="relative"
             {
@@ -92,10 +86,7 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
                 {
                     h1 class="text-xl font-bold" { "Tags" }
 
-                    a
-                        href=(new_tag_route)
-                        class="text-blue-600 hover:text-blue-500
-                            dark:text-blue-500 dark:hover:text-blue-400 underline"
+                    a href=(new_tag_route) class=(LINK_STYLE)
                     {
                         "Create Tag"
                     }
@@ -106,21 +97,19 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
                     table class="w-full text-sm text-left rtl:text-right
                         text-gray-500 dark:text-gray-400"
                     {
-                        thead
-                            class="text-xs text-gray-700 uppercase bg-gray-50
-                            dark:bg-gray-700 dark:text-gray-400"
+                        thead class=(TABLE_HEADER_STYLE)
                         {
                             tr
                             {
-                                th scope="col" class="px-6 py-3"
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
                                     "Name"
                                 }
-                                th scope="col" class="px-6 py-3"
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
                                     "Transactions"
                                 }
-                                th scope="col" class="px-6 py-3"
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
                                     "Actions"
                                 }
@@ -142,13 +131,7 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
                                             text-gray-500 dark:text-gray-400"
                                     {
                                         "No tags created yet. "
-                                        a
-                                            href=(new_tag_route)
-                                            class="text-blue-600
-                                                hover:text-blue-500
-                                                dark:text-blue-500
-                                                dark:hover:text-blue-400
-                                                underline"
+                                        a href=(new_tag_route) class=(LINK_STYLE)
                                         {
                                             "Create your first tag"
                                         }

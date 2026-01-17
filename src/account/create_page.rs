@@ -12,7 +12,8 @@ use crate::{
     navigation::NavBar,
     timezone::get_local_offset,
     view_templates::{
-        FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
+        BUTTON_PRIMARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base,
+        dollar_input_styles, loading_spinner,
     },
 };
 
@@ -24,9 +25,7 @@ fn create_account_view(max_date: Date) -> Markup {
     let content = html! {
         (nav_bar)
 
-        div
-            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md
-            text-gray-900 dark:text-white"
+        div class=(FORM_CONTAINER_STYLE)
         {
             form
                 hx-post=(create_account_route)
@@ -105,8 +104,7 @@ fn create_account_view(max_date: Date) -> Markup {
                     type="submit"
                     id="submit-button"
                     tabindex="0"
-                    class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
-                        hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+                    class=(BUTTON_PRIMARY_STYLE)
                 {
                     span
                         id="indicator"

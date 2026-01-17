@@ -3,7 +3,7 @@
 ## Stage One: Budgeting
 
 - Migrate to Maud:
-  - [ ] Rewrite askama templates to maud:
+  - [x] Rewrite askama templates to maud:
     - [x] templates/base.html
     - [x] templates/components/nav_link.html
     - [x] templates/components/spinner.html
@@ -48,14 +48,14 @@
     - [x] templates/views/transaction/create.html
     - [x] templates/views/transaction/edit.html
     - [x] templates/views/transaction/table.html
-  - [ ] Factor out common patterns
-  - [ ] Review whether `view_templates.rs` should be broken up.
-  - [ ] Standardise button styles via constants in `view_templates.rs`
+  - [x] Factor out common patterns
+  - [x] Standardise button styles via constants in `view_templates.rs`
   - [x] Delete `shared_templates.rs`
   - [x] Delete templates folder
   - [x] Refactor currency filter to take a number and return a string
   - [x] Refactor import alerts to directly use `alerts::Alert` and use plain functions instead of OOP approach
   - [x] Remove Askama from dependencies
+  - [x] Review whether `view_templates.rs` should be broken up.
   - [x] Test tailwind css still works (delete existing css bundle)
   - PR description:
     ```text

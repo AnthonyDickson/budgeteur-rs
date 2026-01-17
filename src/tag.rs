@@ -1,9 +1,11 @@
 //! This file defines the `Tag` type, the types needed to create a tag and the API routes for the tag type.
 //! A tag is used for categorising and grouping transactions.
 
-use std::fmt::Display;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt::Display,
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 
 use axum::{
     Form,
@@ -16,11 +18,14 @@ use maud::{Markup, html};
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
-use crate::alert::Alert;
 use crate::{
-    AppState, Error, endpoints,
+    AppState, Error,
+    alert::Alert,
+    endpoints,
     navigation::NavBar,
-    view_templates::{FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base},
+    view_templates::{
+        BUTTON_PRIMARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base,
+    },
 };
 
 /// The name of a tag.
@@ -120,13 +125,7 @@ fn new_tag_form_view(error_message: &str) -> Markup {
                 }
             }
 
-            button
-                type="submit"
-                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
-                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
-            {
-                "Create Tag"
-            }
+            button type="submit" class=(BUTTON_PRIMARY_STYLE) { "Update Tag" }
         }
     }
 }
@@ -137,13 +136,7 @@ fn new_tag_view() -> Markup {
 
     let content = html! {
         (nav_bar)
-
-        div
-            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md
-            text-gray-900 dark:text-white"
-        {
-            (form)
-        }
+        div class=(FORM_CONTAINER_STYLE) { (form) }
     };
 
     base("Create Tag", &[], &content)
@@ -182,13 +175,7 @@ fn edit_tag_form_view(update_tag_endpoint: &str, tag_name: &str, error_message: 
                 }
             }
 
-            button
-                type="submit"
-                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
-                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
-            {
-                "Update Tag"
-            }
+            button type="submit" class=(BUTTON_PRIMARY_STYLE) { "Update Tag" }
         }
     }
 }
@@ -204,13 +191,7 @@ fn edit_tag_view(
 
     let content = html! {
         (nav_bar)
-
-        div
-            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md
-            text-gray-900 dark:text-white"
-        {
-            (form)
-        }
+        div class=(FORM_CONTAINER_STYLE) { (form) }
     };
 
     base("Edit Tag", &[], &content)

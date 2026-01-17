@@ -4,6 +4,54 @@ use std::sync::OnceLock;
 
 use numfmt::{Formatter, Precision};
 
+// In view_templates.rs
+
+// Link styles
+pub const LINK_STYLE: &str = "text-blue-600 hover:text-blue-500 \
+    dark:text-blue-500 dark:hover:text-blue-400 underline";
+
+// Button styles
+pub const BUTTON_PRIMARY_STYLE: &str = "w-full px-4 py-2 bg-blue-500
+    dark:bg-blue-600 disabled:bg-blue-700 hover:enabled:bg-blue-600 \
+    hover:enabled:dark:bg-blue-700 text-white rounded";
+
+pub const BUTTON_SECONDARY_STYLE: &str = "w-full py-2.5 px-5 mb-2 \
+    text-sm font-medium text-gray-900 bg-white rounded border border-gray-200 \
+    hover:bg-gray-100 hover:text-blue-700 focus:z-10 dark:bg-gray-800 \
+    dark:text-gray-400 dark:border-gray-600 dark:hover:text-white \
+    dark:hover:bg-gray-700";
+
+pub const BUTTON_DELETE_STYLE: &str = "text-red-600 hover:text-red-500 \
+    dark:text-red-500 dark:hover:text-red-400 underline bg-transparent \
+    border-none cursor-pointer";
+
+// Form styles
+pub const FORM_CONTAINER_STYLE: &str = "flex flex-col items-center px-6 py-8 \
+    mx-auto lg:py-0 max-w-md text-gray-900 dark:text-white";
+pub const FORM_LABEL_STYLE: &str = "block mb-2 text-sm font-medium text-gray-900 dark:text-white";
+pub const FORM_TEXT_INPUT_STYLE: &str = "block w-full p-2.5 rounded text-sm \
+    text-gray-900 dark:text-white disabled:text-gray-500 bg-gray-50 \
+    dark:bg-gray-700 border border-gray-300 dark:border-gray-600 \
+    dark:placeholder-gray-400 focus:ring-blue-600 focus:border-blue-600 \
+    focus:dark:border-blue-500 focus:dark:ring-blue-500";
+
+// Table styles
+pub const TABLE_HEADER_STYLE: &str = "text-xs text-gray-700 uppercase \
+    bg-gray-50 dark:bg-gray-700 dark:text-gray-400";
+
+pub const TABLE_ROW_STYLE: &str = "bg-white border-b dark:bg-gray-800 dark:border-gray-700";
+
+pub const TABLE_CELL_STYLE: &str = "px-6 py-4";
+
+// Tag badge style
+pub const TAG_BADGE_STYLE: &str = "inline-flex items-center px-2.5 py-0.5 \
+    text-xs font-semibold text-blue-800 bg-blue-100 rounded-full \
+    dark:bg-blue-900 dark:text-blue-300";
+
+// Page container
+pub const PAGE_CONTAINER_STYLE: &str =
+    "flex flex-col items-center px-6 py-8 mx-auto lg:py-5 text-gray-900 dark:text-white";
+
 pub enum HeadElement {
     /// The file path or URL to a JavaScript script.
     ScriptLink(String),
@@ -148,13 +196,6 @@ pub fn log_in_register(form_title: &str, form: &Markup) -> Markup {
         }
     }
 }
-
-pub const FORM_LABEL_STYLE: &str = "block mb-2 text-sm font-medium text-gray-900 dark:text-white";
-pub const FORM_TEXT_INPUT_STYLE: &str =
-    "block w-full p-2.5 rounded text-sm text-gray-900 dark:text-white
-disabled:text-gray-500 bg-gray-50 dark:bg-gray-700 border border-gray-300
-dark:border-gray-600 dark:placeholder-gray-400 focus:ring-blue-600
-focus:border-blue-600 focus:dark:border-blue-500 focus:dark:ring-blue-500";
 
 pub fn password_input(password: &str, min_length: u8, error_message: Option<&str>) -> Markup {
     html! {

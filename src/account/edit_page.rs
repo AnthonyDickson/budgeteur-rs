@@ -16,7 +16,8 @@ use crate::{
     navigation::NavBar,
     timezone::get_local_offset,
     view_templates::{
-        FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
+        BUTTON_PRIMARY_STYLE, BUTTON_SECONDARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE,
+        FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
     },
 };
 
@@ -28,9 +29,7 @@ fn edit_account_view(edit_url: &str, max_date: Date, account: &Account) -> Marku
     let content = html! {
         (nav_bar)
 
-        div
-            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-0 max-w-md
-            text-gray-900 dark:text-white"
+        div class=(FORM_CONTAINER_STYLE)
         {
             form
                 hx-put=(edit_url)
@@ -100,31 +99,11 @@ fn edit_account_view(edit_url: &str, max_date: Date, account: &Account) -> Marku
                         class=(FORM_TEXT_INPUT_STYLE);
                 }
 
-                button
-                    onclick="history.back()"
-                    type="button"
-                    class="w-full py-2.5 px-5 mb-2 text-sm font-medium text-gray-900
-                        bg-white rounded border border-gray-200
-                        hover:bg-gray-100 hover:text-blue-700 focus:z-10 dark:bg-gray-800
-                        dark:text-gray-400 dark:border-gray-600 dark:hover:text-white
-                        dark:hover:bg-gray-700"
-                {
-                    "Cancel"
-                }
+                button onclick="history.back()" type="button" class=(BUTTON_SECONDARY_STYLE) { "Cancel" }
 
-                button
-                    type="submit"
-                    id="submit-button"
-                    tabindex="0"
-                    class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
-                        hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+                button type="submit" id="submit-button" tabindex="0" class=(BUTTON_PRIMARY_STYLE)
                 {
-                    span
-                        id="indicator"
-                        class="inline htmx-indicator"
-                    {
-                        (spinner)
-                    }
+                    span id="indicator" class="inline htmx-indicator" { (spinner) }
                     " Edit Account"
                 }
             }

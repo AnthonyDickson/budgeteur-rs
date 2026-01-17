@@ -19,7 +19,10 @@ use crate::{
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     tag::TagName,
     transaction::core::count_transactions,
-    view_templates::{base, format_currency},
+    view_templates::{
+        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
+        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
+    },
 };
 
 /// The state needed for the transactions page.
@@ -103,17 +106,15 @@ impl TransactionTableRow {
         let amount_str = format_currency(self.amount);
 
         html! {
-            tr class="bg-white dark:bg-gray-800"
+            tr class=(TABLE_ROW_STYLE)
             {
                 td class="px-6 py-4 text-right" { (amount_str) }
-                td class="px-6 py-4" { (self.date) }
-                td class="px-6 py-4" { (self.description) }
-                td class="px-6 py-4"
+                td class=(TABLE_CELL_STYLE) { (self.date) }
+                td class=(TABLE_CELL_STYLE) { (self.description) }
+                td class=(TABLE_CELL_STYLE)
                 {
                     @if let Some(tag_name) = &self.tag_name {
-                        span
-                            class="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold text-blue-800
-                            bg-blue-100 rounded-full dark:bg-blue-900 dark:text-blue-300"
+                        span class=(TAG_BADGE_STYLE)
                         {
                             (tag_name)
                         }
@@ -121,13 +122,11 @@ impl TransactionTableRow {
                         span class="text-gray-400 dark:text-gray-500" { "-" }
                     }
                 }
-                td class="px-6 py-4"
+                td class=(TABLE_CELL_STYLE)
                 {
                     div class="flex gap-4"
                     {
-                        a
-                            href=(self.edit_url)
-                            class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+                        a href=(self.edit_url) class=(LINK_STYLE)
                         {
                             "Edit"
                         }
@@ -141,8 +140,7 @@ impl TransactionTableRow {
                             hx-target="closest tr"
                             hx-target-error="#alert-container"
                             hx-swap="outerHTML"
-                            class="text-red-600 hover:text-red-500 dark:text-red-500 dark:hover:text-red-400
-                               underline bg-transparent border-none cursor-pointer"
+                            class=(BUTTON_DELETE_STYLE)
                         {
                            "Delete"
                         }
@@ -219,9 +217,7 @@ fn transactions_view(
     let content = html! {
         (nav_bar)
 
-        div
-            class="flex flex-col items-center px-6 py-8 mx-auto lg:py-5
-            text-gray-900 dark:text-white"
+        div class=(PAGE_CONTAINER_STYLE)
         {
             div class="relative"
             {
@@ -229,18 +225,12 @@ fn transactions_view(
                 {
                     h1 class="text-xl font-bold" { "Transactions" }
 
-                    a
-                        href=(import_transaction_route)
-                        class="text-blue-600 hover:text-blue-500
-                            dark:text-blue-500 dark:hover:text-blue-400 underline"
+                    a href=(import_transaction_route) class=(LINK_STYLE)
                     {
                         "Import Transactions"
                     }
 
-                    a
-                        href=(create_transaction_route)
-                        class="text-blue-600 hover:text-blue-500
-                            dark:text-blue-500 dark:hover:text-blue-400 underline"
+                    a href=(create_transaction_route) class=(LINK_STYLE)
                     {
                         "Create Transaction"
                     }
@@ -251,9 +241,7 @@ fn transactions_view(
                     table class="w-full text-sm text-left rtl:text-right
                         text-gray-500 dark:text-gray-400"
                     {
-                        thead
-                            class="text-xs text-gray-700 uppercase bg-gray-50
-                            dark:bg-gray-700 dark:text-gray-400"
+                        thead class=(TABLE_HEADER_STYLE)
                         {
                             tr
                             {
@@ -261,19 +249,19 @@ fn transactions_view(
                                 {
                                     "Amount"
                                 }
-                                th scope="col" class="px-6 py-3"
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
                                     "Date"
                                 }
-                                th scope="col" class="px-6 py-3"
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
                                     "Description"
                                 }
-                                th scope="col" class="px-6 py-3"
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
                                     "Tags"
                                 }
-                                th scope="col" class="px-6 py-3"
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
                                     "Actions"
                                 }
