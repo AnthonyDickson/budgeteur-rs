@@ -50,6 +50,7 @@
 - Use HTML5 elements where possible: https://dev.to/maxprilutskiy/html5-elements-you-didnt-know-you-need-gan
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
+- Update dependencies
 - Refactor common testing functions into a separate module.
 - Ensure page layout fits on smartphone screen
 - Review UI design
