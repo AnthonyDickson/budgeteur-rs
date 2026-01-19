@@ -21,7 +21,6 @@ mod app_state;
 mod auth;
 mod csv_import;
 mod dashboard;
-mod dashboard_preferences;
 mod database_id;
 mod db;
 mod endpoints;

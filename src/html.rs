@@ -308,3 +308,16 @@ pub fn format_currency(number: f64) -> String {
 
     formatted_string
 }
+
+/// A link with blue text for use in a <p> tag.
+pub fn link(url: &str, text: &str) -> Markup {
+    html! (
+        a
+            href=(url)
+            class="text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400 underline"
+        {
+          (text)
+        }
+
+    )
+}

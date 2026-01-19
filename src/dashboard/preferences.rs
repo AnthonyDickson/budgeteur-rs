@@ -28,7 +28,7 @@ pub fn create_dashboard_excluded_tags_table(
     Ok(())
 }
 
-/// Save the list of excluded tag IDs for dashboard summary calculations.
+/// Saves the list of excluded tag IDs for dashboard summary calculations.
 ///
 /// This function replaces all currently excluded tags with the provided list.
 ///
@@ -40,7 +40,10 @@ pub fn create_dashboard_excluded_tags_table(
 /// Returns [Error::SqlError] if:
 /// - Database transaction fails
 /// - SQL query preparation or execution fails
-pub fn save_excluded_tags(tag_ids: Vec<DatabaseId>, connection: &Connection) -> Result<(), Error> {
+pub(super) fn save_excluded_tags(
+    tag_ids: Vec<DatabaseId>,
+    connection: &Connection,
+) -> Result<(), Error> {
     let transaction = connection.unchecked_transaction()?;
 
     // Clear all existing excluded tags
@@ -58,19 +61,19 @@ pub fn save_excluded_tags(tag_ids: Vec<DatabaseId>, connection: &Connection) -> 
     Ok(())
 }
 
-/// Get the list of tag IDs that are currently excluded from dashboard summary calculations.
+/// Gets the list of tag IDs that are currently excluded from dashboard summary calculations.
 ///
 /// # Arguments
 /// * `connection` - Database connection reference
 ///
 /// # Returns
-/// Vector of tag IDs that should be excluded from dashboard summaries
+/// Vector of tag IDs that should be excluded from dashboard summaries.
 ///
 /// # Errors
 /// Returns [Error::SqlError] if:
 /// - Database connection fails
 /// - SQL query preparation or execution fails
-pub fn get_excluded_tags(connection: &Connection) -> Result<Vec<DatabaseId>, Error> {
+pub(super) fn get_excluded_tags(connection: &Connection) -> Result<Vec<DatabaseId>, Error> {
     let mut stmt =
         connection.prepare("SELECT tag_id FROM dashboard_excluded_tags ORDER BY tag_id")?;
 
