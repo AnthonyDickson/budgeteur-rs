@@ -17,17 +17,13 @@ use charming::{
     },
     series::{Line, bar},
 };
-use maud::PreEscaped;
 
-use crate::{
-    dashboard::{
-        aggregation::{
-            aggregate_by_month, calculate_running_balances, format_month_labels,
-            get_monthly_label_and_value_pairs, get_sorted_months, group_monthly_expenses_by_tag,
-        },
-        transaction::Transaction,
+use crate::dashboard::{
+    aggregation::{
+        aggregate_by_month, calculate_running_balances, format_month_labels,
+        get_monthly_label_and_value_pairs, get_sorted_months, group_monthly_expenses_by_tag,
     },
-    html::HeadElement,
+    transaction::Transaction,
 };
 
 /// A dashboard chart with its HTML container ID and ECharts configuration.
@@ -37,50 +33,55 @@ pub(super) struct DashboardChart {
     /// The ECharts configuration as a JSON string
     pub options: String,
 }
-
-/// Generates JavaScript initialization code for dashboard charts.
+/// Generates inline JavaScript for initializing charts (without DOMContentLoaded wrapper).
 ///
-/// Creates scripts that initialize ECharts instances with dark mode support
-/// and responsive resizing.
+/// This is used when charts are dynamically loaded via HTMX and need to initialize
+/// immediately when the content is swapped in.
 ///
 /// # Arguments
 /// * `charts` - The charts to generate initialization scripts for
 ///
 /// # Returns
-/// HeadElement containing the initialization JavaScript.
-pub(super) fn charts_script(charts: &[DashboardChart]) -> HeadElement {
-    let script_content = charts
+/// JavaScript code as a string that initializes all charts.
+pub(super) fn charts_inline_script(charts: &[DashboardChart]) -> String {
+    charts
         .iter()
         .map(|chart| {
             format!(
                 r#"(function() {{
                     const chartDom = document.getElementById("{}");
+                    if (!chartDom) {{
+                        console.error("Chart container not found: {}");
+                        return;
+                    }}
+                    
+                    // Dispose of existing chart instance if any
+                    const existingChart = echarts.getInstanceByDom(chartDom);
+                    if (existingChart) {{
+                        existingChart.dispose();
+                    }}
+                    
                     const chart = echarts.init(chartDom);
                     const option = {};
                     chart.setOption(option);
 
-                    window.addEventListener('resize', chart.resize);
+                    // Re-attach resize listener
+                    window.addEventListener('resize', () => chart.resize());
 
+                    // Handle dark mode
                     const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
                     const updateTheme = () => {{
                         const isDarkMode = darkModeMediaQuery.matches;
                         chart.setTheme(isDarkMode ? 'dark' : 'default');
-                    }}
+                    }};
                     darkModeMediaQuery.addEventListener('change', updateTheme);
                     updateTheme();
                 }})();"#,
-                chart.id, chart.options
+                chart.id, chart.id, chart.options
             )
         })
         .collect::<Vec<_>>()
-        .join("\n");
-
-    let wrapped_script = format!(
-        "document.addEventListener('DOMContentLoaded', function() {{\n{}\n}});",
-        script_content
-    );
-
-    HeadElement::ScriptSource(PreEscaped(wrapped_script))
+        .join("\n")
 }
 
 pub(super) fn net_income_chart(transactions: &[Transaction]) -> Chart {

@@ -10,7 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Form;
-use maud::{Markup, html};
+use maud::{Markup, PreEscaped, html};
 use rusqlite::Connection;
 use serde::Deserialize;
 use std::{
@@ -24,7 +24,9 @@ use crate::{
     AppState, Error,
     account::get_total_account_balance,
     dashboard::{
-        charts::{DashboardChart, balances_chart, charts_script, expenses_chart, net_income_chart},
+        charts::{
+            DashboardChart, balances_chart, charts_inline_script, expenses_chart, net_income_chart,
+        },
         preferences::{get_excluded_tags, save_excluded_tags},
         tables::{monthly_summary_table, summary_statistics_table},
         transaction::{Transaction, get_transactions_in_date_range},
@@ -345,6 +347,14 @@ fn dashboard_view<'a>(
                 }
             }
 
+            // NOTE: Charts must be initialized inline, not in <head>.
+            // HTMX content swaps don't trigger DOMContentLoaded, so scripts in <head>
+            // won't re-run. This inline script executes immediately after the chart
+            // containers are swapped in, ensuring charts render on filter changes.
+            script {
+                (PreEscaped(charts_inline_script(charts)))
+            }
+
             @if !tags_with_status.is_empty() {
                 div class="mb-8 w-full"
                 {
@@ -400,7 +410,6 @@ fn dashboard_view<'a>(
     let scripts = [
         HeadElement::ScriptLink("/static/echarts.6.0.0.min.js".to_owned()),
         HeadElement::ScriptLink("/static/echarts-gl.2.0.9.min.js".to_owned()),
-        charts_script(charts),
     ];
 
     base("Dashboard", &scripts, &content)
@@ -440,6 +449,14 @@ fn dashboard_content_partial(
                     (table)
                 }
             }
+        }
+
+        // NOTE: Charts must be initialized inline, not in <head>.
+        // HTMX content swaps don't trigger DOMContentLoaded, so scripts in <head>
+        // won't re-run. This inline script executes immediately after the chart
+        // containers are swapped in, ensuring charts render on filter changes.
+        script {
+            (PreEscaped(charts_inline_script(charts)))
         }
 
         @if !tags_with_status.is_empty() {
