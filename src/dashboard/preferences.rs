@@ -41,9 +41,11 @@ pub fn create_dashboard_excluded_tags_table(
 /// - Database transaction fails
 /// - SQL query preparation or execution fails
 pub(super) fn save_excluded_tags(
-    tag_ids: Vec<DatabaseId>,
+    tag_ids: &[DatabaseId],
     connection: &Connection,
 ) -> Result<(), Error> {
+    // Using unchecked_transaction because we only have &Connection from the MutexGuard.
+    // This is safe because we hold the mutex lock and won't have nested transactions.
     let transaction = connection.unchecked_transaction()?;
 
     // Clear all existing excluded tags
@@ -110,7 +112,7 @@ mod tests {
 
         // Save excluded tags
         let excluded_tags = vec![tag1.id, tag3.id];
-        save_excluded_tags(excluded_tags.clone(), &conn).unwrap();
+        save_excluded_tags(&excluded_tags, &conn).unwrap();
 
         // Get excluded tags
         let result = get_excluded_tags(&conn).unwrap();
@@ -128,11 +130,11 @@ mod tests {
         let tag3 = create_tag(TagName::new("Tag3").unwrap(), &conn).unwrap();
 
         // Save initial excluded tags
-        save_excluded_tags(vec![tag1.id, tag2.id], &conn).unwrap();
+        save_excluded_tags(&[tag1.id, tag2.id], &conn).unwrap();
 
         // Save different excluded tags (should replace)
         let new_excluded = vec![tag3.id];
-        save_excluded_tags(new_excluded.clone(), &conn).unwrap();
+        save_excluded_tags(&new_excluded, &conn).unwrap();
 
         // Get excluded tags
         let result = get_excluded_tags(&conn).unwrap();
@@ -157,7 +159,7 @@ mod tests {
         let tag = create_tag(TagName::new("TestTag").unwrap(), &conn).unwrap();
 
         // Add it to excluded tags
-        save_excluded_tags(vec![tag.id], &conn).unwrap();
+        save_excluded_tags(&[tag.id], &conn).unwrap();
 
         // Verify it's excluded
         let excluded = get_excluded_tags(&conn).unwrap();

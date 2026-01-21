@@ -7,6 +7,7 @@ mod aggregation;
 mod charts;
 mod handlers;
 mod preferences;
+mod tables;
 mod transaction;
 
 pub use handlers::{get_dashboard_page, update_excluded_tags};

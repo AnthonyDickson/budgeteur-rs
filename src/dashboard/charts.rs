@@ -17,7 +17,7 @@ use charming::{
     },
     series::{Line, bar},
 };
-use maud::{Markup, PreEscaped, html};
+use maud::PreEscaped;
 
 use crate::{
     dashboard::{
@@ -36,32 +36,6 @@ pub(super) struct DashboardChart {
     pub id: &'static str,
     /// The ECharts configuration as a JSON string
     pub options: String,
-}
-
-/// Renders the HTML containers for dashboard charts.
-///
-/// # Arguments
-/// * `charts` - The charts to render containers for
-///
-/// # Returns
-/// Maud markup containing a grid of chart container divs.
-pub(super) fn charts_view(charts: &[DashboardChart]) -> Markup {
-    html!(
-        section
-            id="charts"
-            class="w-full mx-auto mb-4"
-        {
-            div class="grid grid-cols-1 xl:grid-cols-2 gap-4"
-            {
-                @for chart in charts {
-                    div
-                        id=(chart.id)
-                        class="min-h-[380px] rounded dark:bg-gray-100"
-                    {}
-                }
-            }
-        }
-    )
 }
 
 /// Generates JavaScript initialization code for dashboard charts.
