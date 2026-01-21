@@ -55,6 +55,7 @@ pub const PAGE_CONTAINER_STYLE: &str =
 pub enum HeadElement {
     /// The file path or URL to a JavaScript script.
     ScriptLink(String),
+    #[allow(dead_code)]
     /// JavaScript source code.
     ScriptSource(PreEscaped<String>),
     Style(PreEscaped<String>),
