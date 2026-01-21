@@ -13,18 +13,20 @@ use axum_extra::extract::Form;
 use maud::{Markup, html};
 use rusqlite::Connection;
 use serde::Deserialize;
-use std::sync::{Arc, Mutex};
-use time::{Duration, OffsetDateTime};
+use std::{
+    collections::HashSet,
+    ops::RangeInclusive,
+    sync::{Arc, Mutex},
+};
+use time::{Date, Duration, OffsetDateTime, UtcOffset};
 
 use crate::{
     AppState, Error,
     account::get_total_account_balance,
     dashboard::{
-        charts::{
-            DashboardChart, balances_chart, charts_script, charts_view, expenses_chart,
-            net_income_chart,
-        },
+        charts::{DashboardChart, balances_chart, charts_script, expenses_chart, net_income_chart},
         preferences::{get_excluded_tags, save_excluded_tags},
+        tables::{monthly_summary_table, summary_statistics_table},
         transaction::{Transaction, get_transactions_in_date_range},
     },
     database_id::DatabaseId,
@@ -37,18 +39,6 @@ use crate::{
 
 /// Number of days to look back for yearly summary calculations  
 const YEARLY_PERIOD_DAYS: i64 = 365;
-
-/// A tag paired with its exclusion status for the dashboard filter UI.
-///
-/// Used to render checkboxes that allow users to exclude specific tags
-/// from dashboard calculations.
-#[derive(Debug, Clone)]
-struct TagWithExclusion {
-    /// The tag
-    tag: Tag,
-    /// Whether this tag is currently excluded from dashboard summaries
-    is_excluded: bool,
-}
 
 /// The state needed for displaying the dashboard page.
 ///
@@ -69,6 +59,213 @@ impl FromRef<AppState> for DashboardState {
             local_timezone: state.local_timezone.clone(),
         }
     }
+}
+
+/// Form data for updating excluded tags.
+#[derive(Deserialize)]
+pub struct ExcludedTagsForm {
+    /// List of tag IDs to exclude from dashboard summaries
+    #[serde(default)]
+    pub excluded_tags: Vec<DatabaseId>,
+}
+
+/// A tag paired with its exclusion status for the dashboard filter UI.
+///
+/// Used to render checkboxes that allow users to exclude specific tags
+/// from dashboard calculations.
+#[derive(Debug, Clone)]
+struct TagWithExclusion {
+    /// The tag
+    tag: Tag,
+    /// Whether this tag is currently excluded from dashboard summaries
+    is_excluded: bool,
+}
+
+/// Holds all the data needed to render the dashboard.
+struct DashboardData {
+    tags_with_status: Vec<TagWithExclusion>,
+    charts: [DashboardChart; 3],
+    tables: Vec<Markup>,
+}
+
+/// Display a page with an overview of the user's data.
+pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Result<Response, Error> {
+    let connection = state
+        .db_connection
+        .lock()
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
+
+    let nav_bar = NavBar::new(endpoints::DASHBOARD_VIEW);
+
+    // Get excluded tags from database
+    let excluded_tag_ids = get_excluded_tags(&connection)
+        .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
+
+    // Build all dashboard data
+    match build_dashboard_data(&excluded_tag_ids, &state.local_timezone, &connection)? {
+        Some(data) => {
+            Ok(
+                dashboard_view(nav_bar, &data.tags_with_status, &data.charts, &data.tables)
+                    .into_response(),
+            )
+        }
+        None => Ok(dashboard_no_data_view(nav_bar).into_response()),
+    }
+}
+
+/// API endpoint to update excluded tags and return updated summaries
+pub async fn update_excluded_tags(
+    State(state): State<DashboardState>,
+    Form(form): Form<ExcludedTagsForm>,
+) -> Response {
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
+
+    // Save the excluded tags to database
+    if let Err(error) = save_excluded_tags(&form.excluded_tags, &connection) {
+        tracing::error!("Failed to save dashboard preferences: {error}");
+        return Error::DashboardPreferencesSaveError.into_alert_response();
+    }
+
+    // Build all dashboard data with the new exclusions
+    let data = match build_dashboard_data(&form.excluded_tags, &state.local_timezone, &connection) {
+        Ok(Some(data)) => data,
+        Ok(None) => {
+            // Shouldn't happen since we're updating filters, not deleting all transactions
+            tracing::warn!("No transaction data after updating excluded tags");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+        Err(error) => {
+            tracing::error!("Failed to build dashboard data: {error}");
+            return error.into_alert_response();
+        }
+    };
+
+    dashboard_content_partial(&data.tags_with_status, &data.charts, &data.tables).into_response()
+}
+
+/// Gets the date range for dashboard queries (last year from today).
+///
+/// # Arguments
+/// * `local_timezone` - The local timezone offset
+///
+/// # Returns
+/// Inclusive date range from one year ago to today.
+fn get_dashboard_date_range(local_timezone: UtcOffset) -> RangeInclusive<Date> {
+    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
+    let one_year_ago = today - Duration::days(YEARLY_PERIOD_DAYS);
+    one_year_ago..=today
+}
+
+/// Fetches and builds all data needed for the dashboard display.
+///
+/// # Arguments
+/// * `excluded_tag_ids` - Tag IDs to exclude from calculations
+/// * `local_timezone_name` - Timezone name like "Pacific/Auckland"
+/// * `connection` - Database connection
+///
+/// # Returns
+/// All dashboard data ready for rendering, or `None` if no transaction data exists.
+///
+/// # Errors
+/// Returns error if database queries fail or timezone is invalid.
+fn build_dashboard_data(
+    excluded_tag_ids: &[DatabaseId],
+    local_timezone_name: &str,
+    connection: &Connection,
+) -> Result<Option<DashboardData>, Error> {
+    // Get all tags and build tags with exclusion status
+    let available_tags = get_all_tags(connection)
+        .inspect_err(|error| tracing::error!("could not get tags: {error}"))?;
+
+    let excluded_set: HashSet<_> = excluded_tag_ids.iter().collect();
+    let tags_with_status: Vec<TagWithExclusion> = available_tags
+        .into_iter()
+        .map(|tag| TagWithExclusion {
+            is_excluded: excluded_set.contains(&tag.id),
+            tag,
+        })
+        .collect();
+
+    // Get timezone offset
+    let local_timezone = get_local_offset(local_timezone_name).ok_or_else(|| {
+        tracing::error!("Invalid timezone {}", local_timezone_name);
+        Error::InvalidTimezoneError(local_timezone_name.to_owned())
+    })?;
+
+    // Prepare excluded tags for query
+    let excluded_tags_slice = if excluded_tag_ids.is_empty() {
+        None
+    } else {
+        Some(excluded_tag_ids)
+    };
+
+    // Get transactions for the last year
+    let date_range = get_dashboard_date_range(local_timezone);
+    let transactions = get_transactions_in_date_range(date_range, excluded_tags_slice, connection)
+        .inspect_err(|error| {
+            tracing::error!("Could not get transactions for last year: {error}")
+        })?;
+
+    // Return None if no transaction data exists
+    if transactions.is_empty() {
+        return Ok(None);
+    }
+
+    // Get total account balance
+    let total_account_balance = get_total_account_balance(connection).inspect_err(|error| {
+        tracing::error!("Could not calculate total account balance: {error}")
+    })?;
+
+    // Build charts and tables
+    let charts = build_dashboard_charts(&transactions, total_account_balance);
+    let tables = vec![
+        summary_statistics_table(&transactions, total_account_balance),
+        monthly_summary_table(&transactions, total_account_balance),
+    ];
+
+    Ok(Some(DashboardData {
+        tags_with_status,
+        charts,
+        tables,
+    }))
+}
+
+/// Creates the array of dashboard charts from transaction data.
+///
+/// Generates three charts: net income, balances, and expenses by tag.
+/// The chart options are serialized to JSON for ECharts consumption.
+///
+/// # Arguments
+/// * `transactions` - Transaction data for the last year
+/// * `total_account_balance` - Current total balance across all accounts
+///
+/// # Returns
+/// Array of three DashboardChart instances ready for rendering.
+fn build_dashboard_charts(
+    transactions: &[Transaction],
+    total_account_balance: f64,
+) -> [DashboardChart; 3] {
+    [
+        DashboardChart {
+            id: "net-income-chart",
+            options: net_income_chart(transactions).to_string(),
+        },
+        DashboardChart {
+            id: "balances-chart",
+            options: balances_chart(total_account_balance, transactions).to_string(),
+        },
+        DashboardChart {
+            id: "expenses-chart",
+            options: expenses_chart(transactions).to_string(),
+        },
+    ]
 }
 
 /// Renders the dashboard page when no transaction data exists.
@@ -105,29 +302,48 @@ fn dashboard_no_data_view(nav_bar: NavBar) -> Markup {
     base("Dashboard", &[], &content)
 }
 
-/// Renders the main dashboard page with charts and tag filter controls.
+/// Renders the main dashboard page with charts, tables, and tag filter controls.
 ///
 /// # Arguments
 /// * `nav_bar` - Navigation bar component
 /// * `tags_with_status` - Tags with their exclusion status for the filter UI
 /// * `charts` - Dashboard charts to display
+/// * `tables` - Dashboard tables to display
 fn dashboard_view<'a>(
     nav_bar: NavBar<'a>,
     tags_with_status: &[TagWithExclusion],
     charts: &[DashboardChart],
+    tables: &[Markup],
 ) -> Markup {
     let nav_bar = nav_bar.into_html();
     let excluded_tags_endpoint = endpoints::DASHBOARD_EXCLUDED_TAGS;
-    let charts_view = charts_view(charts);
 
     let content = html!(
         (nav_bar)
 
         div
+            id="dashboard-content"
             class="flex flex-col items-center px-2 lg:px-6 lg:py-8 mx-auto
                 max-w-screen-xl text-gray-900 dark:text-white"
         {
-            (charts_view)
+            section
+                id="charts"
+                class="w-full mx-auto mb-4"
+            {
+                div class="grid grid-cols-1 xl:grid-cols-2 gap-4"
+                {
+                    @for chart in charts {
+                        div
+                            id=(chart.id)
+                            class="min-h-[380px] rounded dark:bg-gray-100"
+                        {}
+                    }
+
+                    @for table in tables {
+                        (table)
+                    }
+                }
+            }
 
             @if !tags_with_status.is_empty() {
                 div class="mb-8 w-full"
@@ -136,7 +352,7 @@ fn dashboard_view<'a>(
 
                     form
                         hx-post=(excluded_tags_endpoint)
-                        hx-target="#charts"
+                        hx-target="#dashboard-content"
                         hx-target-error="#alert-container"
                         hx-swap="innerHTML"
                         hx-trigger="change"
@@ -144,7 +360,7 @@ fn dashboard_view<'a>(
                     {
                         p class="text-sm text-gray-600 dark:text-gray-400 mb-3"
                         {
-                            "Exclude transactions with these tags from the charts above:"
+                            "Exclude transactions with these tags from the charts and table above:"
                         }
 
                         div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
@@ -190,166 +406,92 @@ fn dashboard_view<'a>(
     base("Dashboard", &scripts, &content)
 }
 
-/// Creates the array of dashboard charts from transaction data.
+/// Renders the updated dashboard content (charts and tables) for HTMX updates.
 ///
-/// Generates three charts: net income, balances, and expenses by tag.
-/// The chart options are serialized to JSON for ECharts consumption.
+/// This is used when the tag filter is changed to update the dashboard
+/// without requiring a full page reload.
 ///
 /// # Arguments
-/// * `transactions` - Transaction data for the last year
-/// * `total_account_balance` - Current total balance across all accounts
-///
-/// # Returns
-/// Array of three DashboardChart instances ready for rendering.
-fn build_dashboard_charts(
-    transactions: &[Transaction],
-    total_account_balance: f64,
-) -> [DashboardChart; 3] {
-    [
-        DashboardChart {
-            id: "net-income-chart",
-            options: net_income_chart(transactions).to_string(),
-        },
-        DashboardChart {
-            id: "balances-chart",
-            options: balances_chart(total_account_balance, transactions).to_string(),
-        },
-        DashboardChart {
-            id: "expenses-chart",
-            options: expenses_chart(transactions).to_string(),
-        },
-    ]
-}
+/// * `tags_with_status` - Tags with their exclusion status for the filter UI
+/// * `charts` - Dashboard charts to display
+/// * `tables` - Dashboard tables to display
+fn dashboard_content_partial(
+    tags_with_status: &[TagWithExclusion],
+    charts: &[DashboardChart],
+    tables: &[Markup],
+) -> Markup {
+    let excluded_tags_endpoint = endpoints::DASHBOARD_EXCLUDED_TAGS;
 
-/// Display a page with an overview of the user's data.
-pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Result<Response, Error> {
-    let connection = state
-        .db_connection
-        .lock()
-        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
-        .map_err(|_| Error::DatabaseLockError)?;
+    html!(
+        section
+            id="charts"
+            class="w-full mx-auto mb-4"
+        {
+            div class="grid grid-cols-1 xl:grid-cols-2 gap-4"
+            {
+                @for chart in charts {
+                    div
+                        id=(chart.id)
+                        class="min-h-[380px] rounded dark:bg-gray-100"
+                    {}
+                }
 
-    let nav_bar = NavBar::new(endpoints::DASHBOARD_VIEW);
-
-    // Get available tags and excluded tags for dashboard summaries
-    let available_tags = get_all_tags(&connection)
-        .inspect_err(|error| tracing::error!("could not get tags: {error}"))?;
-    let excluded_tag_ids = get_excluded_tags(&connection)
-        .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
-
-    // Create tags with exclusion status
-    let tags_with_status: Vec<TagWithExclusion> = available_tags
-        .into_iter()
-        .map(|tag| TagWithExclusion {
-            is_excluded: excluded_tag_ids.contains(&tag.id),
-            tag,
-        })
-        .collect();
-
-    let Some(local_timezone) = get_local_offset(&state.local_timezone) else {
-        tracing::error!("Invalid timezone {}", state.local_timezone);
-        return Err(Error::InvalidTimezoneError(state.local_timezone));
-    };
-
-    let excluded_tags_slice = if excluded_tag_ids.is_empty() {
-        None
-    } else {
-        Some(excluded_tag_ids.as_slice())
-    };
-
-    // Calculate yearly summary (last 365 days)
-    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
-    let one_year_ago = today - Duration::days(YEARLY_PERIOD_DAYS);
-    let transactions =
-        get_transactions_in_date_range(one_year_ago..=today, excluded_tags_slice, &connection)
-            .inspect_err(|error| {
-                tracing::error!("Could not get transactions for last year: {error}")
-            })?;
-
-    if transactions.is_empty() {
-        return Ok(dashboard_no_data_view(nav_bar).into_response());
-    }
-
-    // Get total account balance
-    let total_account_balance = get_total_account_balance(&connection).inspect_err(|error| {
-        tracing::error!("Could not calculate total account balance: {error}")
-    })?;
-
-    let charts = build_dashboard_charts(&transactions, total_account_balance);
-
-    Ok(dashboard_view(nav_bar, &tags_with_status, &charts).into_response())
-}
-
-/// Form data for updating excluded tags.
-#[derive(Deserialize)]
-pub struct ExcludedTagsForm {
-    /// List of tag IDs to exclude from dashboard summaries
-    #[serde(default)]
-    pub excluded_tags: Vec<DatabaseId>,
-}
-
-/// API endpoint to update excluded tags and return updated summaries
-pub async fn update_excluded_tags(
-    State(state): State<DashboardState>,
-    Form(form): Form<ExcludedTagsForm>,
-) -> Response {
-    let connection = match state.db_connection.lock() {
-        Ok(connection) => connection,
-        Err(error) => {
-            tracing::error!("could not acquire database lock: {error}");
-            return Error::DatabaseLockError.into_alert_response();
+                @for table in tables {
+                    (table)
+                }
+            }
         }
-    };
 
-    // Save the excluded tags
-    let excluded_tags = form.excluded_tags.clone();
+        @if !tags_with_status.is_empty() {
+            div class="mb-8 w-full"
+            {
+                h3 class="text-xl font-semibold mb-4" { "Filter Out Tags" }
 
-    match save_excluded_tags(form.excluded_tags.clone(), &connection) {
-        Ok(_) => {}
-        Err(error) => {
-            tracing::error!("Failed to save dashboard preferences: {error}");
-            return Error::DashboardPreferencesSaveError.into_alert_response();
+                form
+                    hx-post=(excluded_tags_endpoint)
+                    hx-target="#dashboard-content"
+                    hx-target-error="#alert-container"
+                    hx-swap="innerHTML"
+                    hx-trigger="change"
+                    class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg"
+                {
+                    p class="text-sm text-gray-600 dark:text-gray-400 mb-3"
+                    {
+                        "Exclude transactions with these tags from the charts and table above:"
+                    }
+
+                    div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
+                    {
+                        @for tag_status in tags_with_status {
+                            label class="flex items-center space-x-2"
+                            {
+                                input
+                                    type="checkbox"
+                                    name="excluded_tags"
+                                    value=(tag_status.tag.id)
+                                    checked[tag_status.is_excluded]
+                                    class="rounded-sm border-gray-300
+                                        text-blue-600 shadow-xs
+                                        focus:border-blue-300 focus:ring-3
+                                        focus:ring-blue-200/50"
+                                ;
+
+                                span
+                                    class="inline-flex items-center
+                                        px-2.5 py-0.5
+                                        text-xs font-semibold text-blue-800
+                                        bg-blue-100 rounded-full
+                                        dark:bg-blue-900 dark:text-blue-300"
+                                {
+                                    (tag_status.tag.name)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
-    };
-
-    // Get updated charts
-    let Some(local_timezone) = get_local_offset(&state.local_timezone) else {
-        tracing::error!("Invalid timezone {}", state.local_timezone);
-        return Error::InvalidTimezoneError(state.local_timezone).into_alert_response();
-    };
-
-    let excluded_tags_slice = if excluded_tags.is_empty() {
-        None
-    } else {
-        Some(excluded_tags.as_slice())
-    };
-
-    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
-    let one_year_ago = today - Duration::days(YEARLY_PERIOD_DAYS);
-    let transactions = match get_transactions_in_date_range(
-        one_year_ago..=today,
-        excluded_tags_slice,
-        &connection,
-    ) {
-        Ok(transactions) => transactions,
-        Err(error) => {
-            tracing::error!("Could not get transactions for last year: {error}");
-            return error.into_alert_response();
-        }
-    };
-
-    // Get total account balance
-    let total_account_balance = match get_total_account_balance(&connection) {
-        Ok(total_account_balance) => total_account_balance,
-        Err(error) => {
-            tracing::error!("could not calculate total account balance: {error}");
-            return error.into_alert_response();
-        }
-    };
-
-    let charts = build_dashboard_charts(&transactions, total_account_balance);
-
-    charts_view(&charts).into_response()
+    )
 }
 
 #[cfg(test)]
@@ -364,7 +506,6 @@ mod tests {
 
     use crate::{
         dashboard::handlers::DashboardState,
-        database_id::DatabaseId,
         db::initialize,
         tag::{TagName, create_tag},
         transaction::{Transaction, create_transaction},
@@ -410,6 +551,9 @@ mod tests {
         assert_chart_exists(&html, "net-income-chart");
         assert_chart_exists(&html, "balances-chart");
         assert_chart_exists(&html, "expenses-chart");
+
+        // Check that table is present
+        assert_table_exists(&html);
     }
 
     #[tokio::test]
@@ -493,6 +637,15 @@ mod tests {
         );
     }
 
+    #[track_caller]
+    fn assert_table_exists(html: &Html) {
+        let selector = Selector::parse("table").unwrap();
+        assert!(
+            html.select(&selector).next().is_some(),
+            "Monthly summary table not found"
+        );
+    }
+
     #[test]
     fn excluded_tags_form_handles_multiple_values() {
         // Test multiple values
@@ -508,6 +661,6 @@ mod tests {
         // Test no values (when no checkboxes are selected)
         let form_data = "";
         let form: ExcludedTagsForm = serde_html_form::from_str(form_data).unwrap();
-        assert_eq!(form.excluded_tags, Vec::<DatabaseId>::new());
+        assert_eq!(form.excluded_tags, Vec::<i64>::new());
     }
 }
