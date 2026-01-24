@@ -2,10 +2,9 @@
 
 ## Stage One: Budgeting
 
-- Implement expense cards, see [design spec](./docs/expenses-by-tag-design-spec.md) and
-  [technical spec](./docs/expenses-by-tag-tech-spec.md)
 - Currently shows up to 13 months (curr + curr of last year), remove first to avoid showing part of past month's transactions?
 - Dashboard tables:
+  - Separate from chart grid so tables display on same row in desktop view
   - Make text in tables right aligned
   - Make it obvious that tables can be scrolled (always show scroll bar?)
   - Investigate flickering of sticky header column in monthly summaries table on iOS when scrolling vertically

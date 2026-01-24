@@ -24,6 +24,8 @@ use crate::{
     AppState, Error,
     account::get_total_account_balance,
     dashboard::{
+        aggregation::{TagExpenseStats, calculate_tag_expense_statistics},
+        cards::expense_cards_view,
         charts::{
             DashboardChart, balances_chart, charts_inline_script, expenses_chart, net_income_chart,
         },
@@ -88,6 +90,7 @@ struct DashboardData {
     tags_with_status: Vec<TagWithExclusion>,
     charts: [DashboardChart; 3],
     tables: Vec<Markup>,
+    tag_stats: Vec<TagExpenseStats>,
 }
 
 /// Display a page with an overview of the user's data.
@@ -100,18 +103,18 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Result<R
 
     let nav_bar = NavBar::new(endpoints::DASHBOARD_VIEW);
 
-    // Get excluded tags from database
     let excluded_tag_ids = get_excluded_tags(&connection)
         .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
 
-    // Build all dashboard data
     match build_dashboard_data(&excluded_tag_ids, &state.local_timezone, &connection)? {
-        Some(data) => {
-            Ok(
-                dashboard_view(nav_bar, &data.tags_with_status, &data.charts, &data.tables)
-                    .into_response(),
-            )
-        }
+        Some(data) => Ok(dashboard_view(
+            nav_bar,
+            &data.tags_with_status,
+            &data.charts,
+            &data.tables,
+            &data.tag_stats,
+        )
+        .into_response()),
         None => Ok(dashboard_no_data_view(nav_bar).into_response()),
     }
 }
@@ -149,7 +152,13 @@ pub async fn update_excluded_tags(
         }
     };
 
-    dashboard_content_partial(&data.tags_with_status, &data.charts, &data.tables).into_response()
+    dashboard_content_partial(
+        &data.tags_with_status,
+        &data.charts,
+        &data.tables,
+        &data.tag_stats,
+    )
+    .into_response()
 }
 
 /// Gets the date range for dashboard queries (last year from today).
@@ -159,7 +168,7 @@ pub async fn update_excluded_tags(
 ///
 /// # Returns
 /// Inclusive date range from one year ago to today.
-fn get_dashboard_date_range(local_timezone: UtcOffset) -> RangeInclusive<Date> {
+fn year_to_date(local_timezone: UtcOffset) -> RangeInclusive<Date> {
     let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
     let one_year_ago = today - Duration::days(YEARLY_PERIOD_DAYS);
     one_year_ago..=today
@@ -182,7 +191,6 @@ fn build_dashboard_data(
     local_timezone_name: &str,
     connection: &Connection,
 ) -> Result<Option<DashboardData>, Error> {
-    // Get all tags and build tags with exclusion status
     let available_tags = get_all_tags(connection)
         .inspect_err(|error| tracing::error!("could not get tags: {error}"))?;
 
@@ -195,47 +203,46 @@ fn build_dashboard_data(
         })
         .collect();
 
-    // Get timezone offset
     let local_timezone = get_local_offset(local_timezone_name).ok_or_else(|| {
         tracing::error!("Invalid timezone {}", local_timezone_name);
         Error::InvalidTimezoneError(local_timezone_name.to_owned())
     })?;
 
-    // Prepare excluded tags for query
     let excluded_tags_slice = if excluded_tag_ids.is_empty() {
         None
     } else {
         Some(excluded_tag_ids)
     };
 
-    // Get transactions for the last year
-    let date_range = get_dashboard_date_range(local_timezone);
+    let date_range = year_to_date(local_timezone);
     let transactions = get_transactions_in_date_range(date_range, excluded_tags_slice, connection)
         .inspect_err(|error| {
             tracing::error!("Could not get transactions for last year: {error}")
         })?;
 
-    // Return None if no transaction data exists
     if transactions.is_empty() {
         return Ok(None);
     }
 
-    // Get total account balance
     let total_account_balance = get_total_account_balance(connection).inspect_err(|error| {
         tracing::error!("Could not calculate total account balance: {error}")
     })?;
 
-    // Build charts and tables
     let charts = build_dashboard_charts(&transactions, total_account_balance);
     let tables = vec![
         summary_statistics_table(&transactions, total_account_balance),
         monthly_summary_table(&transactions, total_account_balance),
     ];
 
+    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
+    let current_month = today.replace_day(1).unwrap();
+    let tag_stats = calculate_tag_expense_statistics(&transactions, current_month);
+
     Ok(Some(DashboardData {
         tags_with_status,
         charts,
         tables,
+        tag_stats,
     }))
 }
 
@@ -311,11 +318,13 @@ fn dashboard_no_data_view(nav_bar: NavBar) -> Markup {
 /// * `tags_with_status` - Tags with their exclusion status for the filter UI
 /// * `charts` - Dashboard charts to display
 /// * `tables` - Dashboard tables to display
+/// * `tag_stats` - Expense cards to display
 fn dashboard_view<'a>(
     nav_bar: NavBar<'a>,
     tags_with_status: &[TagWithExclusion],
     charts: &[DashboardChart],
     tables: &[Markup],
+    tag_stats: &[TagExpenseStats],
 ) -> Markup {
     let nav_bar = nav_bar.into_html();
     let excluded_tags_endpoint = endpoints::DASHBOARD_EXCLUDED_TAGS;
@@ -346,6 +355,8 @@ fn dashboard_view<'a>(
                     }
                 }
             }
+
+            (expense_cards_view(tag_stats))
 
             // NOTE: Charts must be initialized inline, not in <head>.
             // HTMX content swaps don't trigger DOMContentLoaded, so scripts in <head>
@@ -428,6 +439,7 @@ fn dashboard_content_partial(
     tags_with_status: &[TagWithExclusion],
     charts: &[DashboardChart],
     tables: &[Markup],
+    tag_stats: &[TagExpenseStats],
 ) -> Markup {
     let excluded_tags_endpoint = endpoints::DASHBOARD_EXCLUDED_TAGS;
 
@@ -450,6 +462,8 @@ fn dashboard_content_partial(
                 }
             }
         }
+
+        (expense_cards_view(tag_stats))
 
         // NOTE: Charts must be initialized inline, not in <head>.
         // HTMX content swaps don't trigger DOMContentLoaded, so scripts in <head>
