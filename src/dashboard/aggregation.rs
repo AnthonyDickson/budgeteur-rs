@@ -1,8 +1,6 @@
-//! Transaction data aggregation and transformation for dashboard.
+//! Transaction data aggregation for dashboard charts and expense cards.
 //!
-//! Provides functions to aggregate transaction data by month, calculate running
-//! balances, group expenses by tag, compute summary statistics, and format data
-//! for chart and table display.
+//! See `expenses-by-tag-tech-spec.md` for detailed implementation specifications.
 
 use std::collections::{HashMap, HashSet};
 use time::Date;
@@ -32,17 +30,17 @@ pub(super) struct SummaryStatistics {
 pub(super) struct TagExpenseStats {
     /// Tag name (as entered by user, may include emoji)
     pub tag: String,
-    /// This month's expenses for tag (absolute value)
-    pub current_month_amount: f64,
+    /// Last complete month's expenses for tag (absolute value)
+    pub last_month_amount: f64,
     /// Percentage of total expenses this tag represents
     pub percentage_of_total: f64,
     /// Average monthly expenses over available data
     pub monthly_average: f64,
     /// Percentage change from average (+/- percent)
     pub percentage_change: f64,
-    /// Projected annual delta: (current - average) * 12
+    /// Projected annual delta: (comparison_month - average) * 12
     pub annual_delta: f64,
-    /// Number of months of data available for this tag
+    /// Number of complete months of data available
     pub months_of_data: usize,
 }
 
@@ -219,7 +217,7 @@ pub(super) fn calculate_running_balances(
 }
 
 // ============================================================================
-// EXPENSE GROUPING (used by expense chart)
+// EXPENSE GROUPING (used by expense chart and expense cards)
 // ============================================================================
 
 /// Groups expense transactions by tag and calculates monthly totals.
@@ -291,6 +289,148 @@ fn calculate_monthly_expenses(
 }
 
 // ============================================================================
+// EXPENSES BY TAG (used by expenses by tag cards)
+// ============================================================================
+
+/// Calculates expense statistics by tag for the expense cards.
+///
+/// # Implementation Notes
+/// - Historical average **excludes** the comparison month (prevents circular comparison)
+/// - Requires at least 2 complete months of data
+/// - If only one month exists, `percentage_change` will be 0
+///
+/// See `expenses-by-tag-tech-spec.md` for algorithm details.
+pub(super) fn calculate_tag_expense_statistics(
+    transactions: &[Transaction],
+    comparison_month: Date,
+) -> Vec<TagExpenseStats> {
+    let comparison_month = comparison_month.replace_day(1).unwrap();
+
+    let expenses: Vec<_> = transactions
+        .iter()
+        .filter(|t| t.amount < 0.0)
+        .filter(|t| t.date.replace_day(1).unwrap() <= comparison_month)
+        .collect();
+
+    if expenses.is_empty() {
+        return Vec::new();
+    }
+
+    let total_expenses = sum_expenses_for_month(&expenses, comparison_month);
+    let transactions_by_tag = group_by_tag_name(&expenses);
+
+    let mut stats: Vec<TagExpenseStats> = transactions_by_tag
+        .into_iter()
+        .map(|(tag, tag_transactions)| {
+            calculate_tag_stats(tag, &tag_transactions, comparison_month, total_expenses)
+        })
+        .collect();
+
+    sort_stats_with_other_tag_last(&mut stats);
+
+    stats
+}
+
+fn sum_expenses_for_month(expenses: &[&Transaction], month: Date) -> f64 {
+    expenses
+        .iter()
+        .filter(|t| t.date.replace_day(1).unwrap() == month)
+        .map(|t| t.amount.abs())
+        .sum()
+}
+
+fn group_by_tag_name<'a>(expenses: &[&'a Transaction]) -> HashMap<&'a str, Vec<&'a Transaction>> {
+    let mut groups: HashMap<&str, Vec<&Transaction>> = HashMap::new();
+    for transaction in expenses {
+        groups
+            .entry(transaction.tag.as_str())
+            .or_default()
+            .push(transaction);
+    }
+    groups
+}
+
+fn calculate_tag_stats(
+    tag: &str,
+    tag_transactions: &[&Transaction],
+    comparison_month: Date,
+    total_expenses: f64,
+) -> TagExpenseStats {
+    let mut comparison_month_amount = 0.0;
+    let mut historical_total = 0.0;
+    let mut all_months = HashSet::new();
+    let mut historical_months = HashSet::new();
+
+    for t in tag_transactions {
+        let month = t.date.replace_day(1).unwrap();
+        let amount = t.amount.abs();
+        all_months.insert(month);
+
+        if month == comparison_month {
+            comparison_month_amount += amount;
+        } else {
+            historical_total += amount;
+            historical_months.insert(month);
+        }
+    }
+
+    let months_of_data = all_months.len();
+    let monthly_average = if historical_months.is_empty() {
+        comparison_month_amount
+    } else {
+        historical_total / historical_months.len() as f64
+    };
+
+    let percentage_change = calculate_percentage_change(comparison_month_amount, monthly_average);
+    let annual_delta = (comparison_month_amount - monthly_average) * 12.0;
+
+    // Handle case where comparison month has no total expenses
+    let percentage_of_total = if total_expenses > 0.0 {
+        (comparison_month_amount / total_expenses) * 100.0
+    } else {
+        // If total is 0, then comparison_month_amount must also be 0
+        // so this tag represents 0% of 0 total
+        0.0
+    };
+
+    TagExpenseStats {
+        tag: tag.to_owned(),
+        last_month_amount: comparison_month_amount,
+        percentage_of_total,
+        monthly_average,
+        percentage_change,
+        annual_delta,
+        months_of_data,
+    }
+}
+
+fn calculate_percentage_change(current: f64, baseline: f64) -> f64 {
+    if baseline > 0.0 {
+        ((current - baseline) / baseline) * 100.0
+    } else if current > 0.0 {
+        100.0 // First spending in this category
+    } else {
+        0.0
+    }
+}
+
+/// Sorts stats by amount (descending) with "Other" tag moved to end.
+fn sort_stats_with_other_tag_last(stats: &mut Vec<TagExpenseStats>) {
+    // Sort by comparison month amount (descending)
+    stats.sort_by(|a, b| {
+        b.last_month_amount
+            .partial_cmp(&a.last_month_amount)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Move "Other" tag to end
+    if let Some(other_idx) = stats.iter().position(|s| s.tag == UNTAGGED_LABEL) {
+        let other_stat = stats.remove(other_idx);
+        stats.push(other_stat);
+    }
+}
+
+// ============================================================================
 // FORMATTING UTILITIES
 // ============================================================================
 
@@ -344,107 +484,6 @@ pub(super) fn get_monthly_label_and_value_pairs(
         .collect();
 
     (labels, values)
-}
-
-/// Calculates expense statistics by tag for the expense cards.
-///
-/// Only negative amounts (expenses) are included in calculations.
-/// Statistics include current month total, percentage of total expenses,
-/// monthly average, percentage change from average, and annual delta.
-///
-/// # Arguments
-/// * `transactions` - All transactions to analyze
-/// * `current_month` - The month to use as "current" (typically today's month)
-///
-/// # Returns
-/// Vector of tag statistics sorted by current month amount (descending),
-/// with "Other" tag sorted to the end.
-pub(super) fn calculate_tag_expense_statistics(
-    transactions: &[Transaction],
-    current_month: Date,
-) -> Vec<TagExpenseStats> {
-    let expenses: Vec<_> = transactions.iter().filter(|t| t.amount < 0.0).collect();
-
-    if expenses.is_empty() {
-        return Vec::new();
-    }
-
-    let total_expenses: f64 = expenses.iter().map(|t| t.amount.abs()).sum();
-
-    let mut transactions_by_tag: HashMap<&str, Vec<&Transaction>> = HashMap::new();
-    for transaction in &expenses {
-        transactions_by_tag
-            .entry(transaction.tag.as_str())
-            .or_default()
-            .push(transaction);
-    }
-
-    let mut stats: Vec<TagExpenseStats> = transactions_by_tag
-        .into_iter()
-        .map(|(tag, tag_transactions)| {
-            let current_month_amount: f64 = tag_transactions
-                .iter()
-                .filter(|t| t.date.replace_day(1).unwrap() == current_month)
-                .map(|t| t.amount.abs())
-                .sum();
-
-            let unique_months: HashSet<Date> = tag_transactions
-                .iter()
-                .map(|t| t.date.replace_day(1).unwrap())
-                .collect();
-            let months_of_data = unique_months.len();
-
-            let total: f64 = tag_transactions.iter().map(|t| t.amount.abs()).sum();
-            let monthly_average = if months_of_data > 1 {
-                let total_excluding_current: f64 = tag_transactions
-                    .iter()
-                    .filter(|t| t.date.replace_day(1).unwrap() != current_month)
-                    .map(|t| t.amount.abs())
-                    .sum();
-                total_excluding_current / (months_of_data - 1) as f64
-            } else {
-                total / months_of_data as f64
-            };
-
-            let percentage_change = if monthly_average > 0.0 {
-                ((current_month_amount - monthly_average) / monthly_average) * 100.0
-            } else {
-                0.0
-            };
-            let annual_delta = (current_month_amount - monthly_average) * 12.0;
-
-            let percentage_of_total = if total_expenses > 0.0 {
-                (current_month_amount / total_expenses) * 100.0
-            } else {
-                0.0
-            };
-
-            TagExpenseStats {
-                tag: tag.to_owned(),
-                current_month_amount,
-                percentage_of_total,
-                monthly_average,
-                percentage_change,
-                annual_delta,
-                months_of_data,
-            }
-        })
-        .collect();
-
-    // Sort by current month amount (descending)
-    stats.sort_by(|a, b| {
-        b.current_month_amount
-            .partial_cmp(&a.current_month_amount)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    // Move "Other" tag to end
-    if let Some(other_idx) = stats.iter().position(|s| s.tag == UNTAGGED_LABEL) {
-        let other_stat = stats.remove(other_idx);
-        stats.push(other_stat);
-    }
-
-    stats
 }
 
 #[cfg(test)]
@@ -680,19 +719,19 @@ mod tests {
             create_test_transaction(200.0, date!(2024 - 01 - 10), "Income"), // Positive, excluded
         ];
 
-        let current_month = date!(2024 - 01 - 01);
-        let stats = calculate_tag_expense_statistics(&transactions, current_month);
+        let comparison_month = date!(2024 - 01 - 01);
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
 
         assert_eq!(stats.len(), 2); // Food and Transport, Income excluded
 
-        // Food should be first (higher current month amount)
+        // Food should be first (higher comparison month amount)
         assert_eq!(stats[0].tag, "Food");
-        assert_eq!(stats[0].current_month_amount, 100.0);
-        assert_eq!(stats[0].months_of_data, 2);
+        assert_eq!(stats[0].last_month_amount, 100.0);
+        assert_eq!(stats[0].months_of_data, 1);
 
         // Transport should be second
         assert_eq!(stats[1].tag, "Transport");
-        assert_eq!(stats[1].current_month_amount, 50.0);
+        assert_eq!(stats[1].last_month_amount, 50.0);
     }
 
     #[test]
@@ -702,8 +741,8 @@ mod tests {
             create_test_transaction(-50.0, date!(2024 - 01 - 20), "Food"),
         ];
 
-        let current_month = date!(2024 - 01 - 01);
-        let stats = calculate_tag_expense_statistics(&transactions, current_month);
+        let comparison_month = date!(2024 - 01 - 01);
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
 
         assert_eq!(stats.len(), 2);
         // "Other" should be last despite having higher amount
@@ -717,8 +756,8 @@ mod tests {
             create_test_transaction(50.0, date!(2024 - 01 - 20), "Refund"),
         ];
 
-        let current_month = date!(2024 - 01 - 01);
-        let stats = calculate_tag_expense_statistics(&transactions, current_month);
+        let comparison_month = date!(2024 - 01 - 01);
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
 
         assert_eq!(stats.len(), 0);
     }
@@ -730,8 +769,8 @@ mod tests {
             create_test_transaction(-40.0, date!(2024 - 01 - 20), "Transport"),
         ];
 
-        let current_month = date!(2024 - 01 - 01);
-        let stats = calculate_tag_expense_statistics(&transactions, current_month);
+        let comparison_month = date!(2024 - 01 - 01);
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
 
         assert_eq!(stats[0].tag, "Food");
         assert_eq!(stats[0].percentage_of_total, 60.0);
@@ -743,54 +782,94 @@ mod tests {
     #[test]
     fn calculate_tag_expense_statistics_handles_empty_input() {
         let transactions = vec![];
-        let current_month = date!(2024 - 01 - 01);
-        let stats = calculate_tag_expense_statistics(&transactions, current_month);
+        let comparison_month = date!(2024 - 01 - 01);
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
 
         assert_eq!(stats.len(), 0);
     }
 
     #[test]
     fn calculate_tag_expense_statistics_boundary_percentages() {
-        // Create scenarios that result in boundary percentage changes
         let transactions = vec![
-            // Food: 105.5 current, 100 average → 5.5% change
+            // Food: 105.5 comparison, 100 average → 5.5% change
             create_test_transaction(-100.0, date!(2024 - 01 - 15), "Food"),
             create_test_transaction(-100.0, date!(2024 - 02 - 15), "Food"),
             create_test_transaction(-105.5, date!(2024 - 03 - 15), "Food"),
-            // Transport: 94.5 current, 100 average → -5.5% change
-            create_test_transaction(-100.0, date!(2024 - 01 - 15), "Transport"),
-            create_test_transaction(-100.0, date!(2024 - 02 - 15), "Transport"),
-            create_test_transaction(-94.5, date!(2024 - 03 - 15), "Transport"),
         ];
 
-        let current_month = date!(2024 - 03 - 01);
-        let stats = calculate_tag_expense_statistics(&transactions, current_month);
+        let comparison_month = date!(2024 - 03 - 01);
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
 
-        // Verify the calculations are precise
-        let food = stats.iter().find(|s| s.tag == "Food").unwrap();
-        assert_eq!(food.current_month_amount, 105.5);
+        assert_eq!(stats.len(), 1);
+        let food = &stats[0];
+        assert_eq!(food.last_month_amount, 105.5);
         assert!((food.percentage_change - 5.5).abs() < 0.01);
-
-        let transport = stats.iter().find(|s| s.tag == "Transport").unwrap();
-        assert_eq!(transport.current_month_amount, 94.5);
-        assert!((transport.percentage_change - (-5.5)).abs() < 0.01);
     }
 
     #[test]
-    fn calculate_tag_expense_statistics_with_zero_average() {
-        // Edge case: first month of spending in a category
+    fn calculate_tag_expense_statistics_excludes_comparison_month_from_average() {
+        // This is the KEY test for v2.0 - verify historical average excludes comparison month
+        let transactions = vec![
+            // December (comparison month): $200
+            create_test_transaction(-200.0, date!(2024 - 12 - 15), "Food"),
+            // November: $100
+            create_test_transaction(-100.0, date!(2024 - 11 - 15), "Food"),
+            // October: $100
+            create_test_transaction(-100.0, date!(2024 - 10 - 15), "Food"),
+        ];
+
+        let comparison_month = date!(2024 - 12 - 01);
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
+
+        assert_eq!(stats.len(), 1);
+        let food = &stats[0];
+
+        // Last month amount should be December
+        assert_eq!(food.last_month_amount, 200.0);
+
+        // Average should be (Nov + Oct) / 2 = (100 + 100) / 2 = 100
+        // NOT (Dec + Nov + Oct) / 3 = 133.33
+        assert_eq!(food.monthly_average, 100.0);
+
+        // Percentage change should be (200 - 100) / 100 = 100%
+        assert!((food.percentage_change - 100.0).abs() < 0.01);
+
+        // Should have 3 months of data total
+        assert_eq!(food.months_of_data, 3);
+    }
+
+    #[test]
+    fn calculate_tag_expense_statistics_with_future_comparison_month() {
         let transactions = vec![create_test_transaction(
             -100.0,
             date!(2024 - 01 - 15),
             "Food",
         )];
 
-        let current_month = date!(2024 - 01 - 01);
-        let stats = calculate_tag_expense_statistics(&transactions, current_month);
+        let comparison_month = date!(2025 - 01 - 01); // Future
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
+
+        // Should include the transaction since filter is <= comparison_month
+        assert_eq!(stats.len(), 1);
+    }
+
+    #[test]
+    fn calculate_tag_expense_statistics_with_only_comparison_month() {
+        // Edge case: first month of spending in a category (no historical baseline)
+        let transactions = vec![create_test_transaction(
+            -100.0,
+            date!(2024 - 01 - 15),
+            "Food",
+        )];
+
+        let comparison_month = date!(2024 - 01 - 01);
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
 
         assert_eq!(stats.len(), 1);
-        assert_eq!(stats[0].current_month_amount, 100.0);
+        assert_eq!(stats[0].last_month_amount, 100.0);
+        // With only comparison month, average equals the amount
         assert_eq!(stats[0].monthly_average, 100.0);
+        // No change since no historical baseline
         assert_eq!(stats[0].percentage_change, 0.0);
         assert_eq!(stats[0].months_of_data, 1);
     }
@@ -804,13 +883,52 @@ mod tests {
             create_test_transaction(-0.3, date!(2024 - 03 - 15), "Food"),
         ];
 
-        let current_month = date!(2024 - 03 - 01);
-        let stats = calculate_tag_expense_statistics(&transactions, current_month);
+        let comparison_month = date!(2024 - 03 - 01);
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
 
         assert_eq!(stats.len(), 1);
         // Historical average excludes March
         // Jan + Feb = 0.1 + 0.2 = 0.3
         // Average = 0.3 / 2 = 0.15
         assert!((stats[0].monthly_average - 0.15).abs() < 0.0001);
+    }
+
+    #[test]
+    fn calculate_tag_expense_statistics_percentage_of_total_uses_comparison_month_only() {
+        let transactions = vec![
+            // Comparison month (January): Food $60, Transport $40, total $100
+            create_test_transaction(-60.0, date!(2024 - 01 - 15), "Food"),
+            create_test_transaction(-40.0, date!(2024 - 01 - 20), "Transport"),
+            // Previous months with large amounts that shouldn't affect January percentages
+            create_test_transaction(-200.0, date!(2023 - 12 - 15), "Food"),
+            create_test_transaction(-150.0, date!(2023 - 11 - 15), "Food"),
+            create_test_transaction(-100.0, date!(2023 - 12 - 20), "Transport"),
+        ];
+
+        let comparison_month = date!(2024 - 01 - 01);
+        let stats = calculate_tag_expense_statistics(&transactions, comparison_month);
+
+        let food = stats.iter().find(|s| s.tag == "Food").unwrap();
+        // Should be 60 / (60 + 40) = 60%
+        // NOT 60 / (60 + 40 + 200 + 150 + 100) = 10.9%
+        assert_eq!(
+            food.percentage_of_total, 60.0,
+            "Food should be 60% of January expenses (60 out of 100 total)"
+        );
+
+        let transport = stats.iter().find(|s| s.tag == "Transport").unwrap();
+        // Should be 40 / (60 + 40) = 40%
+        assert_eq!(
+            transport.percentage_of_total, 40.0,
+            "Transport should be 40% of January expenses (40 out of 100 total)"
+        );
+
+        // Verify the percentages add up to 100%
+        let total_percentage: f64 = stats.iter().map(|s| s.percentage_of_total).sum();
+        assert!(
+            (total_percentage - 100.0).abs() < 0.01,
+            "All tag percentages should sum to 100%, got {}",
+            total_percentage
+        );
     }
 }

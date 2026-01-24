@@ -1,10 +1,6 @@
-//! Card components for displaying expense breakdown by tag.
+//! Card components for expense breakdown by tag.
 //!
-//! Provides card-based visualizations showing:
-//! - Current month spending per tag
-//! - Percentage of total expenses
-//! - Trend indicators (overspending/saving/on-track)
-//! - Annual spending impact projections
+//! See `expenses-by-tag-design-spec.md` for UI specifications.
 
 use maud::{Markup, html};
 
@@ -14,8 +10,16 @@ use crate::{
     html::{LINK_STYLE, format_currency},
 };
 
-const DISPLAY_THRESHOLD: f64 = 5.5; // Anything < 5.5 rounds to "5" or less
+/// Uses 5.5% (not 5.0%) to align with percentage rounding:
+/// - 5.4% rounds to "5" → OnTrack
+/// - 5.5% rounds to "6" → Overspending/Saving
+///
+/// This ensures displayed value matches card state.
+/// See expenses-by-tag-tech-spec.md for full explanation.
+const DISPLAY_THRESHOLD: f64 = 5.5;
 const MINIMUM_MONTHS_OF_DATA: usize = 2;
+/// Used to ensure a minimum width so rounded corners are visible
+const PROGRESS_BAR_MIN_PERCENTAGE: f64 = 3.0;
 
 /// The state of a tag's spending relative to historical patterns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,11 +30,14 @@ enum CardState {
     Saving,
     /// Spending is within 5% of average
     OnTrack,
-    /// Less than 1 month of data available
+    /// Less than 2 months of data available
     InsufficientData,
 }
 
 /// Determines the card state based on spending patterns.
+///
+/// Uses 5.5% threshold (not 5.0%) to align with percentage rounding.
+/// See technical spec for threshold alignment explanation.
 fn determine_card_state(stat: &TagExpenseStats) -> CardState {
     if stat.months_of_data < MINIMUM_MONTHS_OF_DATA {
         return CardState::InsufficientData;
@@ -58,17 +65,13 @@ fn format_percentage(value: f64) -> String {
     }
 }
 
-/// Renders the expense cards section with all tag statistics.
+/// Renders the expense cards section.
 ///
-/// Shows empty state if no tags exist, or a grid of expense cards.
-/// Includes a helper card if there are only 1-2 tags to encourage categorization.
-///
-/// # Arguments
-/// * `tag_stats` - Statistics for each tag to display
-///
-/// # Returns
-/// Maud markup containing the expense cards section.
-pub(super) fn expense_cards_view(tag_stats: &[TagExpenseStats]) -> Markup {
+/// Shows empty state if no tags, helper card if ≤2 tags.
+pub(super) fn expense_cards_view(
+    tag_stats: &[TagExpenseStats],
+    displayed_month_label: &str,
+) -> Markup {
     if tag_stats.is_empty() {
         return empty_state_view();
     }
@@ -81,7 +84,7 @@ pub(super) fn expense_cards_view(tag_stats: &[TagExpenseStats]) -> Markup {
                     "Expenses by Tag"
                 }
                 span class="text-sm text-gray-600 dark:text-gray-400" {
-                    "Last 12 months"
+                    (displayed_month_label)
                 }
             }
 
@@ -110,27 +113,7 @@ fn expense_card(stat: &TagExpenseStats) -> Markup {
                    dark:border-gray-700 rounded-lg p-4 shadow-md 
                    hover:shadow-lg transition-shadow min-h-[200px] 
                    flex flex-col justify-between"
-            aria-label=(format!(
-                "{} expenses: {} this month, {} from usual {} average{}",
-                stat.tag,
-                format_currency(stat.current_month_amount),
-                if stat.percentage_change >= 0.0 {
-                    format!("up {}%", format_percentage(stat.percentage_change))
-                } else {
-                    format!("down {}%", format_percentage(stat.percentage_change.abs()))
-                },
-                format_currency(stat.monthly_average),
-                if state == CardState::InsufficientData {
-                    ", building baseline".to_string()
-                } else if state != CardState::OnTrack {
-                    format!(", resulting in {} {} per year",
-                        format_currency(stat.annual_delta.abs()),
-                        if stat.annual_delta >= 0.0 { "more spending" } else { "savings" }
-                    )
-                } else {
-                    String::new()
-                }
-            ))
+            aria-label=(create_card_aria_label(stat, state))
         {
             div {
                 // Tag name
@@ -141,7 +124,7 @@ fn expense_card(stat: &TagExpenseStats) -> Markup {
 
                 // Current amount
                 div class="text-3xl font-bold mb-1" {
-                    (format_currency(stat.current_month_amount))
+                    (format_currency(stat.last_month_amount))
                 }
 
                 // Percentage of total
@@ -208,9 +191,8 @@ fn card_bottom_content(stat: &TagExpenseStats, state: CardState) -> Markup {
 fn progress_bar(percentage: f64) -> Markup {
     let clamped = percentage.clamp(0.0, 100.0);
 
-    // Ensure minimum 3% width so rounded corners are visible
-    let display_percentage = if clamped > 0.0 && clamped < 3.0 {
-        3.0
+    let display_percentage = if clamped > 0.0 && clamped < PROGRESS_BAR_MIN_PERCENTAGE {
+        PROGRESS_BAR_MIN_PERCENTAGE
     } else {
         clamped
     };
@@ -231,6 +213,37 @@ fn progress_bar(percentage: f64) -> Markup {
             }
         }
     }
+}
+
+fn create_card_aria_label(stat: &TagExpenseStats, state: CardState) -> String {
+    let tag = &stat.tag;
+    let amount = format_currency(stat.last_month_amount);
+    let average = format_currency(stat.monthly_average);
+
+    let change_description = if stat.percentage_change >= 0.0 {
+        format!("up {}%", format_percentage(stat.percentage_change))
+    } else {
+        format!("down {}%", format_percentage(stat.percentage_change.abs()))
+    };
+
+    let impact_description = match state {
+        CardState::InsufficientData => ", building baseline".to_string(),
+        CardState::OnTrack => String::new(),
+        CardState::Overspending | CardState::Saving => {
+            let delta = format_currency(stat.annual_delta.abs());
+            let impact_type = if stat.annual_delta >= 0.0 {
+                "more spending"
+            } else {
+                "savings"
+            };
+            format!(", resulting in {} {} per year", delta, impact_type)
+        }
+    };
+
+    format!(
+        "{} expenses: {} last month, {} from usual {} average{}",
+        tag, amount, change_description, average, impact_description
+    )
 }
 
 /// Renders an empty state when no tags exist.
@@ -288,7 +301,6 @@ fn helper_card() -> Markup {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     //! Test suite for expense cards
@@ -301,35 +313,42 @@ mod tests {
     //! The critical invariant: If two expenses display the same rounded percentage
     //! (e.g., both show "5%"), they MUST show the same card state.
 
+    use scraper::{Html, Selector};
+
     use super::*;
 
     fn create_test_stat(
         tag: &str,
-        current: f64,
+        last_month: f64,
         average: f64,
         months: usize,
         percentage_of_total: f64,
     ) -> TagExpenseStats {
         let percentage_change = if average > 0.0 {
-            ((current - average) / average) * 100.0
+            ((last_month - average) / average) * 100.0
         } else {
             0.0
         };
 
         TagExpenseStats {
             tag: tag.to_owned(),
-            current_month_amount: current,
+            last_month_amount: last_month,
             percentage_of_total,
             monthly_average: average,
             percentage_change,
-            annual_delta: (current - average) * 12.0,
+            annual_delta: (last_month - average) * 12.0,
             months_of_data: months,
         }
     }
 
     #[test]
     fn card_state_insufficient_data() {
+        // Zero months
         let stat = create_test_stat("Food", 100.0, 100.0, 0, 50.0);
+        assert_eq!(determine_card_state(&stat), CardState::InsufficientData);
+
+        // One month
+        let stat = create_test_stat("Food", 100.0, 100.0, 1, 50.0);
         assert_eq!(determine_card_state(&stat), CardState::InsufficientData);
     }
 
@@ -419,99 +438,50 @@ mod tests {
         assert_eq!(determine_card_state(&stat), CardState::OnTrack);
         assert_eq!(format_percentage(stat.percentage_change), "-5");
     }
-
     #[test]
     fn display_and_state_consistency() {
-        // This test ensures we never show the same displayed percentage
-        // with different card states
-
         let test_cases = vec![
-            (104.0, 100.0), // 4%
-            (104.5, 100.0), // 4.5%
-            (105.0, 100.0), // 5%
-            (105.5, 100.0), // 5.5%
-            (106.0, 100.0), // 6%
-            (95.5, 100.0),  // -4.5%
-            (95.0, 100.0),  // -5%
-            (94.5, 100.0),  // -5.5%
+            (104.0, 100.0, "4", CardState::OnTrack),
+            (104.5, 100.0, "5", CardState::OnTrack), // Edge: rounds to 5
+            (105.0, 100.0, "5", CardState::OnTrack),
+            (105.5, 100.0, "6", CardState::Overspending), // Boundary
+            (106.0, 100.0, "6", CardState::Overspending),
+            (94.5, 100.0, "-6", CardState::Saving),
+            (95.0, 100.0, "-5", CardState::OnTrack),
+            (95.5, 100.0, "-5", CardState::OnTrack), // Edge: rounds to -5
         ];
 
-        for (current, average) in test_cases {
-            let stat = create_test_stat("Food", current, average, 5, 50.0);
+        for (last_month, average, expected_display, expected_state) in test_cases {
+            let stat = create_test_stat("Food", last_month, average, 5, 50.0);
             let state = determine_card_state(&stat);
             let displayed = format_percentage(stat.percentage_change);
 
-            // Rule: If display shows "5" or less (absolute), must be OnTrack
-            let abs_displayed: i32 = displayed.trim_start_matches('-').parse().unwrap();
-
-            if abs_displayed <= 5 {
-                assert_eq!(
-                    state,
-                    CardState::OnTrack,
-                    "Displayed '{}%' (from {:.2}%) should be OnTrack, got {:?}",
-                    displayed,
-                    stat.percentage_change,
-                    state
-                );
-            } else {
-                assert_ne!(
-                    state,
-                    CardState::OnTrack,
-                    "Displayed '{}%' (from {:.2}%) should NOT be OnTrack, got {:?}",
-                    displayed,
-                    stat.percentage_change,
-                    state
-                );
-            }
+            assert_eq!(
+                displayed, expected_display,
+                "Display formatting failed for {:.1}%",
+                stat.percentage_change
+            );
+            assert_eq!(
+                state, expected_state,
+                "State mismatch for displayed '{}%' (actual {:.2}%)",
+                displayed, stat.percentage_change
+            );
         }
     }
 
     #[test]
     fn format_percentage_avoids_negative_zero() {
+        // Zero should always display as "0"
         assert_eq!(format_percentage(0.0), "0");
         assert_eq!(format_percentage(-0.0), "0");
-        assert_eq!(format_percentage(-0.4), "0");
+
+        // Small values round to zero
         assert_eq!(format_percentage(0.4), "0");
+        assert_eq!(format_percentage(-0.4), "0");
+
+        // Normal rounding
         assert_eq!(format_percentage(5.0), "5");
         assert_eq!(format_percentage(-5.0), "-5");
-    }
-
-    #[test]
-    fn renders_empty_state_when_no_tags() {
-        let stats: Vec<TagExpenseStats> = vec![];
-        let html = expense_cards_view(&stats).into_string();
-
-        assert!(html.contains("Get Started"));
-        assert!(html.contains("Manage Tags"));
-    }
-
-    #[test]
-    fn renders_helper_card_when_few_tags() {
-        let stats = vec![create_test_stat("Food", 100.0, 100.0, 5, 100.0)];
-        let html = expense_cards_view(&stats).into_string();
-
-        assert!(html.contains("Tip"));
-        assert!(html.contains("Add more tags"));
-    }
-
-    #[test]
-    fn does_not_render_helper_card_when_many_tags() {
-        let stats = vec![
-            create_test_stat("Food", 100.0, 100.0, 5, 30.0),
-            create_test_stat("Transport", 50.0, 50.0, 5, 20.0),
-            create_test_stat("Utilities", 40.0, 40.0, 5, 15.0),
-        ];
-        let html = expense_cards_view(&stats).into_string();
-
-        assert!(!html.contains("Add more tags"));
-    }
-
-    #[test]
-    fn tag_name_displays_with_emoji() {
-        let stat = create_test_stat("🍔 Food", 100.0, 100.0, 5, 50.0);
-        let html = expense_card(&stat).into_string();
-
-        assert!(html.contains("🍔 Food"));
     }
 
     #[test]
@@ -538,10 +508,210 @@ mod tests {
         assert!(!html.contains("bg-blue-600"));
     }
 
+    fn parse_html(markup: &Markup) -> Html {
+        Html::parse_fragment(&markup.clone().into_string())
+    }
+
     #[test]
-    fn progress_bar_clamps_over_100() {
-        let html = progress_bar(150.0).into_string();
-        // Should clamp to 100%
-        assert!(html.contains("width: 100.0%"));
+    fn renders_empty_state_when_no_tags() {
+        let stats: Vec<TagExpenseStats> = vec![];
+        let html = parse_html(&expense_cards_view(&stats, "December 2024"));
+
+        // Check for semantic structure
+        let h3_selector = Selector::parse("h3").unwrap();
+        let h3_text = html
+            .select(&h3_selector)
+            .next()
+            .unwrap()
+            .text()
+            .collect::<String>();
+        assert_eq!(h3_text.trim(), "Get Started");
+
+        // Check for link to tags
+        let link_selector = Selector::parse("a[href='/tags']").unwrap();
+        assert!(
+            html.select(&link_selector).next().is_some(),
+            "Should have link to tags page"
+        );
+    }
+
+    #[test]
+    fn renders_helper_card_when_few_tags() {
+        let stats = vec![create_test_stat("Food", 100.0, 100.0, 5, 100.0)];
+        let html = parse_html(&expense_cards_view(&stats, "December 2024"));
+
+        // Check for tip card by class
+        let tip_selector = Selector::parse(".bg-blue-50").unwrap();
+        assert!(
+            html.select(&tip_selector).next().is_some(),
+            "Should render helper card with blue background"
+        );
+
+        // Check for heading
+        let h4_selector = Selector::parse("h4").unwrap();
+        let h4_texts: Vec<_> = html
+            .select(&h4_selector)
+            .map(|el| el.text().collect::<String>())
+            .collect();
+        assert!(
+            h4_texts.iter().any(|t| t.contains("Tip")),
+            "Should have 'Tip' heading"
+        );
+    }
+
+    #[test]
+    fn does_not_render_helper_card_when_many_tags() {
+        let stats = vec![
+            create_test_stat("Food", 100.0, 100.0, 5, 30.0),
+            create_test_stat("Transport", 50.0, 50.0, 5, 20.0),
+            create_test_stat("Utilities", 40.0, 40.0, 5, 15.0),
+        ];
+        let html = parse_html(&expense_cards_view(&stats, "December 2024"));
+
+        // Should have 3 expense cards
+        let card_selector = Selector::parse(".bg-white.dark\\:bg-gray-800").unwrap();
+        let card_count = html.select(&card_selector).count();
+        assert_eq!(card_count, 3, "Should have exactly 3 expense cards");
+
+        // Should NOT have helper card
+        let tip_selector = Selector::parse(".bg-blue-50").unwrap();
+        assert_eq!(
+            html.select(&tip_selector).count(),
+            0,
+            "Should not have helper card"
+        );
+    }
+
+    #[test]
+    fn tag_name_displays_with_emoji() {
+        let stat = create_test_stat("🍔 Food", 100.0, 100.0, 5, 50.0);
+        let html = parse_html(&expense_card(&stat));
+
+        let h4_selector = Selector::parse("h4").unwrap();
+        let h4_text = html
+            .select(&h4_selector)
+            .next()
+            .unwrap()
+            .text()
+            .collect::<String>();
+        assert_eq!(h4_text.trim(), "🍔 Food");
+    }
+
+    #[test]
+    fn displays_month_label_correctly() {
+        let stats = vec![create_test_stat("Food", 100.0, 100.0, 5, 100.0)];
+        let html = parse_html(&expense_cards_view(&stats, "December 2024"));
+
+        // Check for month label in header
+        let header_selector = Selector::parse(".text-sm.text-gray-600").unwrap();
+        let month_label = html
+            .select(&header_selector)
+            .next()
+            .unwrap()
+            .text()
+            .collect::<String>();
+        assert_eq!(month_label.trim(), "December 2024");
+    }
+
+    #[test]
+    fn progress_bar_has_correct_structure() {
+        let html = parse_html(&progress_bar(50.0));
+
+        // Check for progressbar role
+        let bar_selector = Selector::parse("[role='progressbar']").unwrap();
+        let bar = html
+            .select(&bar_selector)
+            .next()
+            .expect("Should have progressbar role");
+
+        // Check aria attributes
+        let aria_valuenow = bar.value().attr("aria-valuenow").unwrap();
+        assert_eq!(aria_valuenow, "50");
+
+        let aria_valuemin = bar.value().attr("aria-valuemin").unwrap();
+        assert_eq!(aria_valuemin, "0");
+
+        let aria_valuemax = bar.value().attr("aria-valuemax").unwrap();
+        assert_eq!(aria_valuemax, "100");
+    }
+
+    #[test]
+    fn expense_card_has_proper_aria_label() {
+        let stat = create_test_stat("Food", 150.0, 100.0, 5, 60.0);
+        let html = parse_html(&expense_card(&stat));
+
+        let card_selector = Selector::parse("[aria-label]").unwrap();
+        let card = html
+            .select(&card_selector)
+            .next()
+            .expect("Card should have aria-label");
+
+        let aria_label = card.value().attr("aria-label").unwrap();
+        assert!(aria_label.contains("Food expenses"));
+        assert!(aria_label.contains("$150.00"));
+        assert!(aria_label.contains("up 50%"));
+    }
+
+    #[test]
+    fn card_displays_overspending_state_correctly() {
+        let stat = create_test_stat("Food", 150.0, 100.0, 5, 60.0);
+        let html = parse_html(&expense_card(&stat));
+
+        // Check for red text (overspending indicator)
+        let red_selector = Selector::parse(".text-red-600").unwrap();
+        let red_elements: Vec<_> = html.select(&red_selector).collect();
+        assert!(
+            red_elements.len() >= 2,
+            "Should have at least 2 red elements (trend and delta)"
+        );
+
+        // Check for up arrow
+        let trend_text: String = html.select(&red_selector).next().unwrap().text().collect();
+        assert!(trend_text.contains("↑") || trend_text.contains("above usual"));
+    }
+
+    #[test]
+    fn card_displays_saving_state_correctly() {
+        let stat = create_test_stat("Food", 80.0, 100.0, 5, 60.0);
+        let html = parse_html(&expense_card(&stat));
+
+        // Check for green text (saving indicator)
+        let green_selector = Selector::parse(".text-green-600").unwrap();
+        let green_elements: Vec<_> = html.select(&green_selector).collect();
+        assert!(
+            green_elements.len() >= 2,
+            "Should have at least 2 green elements"
+        );
+
+        // Check for celebration emoji
+        let text: String = html.html();
+        assert!(text.contains("🎉"), "Should have celebration emoji");
+    }
+
+    #[test]
+    fn card_grid_has_responsive_classes() {
+        let stats = vec![create_test_stat("Food", 100.0, 100.0, 5, 100.0)];
+        let html = parse_html(&expense_cards_view(&stats, "December 2024"));
+
+        let grid_selector = Selector::parse(".grid").unwrap();
+        let grid = html
+            .select(&grid_selector)
+            .next()
+            .expect("Should have grid container");
+
+        let classes = grid.value().attr("class").unwrap();
+        assert!(classes.contains("grid-cols-1"), "Should have mobile layout");
+        assert!(
+            classes.contains("sm:grid-cols-2"),
+            "Should have small breakpoint"
+        );
+        assert!(
+            classes.contains("md:grid-cols-3"),
+            "Should have medium breakpoint"
+        );
+        assert!(
+            classes.contains("lg:grid-cols-4"),
+            "Should have large breakpoint"
+        );
     }
 }

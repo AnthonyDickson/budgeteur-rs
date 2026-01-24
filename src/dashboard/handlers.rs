@@ -1,9 +1,7 @@
 //! Dashboard HTTP handlers and view rendering.
 //!
-//! This module contains:
-//! - Route handlers for displaying and updating the dashboard
-//! - HTML view functions for rendering the dashboard UI
-//! - State and form types used by the handlers
+//! # HTMX Note
+//! Charts must be initialized inline. See comment in `dashboard_view()`.
 
 use axum::{
     extract::{FromRef, State},
@@ -42,7 +40,7 @@ use crate::{
 };
 
 /// Number of days to look back for yearly summary calculations  
-const YEARLY_PERIOD_DAYS: i64 = 365;
+const YEARLY_PERIOD_DAYS: i64 = 365; // Could be 366 for leap years, but using 365 for consistency
 
 /// The state needed for displaying the dashboard page.
 ///
@@ -91,6 +89,7 @@ struct DashboardData {
     charts: [DashboardChart; 3],
     tables: Vec<Markup>,
     tag_stats: Vec<TagExpenseStats>,
+    displayed_month_label: String,
 }
 
 /// Display a page with an overview of the user's data.
@@ -113,6 +112,7 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Result<R
             &data.charts,
             &data.tables,
             &data.tag_stats,
+            &data.displayed_month_label,
         )
         .into_response()),
         None => Ok(dashboard_no_data_view(nav_bar).into_response()),
@@ -142,9 +142,14 @@ pub async fn update_excluded_tags(
     let data = match build_dashboard_data(&form.excluded_tags, &state.local_timezone, &connection) {
         Ok(Some(data)) => data,
         Ok(None) => {
-            // Shouldn't happen since we're updating filters, not deleting all transactions
+            // This shouldn't happen when updating filters, only on initial load
             tracing::warn!("No transaction data after updating excluded tags");
-            return Error::DatabaseLockError.into_alert_response();
+            return html! {
+                div class="text-center text-gray-600 dark:text-gray-400" {
+                    "No transaction data available"
+                }
+            }
+            .into_response();
         }
         Err(error) => {
             tracing::error!("Failed to build dashboard data: {error}");
@@ -157,6 +162,7 @@ pub async fn update_excluded_tags(
         &data.charts,
         &data.tables,
         &data.tag_stats,
+        &data.displayed_month_label,
     )
     .into_response()
 }
@@ -235,14 +241,20 @@ fn build_dashboard_data(
     ];
 
     let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
-    let current_month = today.replace_day(1).unwrap();
-    let tag_stats = calculate_tag_expense_statistics(&transactions, current_month);
+
+    // Safe unwrap: dates from OffsetDateTime are always valid
+    let last_complete_month = (today.replace_day(1).unwrap() - Duration::days(1))
+        .replace_day(1)
+        .unwrap();
+    let displayed_month_label = format_month_year_label(last_complete_month);
+    let tag_stats = calculate_tag_expense_statistics(&transactions, last_complete_month);
 
     Ok(Some(DashboardData {
         tags_with_status,
         charts,
         tables,
         tag_stats,
+        displayed_month_label,
     }))
 }
 
@@ -325,97 +337,15 @@ fn dashboard_view<'a>(
     charts: &[DashboardChart],
     tables: &[Markup],
     tag_stats: &[TagExpenseStats],
+    displayed_month_label: &str,
 ) -> Markup {
     let nav_bar = nav_bar.into_html();
-    let excluded_tags_endpoint = endpoints::DASHBOARD_EXCLUDED_TAGS;
-
-    let content = html!(
-        (nav_bar)
-
-        div
-            id="dashboard-content"
-            class="flex flex-col items-center px-2 lg:px-6 lg:py-8 mx-auto
-                max-w-screen-xl text-gray-900 dark:text-white"
-        {
-            section
-                id="charts"
-                class="w-full mx-auto mb-4"
-            {
-                div class="grid grid-cols-1 xl:grid-cols-2 gap-4"
-                {
-                    @for chart in charts {
-                        div
-                            id=(chart.id)
-                            class="min-h-[380px] rounded dark:bg-gray-100"
-                        {}
-                    }
-
-                    @for table in tables {
-                        (table)
-                    }
-                }
-            }
-
-            (expense_cards_view(tag_stats))
-
-            // NOTE: Charts must be initialized inline, not in <head>.
-            // HTMX content swaps don't trigger DOMContentLoaded, so scripts in <head>
-            // won't re-run. This inline script executes immediately after the chart
-            // containers are swapped in, ensuring charts render on filter changes.
-            script {
-                (PreEscaped(charts_inline_script(charts)))
-            }
-
-            @if !tags_with_status.is_empty() {
-                div class="mb-8 w-full"
-                {
-                    h3 class="text-xl font-semibold mb-4" { "Filter Out Tags" }
-
-                    form
-                        hx-post=(excluded_tags_endpoint)
-                        hx-target="#dashboard-content"
-                        hx-target-error="#alert-container"
-                        hx-swap="innerHTML"
-                        hx-trigger="change"
-                        class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg"
-                    {
-                        p class="text-sm text-gray-600 dark:text-gray-400 mb-3"
-                        {
-                            "Exclude transactions with these tags from the charts and table above:"
-                        }
-
-                        div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
-                        {
-                            @for tag_status in tags_with_status {
-                                label class="flex items-center space-x-2"
-                                {
-                                    input
-                                        type="checkbox"
-                                        name="excluded_tags"
-                                        value=(tag_status.tag.id)
-                                        checked[tag_status.is_excluded]
-                                        class="rounded-sm border-gray-300
-                                            text-blue-600 shadow-xs
-                                            focus:border-blue-300 focus:ring-3
-                                            focus:ring-blue-200/50"
-                                    ;
-
-                                    span
-                                        class="inline-flex items-center
-                                            px-2.5 py-0.5
-                                            text-xs font-semibold text-blue-800
-                                            bg-blue-100 rounded-full
-                                            dark:bg-blue-900 dark:text-blue-300"
-                                    {
-                                        (tag_status.tag.name)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    let content = dashboard_content_partial(
+        tags_with_status,
+        charts,
+        tables,
+        tag_stats,
+        displayed_month_label,
     );
 
     let scripts = [
@@ -423,7 +353,20 @@ fn dashboard_view<'a>(
         HeadElement::ScriptLink("/static/echarts-gl.2.0.9.min.js".to_owned()),
     ];
 
-    base("Dashboard", &scripts, &content)
+    base(
+        "Dashboard",
+        &scripts,
+        &html!(
+         (nav_bar)
+            div
+                id="dashboard-content"
+                class="flex flex-col items-center px-2 lg:px-6 lg:py-8 mx-auto
+                    max-w-screen-xl text-gray-900 dark:text-white"
+            {
+                (content)
+            }
+        ),
+    )
 }
 
 /// Renders the updated dashboard content (charts and tables) for HTMX updates.
@@ -440,6 +383,7 @@ fn dashboard_content_partial(
     charts: &[DashboardChart],
     tables: &[Markup],
     tag_stats: &[TagExpenseStats],
+    displayed_month_label: &str,
 ) -> Markup {
     let excluded_tags_endpoint = endpoints::DASHBOARD_EXCLUDED_TAGS;
 
@@ -463,12 +407,10 @@ fn dashboard_content_partial(
             }
         }
 
-        (expense_cards_view(tag_stats))
+        (expense_cards_view(tag_stats, displayed_month_label))
 
-        // NOTE: Charts must be initialized inline, not in <head>.
-        // HTMX content swaps don't trigger DOMContentLoaded, so scripts in <head>
-        // won't re-run. This inline script executes immediately after the chart
-        // containers are swapped in, ensuring charts render on filter changes.
+        // ⚠️ CRITICAL: Charts must be initialized inline, not in <head>
+        // HTMX swaps don't trigger DOMContentLoaded. DO NOT MOVE.
         script {
             (PreEscaped(charts_inline_script(charts)))
         }
@@ -523,6 +465,25 @@ fn dashboard_content_partial(
             }
         }
     )
+}
+
+fn format_month_year_label(date: Date) -> String {
+    use time::Month;
+    let month_name = match date.month() {
+        Month::January => "January",
+        Month::February => "February",
+        Month::March => "March",
+        Month::April => "April",
+        Month::May => "May",
+        Month::June => "June",
+        Month::July => "July",
+        Month::August => "August",
+        Month::September => "September",
+        Month::October => "October",
+        Month::November => "November",
+        Month::December => "December",
+    };
+    format!("{} {}", month_name, date.year())
 }
 
 #[cfg(test)]
