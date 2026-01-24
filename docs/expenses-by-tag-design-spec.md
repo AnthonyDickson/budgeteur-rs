@@ -1,0 +1,420 @@
+# Design Specification: Expenses by Tag Cards
+
+## Overview
+
+A card-based visualization showing expense breakdown by tag with trend indicators and annual spending impact.
+Complements the existing dashboard charts and tables by providing an at-a-glance view of spending patterns across
+categories.
+
+## Goals
+
+- **Primary**: Help identify overspending categories quickly
+- **Secondary**: Motivate behavioral change through annual delta projection
+- **Tertiary**: Provide visual variety to break up table-heavy dashboard
+
+## Design Principles
+
+1. **Scannable**: Visual hierarchy allows absorbing information in <3 seconds per card
+2. **Actionable**: Annual delta framing encourages spending adjustments
+3. **Progressive**: Works well for first-time use and ongoing analysis
+4. **Non-judgmental**: Neutral tone with celebration for savings, not shame for overspending
+
+---
+
+## Visual Design
+
+### Section Layout
+
+```
+Dashboard Page
+├── Navigation Bar
+├── Charts Grid (2x2)
+│   ├── Net Income Chart
+│   ├── Net Balance Chart
+│   ├── Summary Statistics Table
+│   └── Monthly Summary Table
+└── Expenses by Tag Section ⬅️ NEW
+    ├── Section Header
+    └── Card Grid
+```
+
+### Section Header
+
+```
+Expenses by Tag                                    Last 12 months
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Specifications:**
+
+- Title: "Expenses by Tag" (text-xl, font-semibold)
+- Subtitle: "Last 12 months" (text-sm, text-gray-600, right-aligned)
+- Divider: Subtle border or visual separator
+- Margin: 8 units below Monthly Summary Table, 4 units above cards
+
+---
+
+## Card Design
+
+### Standard Card (Normal Spending)
+
+```
+┌──────────────────────┐
+│ 🍔 Food              │
+│                      │
+│ $450                 │
+│ 35% of expenses      │
+│ ▓▓▓▓▓▓▓░░░           │
+│                      │
+│ Avg: $420/month      │
+│ ↑ +7% above usual    │
+│ 💡 +$360/year        │
+└──────────────────────┘
+```
+
+**Note:** Emojis (like 🍔) are entered directly in tag names by the user, not auto-generated. Tags without emojis display as plain text.
+
+### Card Anatomy
+
+| Element                 | Style               | Purpose                                                          |
+| ----------------------- | ------------------- | ---------------------------------------------------------------- |
+| **Tag Name**            | Large, semibold     | Quick category identification (includes any emoji from tag name) |
+| **Current Amount**      | XX-large, bold      | Primary data point                                               |
+| **% of Total Expenses** | Small, muted        | Relative context                                                 |
+| **Visual Bar**          | Horizontal progress | At-a-glance comparison                                           |
+| **Monthly Average**     | Small, regular      | Historical baseline                                              |
+| **Trend Indicator**     | Arrow + % + color   | Direction of change                                              |
+| **Annual Impact**       | Bulb emoji + amount | Motivational projection                                          |
+
+### Card States
+
+#### 1. Overspending (≥5% above average)
+
+```
+┌──────────────────────┐
+│ 🚗 Transport         │
+│                      │
+│ $950                 │
+│ 28% of expenses      │
+│ ▓▓▓▓▓▓░░░░           │
+│                      │
+│ Avg: $650/month      │
+│ ↑ +46% above usual   │ ⬅️ Red text
+│ 💡 +$3,600/year      │ ⬅️ Red text
+└──────────────────────┘
+```
+
+#### 2. Saving (≥5% below average)
+
+```
+┌──────────────────────┐
+│ 🎬 Entertainment     │
+│                      │
+│ $120                 │
+│ 8% of expenses       │
+│ ▓▓░░░░░░░░           │
+│                      │
+│ Avg: $200/month      │
+│ ↓ -40% below usual   │ ⬅️ Green text
+│ 💡 -$960/year 🎉     │ ⬅️ Green text + celebration
+└──────────────────────┘
+```
+
+#### 3. On Track (<5% variance)
+
+```
+┌──────────────────────┐
+│ ⚡ Utilities         │
+│                      │
+│ $215                 │
+│ 12% of expenses      │
+│ ▓▓▓░░░░░░░           │
+│                      │
+│ Avg: $220/month      │
+│ → On track           │ ⬅️ Gray text, no annual delta
+└──────────────────────┘
+```
+
+#### 4. Insufficient Data (<1 month of data)
+
+```
+┌──────────────────────┐
+│ 🍔 Food              │
+│                      │
+│ $450                 │
+│ 35% of expenses      │
+│ ▓▓▓▓▓▓▓░░░           │
+│                      │
+│ Building baseline... │ ⬅️ Blue/info color
+└──────────────────────┘
+```
+
+#### 5. No Tags / Empty State
+
+```
+┌──────────────────────┐
+│ 💡 Get Started       │
+│                      │
+│ Add tags to see      │
+│ detailed spending    │
+│ breakdown!           │
+│                      │
+│ Tags help you        │
+│ understand where     │
+│ your money goes.     │
+│                      │
+│ [Manage Tags →]      │ ⬅️ Link to tag management
+└──────────────────────┘
+```
+
+#### 6. Helper Card (1-2 tags only)
+
+```
+┌──────────────────────┐
+│ 💡 Tip               │
+│                      │
+│ Add more tags to     │
+│ see detailed         │
+│ spending breakdown!  │
+│                      │
+│ Keep tags broad      │
+│ (aim for ~10 tags).  │
+│                      │
+│ [Manage Tags →]      │
+└──────────────────────┘
+```
+
+---
+
+## Responsive Behavior
+
+### Breakpoints
+
+```
+Mobile:    1 column  (< 640px)   ┌───┐
+                                 │ A │
+                                 ├───┤
+                                 │ B │
+                                 └───┘
+
+Small:     2 columns (≥ 640px)   ┌───┬───┐
+                                 │ A │ B │
+                                 ├───┼───┤
+                                 │ C │ D │
+                                 └───┴───┘
+
+Medium:    3 columns (≥ 768px)   ┌───┬───┬───┐
+                                 │ A │ B │ C │
+                                 └───┴───┴───┘
+
+Large:     4 columns (≥ 1024px)  ┌───┬───┬───┬───┐
+                                 │ A │ B │ C │ D │
+                                 └───┴───┴───┴───┘
+```
+
+**Tailwind classes:** `grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4`
+
+### Card Dimensions
+
+- **Min width:** 180px (prevents over-stretching on wide screens)
+- **Max width:** None (fills grid cell)
+- **Min height:** 200px (consistent card height)
+- **Padding:** 4 units internal spacing
+- **Gap:** 4 units between cards
+
+---
+
+## Interaction & Accessibility
+
+### Hover States
+
+- **Subtle elevation:** Shadow increases slightly (`shadow-md` → `hover:shadow-lg`)
+- **No pointer cursor:** Cards are informational, not clickable (yet)
+- **Future:** Could add drill-down to filtered transaction list
+
+### Accessibility
+
+- **Semantic HTML:** Each card is a `<div>` with appropriate ARIA labels
+- **Screen reader text:**
+  ```
+  aria-label="Food expenses: $450 this month, up 7% from usual $420 average, 
+             resulting in $360 more spending per year"
+  ```
+- **Color not sole indicator:** Arrows (↑↓→) supplement color for colorblind users
+- **Focus indicators:** Visible outline for keyboard navigation (if interactive features added)
+
+### Keyboard Navigation
+
+- Not applicable (no interactive elements currently)
+- Future: Tab through cards, Enter to drill down
+
+---
+
+## Data & Logic
+
+### Calculations
+
+#### Monthly Average
+
+```
+average = sum(last 12 months) / count(months with data)
+```
+
+#### Percentage Change
+
+```
+change_pct = ((current_month - average) / average) * 100
+```
+
+#### Annual Delta
+
+```
+annual_delta = (current_month - average) * 12
+```
+
+### Display Rules
+
+| Condition              | Display                                       |
+| ---------------------- | --------------------------------------------- |
+| `months_of_data < 1`   | "Building baseline..."                        |
+| `abs(change_pct) < 5%` | "On track" (no annual delta)                  |
+| `change_pct >= 5%`     | "↑ +X% above usual" + red annual delta        |
+| `change_pct <= -5%`    | "↓ -X% below usual" + green annual delta + 🎉 |
+
+### Number Formatting
+
+- **Amounts:** Use existing `format_currency()` function from `html.rs`
+  - Outputs: `$1,234.00` (comma separator, 2 decimals)
+- **Percentages:** `+7%` (no decimals, include sign)
+- **Annual delta:** `+$360/year` (include sign, "/year" suffix)
+
+### Sorting
+
+Default order: **Amount descending** (largest expenses first)
+
+Rationale: Focus on biggest spending categories first.
+
+Future enhancement: Could add sort options if needed.
+
+---
+
+## Edge Cases
+
+### 1. Only One Tag
+
+Show the tag card + helper card encouraging broader categorization
+
+### 2. Many Tags (>15)
+
+All tags shown - no hiding or "show more" button. User should be encouraged to consolidate tags.
+
+### 3. Small Tags (<2% of expenses)
+
+**Always show** - no threshold for hiding. Better to see all categories.
+
+### 4. Exact Zero Change
+
+```
+│ Avg: $500/month      │
+│ → On target  │
+```
+
+### 5. Very Large Delta
+
+```
+│ 💡 +$12,360/year     │
+```
+
+No special handling - show as calculated.
+
+### 6. Negative Expenses (Refunds)
+
+If a tag has net positive amount (refunds > expenses), exclude from this section.
+
+**Decision:** Exclude tags with positive net amounts (they're not expenses).
+
+### 7. "Other" Tag Placement
+
+Always sort "Other" (untagged transactions) to the **end** of the list, regardless of amount.
+
+---
+
+## Visual Design Tokens
+
+### Colors (Use existing classes from `html.rs`)
+
+- **Overspending:** `text-red-600 dark:text-red-400`
+- **Saving:** `text-green-600 dark:text-green-400`
+- **On track:** `text-gray-600 dark:text-gray-400`
+- **Insufficient data:** `text-blue-600 dark:text-blue-400`
+- **Card background:** `bg-white dark:bg-gray-800`
+- **Card border:** `border border-gray-200 dark:border-gray-700`
+
+### Typography
+
+- **Tag name:** `text-lg font-semibold`
+- **Current amount:** `text-3xl font-bold`
+- **Percentage:** `text-sm text-gray-600 dark:text-gray-400`
+- **Average:** `text-sm`
+- **Trend:** `text-sm font-medium`
+- **Annual delta:** `text-sm font-semibold`
+
+### Spacing
+
+- **Card padding:** `p-4`
+- **Grid gap:** `gap-4`
+- **Internal spacing:** `space-y-2` between elements
+- **Section margin:** `mt-8 mb-8`
+
+### Shadows & Borders
+
+- **Card elevation:** `shadow-md hover:shadow-lg`
+- **Rounded corners:** `rounded-lg`
+- **Transition:** `transition-shadow` for smooth hover effect
+
+---
+
+## Implementation Notes
+
+### Emojis in Tags
+
+- Users enter emojis directly in tag names (e.g., "🍔 Food", "Transport")
+- No automatic emoji mapping or picker
+- Tags display exactly as entered
+- Emojis are optional - plain text tags work fine
+
+### Tag Organization Philosophy
+
+- Encourage **broad categories** (~10 tags total)
+- Show all tags regardless of size
+- "Other" tag for untagged transactions appears last
+
+### Integration with Existing Code
+
+- Use `format_currency()` from `html.rs` for all monetary values
+- Follow existing Tailwind class patterns
+- Match existing table/chart styling for consistency
+- Use existing color scheme (blue accent, dark mode support)
+
+---
+
+## Future Enhancements
+
+Could consider adding:
+
+- Click to filter transactions by tag
+- Tooltip with monthly breakdown on hover
+- Sort options (by amount, by %, by name)
+- Sparkline showing last few months
+
+---
+
+## Open Questions
+
+None - design is complete and ready for implementation.
+
+---
+
+**Document Version:** 1.0
+**Last Updated:** 2026-01-24
+**Status:** Ready for Implementation

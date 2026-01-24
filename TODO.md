@@ -2,7 +2,17 @@
 
 ## Stage One: Budgeting
 
+- Implement expense cards, see [design spec](./docs/expenses-by-tag-design-spec.md) and
+  [technical spec](./docs/expenses-by-tag-tech-spec.md)
+- Currently shows up to 13 months (curr + curr of last year), remove first to avoid showing part of past month's transactions?
+- Dashboard tables:
+  - Make text in tables right aligned
+  - Make it obvious that tables can be scrolled (always show scroll bar?)
+  - Investigate flickering of sticky header column in monthly summaries table on iOS when scrolling vertically
+  - Round values to whole numbers?
+  - Reduce corner rounding from `rounded-lg` to `rounded`
 - Bring registration form in line with other pages re how to handle errors, in particular mutex locks.
+- Add support for Wise CSV exports
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
 - Organise code into modules based on features
   - dashboard
