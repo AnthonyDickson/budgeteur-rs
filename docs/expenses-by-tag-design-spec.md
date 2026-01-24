@@ -6,6 +6,8 @@ A card-based visualization showing expense breakdown by tag with trend indicator
 Complements the existing dashboard charts and tables by providing an at-a-glance view of spending patterns across
 categories.
 
+**IMPORTANT: Cards display data for the LAST COMPLETE MONTH, not the current partial month.**
+
 ## Goals
 
 - **Primary**: Help identify overspending categories quickly
@@ -18,6 +20,49 @@ categories.
 2. **Actionable**: Annual delta framing encourages spending adjustments
 3. **Progressive**: Works well for first-time use and ongoing analysis
 4. **Non-judgmental**: Neutral tone with celebration for savings, not shame for overspending
+5. **Truthful**: Only show complete, accurate data - never partial or extrapolated
+
+---
+
+## Temporal Logic: Why Last Complete Month?
+
+The cards compare **last complete month** against **historical average** (excluding that month).
+
+### The Problem with Current Month
+
+```
+Today: January 15th
+Current month: $500 spent
+Historical avg: $800/month
+
+Showing current month would say: "↓ -37% below usual"
+But reality: User is on track to spend ~$1000 (overspending!)
+```
+
+Partial month data is **misleading** until the last day. Extrapolation is **unreliable** (big purchases, rent payments, irregular spending).
+
+### The Solution: Last Complete Month
+
+```
+Today: January 15th (any day)
+Last complete: December ($850)
+Historical avg: $800/month (Jan-Nov average)
+
+Card shows: "↑ +6% above usual" ✓
+```
+
+Benefits:
+
+- Always accurate (complete data)
+- Always comparable (full month vs full months)
+- Simple to understand
+- No edge cases or estimation errors
+
+### User Mental Model
+
+"Here's how I did last month compared to my usual pattern. I can use this to inform my behavior this month."
+
+This is **actionable** ("I overspent last month, let me be careful") without being **false** (showing misleading partial data).
 
 ---
 
@@ -41,14 +86,16 @@ Dashboard Page
 ### Section Header
 
 ```
-Expenses by Tag                                    Last 12 months
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Expenses by Tag                                    December 2024
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 **Specifications:**
 
 - Title: "Expenses by Tag" (text-xl, font-semibold)
-- Subtitle: "Last 12 months" (text-sm, text-gray-600, right-aligned)
+- Subtitle: "December 2024" (text-sm, text-gray-600, right-aligned)
+  - Format: `{MonthName} {Year}` (e.g., "December 2024", "March 2025")
+  - Shows the actual month being displayed (last complete month)
 - Divider: Subtle border or visual separator
 - Margin: 8 units below Monthly Summary Table, 4 units above cards
 
@@ -79,16 +126,16 @@ Expenses by Tag                                    Last 12 months
 | Element                 | Style               | Purpose                                                          |
 | ----------------------- | ------------------- | ---------------------------------------------------------------- |
 | **Tag Name**            | Large, semibold     | Quick category identification (includes any emoji from tag name) |
-| **Current Amount**      | XX-large, bold      | Primary data point                                               |
+| **Month Amount**        | XX-large, bold      | Primary data point (last complete month)                         |
 | **% of Total Expenses** | Small, muted        | Relative context                                                 |
 | **Visual Bar**          | Horizontal progress | At-a-glance comparison                                           |
-| **Monthly Average**     | Small, regular      | Historical baseline                                              |
+| **Monthly Average**     | Small, regular      | Historical baseline (excluding displayed month)                  |
 | **Trend Indicator**     | Arrow + % + color   | Direction of change                                              |
 | **Annual Impact**       | Bulb emoji + amount | Motivational projection                                          |
 
 ### Card States
 
-#### 1. Overspending (≥5% above average)
+#### 1. Overspending (≥5.5% above average)
 
 ```
 ┌──────────────────────┐
@@ -104,7 +151,7 @@ Expenses by Tag                                    Last 12 months
 └──────────────────────┘
 ```
 
-#### 2. Saving (≥5% below average)
+#### 2. Saving (≤-5.5% below average)
 
 ```
 ┌──────────────────────┐
@@ -120,7 +167,7 @@ Expenses by Tag                                    Last 12 months
 └──────────────────────┘
 ```
 
-#### 3. On Track (<5% variance)
+#### 3. On Track (<5.5% variance)
 
 ```
 ┌──────────────────────┐
@@ -131,11 +178,11 @@ Expenses by Tag                                    Last 12 months
 │ ▓▓▓░░░░░░░           │
 │                      │
 │ Avg: $220/month      │
-│ → On track           │ ⬅️ Gray text, no annual delta
+│ ↑ On track           │ ⬅️ Gray text, no annual delta
 └──────────────────────┘
 ```
 
-#### 4. Insufficient Data (<1 month of data)
+#### 4. Insufficient Data (<2 complete months)
 
 ```
 ┌──────────────────────┐
@@ -148,6 +195,8 @@ Expenses by Tag                                    Last 12 months
 │ Building baseline... │ ⬅️ Blue/info color
 └──────────────────────┘
 ```
+
+**Note:** Requires at least 2 complete months: one for display, one for comparison.
 
 #### 5. No Tags / Empty State
 
@@ -237,7 +286,7 @@ Large:     4 columns (≥ 1024px)  ┌───┬───┬───┬──
 - **Semantic HTML:** Each card is a `<div>` with appropriate ARIA labels
 - **Screen reader text:**
   ```
-  aria-label="Food expenses: $450 this month, up 7% from usual $420 average, 
+  aria-label="Food expenses: $450 last month, up 7% from usual $420 average, 
              resulting in $360 more spending per year"
   ```
 - **Color not sole indicator:** Arrows (↑↓→) supplement color for colorblind users
@@ -252,34 +301,66 @@ Large:     4 columns (≥ 1024px)  ┌───┬───┬───┬──
 
 ## Data & Logic
 
+### Temporal Calculation
+
+```rust
+// Get last complete month
+let today = get_current_date();
+let last_complete_month = (today.replace_day(1) - 1.day).replace_day(1);
+
+// Example: 
+// Today: 2025-01-15 → last_complete_month: 2024-12-01
+// Today: 2025-01-01 → last_complete_month: 2024-12-01
+// Today: 2025-01-31 → last_complete_month: 2024-12-01
+```
+
 ### Calculations
 
-#### Monthly Average
+#### Monthly Average (Historical Baseline)
 
 ```
-average = sum(last 12 months) / count(months with data)
+# Exclude the month being displayed from average calculation
+historical_months = all_months.excluding(last_complete_month)
+average = sum(historical_months) / count(historical_months)
+
+# Special case: if only one month of data exists (no historical baseline)
+if count(historical_months) == 0:
+    insufficient_data = true
 ```
+
+**Why exclude displayed month:**
+
+- Prevents the comparison from being circular
+- "How does December compare to my typical month?" means "typical" shouldn't include December
+- Allows detecting trends: if December is always high, average stays accurate
 
 #### Percentage Change
 
 ```
-change_pct = ((current_month - average) / average) * 100
+if average > 0:
+    change_pct = ((last_month_amount - average) / average) * 100
+else if last_month_amount > 0:
+    change_pct = 100  # First month with spending
+else:
+    change_pct = 0
 ```
 
 #### Annual Delta
 
 ```
-annual_delta = (current_month - average) * 12
+annual_delta = (last_month_amount - average) * 12
 ```
 
 ### Display Rules
 
-| Condition              | Display                                       |
-| ---------------------- | --------------------------------------------- |
-| `months_of_data < 1`   | "Building baseline..."                        |
-| `abs(change_pct) < 5%` | "On track" (no annual delta)                  |
-| `change_pct >= 5%`     | "↑ +X% above usual" + red annual delta        |
-| `change_pct <= -5%`    | "↓ -X% below usual" + green annual delta + 🎉 |
+| Condition                     | Display                                       |
+| ----------------------------- | --------------------------------------------- |
+| `historical_months_count < 1` | "Building baseline..."                        |
+| `abs(change_pct) < 5.5%`      | "On track" (no annual delta)                  |
+| `change_pct >= 5.5%`          | "↑ +X% above usual" + red annual delta        |
+| `change_pct <= -5.5%`         | "↓ -X% below usual" + green annual delta + 🎉 |
+
+**Note:** Threshold is 5.5% (not 5.0%) to align with display rounding - see Technical Spec for details.
 
 ### Number Formatting
 
@@ -287,6 +368,7 @@ annual_delta = (current_month - average) * 12
   - Outputs: `$1,234.00` (comma separator, 2 decimals)
 - **Percentages:** `+7%` (no decimals, include sign)
 - **Annual delta:** `+$360/year` (include sign, "/year" suffix)
+- **Month display:** `"December 2024"` format (full month name + year)
 
 ### Sorting
 
@@ -300,9 +382,11 @@ Future enhancement: Could add sort options if needed.
 
 ## Edge Cases
 
-### 1. Only One Tag
+### 1. Only One Complete Month
 
-Show the tag card + helper card encouraging broader categorization
+Show the tag card + helper card + "Building baseline..." state
+
+**Rationale:** Need at least 2 months (one to display, one for comparison)
 
 ### 2. Many Tags (>15)
 
@@ -316,7 +400,7 @@ All tags shown - no hiding or "show more" button. User should be encouraged to c
 
 ```
 │ Avg: $500/month      │
-│ → On target  │
+│ → On track           │
 ```
 
 ### 5. Very Large Delta
@@ -329,13 +413,28 @@ No special handling - show as calculated.
 
 ### 6. Negative Expenses (Refunds)
 
-If a tag has net positive amount (refunds > expenses), exclude from this section.
+If a tag has net positive amount (refunds > expenses) in the displayed month, exclude from this section.
 
 **Decision:** Exclude tags with positive net amounts (they're not expenses).
 
 ### 7. "Other" Tag Placement
 
 Always sort "Other" (untagged transactions) to the **end** of the list, regardless of amount.
+
+### 8. First Day of Month
+
+On January 1st:
+
+- Last complete month: December
+- Works perfectly - no special case needed
+
+### 9. Month Transitions
+
+The displayed month updates automatically:
+
+- Jan 1-31: Shows "December 2024"
+- Feb 1-28: Shows "January 2025"
+- Smooth transition, always accurate
 
 ---
 
@@ -406,6 +505,7 @@ Could consider adding:
 - Tooltip with monthly breakdown on hover
 - Sort options (by amount, by %, by name)
 - Sparkline showing last few months
+- Toggle to show "current month (projected)" vs "last complete month"
 
 ---
 
@@ -415,6 +515,7 @@ None - design is complete and ready for implementation.
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2026-01-24
+**Document Version:** 2.0
+**Last Updated:** 2025-01-24
 **Status:** Ready for Implementation
+**Changes from v1.0:** Updated temporal logic to use last complete month instead of current partial month
