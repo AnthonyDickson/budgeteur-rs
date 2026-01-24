@@ -4,6 +4,7 @@
 //! Includes functionality for filtering data by tags.
 
 mod aggregation;
+mod cards;
 mod charts;
 mod handlers;
 mod preferences;

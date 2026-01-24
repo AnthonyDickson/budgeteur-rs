@@ -1,6 +1,7 @@
 # Developer Docs
 
 <!--toc:start-->
+
 - [Developer Docs](#developer-docs)
   - [Getting Started](#getting-started)
     - [Nix Flake](#nix-flake)
@@ -12,9 +13,11 @@
     - [Building and Running the Docker Image Locally](#building-and-running-the-docker-image-locally)
   - [Code Style](#code-style)
     - [Error Handling](#error-handling)
+
 <!--toc:end-->
 
 ## Getting Started
+
 These instructions are for people who want to compile from source and/or modify
 the code.
 
@@ -22,6 +25,8 @@ This project was developed with cargo 1.90.0, other versions have not been teste
 [bacon](https://dystroy.org/bacon/) is used for running scripts.
 
 **Note**: you cannot test this web app locally in Safari because it does not support secure cookies on localhost.
+
+For design and technical specifications, see [docs/](./docs).
 
 ### Nix Flake
 
