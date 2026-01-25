@@ -16,7 +16,7 @@ use std::{
     ops::RangeInclusive,
     sync::{Arc, Mutex},
 };
-use time::{Date, Duration, OffsetDateTime, UtcOffset};
+use time::{Date, Duration, Month, OffsetDateTime};
 
 use crate::{
     AppState, Error,
@@ -170,14 +170,26 @@ pub async fn update_excluded_tags(
 /// Gets the date range for dashboard queries (last year from today).
 ///
 /// # Arguments
-/// * `local_timezone` - The local timezone offset
+/// * `today` - The reference date to calculate the range from
 ///
 /// # Returns
-/// Inclusive date range from one year ago to today.
-fn year_to_date(local_timezone: UtcOffset) -> RangeInclusive<Date> {
-    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
-    let one_year_ago = today - Duration::days(YEARLY_PERIOD_DAYS);
-    one_year_ago..=today
+/// Inclusive date range for the last twelve months including the current month.
+fn last_twelve_months(today: Date) -> RangeInclusive<Date> {
+    let start = today - Duration::days(YEARLY_PERIOD_DAYS);
+
+    let start = match start.month() {
+        Month::December => Date::from_calendar_date(start.year() + 1, Month::January, 1)
+            .expect("could not create date"),
+        month if month == today.month() => start
+            .replace_day(1)
+            .and_then(|d| d.replace_month(month.next()))
+            .expect("could not create date"),
+        // This case may happen on 29 Feb on a leap year.
+        // For example, 29 Feb 2028 - 365 days = 01 Mar 2027
+        _ => start,
+    };
+
+    start..=today
 }
 
 /// Fetches and builds all data needed for the dashboard display.
@@ -220,7 +232,8 @@ fn build_dashboard_data(
         Some(excluded_tag_ids)
     };
 
-    let date_range = year_to_date(local_timezone);
+    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
+    let date_range = last_twelve_months(today);
     let transactions = get_transactions_in_date_range(date_range, excluded_tags_slice, connection)
         .inspect_err(|error| {
             tracing::error!("Could not get transactions for last year: {error}")
@@ -239,8 +252,6 @@ fn build_dashboard_data(
         summary_statistics_table(&transactions, total_account_balance),
         monthly_summary_table(&transactions, total_account_balance),
     ];
-
-    let today = OffsetDateTime::now_utc().to_offset(local_timezone).date();
 
     // Safe unwrap: dates from OffsetDateTime are always valid
     let last_complete_month = (today.replace_day(1).unwrap() - Duration::days(1))
@@ -264,7 +275,7 @@ fn build_dashboard_data(
 /// The chart options are serialized to JSON for ECharts consumption.
 ///
 /// # Arguments
-/// * `transactions` - Transaction data for the last year
+/// * `transactions` - Transaction data for the last 12 months
 /// * `total_account_balance` - Current total balance across all accounts
 ///
 /// # Returns
@@ -497,7 +508,7 @@ mod tests {
     use time::{Duration, OffsetDateTime};
 
     use crate::{
-        dashboard::handlers::DashboardState,
+        dashboard::handlers::{DashboardState, last_twelve_months},
         db::initialize,
         tag::{TagName, create_tag},
         transaction::{Transaction, create_transaction},
@@ -654,5 +665,52 @@ mod tests {
         let form_data = "";
         let form: ExcludedTagsForm = serde_html_form::from_str(form_data).unwrap();
         assert_eq!(form.excluded_tags, Vec::<i64>::new());
+    }
+
+    #[test]
+    fn last_twelve_months_returns_correct_range() {
+        use time::{Date, Month};
+
+        let test_cases = [
+            // (today, expected_start)
+            (
+                Date::from_calendar_date(2026, Month::January, 15).unwrap(),
+                Date::from_calendar_date(2025, Month::February, 1).unwrap(),
+            ),
+            (
+                Date::from_calendar_date(2026, Month::March, 5).unwrap(),
+                Date::from_calendar_date(2025, Month::April, 1).unwrap(),
+            ),
+            (
+                Date::from_calendar_date(2026, Month::December, 15).unwrap(),
+                Date::from_calendar_date(2026, Month::January, 1).unwrap(),
+            ),
+            (
+                Date::from_calendar_date(2028, Month::February, 29).unwrap(),
+                Date::from_calendar_date(2027, Month::March, 1).unwrap(),
+            ),
+        ];
+
+        for (today, expected_start) in test_cases {
+            let range = last_twelve_months(today);
+
+            assert_eq!(
+                *range.start(),
+                expected_start,
+                "For today={}, expected start={}, got start={}",
+                today,
+                expected_start,
+                range.start()
+            );
+
+            assert_eq!(
+                *range.end(),
+                today,
+                "For today={}, expected end={}, got end={}",
+                today,
+                today,
+                range.end()
+            );
+        }
     }
 }

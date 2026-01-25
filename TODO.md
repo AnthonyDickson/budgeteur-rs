@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Currently shows up to 13 months (curr + curr of last year), remove first to avoid showing part of past month's transactions?
 - Dashboard tables:
   - Separate from chart grid so tables display on same row in desktop view
   - Make text in tables right aligned
