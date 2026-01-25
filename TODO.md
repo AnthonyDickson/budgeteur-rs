@@ -3,7 +3,6 @@
 ## Stage One: Budgeting
 
 - Dashboard tables:
-  - Separate from chart grid so tables display on same row in desktop view
   - Make text in tables right aligned
   - Make it obvious that tables can be scrolled (always show scroll bar?)
   - Investigate flickering of sticky header column in monthly summaries table on iOS when scrolling vertically

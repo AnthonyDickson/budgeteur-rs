@@ -411,7 +411,15 @@ fn dashboard_content_partial(
                         class="min-h-[380px] rounded dark:bg-gray-100"
                     {}
                 }
+            }
+        }
 
+        section
+            id="tables"
+            class="w-full mx-auto mb-4"
+        {
+            div class="grid grid-cols-1 xl:grid-cols-2 gap-4"
+            {
                 @for table in tables {
                     (table)
                 }
