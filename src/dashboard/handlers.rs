@@ -445,7 +445,7 @@ fn dashboard_content_partial(
                     hx-target-error="#alert-container"
                     hx-swap="innerHTML"
                     hx-trigger="change"
-                    class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg"
+                    class="bg-gray-50 dark:bg-gray-800 p-4 rounded"
                 {
                     p class="text-sm text-gray-600 dark:text-gray-400 mb-3"
                     {

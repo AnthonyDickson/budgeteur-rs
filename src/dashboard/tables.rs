@@ -60,7 +60,7 @@ pub(super) fn summary_statistics_table(
         {
             h3 class="text-xl font-semibold mb-4" { "Summary Statistics" }
 
-            div class="overflow-x-auto rounded-lg shadow" {
+            div class="overflow-x-auto rounded shadow" {
                 table class="w-full text-sm text-right text-gray-500 dark:text-gray-400"
                 {
                     thead class="text-xs text-gray-900 uppercase bg-gray-100 dark:bg-gray-700 dark:text-gray-400"
@@ -196,7 +196,7 @@ pub(super) fn monthly_summary_table(
 
             div
                 id="monthly-summary-table"
-                class="overflow-x-auto rounded-lg shadow"
+                class="overflow-x-auto rounded shadow"
                 dir="rtl"
             {
                 table class="w-full text-right text-sm text-gray-500 dark:text-gray-400" dir="ltr"

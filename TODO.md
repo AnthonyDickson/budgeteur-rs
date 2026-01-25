@@ -3,10 +3,8 @@
 ## Stage One: Budgeting
 
 - Dashboard tables:
-  - Make it obvious that tables can be scrolled (always show scroll bar?)
   - Investigate flickering of sticky header column in monthly summaries table on iOS when scrolling vertically
   - Round values to whole numbers?
-  - Reduce corner rounding from `rounded-lg` to `rounded`
 - Bring registration form in line with other pages re how to handle errors, in particular mutex locks.
 - Add support for Wise CSV exports
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen

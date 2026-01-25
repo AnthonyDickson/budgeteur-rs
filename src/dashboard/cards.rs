@@ -110,7 +110,7 @@ fn expense_card(stat: &TagExpenseStats) -> Markup {
     html! {
         div
             class="bg-white dark:bg-gray-800 border border-gray-200
-                   dark:border-gray-700 rounded-lg p-4 shadow-md 
+                   dark:border-gray-700 rounded p-4 shadow-md 
                    hover:shadow-lg transition-shadow min-h-[200px] 
                    flex flex-col justify-between"
             aria-label=(create_card_aria_label(stat, state))
