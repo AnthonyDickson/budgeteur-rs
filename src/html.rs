@@ -310,6 +310,43 @@ pub fn format_currency(number: f64) -> String {
     formatted_string
 }
 
+pub fn format_currency_rounded(number: f64) -> String {
+    static POSITIVE_FMT: OnceLock<Formatter> = OnceLock::new();
+
+    let positive_fmt = POSITIVE_FMT.get_or_init(|| {
+        Formatter::currency("$")
+            .unwrap()
+            .precision(Precision::Decimals(0))
+    });
+
+    static NEGATIVE_FMT: OnceLock<Formatter> = OnceLock::new();
+
+    let negative_fmt = NEGATIVE_FMT.get_or_init(|| {
+        Formatter::currency("-$")
+            .unwrap()
+            .precision(Precision::Decimals(0))
+    });
+
+    let number = number.round();
+
+    if number < 0.0 {
+        negative_fmt.fmt_string(number.abs())
+    } else if number > 0.0 {
+        positive_fmt.fmt_string(number)
+    } else {
+        // Zero is hardcoded as "0", so we must specify the formatted string for zero
+        "$0".to_owned()
+    }
+}
+
+/// Creates a span with `amount` rounded to the nearest whole number and a
+/// tooltip (title) that shows `amount` rounded to two decimal places.
+pub fn currency_rounded_with_tooltip(amount: f64) -> Markup {
+    html!(
+        span title=(format_currency(amount)) { (format_currency_rounded(amount)) }
+    )
+}
+
 /// A link with blue text for use in a <p> tag.
 pub fn link(url: &str, text: &str) -> Markup {
     html! (
