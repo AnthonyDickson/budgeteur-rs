@@ -3,7 +3,6 @@
 ## Stage One: Budgeting
 
 - Dashboard tables:
-  - Make text in tables right aligned
   - Make it obvious that tables can be scrolled (always show scroll bar?)
   - Investigate flickering of sticky header column in monthly summaries table on iOS when scrolling vertically
   - Round values to whole numbers?
