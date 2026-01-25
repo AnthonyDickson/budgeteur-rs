@@ -2,7 +2,7 @@
 //!
 //! Provides HTML table components for displaying monthly financial summaries.
 
-use maud::{Markup, html};
+use maud::{Markup, PreEscaped, html};
 use time::Date;
 
 use crate::{
@@ -197,9 +197,8 @@ pub(super) fn monthly_summary_table(
             div
                 id="monthly-summary-table"
                 class="overflow-x-auto rounded shadow"
-                dir="rtl"
             {
-                table class="w-full text-right text-sm text-gray-500 dark:text-gray-400" dir="ltr"
+                table class="w-full text-right text-sm text-gray-500 dark:text-gray-400"
                 {
                     thead class="text-xs text-gray-900 uppercase bg-gray-100 dark:bg-gray-700 dark:text-gray-400"
                     {
@@ -276,6 +275,24 @@ pub(super) fn monthly_summary_table(
                         }
                     }
                 }
+            }
+
+            // Scroll to right-most column on load, inline so it is triggered on HTMX swap
+            // Fixes flickering sticky column bug with iOS Safari by avoiding
+            // dir="rtl" on the container and dir="ltr" on the table to
+            // automatically scroll to the right-most column.
+            script {
+                (PreEscaped(r#"
+                (function() {
+                    const container = document.getElementById('monthly-summary-table');
+                    if (container) {
+                        // Use requestAnimationFrame to ensure DOM is ready
+                        requestAnimationFrame(() => {
+                            container.scrollLeft = container.scrollWidth - container.clientWidth;
+                        });
+                    }
+                })();
+                "#))
             }
         }
     }
