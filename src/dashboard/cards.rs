@@ -7,7 +7,7 @@ use maud::{Markup, html};
 use crate::{
     dashboard::aggregation::TagExpenseStats,
     endpoints,
-    html::{LINK_STYLE, format_currency},
+    html::{LINK_STYLE, currency_rounded_with_tooltip, format_currency},
 };
 
 /// Uses 5.5% (not 5.0%) to align with percentage rounding:
@@ -124,7 +124,7 @@ fn expense_card(stat: &TagExpenseStats) -> Markup {
 
                 // Current amount
                 div class="text-3xl font-bold mb-1" {
-                    (format_currency(stat.last_month_amount))
+                    (currency_rounded_with_tooltip(stat.last_month_amount))
                 }
 
                 // Percentage of total
@@ -154,7 +154,7 @@ fn card_bottom_content(stat: &TagExpenseStats, state: CardState) -> Markup {
                 }
                 CardState::OnTrack => {
                     div class="text-sm" {
-                        "Avg: " (format_currency(stat.monthly_average)) "/month"
+                        "Avg: " (currency_rounded_with_tooltip(stat.monthly_average)) "/month"
                     }
                     div class="text-sm text-gray-600 dark:text-gray-400" {
                         "→ On track"
@@ -162,24 +162,24 @@ fn card_bottom_content(stat: &TagExpenseStats, state: CardState) -> Markup {
                 }
                 CardState::Overspending => {
                     div class="text-sm" {
-                        "Avg: " (format_currency(stat.monthly_average)) "/month"
+                        "Avg: " (currency_rounded_with_tooltip(stat.monthly_average)) "/month"
                     }
                     div class="text-sm font-medium text-red-600 dark:text-red-400" {
                         "↑ +" (format_percentage(stat.percentage_change)) "% above usual"
                     }
                     div class="text-sm font-semibold text-red-600 dark:text-red-400" {
-                        "💡 +" (format_currency(stat.annual_delta)) "/year"
+                        "💡 +" (currency_rounded_with_tooltip(stat.annual_delta)) "/year"
                     }
                 }
                 CardState::Saving => {
                     div class="text-sm" {
-                        "Avg: " (format_currency(stat.monthly_average)) "/month"
+                        "Avg: " (currency_rounded_with_tooltip(stat.monthly_average)) "/month"
                     }
                     div class="text-sm font-medium text-green-600 dark:text-green-400" {
                         "↓ -" (format_percentage(stat.percentage_change.abs())) "% below usual"
                     }
                     div class="text-sm font-semibold text-green-600 dark:text-green-400" {
-                        "💡 -" (format_currency(stat.annual_delta.abs())) "/year 🎉"
+                        "💡 -" (currency_rounded_with_tooltip(stat.annual_delta.abs())) "/year 🎉"
                     }
                 }
             }

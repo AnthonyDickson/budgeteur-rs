@@ -192,10 +192,12 @@ fn currency_formatter() -> JsFunction {
         "number",
         // Use USD instead of NZD since it is easier to read (No 'NZ' prefix)
         "const currencyFormatter = new Intl.NumberFormat('en-US', {
-              style: 'currency',
-              currency: 'USD'
-            });
-            return (number) ? currencyFormatter.format(number) : \"-\";",
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 0, // Ensures no decimals are displayed
+            maximumFractionDigits: 0, // Ensures no decimals are displayed
+        });
+        return (number) ? currencyFormatter.format(number) : \"-\";",
     )
 }
 

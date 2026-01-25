@@ -13,7 +13,7 @@ use crate::{
         },
         transaction::Transaction,
     },
-    html::{TABLE_CELL_STYLE, TABLE_ROW_STYLE, format_currency},
+    html::{TABLE_CELL_STYLE, TABLE_ROW_STYLE, currency_rounded_with_tooltip},
 };
 
 // Table cell styles for monthly summary
@@ -81,17 +81,17 @@ pub(super) fn summary_statistics_table(
 
                             td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE) " " (TABLE_CELL_GREEN_STYLE)}
                             {
-                                (format_currency(stats.weekly_avg_income))
+                                (currency_rounded_with_tooltip(stats.weekly_avg_income))
                             }
 
                             td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE) " " (TABLE_CELL_GREEN_STYLE)}
                             {
-                                (format_currency(stats.monthly_avg_income))
+                                (currency_rounded_with_tooltip(stats.monthly_avg_income))
                             }
 
                             td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE) " " (TABLE_CELL_GREEN_STYLE)}
                             {
-                                (format_currency(stats.total_income))
+                                (currency_rounded_with_tooltip(stats.total_income))
                             }
                         }
 
@@ -102,17 +102,17 @@ pub(super) fn summary_statistics_table(
 
                             td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE) " " (TABLE_CELL_RED_STYLE)}
                             {
-                                (format_currency(stats.weekly_avg_expenses))
+                                (currency_rounded_with_tooltip(stats.weekly_avg_expenses))
                             }
 
                             td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE) " " (TABLE_CELL_RED_STYLE)}
                             {
-                                (format_currency(stats.monthly_avg_expenses))
+                                (currency_rounded_with_tooltip(stats.monthly_avg_expenses))
                             }
 
                             td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE) " " (TABLE_CELL_RED_STYLE)}
                             {
-                                (format_currency(stats.total_expenses))
+                                (currency_rounded_with_tooltip(stats.total_expenses))
                             }
                         }
 
@@ -125,7 +125,7 @@ pub(super) fn summary_statistics_table(
                             {
                                 div class={(TABLE_DATA_CELL_STYLE) " " (amount_color_class(stats.weekly_avg_net_income))}
                                 {
-                                    (format_currency(stats.weekly_avg_net_income))
+                                    (currency_rounded_with_tooltip(stats.weekly_avg_net_income))
                                 }
                             }
 
@@ -133,7 +133,7 @@ pub(super) fn summary_statistics_table(
                             {
                                 div class={(TABLE_DATA_CELL_STYLE) " " (amount_color_class(stats.monthly_avg_net_income))}
                                 {
-                                    (format_currency(stats.monthly_avg_net_income))
+                                    (currency_rounded_with_tooltip(stats.monthly_avg_net_income))
                                 }
                             }
 
@@ -141,7 +141,7 @@ pub(super) fn summary_statistics_table(
                             {
                                 div class={(TABLE_DATA_CELL_STYLE) " " (amount_color_class(stats.total_net_income))}
                                 {
-                                    (format_currency(stats.total_net_income))
+                                    (currency_rounded_with_tooltip(stats.total_net_income))
                                 }
                             }
                         }
@@ -154,7 +154,7 @@ pub(super) fn summary_statistics_table(
                             td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE)} { "—" }
                             td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE) " font-bold"}
                             {
-                                (format_currency(total_account_balance))
+                                (currency_rounded_with_tooltip(total_account_balance))
                             }
                         }
                     }
@@ -223,7 +223,7 @@ pub(super) fn monthly_summary_table(
                             @for month in &sorted_months {
                                 td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE) " " (TABLE_CELL_GREEN_STYLE)}
                                 {
-                                    (format_currency(breakdown.income_for_month(month)))
+                                    (currency_rounded_with_tooltip(breakdown.income_for_month(month)))
                                 }
                             }
                         }
@@ -236,7 +236,7 @@ pub(super) fn monthly_summary_table(
                             @for month in &sorted_months {
                                 td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE) " " (TABLE_CELL_RED_STYLE)}
                                 {
-                                    (format_currency(breakdown.expenses_for_month(month)))
+                                    (currency_rounded_with_tooltip(breakdown.expenses_for_month(month)))
                                 }
                             }
                         }
@@ -256,7 +256,7 @@ pub(super) fn monthly_summary_table(
 
                                     div class={(TABLE_DATA_CELL_STYLE) " " (amount_color_class(net))}
                                     {
-                                        (format_currency(net))
+                                        (currency_rounded_with_tooltip(net))
                                     }
                                 }
                             }
@@ -270,7 +270,7 @@ pub(super) fn monthly_summary_table(
                             @for (i, _month) in sorted_months.iter().enumerate() {
                                 td class={(TABLE_CELL_STYLE) " " (TABLE_DATA_CELL_STYLE) " font-semibold"}
                                 {
-                                    (format_currency(balances[i]))
+                                    (currency_rounded_with_tooltip(balances[i]))
                                 }
                             }
                         }
