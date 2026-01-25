@@ -332,7 +332,7 @@ dependencies = [
 
 [[package]]
 name = "budgeteur_rs"
-version = "0.24.0"
+version = "0.24.1"
 dependencies = [
  "axum",
  "axum-extra",
