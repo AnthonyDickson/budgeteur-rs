@@ -1,6 +1,6 @@
 [package]
 name = "budgeteur_rs"
-version = "0.25.0"
+version = "0.25.1"
 edition = "2024"
 default-run = "server"
 
@@ -16,6 +16,7 @@ axum-server = { version = "0.8.0" }
 bcrypt = "0.17.1"
 charming = "0.6.0"
 clap = { version = "4.5.53", features = ["derive"] }
+csv = "1.4.0"
 maud = { version = "0.27.0", features = ["axum"] }
 md5 = "0.8.0"
 numfmt = "1.2.0"
@@ -25,6 +26,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 serde_urlencoded = "0.7.1"
 sha2 = { version = "0.10.9" }
+sscanf = "0.4.4"
 thiserror = "2.0.17"
 time = { version = "0.3.44", features = ["serde", "local-offset"] }
 time-tz = "2.0.0"

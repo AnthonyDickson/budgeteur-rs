@@ -2,6 +2,8 @@
 
 ## Stage One: Budgeting
 
+- Fix: Create tag form has wrong text on submit button
+  - "Update Tag" -> "Create Tag"
 - Bring registration form in line with other pages re how to handle errors, in particular mutex locks.
 - Add support for Wise CSV exports
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
@@ -34,6 +36,7 @@
     - Net balance for last month
     - Current month is previous month's balance plus mean net income over the last 12 months minus the specified amount
     - Projections for the next ten months are the above value plus the mean net income over the last 12 months
+- Navigation: Mobile should use bottom navigation. See example 1 <https://www.justinmind.com/blog/mobile-navigation/>
 - Update values to use accounting formatting
   - Zero filled up to two decimal places for floats
   - Parantheses instead of minus symbol for negative values
