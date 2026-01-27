@@ -125,7 +125,7 @@ fn new_tag_form_view(error_message: &str) -> Markup {
                 }
             }
 
-            button type="submit" class=(BUTTON_PRIMARY_STYLE) { "Update Tag" }
+            button type="submit" class=(BUTTON_PRIMARY_STYLE) { "Create Tag" }
         }
     }
 }
