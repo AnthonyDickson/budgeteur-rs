@@ -24,8 +24,8 @@ jobs:
 
       - name: Install Rust Toolchain
         run: |
-          rustup toolchain install 1.92 && \
-          rustup override set 1.92 && \
+          rustup toolchain install 1.93 && \
+          rustup override set 1.93 && \
           rustup component add clippy && \
           rustup component add rustfmt
 
