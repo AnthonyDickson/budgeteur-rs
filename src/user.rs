@@ -112,7 +112,7 @@ pub fn get_user_by_id(user_id: UserID, db_connection: &Connection) -> Result<Use
 /// # Errors
 ///
 /// Returns a [Error::SqlError] if an SQL related error occurred.
-pub fn count_users(connection: &Connection) -> Result<usize, Error> {
+pub fn count_users(connection: &Connection) -> Result<u32, Error> {
     connection
         .query_row("SELECT COUNT(id) FROM user;", [], |row| row.get(0))
         .map_err(|error| error.into())

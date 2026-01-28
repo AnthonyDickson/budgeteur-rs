@@ -218,7 +218,7 @@ pub fn get_transaction(id: TransactionId, connection: &Connection) -> Result<Tra
 ///
 /// # Errors
 /// This function will return a [Error::SqlError] there is some SQL error.
-pub fn count_transactions(connection: &Connection) -> Result<usize, Error> {
+pub fn count_transactions(connection: &Connection) -> Result<u32, Error> {
     connection
         .query_row("SELECT COUNT(id) FROM \"transaction\";", [], |row| {
             row.get(0)
