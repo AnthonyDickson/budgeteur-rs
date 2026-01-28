@@ -22,7 +22,7 @@ use crate::{
 struct TagWithEditUrl {
     pub tag: Tag,
     pub edit_url: String,
-    pub transaction_count: u64,
+    pub transaction_count: u32,
 }
 
 fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
@@ -178,8 +178,8 @@ pub async fn get_tags_page(State(state): State<TagsPageState>) -> Result<Respons
     Ok(tags_view(&tags_with_edit_urls).into_response())
 }
 
-fn count_transactions_per_tag(connection: &Connection) -> Result<HashMap<TagId, u64>, Error> {
-    let result: Result<HashMap<TagId, u64>, rusqlite::Error> = connection
+fn count_transactions_per_tag(connection: &Connection) -> Result<HashMap<TagId, u32>, Error> {
+    let result: Result<HashMap<TagId, u32>, rusqlite::Error> = connection
         .prepare(
             "SELECT tag_id, COUNT(1) FROM \"transaction\" WHERE tag_id IS NOT NULL GROUP BY tag_id",
         )?

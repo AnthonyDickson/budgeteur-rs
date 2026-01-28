@@ -2,10 +2,9 @@
 
 ## Stage One: Budgeting
 
-- Fix: Create tag form has wrong text on submit button
-  - "Update Tag" -> "Create Tag"
+- Update dependencies
+  - Rust 1.93.0
 - Bring registration form in line with other pages re how to handle errors, in particular mutex locks.
-- Add support for Wise CSV exports
 - Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
 - Organise code into modules based on features
   - dashboard
@@ -44,13 +43,14 @@
 - Use HTML5 elements where possible: https://dev.to/maxprilutskiy/html5-elements-you-didnt-know-you-need-gan
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
-- Update dependencies
 - Refactor common testing functions into a separate module.
 - Ensure page layout fits on smartphone screen
 - Review UI design
   - [ ] Button states, ensure there is visual feedback for both hover and click (active) states
   - [ ] Rounded edge radii consistency---currently buttons use `rounded` but container uses `rounded-lg`
   - [ ] Autofocus on registration form
+- Add support for Wise CSV exports
+  - Complicated by multiple currencies
 
 ## Stage Two: Tracking Net Worth
 
