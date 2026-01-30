@@ -981,6 +981,9 @@ fn get_transactions_for_auto_tagging(
 
 /// Batch set tags for multiple transactions, replacing any existing tags.
 ///
+/// **Note**: If you want transactional integrity (all or nothing), pass in a
+/// transaction for `connection`.
+///
 /// # Arguments
 /// * `transaction_tag_map` - Vec of transaction_id and tag_id pairs
 /// * `connection` - Database connection
@@ -997,11 +1000,9 @@ fn batch_set_transaction_tags(
         return Ok(());
     }
 
-    let tx = connection.unchecked_transaction()?;
-
     // Batch insert new tags
-    let mut stmt =
-        tx.prepare("UPDATE \"transaction\" SET tag_id = ?2 WHERE \"transaction\".id = ?1")?;
+    let mut stmt = connection
+        .prepare("UPDATE \"transaction\" SET tag_id = ?2 WHERE \"transaction\".id = ?1")?;
 
     for (transaction_id, tag_id) in &transaction_tag_pairs {
         stmt.execute((transaction_id, tag_id))
@@ -1014,8 +1015,6 @@ fn batch_set_transaction_tags(
             })?;
     }
 
-    drop(stmt);
-    tx.commit()?;
     Ok(())
 }
 
