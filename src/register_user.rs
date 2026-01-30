@@ -16,6 +16,7 @@ use time::Duration;
 
 use crate::{
     AppState, Error, PasswordHash, ValidatedPassword,
+    alert::Alert,
     app_state::create_cookie_key,
     auth::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
     endpoints,
@@ -23,7 +24,6 @@ use crate::{
         FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner, log_in_register,
         password_input,
     },
-    internal_server_error::get_internal_server_error_redirect,
     timezone::get_local_offset,
     user::{count_users, create_user},
 };
@@ -168,12 +168,15 @@ pub async fn register_user(
     jar: PrivateCookieJar,
     Form(user_data): Form<RegisterForm>,
 ) -> Response {
-    match count_users(
-        &state
-            .db_connection
-            .lock()
-            .expect("Could not acquire database lock"),
-    ) {
+    let connection = match state.db_connection.lock() {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::error!("could not acquire database lock: {error}");
+            return Error::DatabaseLockError.into_alert_response();
+        }
+    };
+
+    match count_users(&connection) {
         Ok(count) if count >= 1 => {
             return registration_form(
                 &user_data.password,
@@ -202,45 +205,52 @@ pub async fn register_user(
         Err(e) => {
             tracing::error!("an error occurred while hashing a password: {e}");
 
-            return get_internal_server_error_redirect();
+            return Alert::ErrorSimple {
+                message: "Something went wrong, please try again later or check the server logs"
+                    .to_owned(),
+            }
+            .into_response();
         }
     };
 
     let local_timezone = match get_local_offset(&state.local_timezone) {
         Some(offset) => offset,
-        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
+        None => return Error::InvalidTimezoneError(state.local_timezone).into_alert_response(),
     };
 
-    create_user(
-        password_hash,
-        &state
-            .db_connection
-            .lock()
-            .expect("Could not acquire database lock"),
-    )
-    .map(|user| {
-        let jar = set_auth_cookie(jar, user.id, state.cookie_duration, local_timezone);
+    create_user(password_hash, &connection)
+        .map(|user| {
+            let jar = set_auth_cookie(jar, user.id, state.cookie_duration, local_timezone);
 
-        match jar {
-            Ok(jar) => (
-                StatusCode::SEE_OTHER,
-                HxRedirect(endpoints::LOG_IN_VIEW.to_owned()),
-                jar,
-            )
-                .into_response(),
-            Err(e) => {
-                tracing::error!("An error occurred while setting the auth cookie: {e}");
+            match jar {
+                Ok(jar) => (
+                    StatusCode::SEE_OTHER,
+                    HxRedirect(endpoints::LOG_IN_VIEW.to_owned()),
+                    jar,
+                )
+                    .into_response(),
+                Err(e) => {
+                    tracing::error!("An error occurred while setting the auth cookie: {e}");
 
-                get_internal_server_error_redirect()
+                    Alert::ErrorSimple {
+                        message:
+                            "Something went wrong, please try again later or check the server logs"
+                                .to_owned(),
+                    }
+                    .into_response()
+                }
             }
-        }
-    })
-    .map_err(|e| {
-        tracing::error!("An unhandled error occurred while inserting a new user: {e}");
+        })
+        .map_err(|e| {
+            tracing::error!("An unhandled error occurred while inserting a new user: {e}");
 
-        get_internal_server_error_redirect()
-    })
-    .into_response()
+            Alert::ErrorSimple {
+                message: "Something went wrong, please try again later or check the server logs"
+                    .to_owned(),
+            }
+            .into_response()
+        })
+        .into_response()
 }
 
 #[cfg(test)]
