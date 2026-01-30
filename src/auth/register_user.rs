@@ -18,14 +18,13 @@ use crate::{
     AppState, Error, PasswordHash, ValidatedPassword,
     alert::Alert,
     app_state::create_cookie_key,
-    auth::{DEFAULT_COOKIE_DURATION, set_auth_cookie},
+    auth::{DEFAULT_COOKIE_DURATION, count_users, create_user, set_auth_cookie},
     endpoints,
     html::{
         FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner, log_in_register,
         password_input,
     },
     timezone::get_local_offset,
-    user::{count_users, create_user},
 };
 
 /// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).
@@ -261,7 +260,7 @@ mod get_register_page_tests {
     };
     use scraper::Html;
 
-    use crate::{endpoints, register_user::get_register_page};
+    use crate::{auth::get_register_page, endpoints};
 
     #[tokio::test]
     async fn render_register_page() {
@@ -386,12 +385,12 @@ mod register_user_tests {
     use rusqlite::Connection;
 
     use crate::{
-        PasswordHash, endpoints,
-        register_user::{RegisterForm, register_user},
-        user::{create_user, create_user_table},
+        PasswordHash,
+        auth::{create_user, create_user_table, register_user},
+        endpoints,
     };
 
-    use super::RegistrationState;
+    use super::{RegisterForm, RegistrationState};
 
     fn get_test_app_config() -> RegistrationState {
         let connection =

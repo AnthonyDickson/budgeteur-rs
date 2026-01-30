@@ -8,7 +8,10 @@ use axum_extra::extract::{
 };
 use time::{Duration, OffsetDateTime, UtcOffset};
 
-use crate::{Error, auth::token::Token, user::UserID};
+use crate::{
+    Error,
+    auth::{Token, UserID},
+};
 
 /// The name of the cookie that will hold the auth token.
 pub const COOKIE_TOKEN: &str = "auth_token";
@@ -169,15 +172,13 @@ mod tests {
     use crate::{
         Error,
         auth::{
-            COOKIE_TOKEN,
-            cookie::{
-                DEFAULT_COOKIE_DURATION, extend_auth_cookie_duration_if_needed,
-                get_token_from_cookies, set_auth_cookie_expiry,
-            },
-            invalidate_auth_cookie, set_auth_cookie,
-            token::Token,
+            COOKIE_TOKEN, DEFAULT_COOKIE_DURATION, Token, UserID, invalidate_auth_cookie,
+            set_auth_cookie,
         },
-        user::UserID,
+    };
+
+    use super::{
+        extend_auth_cookie_duration_if_needed, get_token_from_cookies, set_auth_cookie_expiry,
     };
 
     #[test]

@@ -124,7 +124,7 @@ mod user_tests {
 
     use crate::{
         PasswordHash,
-        user::{UserID, count_users, create_user, get_user_by_id},
+        auth::{UserID, count_users, create_user, get_user_by_id},
     };
 
     use super::{Error, create_user_table};
