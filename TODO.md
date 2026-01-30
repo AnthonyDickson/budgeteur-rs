@@ -3,9 +3,6 @@
 ## Stage One: Budgeting
 
 - Organise code into modules based on features
-  - dashboard
-    - charts
-    - routes
   - auth
     - log in
     - log out
@@ -13,7 +10,7 @@
     - middleware
     - password
     - user
-  - tag
+- Update buttons on edit pages to say "Update" instead of "Edit"
 - Create unique aliases of `i64` for each of the domain models, e.g., `Tag` -> `pub type TagID = i64;`.
 - Truncate long transaction descriptions and show full description in a tooltip
 - On transactions page, group transactions by:

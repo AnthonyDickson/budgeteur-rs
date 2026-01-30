@@ -32,9 +32,8 @@ use crate::{
     },
     tag::{
         create_tag_endpoint, delete_tag_endpoint, get_edit_tag_page, get_new_tag_page,
-        update_tag_endpoint,
+        get_tags_page, update_tag_endpoint,
     },
-    tags_page::get_tags_page,
     transaction::{
         create_transaction_endpoint, delete_transaction_endpoint, edit_tranction_endpoint,
         get_create_transaction_page, get_edit_transaction_page, get_transactions_page,

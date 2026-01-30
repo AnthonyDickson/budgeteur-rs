@@ -1,21 +1,40 @@
-use std::collections::HashMap;
+//! Tags listing page.
+
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use axum::{
-    extract::State,
+    extract::{FromRef, State},
     response::{IntoResponse, Response},
 };
 use maud::{Markup, html};
 use rusqlite::Connection;
 
 use crate::{
-    Error, endpoints,
+    AppState, Error, endpoints,
     html::{
         BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
         TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base,
     },
     navigation::NavBar,
-    tag::{Tag, TagId, TagsPageState, get_all_tags},
+    tag::{Tag, TagId, get_all_tags},
 };
+
+/// The state needed for the tags listing page.
+#[derive(Debug, Clone)]
+pub struct TagsPageState {
+    pub db_connection: Arc<Mutex<Connection>>,
+}
+
+impl FromRef<AppState> for TagsPageState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db_connection: state.db_connection.clone(),
+        }
+    }
+}
 
 /// A tag with its formatted edit URL for template rendering.
 #[derive(Debug, Clone)]
@@ -23,6 +42,52 @@ struct TagWithEditUrl {
     pub tag: Tag,
     pub edit_url: String,
     pub transaction_count: u32,
+}
+
+/// Render the tags listing page with transaction counts.
+pub async fn get_tags_page(State(state): State<TagsPageState>) -> Result<Response, Error> {
+    let connection = state
+        .db_connection
+        .lock()
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
+
+    let tags = get_all_tags(&connection)
+        .inspect_err(|error| tracing::error!("Failed to retrieve tags: {error}"))?;
+
+    let transactions_per_tag = count_transactions_per_tag(&connection)
+        .inspect_err(|error| tracing::error!("Could not count transactions per tag: {error}"))?;
+
+    let tags_with_edit_urls = tags
+        .into_iter()
+        .map(|tag| {
+            let transaction_count = *transactions_per_tag.get(&tag.id).unwrap_or(&0);
+
+            TagWithEditUrl {
+                edit_url: endpoints::format_endpoint(endpoints::EDIT_TAG_VIEW, tag.id),
+                tag,
+                transaction_count,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(tags_view(&tags_with_edit_urls).into_response())
+}
+
+fn count_transactions_per_tag(connection: &Connection) -> Result<HashMap<TagId, u32>, Error> {
+    let result: Result<HashMap<TagId, u32>, rusqlite::Error> = connection
+        .prepare(
+            "SELECT tag_id, COUNT(1) FROM \"transaction\" WHERE tag_id IS NOT NULL GROUP BY tag_id",
+        )?
+        .query_map((), |row| {
+            let tag_id = row.get(0)?;
+            let count = row.get(1)?;
+
+            Ok((tag_id, count))
+        })?
+        .collect();
+
+    result.map_err(Error::from)
 }
 
 fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
@@ -148,60 +213,13 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
     base("Tags", &[], &content)
 }
 
-/// Route handler for the tags listing page.
-pub async fn get_tags_page(State(state): State<TagsPageState>) -> Result<Response, Error> {
-    let connection = state
-        .db_connection
-        .lock()
-        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
-        .map_err(|_| Error::DatabaseLockError)?;
-
-    let tags = get_all_tags(&connection)
-        .inspect_err(|error| tracing::error!("Failed to retrieve tags: {error}"))?;
-
-    let transactions_per_tag = count_transactions_per_tag(&connection)
-        .inspect_err(|error| tracing::error!("Could not count transactions per tag: {error}"))?;
-
-    let tags_with_edit_urls = tags
-        .into_iter()
-        .map(|tag| {
-            let transaction_count = *transactions_per_tag.get(&tag.id).unwrap_or(&0);
-
-            TagWithEditUrl {
-                edit_url: endpoints::format_endpoint(endpoints::EDIT_TAG_VIEW, tag.id),
-                tag,
-                transaction_count,
-            }
-        })
-        .collect::<Vec<_>>();
-
-    Ok(tags_view(&tags_with_edit_urls).into_response())
-}
-
-fn count_transactions_per_tag(connection: &Connection) -> Result<HashMap<TagId, u32>, Error> {
-    let result: Result<HashMap<TagId, u32>, rusqlite::Error> = connection
-        .prepare(
-            "SELECT tag_id, COUNT(1) FROM \"transaction\" WHERE tag_id IS NOT NULL GROUP BY tag_id",
-        )?
-        .query_map((), |row| {
-            let tag_id = row.get(0)?;
-            let count = row.get(1)?;
-
-            Ok((tag_id, count))
-        })?
-        .collect();
-
-    result.map_err(Error::from)
-}
-
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
     use time::OffsetDateTime;
 
     use crate::{
-        tag::{TagName, create_tag, create_tag_table},
-        tags_page::count_transactions_per_tag,
+        tag::{TagName, create_tag, create_tag_table, list::count_transactions_per_tag},
         transaction::{TransactionBuilder, create_transaction, create_transaction_table},
     };
 
