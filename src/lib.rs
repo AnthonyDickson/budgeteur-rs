@@ -39,7 +39,6 @@ mod register_user;
 mod routing;
 mod rule;
 mod tag;
-mod tags_page;
 mod timezone;
 mod transaction;
 mod user;
