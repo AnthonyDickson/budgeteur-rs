@@ -45,41 +45,40 @@ impl FromRef<AppState> for ImportState {
 pub async fn import_transactions(
     State(state): State<ImportState>,
     mut multipart: Multipart,
-) -> Response {
+) -> Result<Response, Response> {
     let start_time = std::time::Instant::now();
     let mut transactions = Vec::new();
     let mut accounts = Vec::new();
 
     while let Some(field) = multipart.next_field().await.unwrap() {
-        let csv_data = match parse_multipart_field(field).await {
-            Ok(data) => data,
-            Err(Error::NotCSV) => {
-                return (
+        let csv_data = parse_multipart_field(field)
+            .await
+            .map_err(|error| match error {
+                Error::NotCSV => (
                     StatusCode::BAD_REQUEST,
                     Alert::ErrorSimple {
                         message: "File type must be CSV.".to_owned(),
                     }
                     .into_html(),
                 )
-                    .into_response();
-            }
-            Err(error) => {
-                tracing::error!("Failed to parse multipart field: {}", error);
-                return error.into_alert_response();
-            }
-        };
+                    .into_response(),
+                error => {
+                    tracing::error!("Failed to parse multipart field: {}", error);
+                    error.into_alert_response()
+                }
+            })?;
 
-        match parse_csv(&csv_data) {
-            Ok(parse_result) => {
+        parse_csv(&csv_data)
+            .map(|parse_result| {
                 transactions.extend(parse_result.transactions);
 
                 if let Some(account) = parse_result.account {
                     accounts.push(account);
                 }
-            }
-            Err(e) => {
-                tracing::debug!("Failed to parse CSV: {}", e);
-                return (
+            })
+            .inspect_err(|error| tracing::debug!("Failed to parse CSV: {}", error))
+            .map_err(|_| {
+                (
                     StatusCode::BAD_REQUEST,
                     Alert::Error {
                         message: "Failed to parse CSV".to_owned(),
@@ -89,17 +88,29 @@ pub async fn import_transactions(
                     }
                     .into_html(),
                 )
-                    .into_response();
-            }
-        }
+                    .into_response()
+            })?;
     }
 
-    let connection = state.db_connection.lock().unwrap();
-    let imported_transactions = match import_transaction_list(transactions, &connection) {
-        Ok(transactions) => transactions,
-        Err(error) => {
-            tracing::error!("Failed to import transactions: {}", error);
-            return (
+    let connection = state.db_connection.lock().map_err(|error| {
+        tracing::error!("could not acquire database lock: {error}");
+        Error::DatabaseLockError.into_alert_response()
+    })?;
+
+    let tx = connection
+        .unchecked_transaction()
+        .inspect_err(|error| tracing::error!("could not start transaction: {error}"))
+        .map_err(|_| {
+            Alert::ErrorSimple {
+                message: "Could not import transactions".to_owned(),
+            }
+            .into_response()
+        })?;
+
+    let imported_transactions = import_transaction_list(transactions, &tx)
+        .inspect_err(|error| tracing::error!("Failed to import transactions: {}", error))
+        .map_err(|_| {
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Alert::Error {
                     message: "Import failed".to_owned(),
@@ -107,55 +118,63 @@ pub async fn import_transactions(
                 }
                 .into_html(),
             )
-                .into_response();
-        }
-    };
+                .into_response()
+        })?;
 
     // Apply auto-tagging to the imported transactions
     let auto_tagging_result = if !imported_transactions.is_empty() {
-        apply_rules_to_transactions(TaggingMode::FromArgs(&imported_transactions), &connection)
+        apply_rules_to_transactions(TaggingMode::FromArgs(&imported_transactions), &tx)
     } else {
         Ok(TaggingResult::empty())
     };
 
     for account in accounts {
-        if let Err(error) = upsert_account(&account, &connection) {
+        upsert_account(&account, &tx).map_err(|error| {
             let duration = start_time.elapsed();
             tracing::error!(
                 "Failed to import accounts after {:.1}ms: {error:#?}",
                 duration.as_millis()
             );
-            return (
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Alert::Error {
                     message: "Account import failed".to_owned(),
                     details: format!(
                         "Transactions were imported but accounts could not be updated after {:.1}ms.",
-                        duration.as_millis()
-                    ),
-                }.into_html(),
-            ).into_response();
-        }
+                        duration.as_millis() ),
+                }
+                .into_html(),
+            )
+                .into_response()
+        })?;
     }
+
+    tx.commit()
+        .inspect_err(|error| tracing::error!("could not commit transaction: {error}"))
+        .map_err(|_| {
+            Alert::ErrorSimple {
+                message: "Could not import transactions".to_owned(),
+            }
+            .into_response()
+        })?;
 
     let duration = start_time.elapsed();
 
     // Generate success/error message based on auto-tagging result
-    match auto_tagging_result {
-        Ok(tagging_result) => {
+    auto_tagging_result
+        .map(|tagging_result| {
             let alert =
                 success_with_tagging(&tagging_result, imported_transactions.len(), duration);
             (StatusCode::CREATED, alert.into_html()).into_response()
-        }
-        Err(error) => {
+        })
+        .map_err(|error| {
             let alert = error_with_partial_success(
                 &error.to_string(),
                 imported_transactions.len(),
                 duration,
             );
             (StatusCode::CREATED, alert.into_html()).into_response()
-        }
-    }
+        })
 }
 
 async fn parse_multipart_field(field: Field<'_>) -> Result<String, Error> {
@@ -191,17 +210,19 @@ async fn parse_multipart_field(field: Field<'_>) -> Result<String, Error> {
 ///
 /// Ignores transactions with import IDs that already exist in the database.
 ///
+/// **Note**: If you want transactional integrity (all or nothing), pass in a
+/// transaction for `connection`.
+///
 /// # Errors
 /// Returns an [Error::SqlError] if there is an unexpected SQL error.
 fn import_transaction_list(
     builders: Vec<TransactionBuilder>,
     connection: &Connection,
 ) -> Result<Vec<Transaction>, Error> {
-    let tx = connection.unchecked_transaction()?;
     let mut imported_transactions = Vec::new();
 
     // Prepare the insert statement once for reuse
-    let mut stmt = tx.prepare(
+    let mut stmt = connection.prepare(
         "INSERT INTO \"transaction\" (amount, date, description, import_id, tag_id)
          VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(import_id) DO NOTHING
@@ -227,9 +248,6 @@ fn import_transaction_list(
         }
     }
 
-    drop(stmt);
-
-    tx.commit()?;
     Ok(imported_transactions)
 }
 
@@ -319,7 +337,8 @@ mod import_transactions_tests {
             ])
             .await,
         )
-        .await;
+        .await
+        .unwrap();
 
         assert_eq!(response.status(), StatusCode::CREATED);
 
@@ -352,7 +371,8 @@ mod import_transactions_tests {
             State(state.clone()),
             must_make_multipart_csv(&[ASB_BANK_STATEMENT_CSV]).await,
         )
-        .await;
+        .await
+        .unwrap();
 
         let accounts =
             get_all_accounts(&connection.lock().unwrap()).expect("Could not get balances");
@@ -392,7 +412,8 @@ mod import_transactions_tests {
             State(state.clone()),
             must_make_multipart_csv(&[ASB_CC_STATEMENT_CSV]).await,
         )
-        .await;
+        .await
+        .unwrap();
 
         let accounts =
             get_all_accounts(&connection.lock().unwrap()).expect("Could not get accounts");
@@ -416,7 +437,9 @@ mod import_transactions_tests {
             db_connection: connection.clone(),
         };
         let response =
-            import_transactions(State(state.clone()), must_make_multipart_csv(&[""]).await).await;
+            import_transactions(State(state.clone()), must_make_multipart_csv(&[""]).await)
+                .await
+                .unwrap_err();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_content_type(&response, "text/html; charset=utf-8");
@@ -445,7 +468,8 @@ mod import_transactions_tests {
             State(state.clone()),
             must_make_multipart(&["text/plain"]).await,
         )
-        .await;
+        .await
+        .unwrap_err();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_content_type(&response, "text/html; charset=utf-8");
@@ -477,7 +501,8 @@ mod import_transactions_tests {
             State(state.clone()),
             must_make_multipart_csv(&[ASB_BANK_STATEMENT_CSV]).await,
         )
-        .await;
+        .await
+        .unwrap_err();
 
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         assert_content_type(&response, "text/html; charset=utf-8");
@@ -685,7 +710,8 @@ mod import_transactions_tests {
             State(state.clone()),
             must_make_multipart_csv(&[AUTO_TAG_TEST_CSV]).await,
         )
-        .await;
+        .await
+        .unwrap();
 
         assert_eq!(response.status(), StatusCode::CREATED);
 
@@ -727,7 +753,8 @@ mod import_transactions_tests {
             State(state.clone()),
             must_make_multipart_csv(&[AUTO_TAG_TEST_CSV]).await,
         )
-        .await;
+        .await
+        .unwrap();
 
         assert_eq!(response.status(), StatusCode::CREATED);
 
@@ -771,7 +798,8 @@ mod import_transactions_tests {
             State(state.clone()),
             must_make_multipart_csv(&[AUTO_TAG_TEST_CSV]).await,
         )
-        .await;
+        .await
+        .unwrap();
 
         assert_eq!(response.status(), StatusCode::CREATED);
 
@@ -818,7 +846,8 @@ mod import_transactions_tests {
             State(state.clone()),
             must_make_multipart_csv(&[AUTO_TAG_TEST_CSV]).await,
         )
-        .await;
+        .await
+        .unwrap();
 
         assert_eq!(
             response.status(),

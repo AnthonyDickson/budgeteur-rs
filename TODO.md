@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Ensure all DB operations that are part of the import feature are atomic, i.e. all happen or none happen
 - Organise code into modules based on features
   - dashboard
     - charts
