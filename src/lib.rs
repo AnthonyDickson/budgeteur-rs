@@ -25,31 +25,24 @@ mod database_id;
 mod db;
 mod endpoints;
 mod error;
-mod forgot_password;
 mod html;
 mod internal_server_error;
-mod log_in;
-mod log_out;
 mod logging;
 mod navigation;
 mod not_found;
 mod pagination;
-mod password;
-mod register_user;
 mod routing;
 mod rule;
 mod tag;
 mod timezone;
 mod transaction;
-mod user;
 
 pub use app_state::AppState;
+pub use auth::{PasswordHash, User, UserID, ValidatedPassword, get_user_by_id};
 pub use db::initialize as initialize_db;
 pub use error::Error;
 pub use logging::{LOG_BODY_LENGTH_LIMIT, logging_middleware};
-pub use password::{PasswordHash, ValidatedPassword};
 pub use routing::build_router;
-pub use user::{User, UserID, get_user_by_id};
 
 /// An async task that waits for either the ctrl+c or terminate signal, whichever comes first, and
 /// then signals the server to shut down gracefully.

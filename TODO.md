@@ -3,13 +3,7 @@
 ## Stage One: Budgeting
 
 - Organise code into modules based on features
-  - auth
-    - log in
-    - log out
-    - cookies
-    - middleware
-    - password
-    - user
+  - rules
 - Update buttons on edit pages to say "Update" instead of "Edit"
 - Create unique aliases of `i64` for each of the domain models, e.g., `Tag` -> `pub type TagID = i64;`.
 - Truncate long transaction descriptions and show full description in a tooltip

@@ -26,10 +26,8 @@ mod log_out_tests {
     use time::{Duration, OffsetDateTime, UtcOffset};
 
     use crate::{
-        auth::{COOKIE_TOKEN, DEFAULT_COOKIE_DURATION, set_auth_cookie},
+        auth::{COOKIE_TOKEN, DEFAULT_COOKIE_DURATION, UserID, get_log_out, set_auth_cookie},
         endpoints,
-        log_out::get_log_out,
-        user::UserID,
     };
 
     #[tokio::test]

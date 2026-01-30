@@ -19,11 +19,13 @@ use time::Duration;
 use crate::{
     AppState, Error,
     app_state::create_cookie_key,
-    auth::{DEFAULT_COOKIE_DURATION, invalidate_auth_cookie, set_auth_cookie},
+    auth::{
+        DEFAULT_COOKIE_DURATION, User, UserID, get_user_by_id, invalidate_auth_cookie,
+        set_auth_cookie,
+    },
     endpoints,
     html::{base, loading_spinner, log_in_register, password_input},
     timezone::get_local_offset,
-    user::{User, UserID, get_user_by_id},
 };
 
 fn log_in_form(password: &str, error_message: Option<&str>) -> Markup {
@@ -273,7 +275,7 @@ mod log_in_page_tests {
     use rusqlite::Connection;
     use scraper::Html;
 
-    use crate::{endpoints, user::create_user_table};
+    use crate::{auth::user::create_user_table, endpoints};
 
     use super::{
         INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, User, get_log_in_page, post_log_in,
@@ -448,9 +450,8 @@ mod log_in_tests {
 
     use crate::{
         PasswordHash, ValidatedPassword,
-        auth::COOKIE_TOKEN,
+        auth::{COOKIE_TOKEN, User, UserID, create_user_table},
         endpoints,
-        user::{User, UserID, create_user_table},
     };
 
     use super::{

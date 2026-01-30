@@ -159,10 +159,11 @@ mod auth_guard_tests {
 
     use crate::{
         Error,
-        auth::{AuthState, COOKIE_TOKEN, DEFAULT_COOKIE_DURATION, auth_guard, set_auth_cookie},
+        auth::{
+            AuthState, COOKIE_TOKEN, DEFAULT_COOKIE_DURATION, UserID, auth_guard, set_auth_cookie,
+        },
         endpoints::{self, format_endpoint},
         timezone::get_local_offset,
-        user::UserID,
     };
 
     async fn test_handler() -> Html<&'static str> {

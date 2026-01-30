@@ -3,9 +3,9 @@
 use rusqlite::{Connection, Error, Transaction as SqlTransaction};
 
 use crate::{
-    account::create_account_table, dashboard::create_dashboard_excluded_tags_table,
-    rule::create_rule_table, tag::create_tag_table, transaction::create_transaction_table,
-    user::create_user_table,
+    account::create_account_table, auth::create_user_table,
+    dashboard::create_dashboard_excluded_tags_table, rule::create_rule_table,
+    tag::create_tag_table, transaction::create_transaction_table,
 };
 
 /// Create the all of the database tables for the application.

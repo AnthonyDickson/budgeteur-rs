@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::user::UserID;
+use crate::auth::UserID;
 
 mod datetime_format {
     //! Specifies how to serialize a [time::OffsetDateTime] in a custom format that
