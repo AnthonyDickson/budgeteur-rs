@@ -16,7 +16,7 @@ pub fn create_rule(pattern: &str, tag_id: TagId, connection: &Connection) -> Res
         (pattern, tag_id),
     )?;
 
-    let id = connection.last_insert_rowid();
+    let id = connection.last_insert_rowid() as u32;
 
     Ok(Rule {
         id,

@@ -7,7 +7,7 @@ use axum::{
 use maud::{Markup, html};
 use rusqlite::Connection;
 
-use crate::{AppState, Error, database_id::TransactionId};
+use crate::{AppState, Error, transaction::TransactionId};
 
 /// The state needed to delete a transaction.
 #[derive(Debug, Clone)]

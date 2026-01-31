@@ -12,9 +12,7 @@ use serde::Deserialize;
 use time::Date;
 
 use crate::{
-    AppState, Error,
-    database_id::TransactionId,
-    endpoints,
+    AppState, Error, endpoints,
     html::{
         BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
         TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
@@ -22,7 +20,7 @@ use crate::{
     navigation::NavBar,
     pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     tag::TagName,
-    transaction::core::count_transactions,
+    transaction::{TransactionId, core::count_transactions},
 };
 
 /// The state needed for the transactions page.
@@ -860,10 +858,9 @@ mod database_tests {
     use time::{Duration, OffsetDateTime, macros::date};
 
     use crate::{
-        database_id::TransactionId,
         db::initialize,
         transaction::{
-            Transaction, create_transaction,
+            Transaction, TransactionId, create_transaction,
             transactions_page::{
                 SortOrder, Transaction as TableTransaction, get_transaction_table_rows_paginated,
             },

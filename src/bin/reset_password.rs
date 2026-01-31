@@ -139,7 +139,7 @@ fn update_password(
 
     let rows_affected = transaction.execute(
         "UPDATE user SET password = ?1 WHERE user.id = ?2;",
-        (&password.to_string(), &user.id.as_i64()),
+        (&password.to_string(), &user.id.as_u32()),
     )?;
 
     if rows_affected != 1 {

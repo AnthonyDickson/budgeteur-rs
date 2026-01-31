@@ -3,7 +3,7 @@ use time::Date;
 
 use crate::Error;
 
-pub type AccountId = i64;
+pub type AccountId = u32;
 
 /// The amount of money available for a bank account or credit card.
 #[derive(Debug, Clone, PartialEq)]

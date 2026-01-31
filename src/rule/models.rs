@@ -9,7 +9,7 @@ use crate::{
     tag::{Tag, TagId},
 };
 
-pub type RuleId = i64;
+pub type RuleId = u32;
 
 /// A rule that automatically tags transactions whose descriptions start with a pattern.
 /// Pattern matching is case-insensitive.

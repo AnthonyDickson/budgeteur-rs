@@ -8,21 +8,19 @@ use axum_htmx::HxRedirect;
 use maud::{Markup, html};
 
 use crate::{
-    Error,
-    database_id::DatabaseId,
-    endpoints,
+    Error, endpoints,
     html::{FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base},
     navigation::NavBar,
     rule::{
         db::{get_rule, update_rule},
-        models::{RuleFormData, RuleState},
+        models::{RuleFormData, RuleId, RuleState},
     },
-    tag::{Tag, get_all_tags},
+    tag::{Tag, TagId, get_all_tags},
 };
 
 /// Route handler for the edit rule page.
 pub async fn get_edit_rule_page(
-    Path(rule_id): Path<DatabaseId>,
+    Path(rule_id): Path<RuleId>,
     State(state): State<RuleState>,
 ) -> Result<Response, Error> {
     let connection = state
@@ -58,7 +56,7 @@ pub async fn get_edit_rule_page(
 
 /// A route handler for updating a rule.
 pub async fn update_rule_endpoint(
-    Path(rule_id): Path<DatabaseId>,
+    Path(rule_id): Path<RuleId>,
     State(state): State<RuleState>,
     Form(form_data): Form<RuleFormData>,
 ) -> Response {
@@ -113,7 +111,7 @@ fn edit_rule_view(
     update_endpoint: &str,
     available_tags: &[Tag],
     rule_pattern: &str,
-    selected_tag_id: DatabaseId,
+    selected_tag_id: TagId,
     error_message: &str,
 ) -> Markup {
     let nav_bar = NavBar::new(edit_endpoint).into_html();
@@ -143,7 +141,7 @@ fn edit_rule_form_view(
     update_rule_endpoint: &str,
     available_tags: &[Tag],
     rule_pattern: &str,
-    selected_tag_id: DatabaseId,
+    selected_tag_id: TagId,
     error_message: &str,
 ) -> Markup {
     html! {

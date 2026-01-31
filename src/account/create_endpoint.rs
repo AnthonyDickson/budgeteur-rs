@@ -79,7 +79,7 @@ pub fn create_account(form: &AccountForm, connection: &Connection) -> Result<Acc
             error => error.into(),
         })?;
 
-    let id = connection.last_insert_rowid();
+    let id = connection.last_insert_rowid() as u32;
 
     Ok(Account {
         id,
@@ -100,11 +100,12 @@ mod tests {
 
     use crate::{
         account::{
-            Account, create_account_endpoint,
+            Account,
+            core::AccountId,
+            create_account_endpoint,
             create_endpoint::{AccountForm, CreateAccountState},
             map_row_to_account,
         },
-        database_id::DatabaseId,
         db::initialize,
         endpoints,
     };
@@ -148,7 +149,7 @@ mod tests {
     }
 
     #[track_caller]
-    fn must_get_account(id: DatabaseId, connection: &Connection) -> Account {
+    fn must_get_account(id: AccountId, connection: &Connection) -> Account {
         connection
             .query_one(
                 "SELECT id, name, balance, date FROM account WHERE id = ?1",

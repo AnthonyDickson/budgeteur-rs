@@ -10,8 +10,7 @@ use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error,
-    account::{Account, map_row_to_account},
-    database_id::DatabaseId,
+    account::{Account, core::AccountId, map_row_to_account},
     endpoints::{self, format_endpoint},
     html::{
         BUTTON_PRIMARY_STYLE, BUTTON_SECONDARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE,
@@ -138,7 +137,7 @@ impl FromRef<AppState> for EditAccountPageState {
 /// Renders the page for editing an account.
 pub async fn get_edit_account_page(
     State(state): State<EditAccountPageState>,
-    Path(account_id): Path<DatabaseId>,
+    Path(account_id): Path<AccountId>,
 ) -> Result<Response, Error> {
     let connection = state
         .db_connection
@@ -168,7 +167,7 @@ pub async fn get_edit_account_page(
 /// This function will return a:
 /// - [Error::NotFound] if `id` does not refer to a valid account,
 /// - or [Error::SqlError] there is some other SQL error.
-fn get_account(id: DatabaseId, connection: &Connection) -> Result<Account, Error> {
+fn get_account(id: AccountId, connection: &Connection) -> Result<Account, Error> {
     let account = connection
         .prepare("SELECT id, name, balance, date FROM account WHERE id = :id")?
         .query_one(&[(":id", &id)], map_row_to_account)?;

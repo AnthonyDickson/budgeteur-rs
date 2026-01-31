@@ -31,11 +31,10 @@ use crate::{
         tables::{monthly_summary_table, summary_statistics_table},
         transaction::{Transaction, get_transactions_in_date_range},
     },
-    database_id::DatabaseId,
     endpoints,
     html::{HeadElement, base, link},
     navigation::NavBar,
-    tag::{Tag, get_all_tags},
+    tag::{Tag, TagId, get_all_tags},
     timezone::get_local_offset,
 };
 
@@ -68,7 +67,7 @@ impl FromRef<AppState> for DashboardState {
 pub struct ExcludedTagsForm {
     /// List of tag IDs to exclude from dashboard summaries
     #[serde(default)]
-    pub excluded_tags: Vec<DatabaseId>,
+    pub excluded_tags: Vec<TagId>,
 }
 
 /// A tag paired with its exclusion status for the dashboard filter UI.
@@ -205,7 +204,7 @@ fn last_twelve_months(today: Date) -> RangeInclusive<Date> {
 /// # Errors
 /// Returns error if database queries fail or timezone is invalid.
 fn build_dashboard_data(
-    excluded_tag_ids: &[DatabaseId],
+    excluded_tag_ids: &[TagId],
     local_timezone_name: &str,
     connection: &Connection,
 ) -> Result<Option<DashboardData>, Error> {
@@ -518,7 +517,7 @@ mod tests {
     use crate::{
         dashboard::handlers::{DashboardState, last_twelve_months},
         db::initialize,
-        tag::{TagName, create_tag},
+        tag::{TagId, TagName, create_tag},
         transaction::{Transaction, create_transaction},
     };
 
@@ -672,7 +671,7 @@ mod tests {
         // Test no values (when no checkboxes are selected)
         let form_data = "";
         let form: ExcludedTagsForm = serde_html_form::from_str(form_data).unwrap();
-        assert_eq!(form.excluded_tags, Vec::<i64>::new());
+        assert_eq!(form.excluded_tags, Vec::<TagId>::new());
     }
 
     #[test]

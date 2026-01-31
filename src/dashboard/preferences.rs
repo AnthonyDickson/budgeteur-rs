@@ -5,7 +5,7 @@
 
 use rusqlite::Connection;
 
-use crate::{Error, database_id::DatabaseId};
+use crate::{Error, tag::TagId};
 
 /// Create the dashboard_excluded_tags table in the database.
 ///
@@ -40,10 +40,7 @@ pub fn create_dashboard_excluded_tags_table(
 /// Returns [Error::SqlError] if:
 /// - Database transaction fails
 /// - SQL query preparation or execution fails
-pub(super) fn save_excluded_tags(
-    tag_ids: &[DatabaseId],
-    connection: &Connection,
-) -> Result<(), Error> {
+pub(super) fn save_excluded_tags(tag_ids: &[TagId], connection: &Connection) -> Result<(), Error> {
     // Using unchecked_transaction because we only have &Connection from the MutexGuard.
     // This is safe because we hold the mutex lock and won't have nested transactions.
     let transaction = connection.unchecked_transaction()?;
@@ -75,13 +72,13 @@ pub(super) fn save_excluded_tags(
 /// Returns [Error::SqlError] if:
 /// - Database connection fails
 /// - SQL query preparation or execution fails
-pub(super) fn get_excluded_tags(connection: &Connection) -> Result<Vec<DatabaseId>, Error> {
+pub(super) fn get_excluded_tags(connection: &Connection) -> Result<Vec<TagId>, Error> {
     let mut stmt =
         connection.prepare("SELECT tag_id FROM dashboard_excluded_tags ORDER BY tag_id")?;
 
     let tag_ids = stmt
-        .query_map([], |row| row.get::<_, DatabaseId>(0))?
-        .collect::<Result<Vec<DatabaseId>, rusqlite::Error>>()?;
+        .query_map([], |row| row.get::<_, TagId>(0))?
+        .collect::<Result<Vec<TagId>, rusqlite::Error>>()?;
 
     Ok(tag_ids)
 }

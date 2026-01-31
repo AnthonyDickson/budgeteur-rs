@@ -12,7 +12,7 @@ use rusqlite::{Connection, params};
 use serde::Deserialize;
 use time::Date;
 
-use crate::{AppState, Error, database_id::DatabaseId, endpoints};
+use crate::{AppState, Error, account::core::AccountId, endpoints};
 
 /// The state needed to edit an account.
 #[derive(Debug, Clone)]
@@ -38,7 +38,7 @@ pub struct EditAccountForm {
 
 pub async fn edit_account_endpoint(
     State(state): State<EditAccountState>,
-    Path(account_id): Path<DatabaseId>,
+    Path(account_id): Path<AccountId>,
     Form(form): Form<EditAccountForm>,
 ) -> Response {
     let connection = match state.db_connection.lock() {
@@ -67,7 +67,7 @@ pub async fn edit_account_endpoint(
 type RowsAffected = usize;
 
 fn update_account(
-    id: DatabaseId,
+    id: AccountId,
     account: &EditAccountForm,
     connection: &Connection,
 ) -> Result<RowsAffected, Error> {
@@ -100,12 +100,12 @@ mod test {
     use crate::{
         account::{
             Account,
+            core::AccountId,
             create_endpoint::{AccountForm, create_account},
             edit_account_endpoint,
             edit_endpoint::{EditAccountForm, EditAccountState},
             map_row_to_account,
         },
-        database_id::DatabaseId,
         endpoints, initialize_db,
     };
 
@@ -155,7 +155,7 @@ mod test {
     }
 
     #[track_caller]
-    fn must_get_account(account_id: DatabaseId, connection: &Connection) -> Account {
+    fn must_get_account(account_id: AccountId, connection: &Connection) -> Account {
         connection
             .query_one(
                 "SELECT id, name, balance, date FROM account WHERE id = ?1",

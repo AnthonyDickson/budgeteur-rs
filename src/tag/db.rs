@@ -11,7 +11,7 @@ use crate::{
 pub fn create_tag(name: TagName, connection: &Connection) -> Result<Tag, Error> {
     connection.execute("INSERT INTO tag (name) VALUES (?1);", (name.as_ref(),))?;
 
-    let id = connection.last_insert_rowid();
+    let id = connection.last_insert_rowid() as u32;
 
     Ok(Tag { id, name })
 }

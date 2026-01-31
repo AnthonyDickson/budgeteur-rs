@@ -96,7 +96,7 @@ pub const DASHBOARD_EXCLUDED_TAGS: &str = "/api/dashboard/excluded-tags";
 /// ```ignore
 /// assert_eq!(&format_endpoint("widgets/{widget_id}", 42), "widgets/42");
 /// ```
-pub fn format_endpoint(endpoint_path: &str, id: i64) -> String {
+pub fn format_endpoint(endpoint_path: &str, id: u32) -> String {
     let mut param_start = None;
     let mut param_end = None;
 

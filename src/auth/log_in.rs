@@ -408,7 +408,7 @@ mod log_in_page_tests {
             connection
                 .execute(
                     "INSERT INTO user (id, password) VALUES (?1, ?2)",
-                    (test_user.id.as_i64(), &test_user.password_hash.to_string()),
+                    (test_user.id.as_u32(), &test_user.password_hash.to_string()),
                 )
                 .expect("Could not create test user");
         }
@@ -603,7 +603,7 @@ mod log_in_tests {
             connection
                 .execute(
                     "INSERT INTO user (id,password) VALUES (?1, ?2)",
-                    (test_user.id.as_i64(), &test_user.password_hash.to_string()),
+                    (test_user.id.as_u32(), &test_user.password_hash.to_string()),
                 )
                 .expect("Could not create test user");
         }

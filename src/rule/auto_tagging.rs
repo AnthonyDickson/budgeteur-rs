@@ -10,10 +10,9 @@ use rusqlite::Connection;
 use crate::{
     Error,
     alert::Alert,
-    database_id::TransactionId,
     rule::{db::get_all_rules, models::RuleState},
     tag::TagId,
-    transaction::Transaction,
+    transaction::{Transaction, TransactionId},
 };
 
 /// Describes which transactions should be used for a batch tagging operation.
