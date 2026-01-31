@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Truncate long transaction descriptions and show full description in a tooltip
 - On transactions page, group transactions by:
   - tag
   - day, week, fortnight, month, quarter, year

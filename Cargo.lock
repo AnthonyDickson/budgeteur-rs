@@ -363,6 +363,7 @@ dependencies = [
  "tower-livereload",
  "tracing",
  "tracing-subscriber",
+ "unicode-segmentation",
  "zxcvbn",
 ]
 

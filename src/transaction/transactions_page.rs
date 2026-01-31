@@ -10,6 +10,7 @@ use maud::{Markup, html};
 use rusqlite::Connection;
 use serde::Deserialize;
 use time::Date;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
     AppState, Error, endpoints,
@@ -22,6 +23,10 @@ use crate::{
     tag::TagName,
     transaction::{TransactionId, core::count_transactions},
 };
+
+/// The max number of graphemes to display in the transaction table rows before
+/// trunctating and displaying elipses.
+const MAX_DESCRIPTION_GRAPHEMES: usize = 32;
 
 /// The state needed for the transactions page.
 #[derive(Debug, Clone)]
@@ -99,205 +104,6 @@ impl TransactionTableRow {
             delete_url: endpoints::format_endpoint(endpoints::DELETE_TRANSACTION, transaction.id),
         }
     }
-
-    fn into_html(self) -> Markup {
-        let amount_str = format_currency(self.amount);
-
-        html! {
-            tr class=(TABLE_ROW_STYLE)
-            {
-                td class="px-6 py-4 text-right" { (amount_str) }
-                td class=(TABLE_CELL_STYLE) { (self.date) }
-                td class=(TABLE_CELL_STYLE) { (self.description) }
-                td class=(TABLE_CELL_STYLE)
-                {
-                    @if let Some(tag_name) = &self.tag_name {
-                        span class=(TAG_BADGE_STYLE)
-                        {
-                            (tag_name)
-                        }
-                    } @else {
-                        span class="text-gray-400 dark:text-gray-500" { "-" }
-                    }
-                }
-                td class=(TABLE_CELL_STYLE)
-                {
-                    div class="flex gap-4"
-                    {
-                        a href=(self.edit_url) class=(LINK_STYLE)
-                        {
-                            "Edit"
-                        }
-
-                        button
-                            hx-delete=(self.delete_url)
-                            hx-confirm={
-                                "Are you sure you want to delete the transaction '"
-                                (self.description) "'? This cannot be undone."
-                            }
-                            hx-target="closest tr"
-                            hx-target-error="#alert-container"
-                            hx-swap="outerHTML"
-                            class=(BUTTON_DELETE_STYLE)
-                        {
-                           "Delete"
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn pagination_indicator_html(
-    indicator: &PaginationIndicator,
-    transactions_page_route: &Uri,
-    per_page: u64,
-) -> Markup {
-    html! {
-        li class="flex items-center"
-        {
-            @match indicator {
-                PaginationIndicator::Page(page) => {
-                    a
-                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
-                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                    {
-                        (page)
-                    }
-                }
-                PaginationIndicator::CurrPage(page) => {
-                    p
-                        aria-current="page"
-                        class="block px-3 py-2 rounded-sm font-bold text-black dark:text-white"
-                    {
-                        (page)
-                    }
-                }
-                PaginationIndicator::Ellipsis => {
-                    span class="px-3 py-2 text-gray-400 select-none" { "..." }
-                }
-                PaginationIndicator::BackButton(page) => {
-                    a
-                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
-                        role="button"
-                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                    {
-                        "Back"
-                    }
-                }
-                PaginationIndicator::NextButton(page) => {
-                    a
-                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
-                        role="button"
-                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                    {
-                        "Next"
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn transactions_view(
-    transactions: Vec<TransactionTableRow>,
-    pagination: &[PaginationIndicator],
-    per_page: u64,
-) -> Markup {
-    let create_transaction_route = Uri::from_static(endpoints::NEW_TRANSACTION_VIEW);
-    let import_transaction_route = Uri::from_static(endpoints::IMPORT_VIEW);
-    let transactions_page_route = Uri::from_static(endpoints::TRANSACTIONS_VIEW);
-    let nav_bar = NavBar::new(endpoints::TRANSACTIONS_VIEW).into_html();
-    // Cache this result so it can be accessed after `transactions` is moved by for loop.
-    let transactions_empty = transactions.is_empty();
-
-    let content = html! {
-        (nav_bar)
-
-        div class=(PAGE_CONTAINER_STYLE)
-        {
-            div class="relative"
-            {
-                div class="flex justify-between flex-wrap items-end"
-                {
-                    h1 class="text-xl font-bold" { "Transactions" }
-
-                    a href=(import_transaction_route) class=(LINK_STYLE)
-                    {
-                        "Import Transactions"
-                    }
-
-                    a href=(create_transaction_route) class=(LINK_STYLE)
-                    {
-                        "Create Transaction"
-                    }
-                }
-
-                div class="dark:bg-gray-800"
-                {
-                    table class="w-full text-sm text-left rtl:text-right
-                        text-gray-500 dark:text-gray-400"
-                    {
-                        thead class=(TABLE_HEADER_STYLE)
-                        {
-                            tr
-                            {
-                                th scope="col" class="px-6 py-3 text-right"
-                                {
-                                    "Amount"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Date"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Description"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Tags"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Actions"
-                                }
-                            }
-                        }
-
-                        tbody
-                        {
-                            @for transaction_row in transactions {
-                                (transaction_row.into_html())
-                            }
-
-                            @if transactions_empty {
-                                tr
-                                {
-                                    th { "Nothing here yet." }
-                                }
-                            }
-                        }
-                    }
-
-                    @if !transactions_empty {
-                        nav class="pagination flex justify-center my-8"
-                        {
-                            ul class="pagination flex list-none gap-2 p-0 m-0"
-                            {
-                                @for indicator in pagination {
-                                    (pagination_indicator_html(indicator, &transactions_page_route, per_page))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    base("Transactions", &[], &content)
 }
 
 /// Render an overview of the user's transactions.
@@ -413,6 +219,219 @@ fn get_transaction_table_rows_paginated(
         })?
         .map(|transaction_result| transaction_result.map_err(Error::SqlError))
         .collect()
+}
+
+fn pagination_indicator_html(
+    indicator: &PaginationIndicator,
+    transactions_page_route: &Uri,
+    per_page: u64,
+) -> Markup {
+    html! {
+        li class="flex items-center"
+        {
+            @match indicator {
+                PaginationIndicator::Page(page) => {
+                    a
+                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
+                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
+                    {
+                        (page)
+                    }
+                }
+                PaginationIndicator::CurrPage(page) => {
+                    p
+                        aria-current="page"
+                        class="block px-3 py-2 rounded-sm font-bold text-black dark:text-white"
+                    {
+                        (page)
+                    }
+                }
+                PaginationIndicator::Ellipsis => {
+                    span class="px-3 py-2 text-gray-400 select-none" { "..." }
+                }
+                PaginationIndicator::BackButton(page) => {
+                    a
+                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
+                        role="button"
+                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
+                    {
+                        "Back"
+                    }
+                }
+                PaginationIndicator::NextButton(page) => {
+                    a
+                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
+                        role="button"
+                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
+                    {
+                        "Next"
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn transaction_row_view(row: &TransactionTableRow) -> Markup {
+    let amount_str = format_currency(row.amount);
+    let description_length = row.description.graphemes(true).count();
+
+    // Truncate long descriptions to prevent visual artifacts from the table growing too wide.
+    let (description, tooltip) = if description_length <= MAX_DESCRIPTION_GRAPHEMES {
+        (row.description.clone(), None)
+    } else {
+        let description: String = row
+            .description
+            .graphemes(true)
+            .take(MAX_DESCRIPTION_GRAPHEMES - 3)
+            .collect();
+        let description = description + "...";
+        (description, Some(&row.description))
+    };
+
+    html! {
+        tr class=(TABLE_ROW_STYLE)
+        {
+            td class="px-6 py-4 text-right" { (amount_str) }
+            td class=(TABLE_CELL_STYLE) { (row.date) }
+            td class=(TABLE_CELL_STYLE) title=[tooltip] { (description) }
+            td class=(TABLE_CELL_STYLE)
+            {
+                @if let Some(ref tag_name) = row.tag_name {
+                    span class=(TAG_BADGE_STYLE)
+                    {
+                        (tag_name)
+                    }
+                } @else {
+                    span class="text-gray-400 dark:text-gray-500" { "-" }
+                }
+            }
+            td class=(TABLE_CELL_STYLE)
+            {
+                div class="flex gap-4"
+                {
+                    a href=(row.edit_url) class=(LINK_STYLE)
+                    {
+                        "Edit"
+                    }
+
+                    button
+                        hx-delete=(row.delete_url)
+                        hx-confirm={
+                            "Are you sure you want to delete the transaction '"
+                            (row.description) "'? This cannot be undone."
+                        }
+                        hx-target="closest tr"
+                        hx-target-error="#alert-container"
+                        hx-swap="outerHTML"
+                        class=(BUTTON_DELETE_STYLE)
+                    {
+                       "Delete"
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn transactions_view(
+    transactions: Vec<TransactionTableRow>,
+    pagination: &[PaginationIndicator],
+    per_page: u64,
+) -> Markup {
+    let create_transaction_route = Uri::from_static(endpoints::NEW_TRANSACTION_VIEW);
+    let import_transaction_route = Uri::from_static(endpoints::IMPORT_VIEW);
+    let transactions_page_route = Uri::from_static(endpoints::TRANSACTIONS_VIEW);
+    let nav_bar = NavBar::new(endpoints::TRANSACTIONS_VIEW).into_html();
+    // Cache this result so it can be accessed after `transactions` is moved by for loop.
+    let transactions_empty = transactions.is_empty();
+
+    let content = html! {
+        (nav_bar)
+
+        div class=(PAGE_CONTAINER_STYLE)
+        {
+            div class="relative"
+            {
+                div class="flex justify-between flex-wrap items-end"
+                {
+                    h1 class="text-xl font-bold" { "Transactions" }
+
+                    a href=(import_transaction_route) class=(LINK_STYLE)
+                    {
+                        "Import Transactions"
+                    }
+
+                    a href=(create_transaction_route) class=(LINK_STYLE)
+                    {
+                        "Create Transaction"
+                    }
+                }
+
+                div class="dark:bg-gray-800"
+                {
+                    table class="w-full text-sm text-left rtl:text-right
+                        text-gray-500 dark:text-gray-400"
+                    {
+                        thead class=(TABLE_HEADER_STYLE)
+                        {
+                            tr
+                            {
+                                th scope="col" class="px-6 py-3 text-right"
+                                {
+                                    "Amount"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Date"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Description"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Tags"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Actions"
+                                }
+                            }
+                        }
+
+                        tbody
+                        {
+                            @for transaction_row in transactions {
+                                (transaction_row_view(&transaction_row))
+                            }
+
+                            @if transactions_empty {
+                                tr
+                                {
+                                    th { "Nothing here yet." }
+                                }
+                            }
+                        }
+                    }
+
+                    @if !transactions_empty {
+                        nav class="pagination flex justify-center my-8"
+                        {
+                            ul class="pagination flex list-none gap-2 p-0 m-0"
+                            {
+                                @for indicator in pagination {
+                                    (pagination_indicator_html(indicator, &transactions_page_route, per_page))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    base("Transactions", &[], &content)
 }
 
 #[cfg(test)]
