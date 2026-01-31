@@ -138,7 +138,7 @@ fn edit_transaction_view(
                 button type="submit" id="submit-button" tabindex="0" class=(BUTTON_PRIMARY_STYLE)
                 {
                     span id="indicator" class="inline htmx-indicator" { (spinner) }
-                    " Edit Transaction"
+                    " Update Transaction"
                 }
             }
         }
