@@ -2,10 +2,9 @@
 
 ## Stage One: Budgeting
 
-- Organise code into modules based on features
-  - rules
 - Update buttons on edit pages to say "Update" instead of "Edit"
-- Create unique aliases of `i64` for each of the domain models, e.g., `Tag` -> `pub type TagID = i64;`.
+- Create unique aliases of `u32` for each of the domain models, e.g., `Tag` -> `pub type TagID = u32;`.
+  - Replace existing aliases of `i64` with `u32`
 - Truncate long transaction descriptions and show full description in a tooltip
 - On transactions page, group transactions by:
   - tag
