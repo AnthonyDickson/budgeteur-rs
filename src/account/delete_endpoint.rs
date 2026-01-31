@@ -8,7 +8,7 @@ use axum::{
 };
 use rusqlite::Connection;
 
-use crate::{AppState, Error, alert::Alert, database_id::DatabaseId};
+use crate::{AppState, Error, account::core::AccountId, alert::Alert};
 
 /// The state needed to delete an account.
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ impl FromRef<AppState> for DeleteAccountState {
 /// Panics if the lock for the database connection is already held by the same thread.
 pub async fn delete_account_endpoint(
     State(state): State<DeleteAccountState>,
-    Path(account_id): Path<DatabaseId>,
+    Path(account_id): Path<AccountId>,
 ) -> Response {
     let connection = match state.db_connection.lock() {
         Ok(connection) => connection,
@@ -58,7 +58,7 @@ pub async fn delete_account_endpoint(
 
 type RowsAffected = usize;
 
-fn delete_account(id: DatabaseId, connection: &Connection) -> Result<RowsAffected, Error> {
+fn delete_account(id: AccountId, connection: &Connection) -> Result<RowsAffected, Error> {
     connection
         .execute("DELETE FROM account WHERE id = :id", &[(":id", &id)])
         .map_err(Error::from)
@@ -73,11 +73,11 @@ mod tests {
         Error,
         account::{
             Account,
+            core::AccountId,
             create_endpoint::{AccountForm, create_account},
             delete_endpoint::delete_account,
             map_row_to_account,
         },
-        database_id::DatabaseId,
         initialize_db,
     };
 
@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[track_caller]
-    fn get_account(id: DatabaseId, connection: &Connection) -> Result<Account, Error> {
+    fn get_account(id: AccountId, connection: &Connection) -> Result<Account, Error> {
         connection
             .query_one(
                 "SELECT id, name, balance, date FROM account WHERE id = ?1",

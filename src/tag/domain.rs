@@ -57,7 +57,7 @@ impl Display for TagName {
 }
 
 /// Database identifier for a tag.
-pub type TagId = i64;
+pub type TagId = u32;
 
 /// A tag for categorizing transactions (e.g., 'Groceries', 'Salary').
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]

@@ -13,7 +13,7 @@ use serde::Deserialize;
 use time::{Date, OffsetDateTime};
 
 use crate::{
-    AppState, Error, database_id::TransactionId, endpoints, tag::TagId, timezone::get_local_offset,
+    AppState, Error, endpoints, tag::TagId, timezone::get_local_offset, transaction::TransactionId,
 };
 
 /// The state needed to edit a transaction.

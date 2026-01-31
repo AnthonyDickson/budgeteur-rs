@@ -14,7 +14,8 @@ mod edit_page;
 mod transactions_page;
 
 pub use core::{
-    Transaction, TransactionBuilder, create_transaction_table, get_transaction, map_transaction_row,
+    Transaction, TransactionBuilder, TransactionId, create_transaction_table, get_transaction,
+    map_transaction_row,
 };
 pub use create_endpoint::create_transaction_endpoint;
 pub use create_page::get_create_transaction_page;

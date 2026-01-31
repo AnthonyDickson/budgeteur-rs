@@ -8,7 +8,7 @@ use std::ops::RangeInclusive;
 use rusqlite::{Connection, params_from_iter};
 use time::Date;
 
-use crate::{Error, database_id::DatabaseId};
+use crate::{Error, tag::TagId};
 
 pub(super) const UNTAGGED_LABEL: &str = "Other";
 
@@ -39,7 +39,7 @@ pub(super) struct Transaction {
 /// - SQL query preparation or execution fails
 pub(super) fn get_transactions_in_date_range(
     date_range: RangeInclusive<Date>,
-    excluded_tags: Option<&[DatabaseId]>,
+    excluded_tags: Option<&[TagId]>,
     connection: &Connection,
 ) -> Result<Vec<Transaction>, Error> {
     let base_query = format!(

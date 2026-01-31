@@ -12,16 +12,16 @@ use crate::{Error, PasswordHash};
 /// This helps disambiguate user IDs from other types of IDs, leading to better compile time
 /// errors, and more flexible generics that can have distinct implementations for multiple ID types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct UserID(i64);
+pub struct UserID(u32);
 
 impl UserID {
     /// Create a new user ID.
-    pub fn new(id: i64) -> Self {
+    pub fn new(id: u32) -> Self {
         Self(id)
     }
 
-    /// Cast the user ID to a 64 bit integer.
-    pub fn as_i64(&self) -> i64 {
+    /// Cast the user ID to a 32 bit integer.
+    pub fn as_u32(&self) -> u32 {
         self.0
     }
 }
@@ -80,7 +80,7 @@ pub fn create_user(password_hash: PasswordHash, connection: &Connection) -> Resu
         (password_hash.as_ref(),),
     )?;
 
-    let id = UserID::new(connection.last_insert_rowid());
+    let id = UserID::new(connection.last_insert_rowid() as u32);
 
     Ok(User::new(id, password_hash))
 }
@@ -95,7 +95,7 @@ pub fn create_user(password_hash: PasswordHash, connection: &Connection) -> Resu
 pub fn get_user_by_id(user_id: UserID, db_connection: &Connection) -> Result<User, Error> {
     db_connection
         .prepare("SELECT id, password FROM user WHERE id = :id")?
-        .query_row(&[(":id", &user_id.as_i64())], |row| {
+        .query_row(&[(":id", &user_id.as_u32())], |row| {
             let raw_id = row.get(0)?;
             let raw_password_hash: String = row.get(1)?;
 
@@ -144,7 +144,7 @@ mod user_tests {
 
         let inserted_user = create_user(password_hash.clone(), &db_connection).unwrap();
 
-        assert!(inserted_user.id.as_i64() > 0);
+        assert!(inserted_user.id.as_u32() > 0);
         assert_eq!(inserted_user.password_hash, password_hash);
     }
 

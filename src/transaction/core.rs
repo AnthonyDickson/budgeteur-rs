@@ -4,15 +4,13 @@ use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 use time::Date;
 
-use crate::{
-    Error,
-    database_id::{DatabaseId, TransactionId},
-    tag::TagId,
-};
+use crate::{Error, tag::TagId};
 
 // ============================================================================
 // MODELS
 // ============================================================================
+
+pub type TransactionId = u32;
 
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
@@ -20,7 +18,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transaction {
     /// The ID of the transaction.
-    pub id: DatabaseId,
+    pub id: TransactionId,
     /// The amount of money spent or earned in this transaction.
     pub amount: f64,
     /// When the transaction happened.

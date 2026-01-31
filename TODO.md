@@ -2,8 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Create unique aliases of `u32` for each of the domain models, e.g., `Tag` -> `pub type TagID = u32;`.
-  - Replace existing aliases of `i64` with `u32`
 - Truncate long transaction descriptions and show full description in a tooltip
 - On transactions page, group transactions by:
   - tag

@@ -11,7 +11,6 @@ use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error,
-    database_id::TransactionId,
     endpoints::{self, format_endpoint},
     html::{
         BUTTON_PRIMARY_STYLE, BUTTON_SECONDARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE,
@@ -20,7 +19,7 @@ use crate::{
     navigation::NavBar,
     tag::{Tag, get_all_tags},
     timezone::get_local_offset,
-    transaction::{Transaction, get_transaction},
+    transaction::{Transaction, TransactionId, get_transaction},
 };
 
 fn edit_transaction_view(
