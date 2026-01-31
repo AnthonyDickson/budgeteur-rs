@@ -35,6 +35,7 @@ tower-http = { version = "0.6.8", features = ["trace", "fs"] }
 tower-livereload = "0.10.2" # For debug builds only
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+unicode-segmentation = "1.12.0"
 zxcvbn = "3.1.0"
 
 [dev-dependencies]
