@@ -104,7 +104,7 @@ fn edit_account_view(edit_url: &str, max_date: Date, account: &Account) -> Marku
                 button type="submit" id="submit-button" tabindex="0" class=(BUTTON_PRIMARY_STYLE)
                 {
                     span id="indicator" class="inline htmx-indicator" { (spinner) }
-                    " Edit Account"
+                    " Update Account"
                 }
             }
         }
