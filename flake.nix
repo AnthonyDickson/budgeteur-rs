@@ -27,6 +27,7 @@
             dockerfile-language-server
             tailwindcss-language-server
             tailwindcss_4
+            codex
           ];
 
           # environment variable for running dev server.
