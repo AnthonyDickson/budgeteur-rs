@@ -28,6 +28,13 @@
 - Tests live alongside code in `src/` modules with `#[cfg(test)]` and `#[test]`/`#[tokio::test]`.
 - Run via `bacon` (`t`) or `cargo test`. Database-related tests often rely on `test.db`.
 
+## View Templates & Test Helpers
+
+- Keep `html!` blocks presentation-focused by preparing values above the markup; for example, precompute a `TransactionFormDefaults` before rendering and pass it into a shared helper.
+- When the same form appears in multiple pages, extract a shared renderer (e.g., transaction form fields live in `src/transaction/form.rs` and are reused by create/edit views).
+- Prefer shared test helpers for repeated HTML assertions (e.g., `src/transaction/test_utils.rs` centralizes HTML parsing and form input checks).
+- For new form fields, add a minimal regression test that asserts the input exists and the default selected/checked state (e.g., transaction `type_` radio inputs).
+
 ## Commit & Pull Request Guidelines
 
 - Commit messages follow a conventional pattern like `feat: ...` or `refactor: ...` (often with a PR number, e.g., `(#99)`).
