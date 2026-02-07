@@ -13,7 +13,10 @@ use serde::Deserialize;
 use time::{Date, OffsetDateTime};
 
 use crate::{
-    AppState, Error, endpoints, tag::TagId, timezone::get_local_offset, transaction::TransactionId,
+    AppState, Error, endpoints,
+    tag::TagId,
+    timezone::get_local_offset,
+    transaction::{TransactionId, core::TransactionType},
 };
 
 /// The state needed to edit a transaction.
@@ -36,6 +39,7 @@ impl FromRef<AppState> for EditTransactionState {
 
 #[derive(Debug, Deserialize)]
 pub struct EditTransactionForm {
+    type_: TransactionType,
     amount: f64,
     date: Date,
     description: String,
@@ -106,6 +110,11 @@ fn update_transaction(
     transaction: &EditTransactionForm,
     connection: &Connection,
 ) -> Result<RowsAffected, Error> {
+    let amount = match transaction.type_ {
+        TransactionType::Income => transaction.amount.abs(),
+        TransactionType::Expense => -transaction.amount.abs(),
+    };
+
     connection
         .execute(
             "UPDATE \"transaction\"
@@ -116,7 +125,7 @@ fn update_transaction(
             tag_id = ?4 \
         WHERE id = ?5;",
             params![
-                transaction.amount,
+                amount,
                 transaction.date,
                 transaction.description,
                 transaction.tag_id,
@@ -141,9 +150,10 @@ mod test {
 
     use crate::{
         initialize_db,
-        tag::create_tag,
         transaction::{
-            Transaction, create_transaction,
+            Transaction,
+            core::TransactionType,
+            create_transaction,
             edit_endpoint::{
                 EditTransactionForm, EditTransactionState, QueryParams, edit_tranction_endpoint,
             },
@@ -152,59 +162,54 @@ mod test {
     };
 
     #[tokio::test]
-    async fn can_update_transaction() {
-        let conn = must_create_test_connection();
-        let tag = create_tag(
-            "Foo".parse().expect("could not create test tag name"),
-            &conn,
-        )
-        .expect("could not create test tag");
-        create_transaction(
-            Transaction::build(1.23, date!(2025 - 10 - 27), "test").tag_id(Some(tag.id)),
-            &conn,
-        )
-        .expect("could not create test transaction");
-        let state = EditTransactionState {
-            db_connection: Arc::new(Mutex::new(conn)),
-            local_timezone: "Etc/UTC".to_owned(),
-        };
-        let want_transaction = Transaction {
-            id: 1,
-            amount: 3.21,
-            date: date!(2025 - 10 - 28),
-            description: "foo".to_owned(),
-            import_id: None,
-            tag_id: None,
-        };
-        let form = EditTransactionForm {
-            amount: want_transaction.amount,
-            date: want_transaction.date,
-            description: want_transaction.description.clone(),
-            tag_id: want_transaction.tag_id,
-        };
-        let redirect_url = "foo/bar?page=123&per_page=20".to_owned();
+    async fn can_update_transaction_with_type() {
+        let cases = [
+            (TransactionType::Income, 3.21, 3.21, "foo"),
+            (TransactionType::Expense, 3.21, -3.21, "expense"),
+        ];
 
-        let response = edit_tranction_endpoint(
-            State(state.clone()),
-            Path(want_transaction.id),
-            Query(QueryParams {
-                redirect_url: Some(redirect_url.clone()),
-            }),
-            Form(form),
-        )
-        .await;
+        for (type_, amount, expected_amount, description) in cases {
+            let conn = must_create_test_connection();
+            create_transaction(
+                Transaction::build(1.23, date!(2025 - 10 - 27), "test"),
+                &conn,
+            )
+            .expect("could not create test transaction");
+            let state = EditTransactionState {
+                db_connection: Arc::new(Mutex::new(conn)),
+                local_timezone: "Etc/UTC".to_owned(),
+            };
+            let form = EditTransactionForm {
+                type_,
+                amount,
+                date: date!(2025 - 10 - 28),
+                description: description.to_owned(),
+                tag_id: None,
+            };
+            let redirect_url = "foo/bar?page=123&per_page=20".to_owned();
 
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        assert_eq!(
-            response.headers().get(HX_REDIRECT),
-            Some(&HeaderValue::from_str(&redirect_url).unwrap())
-        );
-        let got_transaction = get_transaction(
-            want_transaction.id,
-            &state.db_connection.lock().expect("could not fetch string"),
-        )
-        .expect("could not get test transaction");
-        assert_eq!(want_transaction, got_transaction);
+            let response = edit_tranction_endpoint(
+                State(state.clone()),
+                Path(1),
+                Query(QueryParams {
+                    redirect_url: Some(redirect_url.clone()),
+                }),
+                Form(form),
+            )
+            .await;
+
+            assert_eq!(response.status(), StatusCode::SEE_OTHER);
+            assert_eq!(
+                response.headers().get(HX_REDIRECT),
+                Some(&HeaderValue::from_str(&redirect_url).unwrap())
+            );
+            let got_transaction = get_transaction(
+                1,
+                &state.db_connection.lock().expect("could not fetch string"),
+            )
+            .expect("could not get test transaction");
+            assert_eq!(expected_amount, got_transaction.amount);
+        }
     }
 
     fn must_create_test_connection() -> Connection {

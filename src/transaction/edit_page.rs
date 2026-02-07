@@ -13,13 +13,17 @@ use crate::{
     AppState, Error,
     endpoints::{self, format_endpoint},
     html::{
-        BUTTON_PRIMARY_STYLE, BUTTON_SECONDARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE,
-        FORM_TEXT_INPUT_STYLE, base, dollar_input_styles, loading_spinner,
+        BUTTON_PRIMARY_STYLE, BUTTON_SECONDARY_STYLE, FORM_CONTAINER_STYLE, base,
+        dollar_input_styles, loading_spinner,
     },
     navigation::NavBar,
     tag::{Tag, get_all_tags},
     timezone::get_local_offset,
-    transaction::{Transaction, TransactionId, get_transaction},
+    transaction::{
+        Transaction, TransactionId,
+        form::{TransactionFormDefaults, transaction_form_fields},
+        get_transaction,
+    },
 };
 
 fn edit_transaction_view(
@@ -30,7 +34,15 @@ fn edit_transaction_view(
 ) -> Markup {
     let nav_bar = NavBar::new(endpoints::EDIT_TRANSACTION_VIEW).into_html();
     let spinner = loading_spinner();
-    let amount_str = format!("{:.2}", transaction.amount);
+    let form_defaults = TransactionFormDefaults {
+        transaction_type: transaction.type_(),
+        amount: Some(transaction.amount.abs()),
+        date: transaction.date,
+        description: Some(&transaction.description),
+        tag_id: transaction.tag_id,
+        max_date,
+        autofocus_amount: false,
+    };
 
     let content = html! {
         (nav_bar)
@@ -43,94 +55,7 @@ fn edit_transaction_view(
             {
                 h2 class="text-xl font-bold" { "Edit Transaction" }
 
-                div
-                {
-                    label
-                        for="amount"
-                        class=(FORM_LABEL_STYLE)
-                    {
-                        "Amount"
-                    }
-
-                    // w-full needed to ensure input takes the full width when prefilled with a value
-                    div class="input-wrapper w-full"
-                    {
-                        input
-                            name="amount"
-                            id="amount"
-                            type="number"
-                            step="0.01"
-                            placeholder=(amount_str)
-                            value=(amount_str)
-                            required
-                            class=(FORM_TEXT_INPUT_STYLE);
-                    }
-                }
-
-                div
-                {
-                    label
-                        for="date"
-                        class=(FORM_LABEL_STYLE)
-                    {
-                        "Date"
-                    }
-
-                    input
-                        name="date"
-                        id="date"
-                        type="date"
-                        max=(max_date)
-                        value=(transaction.date)
-                        required
-                        class=(FORM_TEXT_INPUT_STYLE);
-                }
-
-                div
-                {
-                    label
-                        for="description"
-                        class=(FORM_LABEL_STYLE)
-                    {
-                        "Description"
-                    }
-
-                    input
-                        name="description"
-                        id="description"
-                        type="text"
-                        placeholder=(transaction.description)
-                        value=(transaction.description)
-                        class=(FORM_TEXT_INPUT_STYLE);
-                }
-
-                @if !available_tags.is_empty() {
-                    div
-                    {
-                        label
-                            for="tag_id"
-                            class=(FORM_LABEL_STYLE)
-                        {
-                            "Tag"
-                        }
-
-                        select
-                            name="tag_id"
-                            id="tag_id"
-                            class=(FORM_TEXT_INPUT_STYLE)
-                        {
-                            option value="" { "Select a tag" }
-
-                            @for tag in available_tags {
-                                @if Some(tag.id) == transaction.tag_id {
-                                    option value=(tag.id) selected { (tag.name) }
-                                } @else {
-                                    option value=(tag.id) { (tag.name) }
-                                }
-                            }
-                        }
-                    }
-                }
+                (transaction_form_fields(&form_defaults, available_tags))
 
                 button onclick="history.back()" type="button" class=(BUTTON_SECONDARY_STYLE) { "Cancel" }
 
@@ -217,4 +142,106 @@ pub async fn get_edit_transaction_page(
         &available_tags,
     )
     .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use axum::extract::{Path, Query, State};
+    use rusqlite::Connection;
+    use scraper::{ElementRef, Html};
+    use time::OffsetDateTime;
+
+    use crate::{
+        db::initialize,
+        endpoints,
+        transaction::{
+            Transaction, create_transaction,
+            edit_page::{EditTransactionPageState, QueryParams, get_edit_transaction_page},
+            test_utils::{
+                assert_html_content_type, assert_status_ok, assert_transaction_type_inputs,
+                assert_valid_html, parse_html,
+            },
+        },
+    };
+
+    fn get_test_connection() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
+
+    #[tokio::test]
+    async fn edit_transaction_checks_type() {
+        let cases = [(-12.34, "expense"), (12.34, "income")];
+
+        for (amount, expected_type) in cases {
+            let conn = get_test_connection();
+            let transaction = create_transaction(
+                Transaction::build(amount, OffsetDateTime::now_utc().date(), "test"),
+                &conn,
+            )
+            .expect("could not create test transaction");
+            let state = EditTransactionPageState {
+                local_timezone: "Etc/UTC".to_owned(),
+                db_connection: Arc::new(Mutex::new(conn)),
+            };
+
+            let response = get_edit_transaction_page(
+                State(state),
+                Path(transaction.id),
+                Query(QueryParams { redirect_url: None }),
+            )
+            .await
+            .unwrap();
+
+            assert_status_ok(&response);
+            assert_html_content_type(&response);
+            let document = parse_html(response).await;
+            assert_valid_html(&document);
+            assert_correct_form(&document, transaction.id, expected_type);
+        }
+    }
+
+    #[track_caller]
+    fn assert_correct_form(document: &Html, transaction_id: u32, checked_type: &str) {
+        let form_selector = scraper::Selector::parse("form").unwrap();
+        let forms = document.select(&form_selector).collect::<Vec<_>>();
+        assert_eq!(forms.len(), 1, "want 1 form, got {}", forms.len());
+
+        let form = forms.first().unwrap();
+        let hx_put = form.value().attr("hx-put");
+        let expected_endpoint =
+            endpoints::format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction_id);
+        assert_eq!(
+            hx_put,
+            Some(expected_endpoint.as_str()),
+            "want form with attribute hx-put=\"{}\", got {:?}",
+            expected_endpoint,
+            hx_put
+        );
+
+        assert_transaction_type_inputs(form, Some(checked_type));
+        assert_has_submit_button(form);
+    }
+
+    #[track_caller]
+    fn assert_has_submit_button(form: &ElementRef) {
+        let button_selector = scraper::Selector::parse("button").unwrap();
+        let buttons = form.select(&button_selector).collect::<Vec<_>>();
+        assert!(
+            !buttons.is_empty(),
+            "want at least 1 button, got {}",
+            buttons.len()
+        );
+        let submit_buttons = buttons
+            .iter()
+            .filter(|button| button.value().attr("type") == Some("submit"))
+            .count();
+        assert_eq!(
+            submit_buttons, 1,
+            "want 1 submit button, got {submit_buttons}"
+        );
+    }
 }

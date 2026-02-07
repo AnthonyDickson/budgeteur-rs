@@ -16,6 +16,10 @@ need_stdout = false
 command = ["cargo", "check", "--all-targets"]
 need_stdout = false
 
+[jobs.format]
+command = ["cargo", "fmt"]
+need_stdout = false
+
 # Run clippy on the default target
 [jobs.clippy]
 command = ["cargo", "clippy"]
@@ -123,6 +127,7 @@ on_change_strategy = "kill_then_restart"
 [keybindings]
 c = "job:clippy-all"
 shift-c = "job:check"
+f = "job:format"
 r = "job:run"
 w = "job:tailwindcss"
 # vim bindings :)

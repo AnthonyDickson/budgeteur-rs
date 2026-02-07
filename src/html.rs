@@ -34,6 +34,19 @@ pub const FORM_TEXT_INPUT_STYLE: &str = "block w-full p-2.5 rounded text-sm \
     dark:bg-gray-700 border border-gray-300 dark:border-gray-600 \
     dark:placeholder-gray-400 focus:ring-blue-600 focus:border-blue-600 \
     focus:dark:border-blue-500 focus:dark:ring-blue-500";
+pub const FORM_RADIO_GROUP_STYLE: &str = "flex flex-col gap-2";
+pub const FORM_RADIO_INPUT_STYLE: &str = "peer h-4 w-4 shrink-0 cursor-pointer \
+    text-blue-600 border-gray-300 dark:border-gray-600 focus-visible:ring-2 \
+    focus-visible:ring-blue-500 focus-visible:ring-offset-2 \
+    focus-visible:ring-offset-white focus-visible:dark:ring-offset-gray-900";
+pub const FORM_RADIO_LABEL_STYLE: &str = "flex-1 rounded border border-gray-300 \
+    dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium \
+    text-gray-700 dark:text-white cursor-pointer transition \
+    hover:border-gray-400 hover:bg-gray-50 hover:text-gray-900 \
+    hover:dark:border-gray-500 hover:dark:bg-gray-600 active:scale-[0.99] \
+    peer-checked:border-blue-600 peer-checked:bg-blue-50 peer-checked:text-blue-700 \
+    peer-checked:shadow-sm peer-checked:dark:border-blue-500 \
+    peer-checked:dark:bg-blue-600/20 peer-checked:dark:text-blue-200";
 
 // Table styles
 pub const TABLE_HEADER_STYLE: &str = "text-xs text-gray-700 uppercase \

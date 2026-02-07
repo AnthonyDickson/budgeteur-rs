@@ -13,18 +13,30 @@ use time::{Date, OffsetDateTime};
 use crate::{
     AppState, Error, endpoints,
     html::{
-        BUTTON_PRIMARY_STYLE, FORM_CONTAINER_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base,
-        dollar_input_styles, loading_spinner,
+        BUTTON_PRIMARY_STYLE, FORM_CONTAINER_STYLE, base, dollar_input_styles, loading_spinner,
     },
     navigation::NavBar,
     tag::{Tag, get_all_tags},
     timezone::get_local_offset,
+    transaction::{
+        core::TransactionType,
+        form::{TransactionFormDefaults, transaction_form_fields},
+    },
 };
 
 fn create_transaction_view(max_date: Date, available_tags: &[Tag]) -> Markup {
     let create_transaction_route = endpoints::TRANSACTIONS_API;
     let nav_bar = NavBar::new(endpoints::NEW_TRANSACTION_VIEW).into_html();
     let spinner = loading_spinner();
+    let form_defaults = TransactionFormDefaults {
+        transaction_type: TransactionType::Expense,
+        amount: None,
+        date: max_date,
+        description: None,
+        tag_id: None,
+        max_date,
+        autofocus_amount: true,
+    };
 
     let content = html! {
         (nav_bar)
@@ -38,89 +50,7 @@ fn create_transaction_view(max_date: Date, available_tags: &[Tag]) -> Markup {
             {
                 h2 class="text-xl font-bold" { "New Transaction" }
 
-                div
-                {
-                    label
-                        for="amount"
-                        class=(FORM_LABEL_STYLE)
-                    {
-                        "Amount"
-                    }
-
-                    // w-full needed to ensure input takes the full width when prefilled with a value
-                    div class="input-wrapper w-full"
-                    {
-                        input
-                            name="amount"
-                            id="amount"
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            required
-                            autofocus
-                            class=(FORM_TEXT_INPUT_STYLE);
-                    }
-                }
-
-                div
-                {
-                    label
-                        for="date"
-                        class=(FORM_LABEL_STYLE)
-                    {
-                        "Date"
-                    }
-
-                    input
-                        name="date"
-                        id="date"
-                        type="date"
-                        max=(max_date)
-                        required
-                        value=(max_date)
-                        class=(FORM_TEXT_INPUT_STYLE);
-                }
-
-                div
-                {
-                    label
-                        for="description"
-                        class=(FORM_LABEL_STYLE)
-                    {
-                        "Description"
-                    }
-
-                    input
-                        name="description"
-                        id="description"
-                        type="text"
-                        placeholder="Description"
-                        class=(FORM_TEXT_INPUT_STYLE);
-                }
-
-                @if !available_tags.is_empty() {
-                    div
-                    {
-                        label
-                            for="tag_id"
-                            class=(FORM_LABEL_STYLE)
-                        {
-                            "Tag"
-                        }
-
-                        select
-                            name="tag_id"
-                            id="tag_id"
-                            class=(FORM_TEXT_INPUT_STYLE)
-                        {
-                            option value="" { "Select a tag" }
-
-                            @for tag in available_tags {
-                                option value=(tag.id) { (tag.name) }
-                            }
-                        }
-                    }
-                }
+                (transaction_form_fields(&form_defaults, available_tags))
 
                 button type="submit" id="submit-button" tabindex="0" class=(BUTTON_PRIMARY_STYLE)
                 {
@@ -187,7 +117,7 @@ pub async fn get_create_transaction_page(
 mod view_tests {
     use std::sync::{Arc, Mutex};
 
-    use axum::{body::Body, extract::State, http::StatusCode, response::Response};
+    use axum::extract::State;
     use rusqlite::Connection;
     use scraper::{ElementRef, Html};
     use time::OffsetDateTime;
@@ -195,7 +125,14 @@ mod view_tests {
     use crate::{
         db::initialize,
         endpoints,
-        transaction::{create_page::CreateTransactionPageState, get_create_transaction_page},
+        transaction::{
+            create_page::CreateTransactionPageState,
+            get_create_transaction_page,
+            test_utils::{
+                assert_html_content_type, assert_status_ok, assert_transaction_type_inputs,
+                assert_valid_html, parse_html,
+            },
+        },
     };
 
     fn get_test_connection() -> Connection {
@@ -218,38 +155,11 @@ mod view_tests {
         assert_html_content_type(&response);
         let document = parse_html(response).await;
         assert_valid_html(&document);
-        assert_correct_form(&document);
+        assert_correct_form(&document, "expense");
     }
 
     #[track_caller]
-    fn assert_status_ok(response: &Response<Body>) {
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    #[track_caller]
-    fn assert_html_content_type(response: &Response<Body>) {
-        assert_eq!(
-            response
-                .headers()
-                .get("content-type")
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            "text/html; charset=utf-8"
-        );
-    }
-
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors: {:?}",
-            html.errors
-        );
-    }
-
-    #[track_caller]
-    fn assert_correct_form(document: &Html) {
+    fn assert_correct_form(document: &Html, expected_type: &str) {
         let form_selector = scraper::Selector::parse("form").unwrap();
         let forms = document.select(&form_selector).collect::<Vec<_>>();
         assert_eq!(forms.len(), 1, "want 1 form, got {}", forms.len());
@@ -264,12 +174,14 @@ mod view_tests {
             hx_post
         );
 
-        assert_correct_inputs(form);
+        assert_correct_inputs(form, expected_type);
         assert_has_submit_button(form);
     }
 
     #[track_caller]
-    fn assert_correct_inputs(form: &ElementRef) {
+    fn assert_correct_inputs(form: &ElementRef, expected_type: &str) {
+        assert_transaction_type_inputs(form, Some(expected_type));
+
         let expected_input_types = vec![
             ("amount", "number"),
             ("date", "date"),
@@ -371,13 +283,5 @@ mod view_tests {
         );
     }
 
-    async fn parse_html(response: Response) -> Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX)
-            .await
-            .expect("Could not get response body");
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        Html::parse_document(&text)
-    }
+    // parse_html lives in test_utils.
 }
