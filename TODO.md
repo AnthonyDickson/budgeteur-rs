@@ -5,6 +5,7 @@
 - On transactions page, group transactions by:
   - tag
   - day, week, fortnight, month, quarter, year
+- Add search/filtering to transactions page
 - Add account info to transactions
   - Set during import
 - Add page/widget on dashboard where you can check the impact of spending a specified amount:
