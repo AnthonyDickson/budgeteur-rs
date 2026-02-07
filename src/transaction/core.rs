@@ -12,6 +12,14 @@ use crate::{Error, tag::TagId};
 
 pub type TransactionId = u32;
 
+/// Whether the transaction is income or an expense.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransactionType {
+    Income,
+    Expense,
+}
+
 /// An expense or income, i.e. an event where money was either spent or earned.
 ///
 /// To create a new `Transaction`, use [Transaction::build].
@@ -42,6 +50,14 @@ impl Transaction {
             description: description.to_owned(),
             import_id: None,
             tag_id: None,
+        }
+    }
+
+    pub fn type_(&self) -> TransactionType {
+        if self.amount < 0.0 {
+            TransactionType::Expense
+        } else {
+            TransactionType::Income
         }
     }
 }

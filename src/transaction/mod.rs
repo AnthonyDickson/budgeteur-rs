@@ -11,6 +11,9 @@ mod create_page;
 mod delete_endpoint;
 mod edit_endpoint;
 mod edit_page;
+mod form;
+#[cfg(test)]
+mod test_utils;
 mod transactions_page;
 
 pub use core::{

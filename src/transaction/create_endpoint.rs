@@ -18,7 +18,10 @@ use crate::{
     AppState, Error, endpoints,
     tag::TagId,
     timezone::get_local_offset,
-    transaction::{Transaction, core::create_transaction},
+    transaction::{
+        Transaction,
+        core::{TransactionType, create_transaction},
+    },
 };
 
 /// The state needed to get or create a transaction.
@@ -42,6 +45,7 @@ impl FromRef<AppState> for CreateTransactionState {
 /// The form data for creating a transaction.
 #[derive(Debug, Deserialize)]
 pub struct TransactionForm {
+    pub type_: TransactionType,
     /// The value of the transaction in dollars.
     pub amount: f64,
     /// The date when the transaction ocurred.
@@ -73,8 +77,12 @@ pub async fn create_transaction_endpoint(
         return Error::FutureDate(form.date).into_alert_response();
     }
 
-    let transaction =
-        Transaction::build(form.amount, form.date, &form.description).tag_id(form.tag_id);
+    let amount = match form.type_ {
+        TransactionType::Income => form.amount.abs(),
+        TransactionType::Expense => -form.amount.abs(),
+    };
+
+    let transaction = Transaction::build(amount, form.date, &form.description).tag_id(form.tag_id);
 
     let connection = match state.db_connection.lock() {
         Ok(connection) => connection,
@@ -111,7 +119,7 @@ mod tests {
         db::initialize,
         tag::{TagName, create_tag},
         transaction::{
-            create_endpoint::{CreateTransactionState, TransactionForm},
+            create_endpoint::{CreateTransactionState, TransactionForm, TransactionType},
             create_transaction_endpoint, get_transaction,
         },
     };
@@ -123,32 +131,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn can_create_transaction() {
-        let conn = get_test_connection();
-        let state = CreateTransactionState {
-            db_connection: Arc::new(Mutex::new(conn)),
-            local_timezone: "Etc/UTC".to_owned(),
-        };
+    async fn can_create_transaction_with_type() {
+        let cases = [
+            (TransactionType::Income, 12.3, 12.3, "test transaction"),
+            (TransactionType::Expense, 12.3, -12.3, "test expense"),
+        ];
 
-        let form = TransactionForm {
-            description: "test transaction".to_string(),
-            amount: 12.3,
-            date: OffsetDateTime::now_utc().date(),
-            tag_id: None,
-        };
+        for (type_, amount, expected_amount, description) in cases {
+            let conn = get_test_connection();
+            let state = CreateTransactionState {
+                db_connection: Arc::new(Mutex::new(conn)),
+                local_timezone: "Etc/UTC".to_owned(),
+            };
 
-        let response = create_transaction_endpoint(State(state.clone()), Form(form))
-            .await
-            .into_response();
+            let form = TransactionForm {
+                type_,
+                description: description.to_string(),
+                amount,
+                date: OffsetDateTime::now_utc().date(),
+                tag_id: None,
+            };
 
-        assert_redirects_to_transactions_view(response);
+            let response = create_transaction_endpoint(State(state.clone()), Form(form))
+                .await
+                .into_response();
 
-        // Verify the transaction was actually created by getting it by ID
-        // We know the first transaction will have ID 1
-        let connection = state.db_connection.lock().unwrap();
-        let transaction = get_transaction(1, &connection).unwrap();
-        assert_eq!(transaction.amount, 12.3);
-        assert_eq!(transaction.description, "test transaction");
+            assert_redirects_to_transactions_view(response);
+
+            let connection = state.db_connection.lock().unwrap();
+            let transaction = get_transaction(1, &connection).unwrap();
+            assert_eq!(transaction.amount, expected_amount);
+            assert_eq!(transaction.description, description);
+        }
     }
 
     #[tokio::test]
@@ -161,6 +175,7 @@ mod tests {
         };
 
         let form = TransactionForm {
+            type_: TransactionType::Income,
             description: "test transaction with tags".to_string(),
             amount: 25.50,
             date: OffsetDateTime::now_utc().date(),

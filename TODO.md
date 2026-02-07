@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Usability: too easy to enter positive number for an expense, have separate links to manually record an expense/income?
 - On transactions page, group transactions by:
   - tag
   - day, week, fortnight, month, quarter, year
