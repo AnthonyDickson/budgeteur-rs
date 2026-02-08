@@ -45,3 +45,14 @@
 
 - For local development, use the `SECRET` environment variable (provided by `nix develop` or manually).
 - The default server runs on HTTP; use a reverse proxy for HTTPS in real deployments.
+
+## Date/Time Conventions
+
+- Prefer explicit window presets (week/fortnight/month/quarter/half-year/year) for date-range navigation and include full four-digit years on both ends of range labels.
+- Default “now” calculations to the user’s local timezone via `get_local_offset`, not UTC.
+- For windowed navigation, use target date ranges as link text to make direction unambiguous.
+
+## Dev Process
+
+- When finished implementing or refactoring something, run `cargo test -q` and `cargo clippy --quiet`.
+- When replacing a subsystem (e.g., pagination → windows), remove unused modules/tests rather than silencing dead-code warnings.
