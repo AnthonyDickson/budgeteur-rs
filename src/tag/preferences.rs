@@ -1,57 +1,65 @@
-//! Dashboard Preferences Management
+//! Tag preference storage shared across features.
 //!
-//! This module handles saving and loading user preferences for the dashboard,
-//! specifically which tags should be excluded from transaction summary calculations.
+//! Currently stores tag IDs that should be excluded from summary calculations.
 
 use rusqlite::Connection;
 
 use crate::{Error, tag::TagId};
 
-/// Create the dashboard_excluded_tags table in the database.
+const EXCLUDED_TAGS_TABLE: &str = "dashboard_excluded_tags";
+
+/// Create the excluded tags table in the database.
 ///
-/// This table stores which tags should be excluded from dashboard summary calculations.
+/// This table stores which tags should be excluded from summary calculations.
 /// Uses tag_id as the primary key to ensure each tag can only be excluded once.
 ///
 /// # Errors
 /// Returns an error if the table cannot be created or if there is an SQL error.
-pub fn create_dashboard_excluded_tags_table(
-    connection: &Connection,
-) -> Result<(), rusqlite::Error> {
+pub fn create_excluded_tags_table(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute(
-        "CREATE TABLE IF NOT EXISTS dashboard_excluded_tags (
-            tag_id INTEGER PRIMARY KEY,
-            FOREIGN KEY(tag_id) REFERENCES tag(id) ON UPDATE CASCADE ON DELETE CASCADE
-        )",
+        &format!(
+            "CREATE TABLE IF NOT EXISTS {table} (
+                tag_id INTEGER PRIMARY KEY,
+                FOREIGN KEY(tag_id) REFERENCES tag(id) ON UPDATE CASCADE ON DELETE CASCADE
+            )",
+            table = EXCLUDED_TAGS_TABLE
+        ),
         (),
     )?;
 
     Ok(())
 }
 
-/// Saves the list of excluded tag IDs for dashboard summary calculations.
+/// Saves the list of excluded tag IDs for summary calculations.
 ///
 /// This function replaces all currently excluded tags with the provided list.
 ///
 /// # Arguments
-/// * `tag_ids` - Vector of tag IDs to exclude from dashboard summaries
+/// * `tag_ids` - Vector of tag IDs to exclude from summaries
 /// * `connection` - Database connection reference
 ///
 /// # Errors
 /// Returns [Error::SqlError] if:
 /// - Database transaction fails
 /// - SQL query preparation or execution fails
-pub(super) fn save_excluded_tags(tag_ids: &[TagId], connection: &Connection) -> Result<(), Error> {
+pub fn save_excluded_tags(tag_ids: &[TagId], connection: &Connection) -> Result<(), Error> {
     // Using unchecked_transaction because we only have &Connection from the MutexGuard.
     // This is safe because we hold the mutex lock and won't have nested transactions.
     let transaction = connection.unchecked_transaction()?;
 
     // Clear all existing excluded tags
-    transaction.execute("DELETE FROM dashboard_excluded_tags", [])?;
+    transaction.execute(
+        &format!("DELETE FROM {table}", table = EXCLUDED_TAGS_TABLE),
+        [],
+    )?;
 
     // Insert new excluded tags
     for tag_id in tag_ids {
         transaction.execute(
-            "INSERT INTO dashboard_excluded_tags (tag_id) VALUES (?1)",
+            &format!(
+                "INSERT INTO {table} (tag_id) VALUES (?1)",
+                table = EXCLUDED_TAGS_TABLE
+            ),
             [tag_id],
         )?;
     }
@@ -60,21 +68,23 @@ pub(super) fn save_excluded_tags(tag_ids: &[TagId], connection: &Connection) -> 
     Ok(())
 }
 
-/// Gets the list of tag IDs that are currently excluded from dashboard summary calculations.
+/// Gets the list of tag IDs that are currently excluded from summary calculations.
 ///
 /// # Arguments
 /// * `connection` - Database connection reference
 ///
 /// # Returns
-/// Vector of tag IDs that should be excluded from dashboard summaries.
+/// Vector of tag IDs that should be excluded from summaries.
 ///
 /// # Errors
 /// Returns [Error::SqlError] if:
 /// - Database connection fails
 /// - SQL query preparation or execution fails
-pub(super) fn get_excluded_tags(connection: &Connection) -> Result<Vec<TagId>, Error> {
-    let mut stmt =
-        connection.prepare("SELECT tag_id FROM dashboard_excluded_tags ORDER BY tag_id")?;
+pub fn get_excluded_tags(connection: &Connection) -> Result<Vec<TagId>, Error> {
+    let mut stmt = connection.prepare(&format!(
+        "SELECT tag_id FROM {table} ORDER BY tag_id",
+        table = EXCLUDED_TAGS_TABLE
+    ))?;
 
     let tag_ids = stmt
         .query_map([], |row| row.get::<_, TagId>(0))?

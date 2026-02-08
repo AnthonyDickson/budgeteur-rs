@@ -27,14 +27,13 @@ use crate::{
         charts::{
             DashboardChart, balances_chart, charts_inline_script, expenses_chart, net_income_chart,
         },
-        preferences::{get_excluded_tags, save_excluded_tags},
         tables::{monthly_summary_table, summary_statistics_table},
         transaction::{Transaction, get_transactions_in_date_range},
     },
     endpoints,
     html::{HeadElement, base, link},
     navigation::NavBar,
-    tag::{Tag, TagId, get_all_tags},
+    tag::{Tag, TagId, get_all_tags, get_excluded_tags, save_excluded_tags},
     timezone::get_local_offset,
 };
 
