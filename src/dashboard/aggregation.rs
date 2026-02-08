@@ -2,7 +2,7 @@
 //!
 //! See `expenses-by-tag-tech-spec.md` for detailed implementation specifications.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use time::Date;
 
 use crate::dashboard::transaction::{Transaction, UNTAGGED_LABEL};
@@ -47,8 +47,8 @@ pub(super) struct TagExpenseStats {
 /// Monthly income and expense breakdown.
 #[derive(Debug, Clone)]
 pub(super) struct MonthlyBreakdown {
-    pub income: HashMap<Date, f64>,
-    pub expenses: HashMap<Date, f64>,
+    pub income: BTreeMap<Date, f64>,
+    pub expenses: BTreeMap<Date, f64>,
 }
 
 impl MonthlyBreakdown {
@@ -70,9 +70,9 @@ impl MonthlyBreakdown {
 /// Aggregates transaction amounts by month.
 ///
 /// # Returns
-/// HashMap mapping each month (as Date with day=1) to the sum of transaction amounts.
-pub(super) fn aggregate_by_month(transactions: &[Transaction]) -> HashMap<Date, f64> {
-    let mut totals = HashMap::new();
+/// BTreeMap mapping each month (as Date with day=1) to the sum of transaction amounts.
+pub(super) fn aggregate_by_month(transactions: &[Transaction]) -> BTreeMap<Date, f64> {
+    let mut totals = BTreeMap::new();
 
     for transaction in transactions {
         let month = transaction.date.replace_day(1).unwrap();
@@ -112,8 +112,8 @@ pub(super) fn get_sorted_months(transactions: &[Transaction]) -> Vec<Date> {
 /// # Returns
 /// Monthly breakdown with income and expenses by month.
 pub(super) fn calculate_monthly_breakdown(transactions: &[Transaction]) -> MonthlyBreakdown {
-    let mut monthly_income: HashMap<Date, f64> = HashMap::new();
-    let mut monthly_expenses: HashMap<Date, f64> = HashMap::new();
+    let mut monthly_income: BTreeMap<Date, f64> = BTreeMap::new();
+    let mut monthly_expenses: BTreeMap<Date, f64> = BTreeMap::new();
 
     for transaction in transactions {
         let month = transaction.date.replace_day(1).unwrap();
@@ -189,16 +189,15 @@ pub(super) fn calculate_summary_statistics(breakdown: &MonthlyBreakdown) -> Summ
 ///
 /// # Arguments
 /// * `total_balance` - The current total account balance
-/// * `monthly_totals` - HashMap of months to their net transaction amounts
+/// * `monthly_totals` - BTreeMap of months to their net transaction amounts
 ///
 /// # Returns
 /// Tuple of (month labels as 3-letter abbreviations, corresponding balance values).
 pub(super) fn calculate_running_balances(
     total_balance: f64,
-    monthly_totals: &HashMap<Date, f64>,
+    monthly_totals: &BTreeMap<Date, f64>,
 ) -> (Vec<String>, Vec<f64>) {
-    let mut sorted_months: Vec<Date> = monthly_totals.keys().copied().collect();
-    sorted_months.sort_unstable();
+    let sorted_months: Vec<Date> = monthly_totals.keys().copied().collect();
 
     let labels = format_month_labels(&sorted_months);
 
@@ -467,15 +466,14 @@ pub(super) fn format_month_labels(months: &[Date]) -> Vec<String> {
 /// Converts monthly aggregate data into sorted labels and values for charting.
 ///
 /// # Arguments
-/// * `monthly_totals` - HashMap of months to their aggregated transaction amounts
+/// * `monthly_totals` - BTreeMap of months to their aggregated transaction amounts
 ///
 /// # Returns
 /// Tuple of (month labels as 3-letter abbreviations, corresponding values).
 pub(super) fn get_monthly_label_and_value_pairs(
-    monthly_totals: &HashMap<Date, f64>,
+    monthly_totals: &BTreeMap<Date, f64>,
 ) -> (Vec<String>, Vec<f64>) {
-    let mut sorted_months: Vec<Date> = monthly_totals.keys().copied().collect();
-    sorted_months.sort_unstable();
+    let sorted_months: Vec<Date> = monthly_totals.keys().copied().collect();
 
     let labels = format_month_labels(&sorted_months);
     let values = sorted_months
@@ -488,7 +486,7 @@ pub(super) fn get_monthly_label_and_value_pairs(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     use time::macros::date;
 
@@ -533,20 +531,36 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_by_month_maintains_chronological_order_across_years() {
+        let transactions = vec![
+            create_test_transaction(100.0, date!(2025 - 03 - 15), "Food"),
+            create_test_transaction(50.0, date!(2023 - 01 - 20), "Transport"),
+            create_test_transaction(-30.0, date!(2024 - 02 - 10), "Food"),
+        ];
+
+        let result = aggregate_by_month(&transactions);
+
+        let months: Vec<_> = result.keys().copied().collect();
+        assert_eq!(months[0], date!(2023 - 01 - 01));
+        assert_eq!(months[1], date!(2024 - 02 - 01));
+        assert_eq!(months[2], date!(2025 - 03 - 01));
+    }
+
+    #[test]
     fn get_sorted_months_returns_unique_sorted_months() {
         let transactions = vec![
-            create_test_transaction(100.0, date!(2024 - 03 - 15), "Food"),
-            create_test_transaction(50.0, date!(2024 - 01 - 20), "Transport"),
+            create_test_transaction(100.0, date!(2025 - 03 - 15), "Food"),
+            create_test_transaction(50.0, date!(2023 - 01 - 20), "Transport"),
             create_test_transaction(-30.0, date!(2024 - 02 - 10), "Food"),
-            create_test_transaction(25.0, date!(2024 - 01 - 25), UNTAGGED_LABEL), // Same month as second
+            create_test_transaction(25.0, date!(2023 - 01 - 25), UNTAGGED_LABEL), // Same month as second
         ];
 
         let result = get_sorted_months(&transactions);
 
         assert_eq!(result.len(), 3);
-        assert_eq!(result[0], date!(2024 - 01 - 01));
+        assert_eq!(result[0], date!(2023 - 01 - 01));
         assert_eq!(result[1], date!(2024 - 02 - 01));
-        assert_eq!(result[2], date!(2024 - 03 - 01));
+        assert_eq!(result[2], date!(2025 - 03 - 01));
     }
 
     #[test]
@@ -678,8 +692,8 @@ mod tests {
     #[test]
     fn summary_statistics_calculates_averages_correctly() {
         let mut breakdown = MonthlyBreakdown {
-            income: HashMap::new(),
-            expenses: HashMap::new(),
+            income: BTreeMap::new(),
+            expenses: BTreeMap::new(),
         };
         breakdown.income.insert(date!(2024 - 01 - 01), 100.0);
         breakdown.expenses.insert(date!(2024 - 01 - 01), 50.0);
@@ -698,8 +712,8 @@ mod tests {
     #[test]
     fn summary_statistics_handles_zero_months() {
         let breakdown = MonthlyBreakdown {
-            income: HashMap::new(),
-            expenses: HashMap::new(),
+            income: BTreeMap::new(),
+            expenses: BTreeMap::new(),
         };
 
         let stats = calculate_summary_statistics(&breakdown);

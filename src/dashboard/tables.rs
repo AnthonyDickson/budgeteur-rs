@@ -182,8 +182,7 @@ pub(super) fn monthly_summary_table(
         return html! {};
     }
 
-    let mut sorted_months: Vec<Date> = monthly_totals.keys().copied().collect();
-    sorted_months.sort_unstable();
+    let sorted_months: Vec<Date> = monthly_totals.keys().copied().collect();
 
     let labels = format_month_labels(&sorted_months);
     let (_, balances) = calculate_running_balances(total_account_balance, &monthly_totals);
