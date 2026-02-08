@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use sha2::{Digest, Sha512};
 use time::Duration;
 
-use crate::{auth::DEFAULT_COOKIE_DURATION, pagination::PaginationConfig};
+use crate::auth::DEFAULT_COOKIE_DURATION;
 
 /// The state of the REST server.
 #[derive(Debug, Clone)]
@@ -22,9 +22,6 @@ pub struct AppState {
     /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
     pub local_timezone: String,
 
-    /// The config that controls how to display pages of data.
-    pub pagination_config: PaginationConfig,
-
     /// The database connection
     pub db_connection: Arc<Mutex<Connection>>,
 }
@@ -33,19 +30,13 @@ impl AppState {
     /// Create a new [AppState] with a SQLite database connection.
     ///
     /// `local_timezone` should be a valid, canonical timezone name, e.g. "Pacific/Auckland".
-    pub fn new(
-        db_connection: Connection,
-        cookie_secret: &str,
-        local_timezone: &str,
-        pagination_config: PaginationConfig,
-    ) -> Self {
+    pub fn new(db_connection: Connection, cookie_secret: &str, local_timezone: &str) -> Self {
         let connection = Arc::new(Mutex::new(db_connection));
 
         Self {
             cookie_key: create_cookie_key(cookie_secret),
             cookie_duration: DEFAULT_COOKIE_DURATION,
             local_timezone: local_timezone.to_owned(),
-            pagination_config,
             db_connection: connection,
         }
     }

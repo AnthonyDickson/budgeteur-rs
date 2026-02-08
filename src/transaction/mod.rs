@@ -15,6 +15,7 @@ mod form;
 #[cfg(test)]
 mod test_utils;
 mod transactions_page;
+mod window;
 
 pub use core::{
     Transaction, TransactionBuilder, TransactionId, create_transaction_table, get_transaction,
@@ -28,4 +29,6 @@ pub use edit_page::get_edit_transaction_page;
 pub use transactions_page::get_transactions_page;
 
 #[cfg(test)]
-pub use core::{count_transactions, create_transaction};
+pub use core::count_transactions;
+#[cfg(test)]
+pub use core::create_transaction;

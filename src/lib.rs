@@ -29,7 +29,6 @@ mod internal_server_error;
 mod logging;
 mod navigation;
 mod not_found;
-mod pagination;
 mod routing;
 mod rule;
 mod tag;

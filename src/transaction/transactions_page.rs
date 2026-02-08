@@ -8,8 +8,7 @@ use axum::{
 };
 use maud::{Markup, html};
 use rusqlite::Connection;
-use serde::Deserialize;
-use time::Date;
+use time::{Date, OffsetDateTime};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
@@ -19,9 +18,14 @@ use crate::{
         TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
     },
     navigation::NavBar,
-    pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
     tag::TagName,
-    transaction::{TransactionId, core::count_transactions},
+    timezone::get_local_offset,
+    transaction::TransactionId,
+};
+
+use super::window::{
+    WindowNavLink, WindowNavigation, WindowPreset, WindowQuery, WindowRange, compute_window_range,
+    get_transaction_date_bounds, window_range_label,
 };
 
 /// The max number of graphemes to display in the transaction table rows before
@@ -33,26 +37,17 @@ const MAX_DESCRIPTION_GRAPHEMES: usize = 32;
 pub struct TransactionsViewState {
     /// The database connection for managing transactions.
     db_connection: Arc<Mutex<Connection>>,
-    /// Configuration for pagination controls.
-    pagination_config: PaginationConfig,
+    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
+    local_timezone: String,
 }
 
 impl FromRef<AppState> for TransactionsViewState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
-            pagination_config: state.pagination_config.clone(),
+            local_timezone: state.local_timezone.clone(),
         }
     }
-}
-
-/// Controls paginations of transactions table.
-#[derive(Deserialize)]
-pub struct Pagination {
-    /// The page number to display. Starts from 1.
-    page: Option<u64>,
-    /// The maximum number of transactions to display per page.
-    per_page: Option<u64>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -109,28 +104,34 @@ impl TransactionTableRow {
 /// Render an overview of the user's transactions.
 pub async fn get_transactions_page(
     State(state): State<TransactionsViewState>,
-    Query(query_params): Query<Pagination>,
+    Query(query_params): Query<WindowQuery>,
 ) -> Result<Response, Error> {
-    let current_page = query_params
-        .page
-        .unwrap_or(state.pagination_config.default_page);
-    let per_page = query_params
-        .per_page
-        .unwrap_or(state.pagination_config.default_page_size);
-
-    let limit = per_page;
-    let offset = (current_page - 1) * per_page;
-    let connection = state.db_connection.lock().unwrap();
-    let page_count = {
-        let transaction_count = count_transactions(&connection)
-            .inspect_err(|error| tracing::error!("could not count transactions: {error}"))?;
-        (transaction_count as f64 / per_page as f64).ceil() as u64
+    let window_preset = query_params
+        .window
+        .unwrap_or(WindowPreset::default_preset());
+    let anchor_date = match query_params.anchor {
+        Some(anchor) => anchor,
+        None => default_anchor_date(&state.local_timezone)?,
     };
+    let connection = state.db_connection.lock().unwrap();
+    let bounds = get_transaction_date_bounds(&connection)
+        .inspect_err(|error| tracing::error!("could not get transaction bounds: {error}"))?;
+    let window_range = compute_window_range(window_preset, anchor_date);
+    let window_nav = WindowNavigation::new(window_preset, window_range, bounds);
+    let latest_link = bounds.and_then(|bounds| {
+        let latest_range = compute_window_range(window_preset, bounds.end);
+        if latest_range == window_range {
+            None
+        } else {
+            Some(WindowNavLink::new(window_preset, latest_range))
+        }
+    });
+    let has_any_transactions = bounds.is_some();
 
-    let redirect_url = get_redirect_url(current_page, per_page);
+    let redirect_url = get_redirect_url(window_preset, anchor_date);
 
     let transactions =
-        get_transaction_table_rows_paginated(limit, offset, SortOrder::Descending, &connection)
+        get_transaction_table_rows_in_range(window_range, SortOrder::Descending, &connection)
             .inspect_err(|error| tracing::error!("could not get transaction table rows: {error}"))?
             .into_iter()
             .map(|transaction| {
@@ -138,16 +139,30 @@ pub async fn get_transactions_page(
             })
             .collect();
 
-    let max_pages = state.pagination_config.max_pages;
-    let pagination_indicators = create_pagination_indicators(current_page, page_count, max_pages);
-
-    Ok(transactions_view(transactions, &pagination_indicators, per_page).into_response())
+    Ok(transactions_view(
+        transactions,
+        &window_nav,
+        latest_link.as_ref(),
+        has_any_transactions,
+    )
+    .into_response())
 }
 
-fn get_redirect_url(page: u64, per_page: u64) -> Option<String> {
+fn default_anchor_date(local_timezone: &str) -> Result<Date, Error> {
+    let Some(local_offset) = get_local_offset(local_timezone) else {
+        tracing::error!("Invalid timezone {}", local_timezone);
+        return Err(Error::InvalidTimezoneError(local_timezone.to_owned()));
+    };
+
+    Ok(OffsetDateTime::now_utc().to_offset(local_offset).date())
+}
+
+fn get_redirect_url(window_preset: WindowPreset, anchor_date: Date) -> Option<String> {
     let redirect_url = format!(
-        "{}?page={page}&per_page={per_page}",
-        endpoints::TRANSACTIONS_VIEW
+        "{}?window={}&anchor={}",
+        endpoints::TRANSACTIONS_VIEW,
+        window_preset.as_query_value(),
+        anchor_date
     );
 
     serde_urlencoded::to_string([("redirect_url", &redirect_url)])
@@ -169,11 +184,10 @@ enum SortOrder {
     Descending,
 }
 
-/// Get transactions with pagination and sorting by date.
+/// Get transactions with sorting by date in a windowed date range.
 ///
 /// # Arguments
-/// * `limit` - Maximum number of transactions to return
-/// * `offset` - Number of transactions to skip
+/// * `window_range` - Inclusive date range of transactions to return
 /// * `sort_order` - Sort direction for date field
 /// * `connection` - Database connection reference
 ///
@@ -182,9 +196,8 @@ enum SortOrder {
 /// - Database connection fails
 /// - SQL query preparation or execution fails
 /// - Transaction row mapping fails
-fn get_transaction_table_rows_paginated(
-    limit: u64,
-    offset: u64,
+fn get_transaction_table_rows_in_range(
+    window_range: WindowRange,
     sort_order: SortOrder,
     connection: &Connection,
 ) -> Result<Vec<Transaction>, Error> {
@@ -197,74 +210,86 @@ fn get_transaction_table_rows_paginated(
     let query = format!(
         "SELECT \"transaction\".id, amount, date, description, tag.name FROM \"transaction\" \
         LEFT JOIN tag ON \"transaction\".tag_id = tag.id \
-        {}, \"transaction\".id ASC \
-        LIMIT {} OFFSET {}",
-        order_clause, limit, offset
+        WHERE \"transaction\".date BETWEEN ?1 AND ?2 \
+        {}, \"transaction\".id ASC",
+        order_clause
     );
 
     connection
         .prepare(&query)?
-        .query_map([], |row| {
-            let tag_name = row
-                .get::<usize, Option<String>>(4)?
-                .map(|some_tag_name| TagName::new_unchecked(&some_tag_name));
+        .query_map(
+            [window_range.start.to_string(), window_range.end.to_string()],
+            |row| {
+                let tag_name = row
+                    .get::<usize, Option<String>>(4)?
+                    .map(|some_tag_name| TagName::new_unchecked(&some_tag_name));
 
-            Ok(Transaction {
-                id: row.get(0)?,
-                amount: row.get(1)?,
-                date: row.get(2)?,
-                description: row.get(3)?,
-                tag_name,
-            })
-        })?
+                Ok(Transaction {
+                    id: row.get(0)?,
+                    amount: row.get(1)?,
+                    date: row.get(2)?,
+                    description: row.get(3)?,
+                    tag_name,
+                })
+            },
+        )?
         .map(|transaction_result| transaction_result.map_err(Error::SqlError))
         .collect()
 }
 
-fn pagination_indicator_html(
-    indicator: &PaginationIndicator,
+fn window_navigation_html(
+    window_nav: &WindowNavigation,
+    latest_link: Option<&WindowNavLink>,
     transactions_page_route: &Uri,
-    per_page: u64,
 ) -> Markup {
+    let current_label = window_range_label(window_nav.range);
+    let row_classes = if latest_link.is_some() {
+        "grid-rows-2 gap-y-0.5"
+    } else {
+        "grid-rows-1"
+    };
+
     html! {
-        li class="flex items-center"
+        nav class="pagination flex justify-center"
         {
-            @match indicator {
-                PaginationIndicator::Page(page) => {
-                    a
-                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
-                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                    {
-                        (page)
+            ul class={ "pagination grid grid-cols-3 gap-x-4 p-0 m-0 items-center w-full " (row_classes) }
+            {
+                @if let Some(prev) = &window_nav.prev {
+                    li class="flex items-center justify-start row-start-1" {
+                        a
+                            href={(transactions_page_route) "?" (&prev.href)}
+                            role="button"
+                            class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
+                        { (window_range_label(prev.range)) }
                     }
+                } @else {
+                    li class="flex items-center justify-start row-start-1" {}
                 }
-                PaginationIndicator::CurrPage(page) => {
-                    p
+                li class="flex items-center justify-center row-start-1" {
+                    span
                         aria-current="page"
                         class="block px-3 py-2 rounded-sm font-bold text-black dark:text-white"
-                    {
-                        (page)
+                    { (current_label) }
+                }
+                @if let Some(next) = &window_nav.next {
+                    li class="flex items-center justify-end row-start-1" {
+                        a
+                            href={(transactions_page_route) "?" (&next.href)}
+                            role="button"
+                            class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
+                        { (window_range_label(next.range)) }
                     }
+                } @else {
+                    li class="flex items-center justify-end row-start-1" {}
                 }
-                PaginationIndicator::Ellipsis => {
-                    span class="px-3 py-2 text-gray-400 select-none" { "..." }
-                }
-                PaginationIndicator::BackButton(page) => {
-                    a
-                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
-                        role="button"
-                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                    {
-                        "Back"
-                    }
-                }
-                PaginationIndicator::NextButton(page) => {
-                    a
-                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
-                        role="button"
-                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                    {
-                        "Next"
+
+                @if let Some(latest) = latest_link {
+                    li class="flex items-center justify-center row-start-2 col-start-2" {
+                        a
+                            href={(transactions_page_route) "?" (&latest.href)}
+                            role="button"
+                            class="block px-3 pb-1 text-blue-600 hover:underline"
+                        { "Latest" }
                     }
                 }
             }
@@ -336,8 +361,9 @@ fn transaction_row_view(row: &TransactionTableRow) -> Markup {
 
 fn transactions_view(
     transactions: Vec<TransactionTableRow>,
-    pagination: &[PaginationIndicator],
-    per_page: u64,
+    window_nav: &WindowNavigation,
+    latest_link: Option<&WindowNavLink>,
+    has_any_transactions: bool,
 ) -> Markup {
     let create_transaction_route = Uri::from_static(endpoints::NEW_TRANSACTION_VIEW);
     let import_transaction_route = Uri::from_static(endpoints::IMPORT_VIEW);
@@ -353,7 +379,7 @@ fn transactions_view(
         {
             div class="relative"
             {
-                div class="flex justify-between flex-wrap items-end"
+                div class="flex justify-between flex-wrap items-end mb-4"
                 {
                     h1 class="text-xl font-bold" { "Transactions" }
 
@@ -370,7 +396,11 @@ fn transactions_view(
 
                 div class="dark:bg-gray-800"
                 {
-                    table class="w-full text-sm text-left rtl:text-right
+                    @if has_any_transactions {
+                        (window_navigation_html(window_nav, latest_link, &transactions_page_route))
+                    }
+
+                    table class="w-full my-2 text-sm text-left rtl:text-right
                         text-gray-500 dark:text-gray-400"
                     {
                         thead class=(TABLE_HEADER_STYLE)
@@ -409,22 +439,16 @@ fn transactions_view(
                             @if transactions_empty {
                                 tr
                                 {
-                                    th { "Nothing here yet." }
+                                    td colspan="5" class="px-6 py-4 text-center" {
+                                        "No transactions in this range."
+                                    }
                                 }
                             }
                         }
                     }
 
-                    @if !transactions_empty {
-                        nav class="pagination flex justify-center my-8"
-                        {
-                            ul class="pagination flex list-none gap-2 p-0 m-0"
-                            {
-                                @for indicator in pagination {
-                                    (pagination_indicator_html(indicator, &transactions_page_route, per_page))
-                                }
-                            }
-                        }
+                    @if has_any_transactions {
+                        (window_navigation_html(window_nav, latest_link, &transactions_page_route))
                     }
                 }
             }
@@ -443,18 +467,19 @@ mod tests {
         response::Response,
     };
     use rusqlite::Connection;
-    use scraper::{ElementRef, Html, Selector, selectable::Selectable};
-    use time::macros::date;
+    use scraper::{ElementRef, Html, Selector};
+    use time::{Date, macros::date};
 
     use crate::{
         db::initialize,
-        endpoints,
-        pagination::{PaginationConfig, PaginationIndicator},
         tag::{TagName, create_tag},
         transaction::{Transaction, create_transaction},
     };
 
-    use super::{Pagination, TransactionsViewState, get_transactions_page};
+    use super::{TransactionsViewState, get_transactions_page};
+    use crate::transaction::window::{
+        WindowPreset, WindowQuery, compute_window_range, window_anchor_query,
+    };
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -472,69 +497,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transactions_page_displays_paged_data() {
+    async fn transactions_page_displays_windowed_data() {
         let conn = get_test_connection();
         let today = date!(2025 - 10 - 05);
 
-        // Create 30 transactions in the database
-        for i in 1..=30 {
+        for i in 1..=3 {
             create_transaction(Transaction::build(i as f64, today, ""), &conn).unwrap();
         }
 
         let state = TransactionsViewState {
             db_connection: Arc::new(Mutex::new(conn)),
-            pagination_config: PaginationConfig {
-                max_pages: 5,
-                ..Default::default()
-            },
+            local_timezone: "Etc/UTC".to_owned(),
         };
-        let per_page = 3;
-        let page = 5;
         let want_transactions = [
             Transaction {
-                id: 13,
-                amount: 13.0,
+                id: 1,
+                amount: 1.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
                 tag_id: None,
             },
             Transaction {
-                id: 14,
-                amount: 14.0,
+                id: 2,
+                amount: 2.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
                 tag_id: None,
             },
             Transaction {
-                id: 15,
-                amount: 15.0,
+                id: 3,
+                amount: 3.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
                 tag_id: None,
             },
-        ];
-        let want_indicators = [
-            PaginationIndicator::BackButton(4),
-            PaginationIndicator::Page(1),
-            PaginationIndicator::Ellipsis,
-            PaginationIndicator::Page(3),
-            PaginationIndicator::Page(4),
-            PaginationIndicator::CurrPage(5),
-            PaginationIndicator::Page(6),
-            PaginationIndicator::Page(7),
-            PaginationIndicator::Ellipsis,
-            PaginationIndicator::Page(10),
-            PaginationIndicator::NextButton(6),
         ];
 
         let response = get_transactions_page(
             State(state),
-            Query(Pagination {
-                page: Some(page),
-                per_page: Some(per_page),
+            Query(WindowQuery {
+                window: Some(WindowPreset::Month),
+                anchor: Some(today),
             }),
         )
         .await
@@ -544,8 +550,64 @@ mod tests {
         assert_valid_html(&html);
         let table = must_get_table(&html);
         assert_table_has_transactions(table, &want_transactions);
-        let pagination = must_get_pagination_indicator(&html);
-        assert_correct_pagination_indicators(pagination, per_page, &want_indicators);
+        assert_window_navigation_present(&html);
+    }
+
+    #[tokio::test]
+    async fn transactions_page_shows_navigation_with_empty_window() {
+        let conn = get_test_connection();
+        let transaction_date = date!(2025 - 10 - 05);
+        let anchor = date!(2025 - 01 - 05);
+
+        create_transaction(Transaction::build(1.0, transaction_date, ""), &conn).unwrap();
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(WindowQuery {
+                window: Some(WindowPreset::Month),
+                anchor: Some(anchor),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+        assert_window_navigation_present(&html);
+        assert_empty_state_present(&html);
+    }
+
+    #[tokio::test]
+    async fn transactions_page_shows_latest_link_when_not_latest_window() {
+        let conn = get_test_connection();
+        let transaction_date = date!(2025 - 10 - 05);
+        let anchor = date!(2025 - 08 - 05);
+
+        create_transaction(Transaction::build(1.0, transaction_date, ""), &conn).unwrap();
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(WindowQuery {
+                window: Some(WindowPreset::Month),
+                anchor: Some(anchor),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+        assert_latest_link_present(&html, WindowPreset::Month, transaction_date);
     }
 
     #[track_caller]
@@ -594,173 +656,50 @@ mod tests {
     }
 
     #[track_caller]
-    fn must_get_pagination_indicator(html: &Html) -> ElementRef<'_> {
-        html.select(&Selector::parse("nav.pagination > ul.pagination").unwrap())
+    fn assert_window_navigation_present(html: &Html) {
+        let nav_selector = Selector::parse("nav.pagination > ul.pagination").unwrap();
+        let nav = html
+            .select(&nav_selector)
             .next()
-            .expect("No pagination indicator found")
+            .expect("No window navigation found");
+
+        let current_selector = Selector::parse("[aria-current='page']").unwrap();
+        nav.select(&current_selector)
+            .next()
+            .expect("Window nav should include aria-current for range label");
     }
 
     #[track_caller]
-    fn assert_correct_pagination_indicators(
-        pagination_indicator: ElementRef,
-        want_per_page: u64,
-        want_indicators: &[PaginationIndicator],
-    ) {
-        let li_selector = Selector::parse("li").unwrap();
-        let list_items: Vec<ElementRef> = pagination_indicator.select(&li_selector).collect();
-        let list_len = list_items.len();
-        let want_len = want_indicators.len();
-        assert_eq!(list_len, want_len, "got {list_len} pages, want {want_len}");
-
+    fn assert_latest_link_present(html: &Html, preset: WindowPreset, latest_date: Date) {
+        let latest_range = compute_window_range(preset, latest_date);
+        let latest_href = window_anchor_query(preset, latest_range.end);
         let link_selector = Selector::parse("a").unwrap();
+        let latest_link = html
+            .select(&link_selector)
+            .find(|link| link.text().collect::<String>().trim() == "Latest")
+            .expect("No Latest link found");
+        let href = latest_link
+            .value()
+            .attr("href")
+            .expect("Latest link missing href");
+        assert!(
+            href.contains(&latest_href),
+            "Latest link href did not include expected query. want {latest_href}, got {href}"
+        );
+    }
 
-        for (i, (list_item, want_indicator)) in list_items.iter().zip(want_indicators).enumerate() {
-            match *want_indicator {
-                PaginationIndicator::CurrPage(want_page) => {
-                    assert!(
-                        list_item.select(&link_selector).next().is_none(),
-                        "The current page indicator should not contain a link"
-                    );
-
-                    let paragraph_selector =
-                        Selector::parse("p").expect("Could not create selector 'p'");
-                    let paragraph = list_item
-                        .select(&paragraph_selector)
-                        .next()
-                        .expect("Current page indicator should have a paragraph element ('<p>')");
-
-                    assert_eq!(paragraph.attr("aria-current"), Some("page"));
-
-                    let text = {
-                        let text = paragraph.text().collect::<String>();
-                        text.trim().to_owned()
-                    };
-
-                    let got_page_number: u64 = text.parse().unwrap_or_else(|_| {
-                        panic!(
-                            "Could not parse \"{text}\" as a u64 for list item {i} in {}",
-                            list_item.html()
-                        )
-                    });
-
-                    assert_eq!(
-                        want_page,
-                        got_page_number,
-                        "want page number {want_page}, got {got_page_number} for list item {i} in {}",
-                        pagination_indicator.html()
-                    );
-                }
-                PaginationIndicator::Page(want_page) => {
-                    let link = list_item.select(&link_selector).next().unwrap_or_else(|| {
-                        panic!("Could not get link (<a> tag) for list item {i}")
-                    });
-                    let link_text = {
-                        let text = link.text().collect::<String>();
-                        text.trim().to_owned()
-                    };
-                    let got_page_number = link_text.parse::<u64>().unwrap_or_else(|_| {
-                        panic!(
-                            "Could not parse page number {link_text} for page {want_page} as usize"
-                        )
-                    });
-
-                    assert_eq!(
-                        want_page,
-                        got_page_number,
-                        "want page number {want_page}, got {got_page_number} for list item {i} in {}",
-                        pagination_indicator.html()
-                    );
-
-                    let link_target = link.attr("href").unwrap_or_else(|| {
-                        panic!("Link for page {want_page} did not have href element")
-                    });
-                    let want_target = format!(
-                        "{}?page={want_page}&per_page={want_per_page}",
-                        endpoints::TRANSACTIONS_VIEW
-                    );
-                    assert_eq!(
-                        want_target, link_target,
-                        "Got incorrect page link for page {want_page}"
-                    );
-                }
-                PaginationIndicator::Ellipsis => {
-                    assert!(
-                        list_item.select(&link_selector).next().is_none(),
-                        "Item {i} should not contain a link tag (<a>) in {}",
-                        pagination_indicator.html()
-                    );
-                    let got_text = list_item.text().collect::<String>();
-                    let got_text = got_text.trim();
-                    assert_eq!(got_text, "...");
-                }
-                PaginationIndicator::NextButton(want_page) => {
-                    let link = list_item.select(&link_selector).next().unwrap_or_else(|| {
-                        panic!("Could not get link (<a> tag) for list item {i}")
-                    });
-                    let link_text = {
-                        let text = link.text().collect::<String>();
-                        text.trim().to_owned()
-                    };
-                    assert_eq!(
-                        "Next", link_text,
-                        "want link text \"Next\", got \"{link_text}\""
-                    );
-
-                    let role = link
-                        .attr("role")
-                        .expect("The next button did not have \"role\" attribute.");
-                    assert_eq!(
-                        role, "button",
-                        "The next page anchor tag should be marked as a button."
-                    );
-
-                    let link_target = link
-                        .attr("href")
-                        .expect("Link for next button did not have href element");
-                    let want_target = format!(
-                        "{}?page={want_page}&per_page={want_per_page}",
-                        endpoints::TRANSACTIONS_VIEW
-                    );
-                    assert_eq!(
-                        want_target, link_target,
-                        "Got link to {link_target} for next button, want {want_page}"
-                    );
-                }
-                PaginationIndicator::BackButton(want_page) => {
-                    let link = list_item.select(&link_selector).next().unwrap_or_else(|| {
-                        panic!("Could not get link (<a> tag) for list item {i}")
-                    });
-                    let link_text = {
-                        let text = link.text().collect::<String>();
-                        text.trim().to_owned()
-                    };
-                    assert_eq!(
-                        "Back", link_text,
-                        "want link text \"Back\", got \"{link_text}\""
-                    );
-
-                    let role = link
-                        .attr("role")
-                        .expect("The back button did not have \"role\" attribute.");
-                    assert_eq!(
-                        role, "button",
-                        "The back button's anchor tag should be marked as a button."
-                    );
-
-                    let link_target = link
-                        .attr("href")
-                        .expect("Link for back button did not have href element");
-                    let want_target = format!(
-                        "{}?page={want_page}&per_page={want_per_page}",
-                        endpoints::TRANSACTIONS_VIEW
-                    );
-                    assert_eq!(
-                        want_target, link_target,
-                        "Got link to {link_target} for back button, want {want_page}"
-                    );
-                }
-            }
-        }
+    #[track_caller]
+    fn assert_empty_state_present(html: &Html) {
+        let empty_row_selector = Selector::parse("tbody tr td[colspan='5']").unwrap();
+        let empty_row = html
+            .select(&empty_row_selector)
+            .next()
+            .expect("No empty-state row found");
+        let text = empty_row.text().collect::<String>();
+        assert!(
+            text.contains("No transactions in this range."),
+            "Empty-state row did not include expected text: {text}"
+        );
     }
 
     #[tokio::test]
@@ -791,14 +730,14 @@ mod tests {
 
         let state = TransactionsViewState {
             db_connection: Arc::new(Mutex::new(conn)),
-            pagination_config: PaginationConfig::default(),
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         let response = get_transactions_page(
             State(state),
-            Query(Pagination {
-                page: Some(1),
-                per_page: Some(10),
+            Query(WindowQuery {
+                window: Some(WindowPreset::Month),
+                anchor: Some(today),
             }),
         )
         .await
@@ -881,8 +820,9 @@ mod database_tests {
         transaction::{
             Transaction, TransactionId, create_transaction,
             transactions_page::{
-                SortOrder, Transaction as TableTransaction, get_transaction_table_rows_paginated,
+                SortOrder, Transaction as TableTransaction, get_transaction_table_rows_in_range,
             },
+            window::WindowRange,
         },
     };
 
@@ -893,14 +833,14 @@ mod database_tests {
     }
 
     #[test]
-    fn get_transactions_with_limit() {
+    fn get_transactions_in_range() {
         let conn = get_test_connection();
 
         let today = OffsetDateTime::now_utc().date();
 
-        for i in 1..=10 {
+        for i in 0..10 {
             let transaction_builder = Transaction::build(
-                i as f64,
+                (i + 1) as f64,
                 today - Duration::days(i),
                 &format!("transaction #{i}"),
             );
@@ -908,36 +848,49 @@ mod database_tests {
             create_transaction(transaction_builder, &conn).unwrap();
         }
 
-        let got = get_transaction_table_rows_paginated(5, 0, SortOrder::Ascending, &conn).unwrap();
+        let window_range = WindowRange {
+            start: today - Duration::days(4),
+            end: today,
+        };
+        let got =
+            get_transaction_table_rows_in_range(window_range, SortOrder::Ascending, &conn).unwrap();
 
         assert_eq!(got.len(), 5, "got {} transactions, want 5", got.len());
     }
 
     #[test]
-    fn get_transactions_with_offset() {
+    fn get_transactions_in_range_orders_by_date() {
         let conn = get_test_connection();
-        let offset = 10;
-        let limit = 5;
         let today = date!(2025 - 10 - 05);
         let mut want = Vec::new();
-        for i in 1..20 {
-            let transaction = create_transaction(Transaction::build(i as f64, today, ""), &conn)
+        for i in 1..=6 {
+            let date = if i <= 3 {
+                today
+            } else {
+                today - Duration::days(1)
+            };
+            let transaction = create_transaction(Transaction::build(i as f64, date, ""), &conn)
                 .expect("Could not create transaction");
 
-            if i > offset && i <= offset + limit {
-                want.push(TableTransaction {
-                    id: i as TransactionId,
-                    amount: transaction.amount,
-                    date: transaction.date,
-                    description: transaction.description.clone(),
-                    tag_name: None,
-                });
-            }
+            want.push(TableTransaction {
+                id: i as TransactionId,
+                amount: transaction.amount,
+                date: transaction.date,
+                description: transaction.description.clone(),
+                tag_name: None,
+            });
         }
 
-        let got = get_transaction_table_rows_paginated(limit, offset, SortOrder::Ascending, &conn)
+        want.sort_by(|a, b| a.date.cmp(&b.date).then(a.id.cmp(&b.id)));
+
+        let window_range = WindowRange {
+            start: today - Duration::days(1),
+            end: today,
+        };
+        let got = get_transaction_table_rows_in_range(window_range, SortOrder::Ascending, &conn)
             .expect("Could not query transactions");
 
+        assert_eq!(want.len(), 6, "expected 6 transactions, got {}", want.len());
         assert_eq!(want, got);
     }
 }
