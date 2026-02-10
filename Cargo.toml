@@ -28,7 +28,7 @@ serde_urlencoded = "0.7.1"
 sha2 = { version = "0.10.9" }
 sscanf = "0.4.4"
 thiserror = "2.0.18"
-time = { version = "0.3.46", features = ["serde", "local-offset"] }
+time = { version = "0.3.47", features = ["serde", "local-offset"] }
 time-tz = "2.0.0"
 tokio = { version = "1.49.0", features = ["full"] }
 tower-http = { version = "0.6.8", features = ["trace", "fs"] }
