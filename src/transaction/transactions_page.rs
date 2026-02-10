@@ -8,7 +8,7 @@ use axum::{
 };
 use maud::{Markup, html};
 use rusqlite::Connection;
-use time::{Date, OffsetDateTime};
+use time::{Date, Duration, Month, OffsetDateTime};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
         TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
     },
     navigation::NavBar,
-    tag::TagName,
+    tag::{TagId, TagName, get_excluded_tags},
     timezone::get_local_offset,
     transaction::TransactionId,
 };
@@ -62,6 +62,8 @@ struct Transaction {
     description: String,
     /// The name of the transactions tag.
     tag_name: Option<TagName>,
+    /// The ID of the transactions tag.
+    tag_id: Option<TagId>,
 }
 
 /// Renders a transaction with its tags as a table row.
@@ -75,6 +77,8 @@ struct TransactionTableRow {
     description: String,
     /// The name of the transactions tag.
     tag_name: Option<TagName>,
+    /// The ID of the transactions tag.
+    tag_id: Option<TagId>,
     /// The API path to edit this transaction
     edit_url: String,
     /// The API path to delete this transaction
@@ -95,8 +99,41 @@ impl TransactionTableRow {
             date: transaction.date,
             description: transaction.description,
             tag_name: transaction.tag_name,
+            tag_id: transaction.tag_id,
             edit_url,
             delete_url: endpoints::format_endpoint(endpoints::DELETE_TRANSACTION, transaction.id),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct BucketTotals {
+    income: f64,
+    expenses: f64,
+}
+
+#[derive(Debug, PartialEq)]
+struct DayGroup {
+    date: Date,
+    transactions: Vec<TransactionTableRow>,
+}
+
+#[derive(Debug, PartialEq)]
+struct DateBucket {
+    range: WindowRange,
+    totals: BucketTotals,
+    days: Vec<DayGroup>,
+}
+
+impl DateBucket {
+    fn new(range: WindowRange) -> Self {
+        Self {
+            range,
+            totals: BucketTotals {
+                income: 0.0,
+                expenses: 0.0,
+            },
+            days: Vec::new(),
         }
     }
 }
@@ -130,6 +167,9 @@ pub async fn get_transactions_page(
 
     let redirect_url = get_redirect_url(window_preset, anchor_date);
 
+    let excluded_tag_ids = get_excluded_tags(&connection)
+        .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
+
     let transactions =
         get_transaction_table_rows_in_range(window_range, SortOrder::Descending, &connection)
             .inspect_err(|error| tracing::error!("could not get transaction table rows: {error}"))?
@@ -137,10 +177,12 @@ pub async fn get_transactions_page(
             .map(|transaction| {
                 TransactionTableRow::new_from_transaction(transaction, redirect_url.as_deref())
             })
-            .collect();
+            .collect::<Vec<_>>();
+
+    let grouped_transactions = group_transactions_by_week(transactions, &excluded_tag_ids);
 
     Ok(transactions_view(
-        transactions,
+        grouped_transactions,
         &window_nav,
         latest_link.as_ref(),
         has_any_transactions,
@@ -208,7 +250,7 @@ fn get_transaction_table_rows_in_range(
 
     // Sort by date, and then ID to keep transaction order stable after updates
     let query = format!(
-        "SELECT \"transaction\".id, amount, date, description, tag.name FROM \"transaction\" \
+        "SELECT \"transaction\".id, amount, date, description, tag.name, tag.id FROM \"transaction\" \
         LEFT JOIN tag ON \"transaction\".tag_id = tag.id \
         WHERE \"transaction\".date BETWEEN ?1 AND ?2 \
         {}, \"transaction\".id ASC",
@@ -230,6 +272,7 @@ fn get_transaction_table_rows_in_range(
                     date: row.get(2)?,
                     description: row.get(3)?,
                     tag_name,
+                    tag_id: row.get(5)?,
                 })
             },
         )?
@@ -315,7 +358,7 @@ fn transaction_row_view(row: &TransactionTableRow) -> Markup {
     };
 
     html! {
-        tr class=(TABLE_ROW_STYLE)
+        tr class=(TABLE_ROW_STYLE) data-transaction-row="true"
         {
             td class="px-6 py-4 text-right" { (amount_str) }
             td class=(TABLE_CELL_STYLE) { (row.date) }
@@ -360,7 +403,7 @@ fn transaction_row_view(row: &TransactionTableRow) -> Markup {
 }
 
 fn transactions_view(
-    transactions: Vec<TransactionTableRow>,
+    grouped_transactions: Vec<DateBucket>,
     window_nav: &WindowNavigation,
     latest_link: Option<&WindowNavLink>,
     has_any_transactions: bool,
@@ -369,8 +412,8 @@ fn transactions_view(
     let import_transaction_route = Uri::from_static(endpoints::IMPORT_VIEW);
     let transactions_page_route = Uri::from_static(endpoints::TRANSACTIONS_VIEW);
     let nav_bar = NavBar::new(endpoints::TRANSACTIONS_VIEW).into_html();
-    // Cache this result so it can be accessed after `transactions` is moved by for loop.
-    let transactions_empty = transactions.is_empty();
+    // Cache this result so it can be accessed after `grouped_transactions` is moved by for loop.
+    let transactions_empty = grouped_transactions.is_empty();
 
     let content = html! {
         (nav_bar)
@@ -432,8 +475,16 @@ fn transactions_view(
 
                         tbody
                         {
-                            @for transaction_row in transactions {
-                                (transaction_row_view(&transaction_row))
+                            @for bucket in grouped_transactions {
+                                (bucket_header_row_view(&bucket))
+
+                                @for day in &bucket.days {
+                                    (day_header_row_view(day.date))
+
+                                    @for transaction_row in &day.transactions {
+                                        (transaction_row_view(transaction_row))
+                                    }
+                                }
                             }
 
                             @if transactions_empty {
@@ -456,6 +507,118 @@ fn transactions_view(
     };
 
     base("Transactions", &[], &content)
+}
+
+fn group_transactions_by_week(
+    transactions: Vec<TransactionTableRow>,
+    excluded_tag_ids: &[TagId],
+) -> Vec<DateBucket> {
+    let mut buckets: Vec<DateBucket> = Vec::new();
+
+    for transaction in transactions {
+        let bucket_range = week_bucket_range(transaction.date);
+        let bucket = match buckets.last_mut() {
+            Some(current) if current.range == bucket_range => current,
+            _ => {
+                buckets.push(DateBucket::new(bucket_range));
+                buckets.last_mut().expect("bucket just added")
+            }
+        };
+
+        if transaction
+            .tag_id
+            .map(|tag_id| !excluded_tag_ids.contains(&tag_id))
+            .unwrap_or(true)
+        {
+            if transaction.amount < 0.0 {
+                bucket.totals.expenses += transaction.amount;
+            } else {
+                bucket.totals.income += transaction.amount;
+            }
+        }
+
+        let day_group = match bucket.days.last_mut() {
+            Some(current) if current.date == transaction.date => current,
+            _ => {
+                bucket.days.push(DayGroup {
+                    date: transaction.date,
+                    transactions: Vec::new(),
+                });
+                bucket.days.last_mut().expect("day group just added")
+            }
+        };
+
+        day_group.transactions.push(transaction);
+    }
+
+    buckets
+}
+
+fn bucket_header_row_view(bucket: &DateBucket) -> Markup {
+    let label = window_range_label(bucket.range);
+    let income = format_currency(bucket.totals.income);
+    let expenses = format_currency(bucket.totals.expenses);
+
+    html! {
+        tr class="bg-gray-50 dark:bg-gray-700" data-bucket-header="true"
+        {
+            td colspan="5" class="px-6 py-3"
+            {
+                div class="flex items-center justify-between font-semibold text-gray-900 dark:text-white"
+                {
+                    span { (label) }
+                    span class="flex items-center gap-4"
+                    {
+                        span class="text-green-700 dark:text-green-300" { (income) }
+                        span class="text-red-700 dark:text-red-300" { (expenses) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn day_header_row_view(date: Date) -> Markup {
+    let label = format_day_label(date);
+
+    html! {
+        tr class="bg-gray-50 dark:bg-gray-800" data-day-header="true"
+        {
+            td colspan="5" class="px-6 py-2 text-xs font-semibold uppercase text-gray-600 dark:text-gray-300"
+            {
+                (label)
+            }
+        }
+    }
+}
+
+fn week_bucket_range(date: Date) -> WindowRange {
+    let weekday_number = date.weekday().number_from_monday() as i64;
+    let start = date - Duration::days(weekday_number - 1);
+    let end = start + Duration::days(6);
+
+    WindowRange { start, end }
+}
+
+fn format_day_label(date: Date) -> String {
+    format!("{:02} {}", date.day(), month_abbrev(date.month()))
+}
+
+fn month_abbrev(month: Month) -> &'static str {
+    match month {
+        Month::January => "Jan",
+        Month::February => "Feb",
+        Month::March => "Mar",
+        Month::April => "Apr",
+        Month::May => "May",
+        Month::June => "Jun",
+        Month::July => "Jul",
+        Month::August => "Aug",
+        Month::September => "Sep",
+        Month::October => "Oct",
+        Month::November => "Nov",
+        Month::December => "Dec",
+    }
 }
 
 #[cfg(test)]
@@ -619,7 +782,7 @@ mod tests {
 
     #[track_caller]
     fn assert_table_has_transactions(table: ElementRef, transactions: &[Transaction]) {
-        let row_selector = Selector::parse("tbody tr").unwrap();
+        let row_selector = Selector::parse("tbody tr[data-transaction-row='true']").unwrap();
         let table_rows: Vec<ElementRef<'_>> = table.select(&row_selector).collect();
 
         assert_eq!(
@@ -762,7 +925,7 @@ mod tests {
 
         // Check table rows for tag content
         let table_rows = html
-            .select(&Selector::parse("tbody tr").unwrap())
+            .select(&Selector::parse("tbody tr[data-transaction-row='true']").unwrap())
             .collect::<Vec<_>>();
         assert_eq!(table_rows.len(), 3, "Should have 3 transaction rows");
 
@@ -878,6 +1041,7 @@ mod database_tests {
                 date: transaction.date,
                 description: transaction.description.clone(),
                 tag_name: None,
+                tag_id: None,
             });
         }
 
