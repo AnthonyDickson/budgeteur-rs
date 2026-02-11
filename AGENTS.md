@@ -20,6 +20,11 @@
 ## Coding Style & Naming Conventions
 
 - Follow Rust standard style: `snake_case` for functions/variables, `PascalCase` for types.
+- Prefer a simple and functional programming style.
+- Avoid adding abstraction unless it would significantly reduce the amount of code to write, improve readability, make
+  the code easier to reason about or make the project easier to maintain and extend.
+- Avoid comments that just restate what the code is doing, focus on comments that explain unintuitive code, rationale
+  or important invariants.
 - Prefer `Error`’s `IntoResponse` for page endpoints; insert errors into forms or use `AlertTemplate` for fragments.
 - Use `bacon.toml` jobs for quality checks (`cargo check`, `cargo clippy`, `cargo doc`).
 
