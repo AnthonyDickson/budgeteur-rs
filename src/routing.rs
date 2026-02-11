@@ -34,7 +34,7 @@ use crate::{
         get_tags_page, update_tag_endpoint,
     },
     transaction::{
-        create_transaction_endpoint, delete_transaction_endpoint, edit_tranction_endpoint,
+        create_transaction_endpoint, delete_transaction_endpoint, edit_transaction_endpoint,
         get_create_transaction_page, get_edit_transaction_page, get_transactions_page,
     },
 };
@@ -94,7 +94,7 @@ pub fn build_router(state: AppState) -> Router {
             )
             .route(
                 endpoints::EDIT_TRANSACTION_VIEW,
-                put(edit_tranction_endpoint),
+                put(edit_transaction_endpoint),
             )
             .route(endpoints::ACCOUNTS, post(create_account_endpoint))
             .route(endpoints::DELETE_ACCOUNT, delete(delete_account_endpoint))

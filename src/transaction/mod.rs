@@ -12,9 +12,13 @@ mod delete_endpoint;
 mod edit_endpoint;
 mod edit_page;
 mod form;
+mod grouping;
+mod models;
+mod query;
 #[cfg(test)]
 mod test_utils;
 mod transactions_page;
+mod view;
 mod window;
 
 pub use core::{
@@ -24,7 +28,7 @@ pub use core::{
 pub use create_endpoint::create_transaction_endpoint;
 pub use create_page::get_create_transaction_page;
 pub use delete_endpoint::delete_transaction_endpoint;
-pub use edit_endpoint::edit_tranction_endpoint;
+pub use edit_endpoint::edit_transaction_endpoint;
 pub use edit_page::get_edit_transaction_page;
 pub use transactions_page::get_transactions_page;
 

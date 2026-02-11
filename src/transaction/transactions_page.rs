@@ -3,35 +3,70 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{FromRef, Query, State},
-    http::Uri,
     response::{IntoResponse, Redirect, Response},
 };
-use maud::{Markup, html};
 use rusqlite::Connection;
-use time::{Date, Month, OffsetDateTime};
-use unicode_segmentation::UnicodeSegmentation;
+use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error, endpoints,
-    html::{
-        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
-        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
-    },
-    navigation::NavBar,
-    tag::{TagId, TagName, get_excluded_tags},
+    tag::{TagId, get_excluded_tags},
     timezone::get_local_offset,
-    transaction::TransactionId,
 };
 
-use super::window::{
-    BucketPreset, WindowNavLink, WindowNavigation, WindowPreset, WindowQuery, WindowRange,
-    compute_bucket_range, compute_window_range, get_transaction_date_bounds,
-    smallest_window_for_bucket, window_preset_can_contain_bucket, window_range_label,
+use super::{
+    grouping::{GroupingOptions, group_transactions},
+    models::{Transaction, TransactionTableRow, TransactionsViewOptions},
+    query::{SortOrder, get_transaction_table_rows_in_range},
+    view::transactions_view,
+    window::{
+        BucketPreset, WindowNavLink, WindowNavigation, WindowPreset, WindowQuery, WindowRange,
+        compute_window_range, get_transaction_date_bounds, smallest_window_for_bucket,
+        window_preset_can_contain_bucket,
+    },
 };
 
-/// The max number of graphemes to display in the transaction table rows before
-/// trunctating and displaying elipses.
-const MAX_DESCRIPTION_GRAPHEMES: usize = 32;
+struct TransactionsInputs {
+    /// Normalized options derived from query params.
+    options: NormalizedQuery,
+    /// Optional min/max transaction dates for the data set.
+    bounds: Option<WindowRange>,
+    /// The date range for the active window.
+    window_range: WindowRange,
+    /// Tag IDs excluded from bucket totals and summaries.
+    excluded_tag_ids: Vec<TagId>,
+    /// Raw transaction rows from the database.
+    transactions: Vec<Transaction>,
+}
+
+struct TransactionsViewModel {
+    /// Grouped and summarized transactions for rendering.
+    grouped: Vec<super::models::DateBucket>,
+    /// Navigation model for window links.
+    window_nav: WindowNavigation,
+    /// Optional link to the latest window.
+    latest_link: Option<WindowNavLink>,
+    /// Whether the dataset contains any transactions at all.
+    has_any_transactions: bool,
+    /// Selected view options for the page.
+    options: TransactionsViewOptions,
+}
+
+struct NormalizedQuery {
+    /// Window preset for navigation.
+    window_preset: WindowPreset,
+    /// Bucket preset for grouping.
+    bucket_preset: BucketPreset,
+    /// Whether category summary mode is enabled.
+    show_category_summary: bool,
+    /// Anchor date for window calculations.
+    anchor_date: Date,
+}
+
+enum QueryDecision {
+    Redirect(String),
+    Normalized(NormalizedQuery),
+}
 
 /// The state needed for the transactions page.
 #[derive(Debug, Clone)]
@@ -51,202 +86,54 @@ impl FromRef<AppState> for TransactionsViewState {
     }
 }
 
-#[derive(Debug, PartialEq)]
-struct Transaction {
-    /// The ID of the transaction.
-    id: TransactionId,
-    /// The amount of money spent or earned in this transaction.
-    amount: f64,
-    /// When the transaction happened.
-    date: Date,
-    /// A text description of what the transaction was for.
-    description: String,
-    /// The name of the transactions tag.
-    tag_name: Option<TagName>,
-    /// The ID of the transactions tag.
-    tag_id: Option<TagId>,
-}
-
-/// Renders a transaction with its tags as a table row.
-#[derive(Debug, PartialEq, Clone)]
-struct TransactionTableRow {
-    /// The amount of money spent or earned in this transaction.
-    amount: f64,
-    /// When the transaction happened.
-    date: Date,
-    /// A text description of what the transaction was for.
-    description: String,
-    /// The name of the transactions tag.
-    tag_name: Option<TagName>,
-    /// The ID of the transactions tag.
-    tag_id: Option<TagId>,
-    /// The API path to edit this transaction
-    edit_url: String,
-    /// The API path to delete this transaction
-    delete_url: String,
-}
-
-struct TransactionsViewOptions {
-    window_preset: WindowPreset,
-    bucket_preset: BucketPreset,
-    show_category_summary: bool,
-    anchor_date: Date,
-}
-
-impl TransactionTableRow {
-    fn new_from_transaction(transaction: Transaction, redirect_url: Option<&str>) -> Self {
-        let mut edit_url =
-            endpoints::format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction.id);
-
-        if let Some(redirect_url) = redirect_url {
-            edit_url = format!("{edit_url}?{redirect_url}");
-        }
-
-        Self {
-            amount: transaction.amount,
-            date: transaction.date,
-            description: transaction.description,
-            tag_name: transaction.tag_name,
-            tag_id: transaction.tag_id,
-            edit_url,
-            delete_url: endpoints::format_endpoint(endpoints::DELETE_TRANSACTION, transaction.id),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-struct BucketTotals {
-    income: f64,
-    expenses: f64,
-}
-
-#[derive(Debug, PartialEq)]
-struct DayGroup {
-    date: Date,
-    transactions: Vec<TransactionTableRow>,
-}
-
-#[derive(Debug, PartialEq)]
-struct DateBucket {
-    range: WindowRange,
-    totals: BucketTotals,
-    days: Vec<DayGroup>,
-    summary: Vec<CategorySummary>,
-}
-
-impl DateBucket {
-    fn new(range: WindowRange) -> Self {
-        Self {
-            range,
-            totals: BucketTotals {
-                income: 0.0,
-                expenses: 0.0,
-            },
-            days: Vec::new(),
-            summary: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-struct CategorySummary {
-    label: String,
-    total: f64,
-    percent: i64,
-    kind: CategorySummaryKind,
-    transactions: Vec<TransactionTableRow>,
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-enum CategorySummaryKind {
-    Income,
-    Expense,
-}
-
 /// Render an overview of the user's transactions.
 pub async fn get_transactions_page(
     State(state): State<TransactionsViewState>,
     Query(query_params): Query<WindowQuery>,
 ) -> Result<Response, Error> {
-    let requested_window_preset = query_params
-        .window
-        .unwrap_or(WindowPreset::default_preset());
-    let bucket_preset = query_params
-        .bucket
-        .unwrap_or(BucketPreset::default_preset());
-    let show_category_summary = query_params.summary.unwrap_or(false);
-    let anchor_date = match query_params.anchor {
-        Some(anchor) => anchor,
-        None => default_anchor_date(&state.local_timezone)?,
+    let now_local = current_local_date(&state.local_timezone)?;
+    let options = match normalize_query(query_params, now_local) {
+        QueryDecision::Normalized(options) => options,
+        QueryDecision::Redirect(redirect_url) => {
+            return Ok(Redirect::to(&redirect_url).into_response());
+        }
     };
-    let window_preset = if window_preset_can_contain_bucket(requested_window_preset, bucket_preset)
-    {
-        requested_window_preset
-    } else {
-        smallest_window_for_bucket(bucket_preset)
-    };
-    if window_preset != requested_window_preset {
-        let redirect_url = transactions_page_url(
-            window_preset,
-            bucket_preset,
-            show_category_summary,
-            anchor_date,
-        );
-        return Ok(Redirect::to(&redirect_url).into_response());
-    }
-    let connection = state.db_connection.lock().unwrap();
+    let connection = state
+        .db_connection
+        .lock()
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
     let bounds = get_transaction_date_bounds(&connection)
         .inspect_err(|error| tracing::error!("could not get transaction bounds: {error}"))?;
-    let window_range = compute_window_range(window_preset, anchor_date);
-    let window_nav = WindowNavigation::new(window_preset, window_range, bounds);
-    let latest_link = bounds.and_then(|bounds| {
-        let latest_range = compute_window_range(window_preset, bounds.end);
-        if latest_range == window_range {
-            None
-        } else {
-            Some(WindowNavLink::new(window_preset, latest_range))
-        }
-    });
-    let has_any_transactions = bounds.is_some();
-
-    let redirect_url = get_redirect_url(
-        window_preset,
-        bucket_preset,
-        show_category_summary,
-        anchor_date,
-    );
-
+    let window_range = compute_window_range(options.window_preset, options.anchor_date);
     let excluded_tag_ids = get_excluded_tags(&connection)
         .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
 
     let transactions =
         get_transaction_table_rows_in_range(window_range, SortOrder::Descending, &connection)
-            .inspect_err(|error| tracing::error!("could not get transaction table rows: {error}"))?
-            .into_iter()
-            .map(|transaction| {
-                TransactionTableRow::new_from_transaction(transaction, redirect_url.as_deref())
-            })
-            .collect::<Vec<_>>();
+            .inspect_err(|error| {
+                tracing::error!("could not get transaction table rows: {error}")
+            })?;
 
-    let grouped_transactions =
-        group_transactions_by_bucket(transactions, bucket_preset, &excluded_tag_ids);
+    let model = build_transactions_view_model(TransactionsInputs {
+        options,
+        bounds,
+        window_range,
+        excluded_tag_ids,
+        transactions,
+    });
 
     Ok(transactions_view(
-        grouped_transactions,
-        &window_nav,
-        latest_link.as_ref(),
-        has_any_transactions,
-        TransactionsViewOptions {
-            window_preset,
-            bucket_preset,
-            show_category_summary,
-            anchor_date,
-        },
+        model.grouped,
+        &model.window_nav,
+        model.latest_link.as_ref(),
+        model.has_any_transactions,
+        model.options,
     )
     .into_response())
 }
 
-fn default_anchor_date(local_timezone: &str) -> Result<Date, Error> {
+fn current_local_date(local_timezone: &str) -> Result<Date, Error> {
     let Some(local_offset) = get_local_offset(local_timezone) else {
         tracing::error!("Invalid timezone {}", local_timezone);
         return Err(Error::InvalidTimezoneError(local_timezone.to_owned()));
@@ -298,780 +185,90 @@ fn transactions_page_url(
     )
 }
 
-/// The order to sort transactions in a [TransactionQuery].
-enum SortOrder {
-    /// Sort in order of increasing value.
-    // TODO: Remove #[allow(dead_code)] once Ascending is used
-    #[allow(dead_code)]
-    Ascending,
-    /// Sort in order of decreasing value.
-    Descending,
-}
-
-/// Get transactions with sorting by date in a windowed date range.
-///
-/// # Arguments
-/// * `window_range` - Inclusive date range of transactions to return
-/// * `sort_order` - Sort direction for date field
-/// * `connection` - Database connection reference
-///
-/// # Errors
-/// Returns [Error::SqlError] if:
-/// - Database connection fails
-/// - SQL query preparation or execution fails
-/// - Transaction row mapping fails
-fn get_transaction_table_rows_in_range(
-    window_range: WindowRange,
-    sort_order: SortOrder,
-    connection: &Connection,
-) -> Result<Vec<Transaction>, Error> {
-    let order_clause = match sort_order {
-        SortOrder::Ascending => "ORDER BY date ASC",
-        SortOrder::Descending => "ORDER BY date DESC",
+fn normalize_query(query: WindowQuery, now_local: Date) -> QueryDecision {
+    let requested_window_preset = query.window.unwrap_or(WindowPreset::default_preset());
+    let bucket_preset = query.bucket.unwrap_or(BucketPreset::default_preset());
+    let show_category_summary = query.summary.unwrap_or(false);
+    let anchor_date = query.anchor.unwrap_or(now_local);
+    let window_preset = if window_preset_can_contain_bucket(requested_window_preset, bucket_preset)
+    {
+        requested_window_preset
+    } else {
+        smallest_window_for_bucket(bucket_preset)
     };
 
-    // Sort by date, and then ID to keep transaction order stable after updates
-    let query = format!(
-        "SELECT \"transaction\".id, amount, date, description, tag.name, tag.id FROM \"transaction\" \
-        LEFT JOIN tag ON \"transaction\".tag_id = tag.id \
-        WHERE \"transaction\".date BETWEEN ?1 AND ?2 \
-        {}, \"transaction\".id ASC",
-        order_clause
+    if window_preset != requested_window_preset {
+        let redirect_url = transactions_page_url(
+            window_preset,
+            bucket_preset,
+            show_category_summary,
+            anchor_date,
+        );
+        return QueryDecision::Redirect(redirect_url);
+    }
+
+    QueryDecision::Normalized(NormalizedQuery {
+        window_preset,
+        bucket_preset,
+        show_category_summary,
+        anchor_date,
+    })
+}
+
+fn build_transactions_view_model(input: TransactionsInputs) -> TransactionsViewModel {
+    let window_nav = WindowNavigation::new(
+        input.options.window_preset,
+        input.window_range,
+        input.bounds,
     );
-
-    connection
-        .prepare(&query)?
-        .query_map(
-            [window_range.start.to_string(), window_range.end.to_string()],
-            |row| {
-                let tag_name = row
-                    .get::<usize, Option<String>>(4)?
-                    .map(|some_tag_name| TagName::new_unchecked(&some_tag_name));
-
-                Ok(Transaction {
-                    id: row.get(0)?,
-                    amount: row.get(1)?,
-                    date: row.get(2)?,
-                    description: row.get(3)?,
-                    tag_name,
-                    tag_id: row.get(5)?,
-                })
-            },
-        )?
-        .map(|transaction_result| transaction_result.map_err(Error::SqlError))
-        .collect()
-}
-
-fn window_navigation_html(
-    window_nav: &WindowNavigation,
-    latest_link: Option<&WindowNavLink>,
-    bucket_preset: BucketPreset,
-    show_category_summary: bool,
-    transactions_page_route: &Uri,
-) -> Markup {
-    let current_label = window_range_label(window_nav.range);
-    let row_classes = if latest_link.is_some() {
-        "grid-rows-2 gap-y-0.5"
-    } else {
-        "grid-rows-1"
-    };
-
-    html! {
-        nav class="pagination flex justify-center"
-        {
-            ul class={ "pagination grid grid-cols-3 gap-x-4 p-0 m-0 items-center w-full " (row_classes) }
-            {
-                @if let Some(prev) = &window_nav.prev {
-                    @let summary_param = if show_category_summary { "&summary=true" } else { "" };
-                    li class="flex items-center justify-start row-start-1" {
-                        a
-                            href={(transactions_page_route) "?" (&prev.href) "&bucket=" (bucket_preset.as_query_value()) (summary_param)}
-                            role="button"
-                            class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                        { (window_range_label(prev.range)) }
-                    }
-                } @else {
-                    li class="flex items-center justify-start row-start-1" {}
-                }
-                li class="flex items-center justify-center row-start-1" {
-                    span
-                        aria-current="page"
-                        class="block px-3 py-2 rounded-sm font-bold text-black dark:text-white"
-                    { (current_label) }
-                }
-                @if let Some(next) = &window_nav.next {
-                    @let summary_param = if show_category_summary { "&summary=true" } else { "" };
-                    li class="flex items-center justify-end row-start-1" {
-                        a
-                            href={(transactions_page_route) "?" (&next.href) "&bucket=" (bucket_preset.as_query_value()) (summary_param)}
-                            role="button"
-                            class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                        { (window_range_label(next.range)) }
-                    }
-                } @else {
-                    li class="flex items-center justify-end row-start-1" {}
-                }
-
-                @if let Some(latest) = latest_link {
-                    @let summary_param = if show_category_summary { "&summary=true" } else { "" };
-                    li class="flex items-center justify-center row-start-2 col-start-2" {
-                        a
-                            href={(transactions_page_route) "?" (&latest.href) "&bucket=" (bucket_preset.as_query_value()) (summary_param)}
-                            role="button"
-                            class="block px-3 pb-1 text-blue-600 hover:underline"
-                        { "Latest" }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn transaction_row_view(row: &TransactionTableRow) -> Markup {
-    transaction_row_view_with_class(row, TABLE_ROW_STYLE)
-}
-
-fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -> Markup {
-    let amount_str = format_currency(row.amount);
-    let (description, tooltip) = format_description(&row.description);
-
-    html! {
-        tr class=(row_class) data-transaction-row="true"
-        {
-            td class="px-6 py-4 text-right" { (amount_str) }
-            td class="sr-only" { (row.date) }
-            td class=(TABLE_CELL_STYLE) title=[tooltip] { (description) }
-            td class=(TABLE_CELL_STYLE)
-            {
-                @if let Some(ref tag_name) = row.tag_name {
-                    span class=(TAG_BADGE_STYLE)
-                    {
-                        (tag_name)
-                    }
-                } @else {
-                    span class="text-gray-400 dark:text-gray-500" { "-" }
-                }
-            }
-            td class=(TABLE_CELL_STYLE)
-            {
-                div class="flex gap-4"
-                {
-                    a href=(row.edit_url) class=(LINK_STYLE)
-                    {
-                        "Edit"
-                    }
-
-                    button
-                        hx-delete=(row.delete_url)
-                        hx-confirm={
-                            "Are you sure you want to delete the transaction '"
-                            (row.description) "'? This cannot be undone."
-                        }
-                        hx-target="closest tr"
-                        hx-target-error="#alert-container"
-                        hx-swap="outerHTML"
-                        class=(BUTTON_DELETE_STYLE)
-                    {
-                       "Delete"
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn transactions_view(
-    grouped_transactions: Vec<DateBucket>,
-    window_nav: &WindowNavigation,
-    latest_link: Option<&WindowNavLink>,
-    has_any_transactions: bool,
-    options: TransactionsViewOptions,
-) -> Markup {
-    let create_transaction_route = Uri::from_static(endpoints::NEW_TRANSACTION_VIEW);
-    let import_transaction_route = Uri::from_static(endpoints::IMPORT_VIEW);
-    let transactions_page_route = Uri::from_static(endpoints::TRANSACTIONS_VIEW);
-    let nav_bar = NavBar::new(endpoints::TRANSACTIONS_VIEW).into_html();
-    // Cache this result so it can be accessed after `grouped_transactions` is moved by for loop.
-    let transactions_empty = grouped_transactions.is_empty();
-
-    let content = html! {
-        (nav_bar)
-
-        div class=(PAGE_CONTAINER_STYLE)
-        {
-            div class="relative"
-            {
-                div class="flex justify-between flex-wrap items-end mb-4"
-                {
-                    h1 class="text-xl font-bold" { "Transactions" }
-
-                    a href=(import_transaction_route) class=(LINK_STYLE)
-                    {
-                        "Import Transactions"
-                    }
-
-                    a href=(create_transaction_route) class=(LINK_STYLE)
-                    {
-                        "Create Transaction"
-                    }
-                }
-
-                div class="dark:bg-gray-800"
-                {
-                    @if has_any_transactions {
-                        (window_navigation_html(
-                            window_nav,
-                            latest_link,
-                            options.bucket_preset,
-                            options.show_category_summary,
-                            &transactions_page_route,
-                        ))
-                    }
-
-                    div class="mt-3 border-t border-gray-200 dark:border-gray-700" {}
-
-                    (control_cluster_html(
-                        options.window_preset,
-                        options.bucket_preset,
-                        options.show_category_summary,
-                        options.anchor_date,
-                        &transactions_page_route,
-                    ))
-
-                    table class="w-full my-2 text-sm text-left rtl:text-right
-                        text-gray-500 dark:text-gray-400"
-                    {
-                        thead class=(TABLE_HEADER_STYLE)
-                        {
-                            tr
-                            {
-                                th scope="col" class="px-6 py-3 text-right"
-                                {
-                                    "Amount"
-                                }
-                                th scope="col" class="sr-only"
-                                {
-                                    "Date"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Description"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Tags"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Actions"
-                                }
-                            }
-                        }
-
-                        tbody
-                        {
-                            @for bucket in grouped_transactions {
-                                (bucket_header_row_view(&bucket))
-
-                                @if options.show_category_summary {
-                                    (category_summary_view(&bucket))
-                                } @else {
-                                    @for day in &bucket.days {
-                                        (day_header_row_view(day.date))
-
-                                        @for transaction_row in &day.transactions {
-                                            (transaction_row_view(transaction_row))
-                                        }
-                                    }
-                                }
-                            }
-
-                            @if transactions_empty {
-                                tr
-                                {
-                                    td colspan="5" class="px-6 py-4 text-center" {
-                                        "No transactions in this range."
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    @if has_any_transactions {
-                        (window_navigation_html(
-                            window_nav,
-                            latest_link,
-                            options.bucket_preset,
-                            options.show_category_summary,
-                            &transactions_page_route,
-                        ))
-                    }
-                }
-            }
-        }
-    };
-
-    base("Transactions", &[], &content)
-}
-
-fn group_transactions_by_bucket(
-    transactions: Vec<TransactionTableRow>,
-    bucket_preset: BucketPreset,
-    excluded_tag_ids: &[TagId],
-) -> Vec<DateBucket> {
-    let mut buckets: Vec<DateBucket> = Vec::new();
-
-    for transaction in transactions {
-        let bucket_range = compute_bucket_range(bucket_preset, transaction.date);
-        let bucket = match buckets.last_mut() {
-            Some(current) if current.range == bucket_range => current,
-            _ => {
-                buckets.push(DateBucket::new(bucket_range));
-                buckets.last_mut().expect("bucket just added")
-            }
-        };
-
-        if transaction
-            .tag_id
-            .map(|tag_id| !excluded_tag_ids.contains(&tag_id))
-            .unwrap_or(true)
-        {
-            if transaction.amount < 0.0 {
-                bucket.totals.expenses += transaction.amount;
-            } else {
-                bucket.totals.income += transaction.amount;
-            }
-        }
-
-        let day_group = match bucket.days.last_mut() {
-            Some(current) if current.date == transaction.date => current,
-            _ => {
-                bucket.days.push(DayGroup {
-                    date: transaction.date,
-                    transactions: Vec::new(),
-                });
-                bucket.days.last_mut().expect("day group just added")
-            }
-        };
-
-        day_group.transactions.push(transaction);
-    }
-
-    apply_category_summaries(&mut buckets, excluded_tag_ids);
-
-    buckets
-}
-
-fn bucket_header_row_view(bucket: &DateBucket) -> Markup {
-    let label = window_range_label(bucket.range);
-    let income = format_currency(bucket.totals.income);
-    let expenses = format_currency(bucket.totals.expenses);
-
-    html! {
-        tr class="bg-gray-50 dark:bg-gray-700" data-bucket-header="true"
-        {
-            td colspan="5" class="px-6 py-3"
-            {
-                div class="flex items-center justify-between font-semibold text-gray-900 dark:text-white"
-                {
-                    span { (label) }
-                    span class="flex items-center gap-4"
-                    {
-                        span class="text-green-700 dark:text-green-300" { (income) }
-                        span class="text-red-700 dark:text-red-300" { (expenses) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn category_summary_view(bucket: &DateBucket) -> Markup {
-    if bucket.summary.is_empty() {
-        return html! {};
-    }
-
-    html! {
-        @for category in &bucket.summary {
-            tr class="border-b border-gray-200 dark:border-gray-700" data-category-summary="true"
-            {
-                td colspan="5" class="px-6 py-2"
-                {
-                    details class="group"
-                    {
-                        summary class="flex items-center justify-between cursor-pointer select-none list-none px-1 py-2"
-                        {
-                            span class="flex flex-col"
-                            {
-                                span class="font-medium text-gray-900 dark:text-white"
-                                { (&category.label) }
-                                span class="text-xs text-gray-500 dark:text-gray-400"
-                                {
-                                    (format!(
-                                        "{}% of total {}",
-                                        category.percent,
-                                        match category.kind {
-                                            CategorySummaryKind::Income => "income",
-                                            CategorySummaryKind::Expense => "expenses",
-                                        }
-                                    ))
-                                }
-                            }
-                            span class="flex items-center gap-3 text-sm"
-                            {
-                                span class={
-                                    "text-right tabular-nums " (if category.kind == CategorySummaryKind::Income {
-                                        "text-green-700 dark:text-green-300"
-                                    } else {
-                                        "text-red-700 dark:text-red-300"
-                                    })
-                                }
-                                { (format_currency(category.total)) }
-                                span class="text-gray-400 group-open:rotate-90 transition-transform" { "›" }
-                            }
-                        }
-
-                        div class="mt-2"
-                        {
-                            table class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400"
-                            {
-                                tbody class="divide-y divide-gray-200 dark:divide-gray-700"
-                                {
-                                    @for day in group_transactions_by_day(&category.transactions) {
-                                        (day_header_row_view(day.date))
-                                        @for transaction in day.transactions {
-                                            (transaction_row_view_with_class(
-                                                &transaction,
-                                                "bg-white dark:bg-gray-800"
-                                            ))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn day_header_row_view(date: Date) -> Markup {
-    let label = format_day_label(date);
-
-    html! {
-        tr class="bg-gray-50 dark:bg-gray-800" data-day-header="true"
-        {
-            td colspan="5" class="px-6 py-2 text-xs font-semibold uppercase text-gray-600 dark:text-gray-300"
-            {
-                (label)
-            }
-        }
-    }
-}
-
-fn format_day_label(date: Date) -> String {
-    format!("{:02} {}", date.day(), month_abbrev(date.month()))
-}
-
-fn month_abbrev(month: Month) -> &'static str {
-    match month {
-        Month::January => "Jan",
-        Month::February => "Feb",
-        Month::March => "Mar",
-        Month::April => "Apr",
-        Month::May => "May",
-        Month::June => "Jun",
-        Month::July => "Jul",
-        Month::August => "Aug",
-        Month::September => "Sep",
-        Month::October => "Oct",
-        Month::November => "Nov",
-        Month::December => "Dec",
-    }
-}
-
-fn format_description(description: &str) -> (String, Option<&str>) {
-    let description_length = description.graphemes(true).count();
-
-    if description_length <= MAX_DESCRIPTION_GRAPHEMES {
-        (description.to_owned(), None)
-    } else {
-        let truncated: String = description
-            .graphemes(true)
-            .take(MAX_DESCRIPTION_GRAPHEMES - 3)
-            .collect();
-        let truncated = truncated + "...";
-        (truncated, Some(description))
-    }
-}
-
-fn group_transactions_by_day(transactions: &[TransactionTableRow]) -> Vec<DayGroup> {
-    let mut days: Vec<DayGroup> = Vec::new();
-
-    for transaction in transactions {
-        let day_group = match days.last_mut() {
-            Some(current) if current.date == transaction.date => current,
-            _ => {
-                days.push(DayGroup {
-                    date: transaction.date,
-                    transactions: Vec::new(),
-                });
-                days.last_mut().expect("day group just added")
-            }
-        };
-
-        day_group.transactions.push(transaction.clone());
-    }
-
-    days
-}
-
-fn apply_category_summaries(buckets: &mut [DateBucket], excluded_tag_ids: &[TagId]) {
-    for bucket in buckets {
-        bucket.summary = build_category_summary(bucket, excluded_tag_ids);
-    }
-}
-
-fn build_category_summary(bucket: &DateBucket, excluded_tag_ids: &[TagId]) -> Vec<CategorySummary> {
-    let mut income_categories: std::collections::HashMap<String, CategorySummaryBuilder> =
-        std::collections::HashMap::new();
-    let mut expense_categories: std::collections::HashMap<String, CategorySummaryBuilder> =
-        std::collections::HashMap::new();
-
-    for day in &bucket.days {
-        for transaction in &day.transactions {
-            if transaction
-                .tag_id
-                .map(|tag_id| excluded_tag_ids.contains(&tag_id))
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
-            let label = transaction
-                .tag_name
-                .as_ref()
-                .map(|name| name.to_string())
-                .unwrap_or_else(|| "Other".to_owned());
-            let entry = if transaction.amount >= 0.0 {
-                income_categories.entry(label).or_default()
-            } else {
-                expense_categories.entry(label).or_default()
-            };
-            entry.total += transaction.amount;
-            entry.transactions.push(transaction.clone());
-        }
-    }
-
-    let mut income = Vec::new();
-    let mut expenses = Vec::new();
-    let total_income = bucket.totals.income;
-    let total_expenses = bucket.totals.expenses;
-
-    for (label, builder) in income_categories {
-        let percent = percent_of(builder.total, total_income);
-        let summary = CategorySummary {
-            label,
-            total: builder.total,
-            percent,
-            kind: CategorySummaryKind::Income,
-            transactions: builder.transactions,
-        };
-
-        income.push(summary);
-    }
-
-    for (label, builder) in expense_categories {
-        let percent = percent_of(builder.total, total_expenses);
-        let summary = CategorySummary {
-            label,
-            total: builder.total,
-            percent,
-            kind: CategorySummaryKind::Expense,
-            transactions: builder.transactions,
-        };
-
-        expenses.push(summary);
-    }
-
-    income.sort_by(|a, b| {
-        b.total
-            .partial_cmp(&a.total)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    expenses.sort_by(|a, b| {
-        b.total
-            .abs()
-            .partial_cmp(&a.total.abs())
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    income.extend(expenses);
-    income
-}
-
-#[derive(Default)]
-struct CategorySummaryBuilder {
-    total: f64,
-    transactions: Vec<TransactionTableRow>,
-}
-
-fn percent_of(value: f64, total: f64) -> i64 {
-    if total == 0.0 {
-        0
-    } else {
-        ((value / total) * 100.0).round() as i64
-    }
-}
-
-fn control_cluster_html(
-    window_preset: WindowPreset,
-    bucket_preset: BucketPreset,
-    show_category_summary: bool,
-    anchor_date: Date,
-    transactions_page_route: &Uri,
-) -> Markup {
-    let window_presets = [
-        WindowPreset::Week,
-        WindowPreset::Fortnight,
-        WindowPreset::Month,
-        WindowPreset::Quarter,
-        WindowPreset::HalfYear,
-        WindowPreset::Year,
-    ];
-    let bucket_presets = [
-        BucketPreset::Week,
-        BucketPreset::Fortnight,
-        BucketPreset::Month,
-        BucketPreset::Quarter,
-        BucketPreset::HalfYear,
-        BucketPreset::Year,
-    ];
-    let summary_param = if show_category_summary {
-        "&summary=true"
-    } else {
-        ""
-    };
-    let window_links: Vec<(WindowPreset, String, bool)> = window_presets
-        .iter()
-        .map(|preset| {
-            let href = format!(
-                "{route}?window={window}&bucket={bucket}&anchor={anchor}{summary_param}",
-                route = transactions_page_route,
-                window = preset.as_query_value(),
-                bucket = bucket_preset.as_query_value(),
-                anchor = anchor_date,
-                summary_param = summary_param
-            );
-            let disabled = !window_preset_can_contain_bucket(*preset, bucket_preset);
-            (*preset, href, disabled)
-        })
-        .collect();
-    let bucket_links: Vec<(BucketPreset, String, bool)> = bucket_presets
-        .iter()
-        .map(|preset| {
-            let href = format!(
-                "{route}?window={window}&bucket={bucket}&anchor={anchor}{summary_param}",
-                route = transactions_page_route,
-                window = window_preset.as_query_value(),
-                bucket = preset.as_query_value(),
-                anchor = anchor_date,
-                summary_param = summary_param
-            );
-            let disabled = !window_preset_can_contain_bucket(window_preset, *preset);
-            (*preset, href, disabled)
-        })
-        .collect();
-
-    let summary_href = format!(
-        "{route}?window={window}&bucket={bucket}&anchor={anchor}{summary_param}",
-        route = transactions_page_route,
-        window = window_preset.as_query_value(),
-        bucket = bucket_preset.as_query_value(),
-        anchor = anchor_date,
-        summary_param = if show_category_summary {
-            ""
+    let latest_link = input.bounds.and_then(|bounds| {
+        let latest_range = compute_window_range(input.options.window_preset, bounds.end);
+        if latest_range == input.window_range {
+            None
         } else {
-            "&summary=true"
+            Some(WindowNavLink::new(
+                input.options.window_preset,
+                latest_range,
+            ))
         }
+    });
+    let has_any_transactions = input.bounds.is_some();
+
+    let redirect_url = get_redirect_url(
+        input.options.window_preset,
+        input.options.bucket_preset,
+        input.options.show_category_summary,
+        input.options.anchor_date,
     );
-    let summary_label = if show_category_summary {
-        "Summary on"
-    } else {
-        "Summary off"
-    };
 
-    html! {
-        div class="flex flex-col gap-2 px-6 py-2 text-sm text-gray-600 dark:text-gray-300"
-        {
-            div class="flex flex-wrap items-center gap-3"
-            {
-                span class="font-semibold text-gray-900 dark:text-white min-w-[5.5rem]" { "Window:" }
-                div class="flex flex-wrap items-center gap-2"
-                {
-                @for (preset, href, disabled) in window_links {
-                    @if preset == window_preset {
-                        span class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
-                        { (window_preset_label(preset)) }
-                    } @else if disabled {
-                        span
-                            class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded text-gray-400 dark:text-gray-500 cursor-not-allowed"
-                            title="Select a smaller bucket size or a larger window to enable this option."
-                        { (window_preset_label(preset)) }
-                    } @else {
-                        a
-                            class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded text-blue-600 hover:underline"
-                            href=(href)
-                        { (window_preset_label(preset)) }
-                        }
-                    }
-                }
-            }
+    let transaction_rows = input
+        .transactions
+        .into_iter()
+        .map(|transaction| {
+            TransactionTableRow::new_from_transaction(transaction, redirect_url.as_deref())
+        })
+        .collect::<Vec<_>>();
 
-            div class="flex flex-wrap items-center gap-3"
-            {
-                span class="font-semibold text-gray-900 dark:text-white min-w-[5.5rem]" { "Bucket:" }
-                div class="flex flex-wrap items-center gap-2"
-                {
-                @for (preset, href, disabled) in bucket_links {
-                    @if preset == bucket_preset {
-                        span class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
-                        { (preset.label()) }
-                    } @else if disabled {
-                        span
-                            class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded text-gray-400 dark:text-gray-500 cursor-not-allowed"
-                            title="Select a larger window to enable this bucket size."
-                        { (preset.label()) }
-                    } @else {
-                        a
-                            class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded text-blue-600 hover:underline"
-                            href=(href)
-                        { (preset.label()) }
-                        }
-                    }
-                }
-            }
+    let grouped = group_transactions(
+        transaction_rows,
+        GroupingOptions {
+            bucket_preset: input.options.bucket_preset,
+            excluded_tag_ids: &input.excluded_tag_ids,
+            show_category_summary: input.options.show_category_summary,
+        },
+    );
 
-            a
-                class="inline-flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-gray-900 dark:text-white hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700 self-start"
-                href=(summary_href)
-            {
-                span class={ "inline-flex h-3 w-3 rounded-full " (if show_category_summary { "bg-green-500" } else { "bg-gray-400" }) } {}
-                span { (summary_label) }
-            }
-        }
-    }
-}
-
-fn window_preset_label(preset: WindowPreset) -> &'static str {
-    match preset {
-        WindowPreset::Week => "Week",
-        WindowPreset::Fortnight => "Fortnight",
-        WindowPreset::Month => "Month",
-        WindowPreset::Quarter => "Quarter",
-        WindowPreset::HalfYear => "Half-year",
-        WindowPreset::Year => "Year",
+    TransactionsViewModel {
+        grouped,
+        window_nav,
+        latest_link,
+        has_any_transactions,
+        options: TransactionsViewOptions {
+            window_preset: input.options.window_preset,
+            bucket_preset: input.options.bucket_preset,
+            show_category_summary: input.options.show_category_summary,
+            anchor_date: input.options.anchor_date,
+        },
     }
 }
 
@@ -1474,91 +671,5 @@ mod tests {
         let text = String::from_utf8_lossy(&body).to_string();
 
         Html::parse_document(&text)
-    }
-}
-
-#[cfg(test)]
-mod database_tests {
-    use rusqlite::Connection;
-    use time::{Duration, OffsetDateTime, macros::date};
-
-    use crate::{
-        db::initialize,
-        transaction::{
-            Transaction, TransactionId, create_transaction,
-            transactions_page::{
-                SortOrder, Transaction as TableTransaction, get_transaction_table_rows_in_range,
-            },
-            window::WindowRange,
-        },
-    };
-
-    fn get_test_connection() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
-        conn
-    }
-
-    #[test]
-    fn get_transactions_in_range() {
-        let conn = get_test_connection();
-
-        let today = OffsetDateTime::now_utc().date();
-
-        for i in 0..10 {
-            let transaction_builder = Transaction::build(
-                (i + 1) as f64,
-                today - Duration::days(i),
-                &format!("transaction #{i}"),
-            );
-
-            create_transaction(transaction_builder, &conn).unwrap();
-        }
-
-        let window_range = WindowRange {
-            start: today - Duration::days(4),
-            end: today,
-        };
-        let got =
-            get_transaction_table_rows_in_range(window_range, SortOrder::Ascending, &conn).unwrap();
-
-        assert_eq!(got.len(), 5, "got {} transactions, want 5", got.len());
-    }
-
-    #[test]
-    fn get_transactions_in_range_orders_by_date() {
-        let conn = get_test_connection();
-        let today = date!(2025 - 10 - 05);
-        let mut want = Vec::new();
-        for i in 1..=6 {
-            let date = if i <= 3 {
-                today
-            } else {
-                today - Duration::days(1)
-            };
-            let transaction = create_transaction(Transaction::build(i as f64, date, ""), &conn)
-                .expect("Could not create transaction");
-
-            want.push(TableTransaction {
-                id: i as TransactionId,
-                amount: transaction.amount,
-                date: transaction.date,
-                description: transaction.description.clone(),
-                tag_name: None,
-                tag_id: None,
-            });
-        }
-
-        want.sort_by(|a, b| a.date.cmp(&b.date).then(a.id.cmp(&b.id)));
-
-        let window_range = WindowRange {
-            start: today - Duration::days(1),
-            end: today,
-        };
-        let got = get_transaction_table_rows_in_range(window_range, SortOrder::Ascending, &conn)
-            .expect("Could not query transactions");
-
-        assert_eq!(want.len(), 6, "expected 6 transactions, got {}", want.len());
-        assert_eq!(want, got);
     }
 }

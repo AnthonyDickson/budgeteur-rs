@@ -2,6 +2,8 @@
 
 ## Stage One: Budgeting
 
+- Add excluded tag controls to transactions page, ensure view and logic is factored out to standalone module to be
+  shared with the dashboard
 - Add search/filtering to transactions page
 - Add account info to transactions
   - Set during import
