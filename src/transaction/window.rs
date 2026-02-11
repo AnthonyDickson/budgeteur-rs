@@ -64,6 +64,17 @@ impl BucketPreset {
             Self::Year => "Year",
         }
     }
+
+    fn size_rank(self) -> u8 {
+        match self {
+            Self::Week => 1,
+            Self::Fortnight => 2,
+            Self::Month => 3,
+            Self::Quarter => 4,
+            Self::HalfYear => 5,
+            Self::Year => 6,
+        }
+    }
 }
 
 impl WindowPreset {
@@ -79,6 +90,17 @@ impl WindowPreset {
             Self::Quarter => "quarter",
             Self::HalfYear => "half-year",
             Self::Year => "year",
+        }
+    }
+
+    fn size_rank(self) -> u8 {
+        match self {
+            Self::Week => 1,
+            Self::Fortnight => 2,
+            Self::Month => 3,
+            Self::Quarter => 4,
+            Self::HalfYear => 5,
+            Self::Year => 6,
         }
     }
 }
@@ -174,6 +196,21 @@ pub fn compute_bucket_range(preset: BucketPreset, anchor_date: Date) -> WindowRa
         BucketPreset::Quarter => quarter_bounds(anchor_date.year(), anchor_date.month()),
         BucketPreset::HalfYear => half_year_bounds(anchor_date.year(), anchor_date.month()),
         BucketPreset::Year => year_bounds(anchor_date.year()),
+    }
+}
+
+pub fn window_preset_can_contain_bucket(window: WindowPreset, bucket: BucketPreset) -> bool {
+    window.size_rank() >= bucket.size_rank()
+}
+
+pub fn smallest_window_for_bucket(bucket: BucketPreset) -> WindowPreset {
+    match bucket {
+        BucketPreset::Week => WindowPreset::Week,
+        BucketPreset::Fortnight => WindowPreset::Fortnight,
+        BucketPreset::Month => WindowPreset::Month,
+        BucketPreset::Quarter => WindowPreset::Quarter,
+        BucketPreset::HalfYear => WindowPreset::HalfYear,
+        BucketPreset::Year => WindowPreset::Year,
     }
 }
 

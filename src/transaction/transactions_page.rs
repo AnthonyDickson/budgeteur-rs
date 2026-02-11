@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use axum::{
     extract::{FromRef, Query, State},
     http::Uri,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
 };
 use maud::{Markup, html};
 use rusqlite::Connection;
@@ -25,7 +25,8 @@ use crate::{
 
 use super::window::{
     BucketPreset, WindowNavLink, WindowNavigation, WindowPreset, WindowQuery, WindowRange,
-    compute_bucket_range, compute_window_range, get_transaction_date_bounds, window_range_label,
+    compute_bucket_range, compute_window_range, get_transaction_date_bounds,
+    smallest_window_for_bucket, window_preset_can_contain_bucket, window_range_label,
 };
 
 /// The max number of graphemes to display in the transaction table rows before
@@ -143,7 +144,7 @@ pub async fn get_transactions_page(
     State(state): State<TransactionsViewState>,
     Query(query_params): Query<WindowQuery>,
 ) -> Result<Response, Error> {
-    let window_preset = query_params
+    let requested_window_preset = query_params
         .window
         .unwrap_or(WindowPreset::default_preset());
     let bucket_preset = query_params
@@ -153,6 +154,16 @@ pub async fn get_transactions_page(
         Some(anchor) => anchor,
         None => default_anchor_date(&state.local_timezone)?,
     };
+    let window_preset = if window_preset_can_contain_bucket(requested_window_preset, bucket_preset)
+    {
+        requested_window_preset
+    } else {
+        smallest_window_for_bucket(bucket_preset)
+    };
+    if window_preset != requested_window_preset {
+        let redirect_url = transactions_page_url(window_preset, bucket_preset, anchor_date);
+        return Ok(Redirect::to(&redirect_url).into_response());
+    }
     let connection = state.db_connection.lock().unwrap();
     let bounds = get_transaction_date_bounds(&connection)
         .inspect_err(|error| tracing::error!("could not get transaction bounds: {error}"))?;
@@ -211,13 +222,7 @@ fn get_redirect_url(
     bucket_preset: BucketPreset,
     anchor_date: Date,
 ) -> Option<String> {
-    let redirect_url = format!(
-        "{}?window={}&bucket={}&anchor={}",
-        endpoints::TRANSACTIONS_VIEW,
-        window_preset.as_query_value(),
-        bucket_preset.as_query_value(),
-        anchor_date
-    );
+    let redirect_url = transactions_page_url(window_preset, bucket_preset, anchor_date);
 
     serde_urlencoded::to_string([("redirect_url", &redirect_url)])
         .inspect_err(|error| {
@@ -226,6 +231,20 @@ fn get_redirect_url(
             );
         })
         .ok()
+}
+
+fn transactions_page_url(
+    window_preset: WindowPreset,
+    bucket_preset: BucketPreset,
+    anchor_date: Date,
+) -> String {
+    format!(
+        "{}?window={}&bucket={}&anchor={}",
+        endpoints::TRANSACTIONS_VIEW,
+        window_preset.as_query_value(),
+        bucket_preset.as_query_value(),
+        anchor_date
+    )
 }
 
 /// The order to sort transactions in a [TransactionQuery].
@@ -712,9 +731,9 @@ mod tests {
         transaction::{Transaction, create_transaction},
     };
 
-    use super::{TransactionsViewState, get_transactions_page};
+    use super::{TransactionsViewState, get_transactions_page, transactions_page_url};
     use crate::transaction::window::{
-        WindowPreset, WindowQuery, compute_window_range, window_anchor_query,
+        BucketPreset, WindowPreset, WindowQuery, compute_window_range, window_anchor_query,
     };
 
     fn get_test_connection() -> Connection {
@@ -847,6 +866,46 @@ mod tests {
         let html = parse_html(response).await;
         assert_valid_html(&html);
         assert_latest_link_present(&html, WindowPreset::Month, transaction_date);
+    }
+
+    #[tokio::test]
+    async fn transactions_page_autoselects_window_when_bucket_exceeds_window() {
+        let conn = get_test_connection();
+        let transaction_date = date!(2025 - 10 - 05);
+
+        create_transaction(Transaction::build(1.0, transaction_date, ""), &conn).unwrap();
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(WindowQuery {
+                window: Some(WindowPreset::Week),
+                bucket: Some(BucketPreset::Month),
+                anchor: Some(transaction_date),
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::SEE_OTHER);
+        let location = response
+            .headers()
+            .get("location")
+            .expect("Missing redirect location header");
+        let expected_url = transactions_page_url(
+            WindowPreset::Month,
+            BucketPreset::Month,
+            transaction_date,
+        );
+        assert_eq!(
+            location,
+            expected_url.as_str(),
+            "Expected redirect to adjusted window preset"
+        );
     }
 
     #[track_caller]

@@ -3,7 +3,6 @@
 ## Stage One: Budgeting
 
 - Transaction grouping:
-  - Enforce preset validation/auto-select when bucket size exceeds window preset
   - Add category summary layer (per bucket) with `<details>/<summary>`, including “Other” + % calculations
   - Add grouping toggle + control cluster UI; persist via query params (prefs later)
   - Extend tests for bucket totals/ordering, category summary rows, percentages, and “Other”
