@@ -3,8 +3,6 @@
 ## Stage One: Budgeting
 
 - Transaction grouping:
-  - Consider changing spec such that:
-    - The date column is removed, it is redundant now
   - Add category summary layer (per bucket) with `<details>/<summary>`, including “Other” + % calculations
   - Add bucket size controls (week/fortnight/month/quarter/half-year/year) and wire into grouping + labels
   - Add grouping toggle + control cluster UI; persist via query params (prefs later)

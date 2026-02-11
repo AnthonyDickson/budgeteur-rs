@@ -69,6 +69,7 @@ The UI can toggle the category summary layer on/off without changing the underly
 ### Grouped view row affordances
 
 - Grouped layouts should preserve the existing row affordances from the baseline table view (inline actions, tag display).
+- The date column remains in the DOM but is visually hidden (`sr-only`) to avoid redundancy with day headers while keeping screen reader context.
 
 ### Collapsible sections
 

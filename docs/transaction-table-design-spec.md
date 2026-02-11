@@ -53,16 +53,16 @@ Shared styles (from `src/html.rs`) provide the base look:
 
 ### Column Layout
 
-```
-|   Amount | Date       | Description                | Tags     | Actions        |
-|  $45.12  | 2025-10-05 | Coffee and bagel...        | Food     | Edit  Delete  |
-```
+| Amount | Date (visually hidden) | Description         | Tags | Actions     |
+| ------ | ---------------------- | ------------------- | ---- | ----------- |
+| $45.12 | 2025-10-05             | Coffee and bagel... | Food | Edit Delete |
 
 1. **Amount**
    - Right-aligned.
    - Formatted with `format_currency` for locale-style currency.
-2. **Date**
-   - Date display in the application’s standard `Date` format.
+2. **Date (visually hidden)**
+   - The date column is present for accessibility but hidden visually (`sr-only`).
+   - Date context is provided by the date bucket and day headers in grouped views.
 3. **Description**
    - Truncated to 32 graphemes with ellipsis to prevent table overflow.
    - Full description available via `title` tooltip when truncated.
@@ -119,6 +119,7 @@ The table will support grouped views inspired by the History screens. These view
 ```
 
 - Date range labels always include the full four-digit year for consistency across all bucket types.
+- The per-row date cell remains in the DOM but is visually hidden for accessibility.
 
 ### Group Header Totals
 
@@ -205,7 +206,6 @@ Back  1  2  3  ...  8  9  Next
 **Last Updated:** 2026-02-07
 **Status:** In Progress
 **Changes from v1.0:** Added grouped transaction view plans and layouts
-
 
 ## New Feature: Windowed Grouping + Date-Range Navigation (vNext)
 

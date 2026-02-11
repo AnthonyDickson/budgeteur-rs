@@ -361,7 +361,7 @@ fn transaction_row_view(row: &TransactionTableRow) -> Markup {
         tr class=(TABLE_ROW_STYLE) data-transaction-row="true"
         {
             td class="px-6 py-4 text-right" { (amount_str) }
-            td class=(TABLE_CELL_STYLE) { (row.date) }
+            td class="sr-only" { (row.date) }
             td class=(TABLE_CELL_STYLE) title=[tooltip] { (description) }
             td class=(TABLE_CELL_STYLE)
             {
@@ -454,7 +454,7 @@ fn transactions_view(
                                 {
                                     "Amount"
                                 }
-                                th scope="col" class=(TABLE_CELL_STYLE)
+                                th scope="col" class="sr-only"
                                 {
                                     "Date"
                                 }
