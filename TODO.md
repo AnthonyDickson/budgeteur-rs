@@ -3,8 +3,6 @@
 ## Stage One: Budgeting
 
 - Transaction grouping:
-  - Add category summary layer (per bucket) with `<details>/<summary>`, including “Other” + % calculations
-  - Add grouping toggle + control cluster UI; persist via query params (prefs later)
   - Extend tests for bucket totals/ordering, category summary rows, percentages, and “Other”
 - Add search/filtering to transactions page
 - Add account info to transactions

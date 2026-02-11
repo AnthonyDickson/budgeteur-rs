@@ -68,7 +68,7 @@ struct Transaction {
 }
 
 /// Renders a transaction with its tags as a table row.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct TransactionTableRow {
     /// The amount of money spent or earned in this transaction.
     amount: f64,
@@ -84,6 +84,13 @@ struct TransactionTableRow {
     edit_url: String,
     /// The API path to delete this transaction
     delete_url: String,
+}
+
+struct TransactionsViewOptions {
+    window_preset: WindowPreset,
+    bucket_preset: BucketPreset,
+    show_category_summary: bool,
+    anchor_date: Date,
 }
 
 impl TransactionTableRow {
@@ -124,6 +131,7 @@ struct DateBucket {
     range: WindowRange,
     totals: BucketTotals,
     days: Vec<DayGroup>,
+    summary: Vec<CategorySummary>,
 }
 
 impl DateBucket {
@@ -135,8 +143,24 @@ impl DateBucket {
                 expenses: 0.0,
             },
             days: Vec::new(),
+            summary: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, PartialEq)]
+struct CategorySummary {
+    label: String,
+    total: f64,
+    percent: i64,
+    kind: CategorySummaryKind,
+    transactions: Vec<TransactionTableRow>,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum CategorySummaryKind {
+    Income,
+    Expense,
 }
 
 /// Render an overview of the user's transactions.
@@ -150,6 +174,7 @@ pub async fn get_transactions_page(
     let bucket_preset = query_params
         .bucket
         .unwrap_or(BucketPreset::default_preset());
+    let show_category_summary = query_params.summary.unwrap_or(false);
     let anchor_date = match query_params.anchor {
         Some(anchor) => anchor,
         None => default_anchor_date(&state.local_timezone)?,
@@ -161,7 +186,12 @@ pub async fn get_transactions_page(
         smallest_window_for_bucket(bucket_preset)
     };
     if window_preset != requested_window_preset {
-        let redirect_url = transactions_page_url(window_preset, bucket_preset, anchor_date);
+        let redirect_url = transactions_page_url(
+            window_preset,
+            bucket_preset,
+            show_category_summary,
+            anchor_date,
+        );
         return Ok(Redirect::to(&redirect_url).into_response());
     }
     let connection = state.db_connection.lock().unwrap();
@@ -179,7 +209,12 @@ pub async fn get_transactions_page(
     });
     let has_any_transactions = bounds.is_some();
 
-    let redirect_url = get_redirect_url(window_preset, bucket_preset, anchor_date);
+    let redirect_url = get_redirect_url(
+        window_preset,
+        bucket_preset,
+        show_category_summary,
+        anchor_date,
+    );
 
     let excluded_tag_ids = get_excluded_tags(&connection)
         .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
@@ -201,9 +236,12 @@ pub async fn get_transactions_page(
         &window_nav,
         latest_link.as_ref(),
         has_any_transactions,
-        window_preset,
-        bucket_preset,
-        anchor_date,
+        TransactionsViewOptions {
+            window_preset,
+            bucket_preset,
+            show_category_summary,
+            anchor_date,
+        },
     )
     .into_response())
 }
@@ -220,9 +258,15 @@ fn default_anchor_date(local_timezone: &str) -> Result<Date, Error> {
 fn get_redirect_url(
     window_preset: WindowPreset,
     bucket_preset: BucketPreset,
+    show_category_summary: bool,
     anchor_date: Date,
 ) -> Option<String> {
-    let redirect_url = transactions_page_url(window_preset, bucket_preset, anchor_date);
+    let redirect_url = transactions_page_url(
+        window_preset,
+        bucket_preset,
+        show_category_summary,
+        anchor_date,
+    );
 
     serde_urlencoded::to_string([("redirect_url", &redirect_url)])
         .inspect_err(|error| {
@@ -236,14 +280,21 @@ fn get_redirect_url(
 fn transactions_page_url(
     window_preset: WindowPreset,
     bucket_preset: BucketPreset,
+    show_category_summary: bool,
     anchor_date: Date,
 ) -> String {
+    let summary_param = if show_category_summary {
+        "&summary=true"
+    } else {
+        ""
+    };
+
     format!(
-        "{}?window={}&bucket={}&anchor={}",
+        "{}?window={}&bucket={}&anchor={}{summary_param}",
         endpoints::TRANSACTIONS_VIEW,
         window_preset.as_query_value(),
         bucket_preset.as_query_value(),
-        anchor_date
+        anchor_date,
     )
 }
 
@@ -315,6 +366,7 @@ fn window_navigation_html(
     window_nav: &WindowNavigation,
     latest_link: Option<&WindowNavLink>,
     bucket_preset: BucketPreset,
+    show_category_summary: bool,
     transactions_page_route: &Uri,
 ) -> Markup {
     let current_label = window_range_label(window_nav.range);
@@ -330,9 +382,10 @@ fn window_navigation_html(
             ul class={ "pagination grid grid-cols-3 gap-x-4 p-0 m-0 items-center w-full " (row_classes) }
             {
                 @if let Some(prev) = &window_nav.prev {
+                    @let summary_param = if show_category_summary { "&summary=true" } else { "" };
                     li class="flex items-center justify-start row-start-1" {
                         a
-                            href={(transactions_page_route) "?" (&prev.href) "&bucket=" (bucket_preset.as_query_value())}
+                            href={(transactions_page_route) "?" (&prev.href) "&bucket=" (bucket_preset.as_query_value()) (summary_param)}
                             role="button"
                             class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
                         { (window_range_label(prev.range)) }
@@ -347,9 +400,10 @@ fn window_navigation_html(
                     { (current_label) }
                 }
                 @if let Some(next) = &window_nav.next {
+                    @let summary_param = if show_category_summary { "&summary=true" } else { "" };
                     li class="flex items-center justify-end row-start-1" {
                         a
-                            href={(transactions_page_route) "?" (&next.href) "&bucket=" (bucket_preset.as_query_value())}
+                            href={(transactions_page_route) "?" (&next.href) "&bucket=" (bucket_preset.as_query_value()) (summary_param)}
                             role="button"
                             class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
                         { (window_range_label(next.range)) }
@@ -359,9 +413,10 @@ fn window_navigation_html(
                 }
 
                 @if let Some(latest) = latest_link {
+                    @let summary_param = if show_category_summary { "&summary=true" } else { "" };
                     li class="flex items-center justify-center row-start-2 col-start-2" {
                         a
-                            href={(transactions_page_route) "?" (&latest.href) "&bucket=" (bucket_preset.as_query_value())}
+                            href={(transactions_page_route) "?" (&latest.href) "&bucket=" (bucket_preset.as_query_value()) (summary_param)}
                             role="button"
                             class="block px-3 pb-1 text-blue-600 hover:underline"
                         { "Latest" }
@@ -373,24 +428,15 @@ fn window_navigation_html(
 }
 
 fn transaction_row_view(row: &TransactionTableRow) -> Markup {
-    let amount_str = format_currency(row.amount);
-    let description_length = row.description.graphemes(true).count();
+    transaction_row_view_with_class(row, TABLE_ROW_STYLE)
+}
 
-    // Truncate long descriptions to prevent visual artifacts from the table growing too wide.
-    let (description, tooltip) = if description_length <= MAX_DESCRIPTION_GRAPHEMES {
-        (row.description.clone(), None)
-    } else {
-        let description: String = row
-            .description
-            .graphemes(true)
-            .take(MAX_DESCRIPTION_GRAPHEMES - 3)
-            .collect();
-        let description = description + "...";
-        (description, Some(&row.description))
-    };
+fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -> Markup {
+    let amount_str = format_currency(row.amount);
+    let (description, tooltip) = format_description(&row.description);
 
     html! {
-        tr class=(TABLE_ROW_STYLE) data-transaction-row="true"
+        tr class=(row_class) data-transaction-row="true"
         {
             td class="px-6 py-4 text-right" { (amount_str) }
             td class="sr-only" { (row.date) }
@@ -439,9 +485,7 @@ fn transactions_view(
     window_nav: &WindowNavigation,
     latest_link: Option<&WindowNavLink>,
     has_any_transactions: bool,
-    window_preset: WindowPreset,
-    bucket_preset: BucketPreset,
-    anchor_date: Date,
+    options: TransactionsViewOptions,
 ) -> Markup {
     let create_transaction_route = Uri::from_static(endpoints::NEW_TRANSACTION_VIEW);
     let import_transaction_route = Uri::from_static(endpoints::IMPORT_VIEW);
@@ -478,15 +522,19 @@ fn transactions_view(
                         (window_navigation_html(
                             window_nav,
                             latest_link,
-                            bucket_preset,
+                            options.bucket_preset,
+                            options.show_category_summary,
                             &transactions_page_route,
                         ))
                     }
 
-                    (bucket_controls_html(
-                        window_preset,
-                        bucket_preset,
-                        anchor_date,
+                    div class="mt-3 border-t border-gray-200 dark:border-gray-700" {}
+
+                    (control_cluster_html(
+                        options.window_preset,
+                        options.bucket_preset,
+                        options.show_category_summary,
+                        options.anchor_date,
                         &transactions_page_route,
                     ))
 
@@ -525,11 +573,15 @@ fn transactions_view(
                             @for bucket in grouped_transactions {
                                 (bucket_header_row_view(&bucket))
 
-                                @for day in &bucket.days {
-                                    (day_header_row_view(day.date))
+                                @if options.show_category_summary {
+                                    (category_summary_view(&bucket))
+                                } @else {
+                                    @for day in &bucket.days {
+                                        (day_header_row_view(day.date))
 
-                                    @for transaction_row in &day.transactions {
-                                        (transaction_row_view(transaction_row))
+                                        @for transaction_row in &day.transactions {
+                                            (transaction_row_view(transaction_row))
+                                        }
                                     }
                                 }
                             }
@@ -549,7 +601,8 @@ fn transactions_view(
                         (window_navigation_html(
                             window_nav,
                             latest_link,
-                            bucket_preset,
+                            options.bucket_preset,
+                            options.show_category_summary,
                             &transactions_page_route,
                         ))
                     }
@@ -604,6 +657,8 @@ fn group_transactions_by_bucket(
         day_group.transactions.push(transaction);
     }
 
+    apply_category_summaries(&mut buckets, excluded_tag_ids);
+
     buckets
 }
 
@@ -624,6 +679,76 @@ fn bucket_header_row_view(bucket: &DateBucket) -> Markup {
                     {
                         span class="text-green-700 dark:text-green-300" { (income) }
                         span class="text-red-700 dark:text-red-300" { (expenses) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn category_summary_view(bucket: &DateBucket) -> Markup {
+    if bucket.summary.is_empty() {
+        return html! {};
+    }
+
+    html! {
+        @for category in &bucket.summary {
+            tr class="border-b border-gray-200 dark:border-gray-700" data-category-summary="true"
+            {
+                td colspan="5" class="px-6 py-2"
+                {
+                    details class="group"
+                    {
+                        summary class="flex items-center justify-between cursor-pointer select-none list-none px-1 py-2"
+                        {
+                            span class="flex flex-col"
+                            {
+                                span class="font-medium text-gray-900 dark:text-white"
+                                { (&category.label) }
+                                span class="text-xs text-gray-500 dark:text-gray-400"
+                                {
+                                    (format!(
+                                        "{}% of total {}",
+                                        category.percent,
+                                        match category.kind {
+                                            CategorySummaryKind::Income => "income",
+                                            CategorySummaryKind::Expense => "expenses",
+                                        }
+                                    ))
+                                }
+                            }
+                            span class="flex items-center gap-3 text-sm"
+                            {
+                                span class={
+                                    "text-right tabular-nums " (if category.kind == CategorySummaryKind::Income {
+                                        "text-green-700 dark:text-green-300"
+                                    } else {
+                                        "text-red-700 dark:text-red-300"
+                                    })
+                                }
+                                { (format_currency(category.total)) }
+                                span class="text-gray-400 group-open:rotate-90 transition-transform" { "›" }
+                            }
+                        }
+
+                        div class="mt-2"
+                        {
+                            table class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400"
+                            {
+                                tbody class="divide-y divide-gray-200 dark:divide-gray-700"
+                                {
+                                    @for day in group_transactions_by_day(&category.transactions) {
+                                        (day_header_row_view(day.date))
+                                        @for transaction in day.transactions {
+                                            (transaction_row_view_with_class(
+                                                &transaction,
+                                                "bg-white dark:bg-gray-800"
+                                            ))
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -666,12 +791,155 @@ fn month_abbrev(month: Month) -> &'static str {
     }
 }
 
-fn bucket_controls_html(
+fn format_description(description: &str) -> (String, Option<&str>) {
+    let description_length = description.graphemes(true).count();
+
+    if description_length <= MAX_DESCRIPTION_GRAPHEMES {
+        (description.to_owned(), None)
+    } else {
+        let truncated: String = description
+            .graphemes(true)
+            .take(MAX_DESCRIPTION_GRAPHEMES - 3)
+            .collect();
+        let truncated = truncated + "...";
+        (truncated, Some(description))
+    }
+}
+
+fn group_transactions_by_day(transactions: &[TransactionTableRow]) -> Vec<DayGroup> {
+    let mut days: Vec<DayGroup> = Vec::new();
+
+    for transaction in transactions {
+        let day_group = match days.last_mut() {
+            Some(current) if current.date == transaction.date => current,
+            _ => {
+                days.push(DayGroup {
+                    date: transaction.date,
+                    transactions: Vec::new(),
+                });
+                days.last_mut().expect("day group just added")
+            }
+        };
+
+        day_group.transactions.push(transaction.clone());
+    }
+
+    days
+}
+
+fn apply_category_summaries(buckets: &mut [DateBucket], excluded_tag_ids: &[TagId]) {
+    for bucket in buckets {
+        bucket.summary = build_category_summary(bucket, excluded_tag_ids);
+    }
+}
+
+fn build_category_summary(bucket: &DateBucket, excluded_tag_ids: &[TagId]) -> Vec<CategorySummary> {
+    let mut income_categories: std::collections::HashMap<String, CategorySummaryBuilder> =
+        std::collections::HashMap::new();
+    let mut expense_categories: std::collections::HashMap<String, CategorySummaryBuilder> =
+        std::collections::HashMap::new();
+
+    for day in &bucket.days {
+        for transaction in &day.transactions {
+            if transaction
+                .tag_id
+                .map(|tag_id| excluded_tag_ids.contains(&tag_id))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            let label = transaction
+                .tag_name
+                .as_ref()
+                .map(|name| name.to_string())
+                .unwrap_or_else(|| "Other".to_owned());
+            let entry = if transaction.amount >= 0.0 {
+                income_categories.entry(label).or_default()
+            } else {
+                expense_categories.entry(label).or_default()
+            };
+            entry.total += transaction.amount;
+            entry.transactions.push(transaction.clone());
+        }
+    }
+
+    let mut income = Vec::new();
+    let mut expenses = Vec::new();
+    let total_income = bucket.totals.income;
+    let total_expenses = bucket.totals.expenses;
+
+    for (label, builder) in income_categories {
+        let percent = percent_of(builder.total, total_income);
+        let summary = CategorySummary {
+            label,
+            total: builder.total,
+            percent,
+            kind: CategorySummaryKind::Income,
+            transactions: builder.transactions,
+        };
+
+        income.push(summary);
+    }
+
+    for (label, builder) in expense_categories {
+        let percent = percent_of(builder.total, total_expenses);
+        let summary = CategorySummary {
+            label,
+            total: builder.total,
+            percent,
+            kind: CategorySummaryKind::Expense,
+            transactions: builder.transactions,
+        };
+
+        expenses.push(summary);
+    }
+
+    income.sort_by(|a, b| {
+        b.total
+            .partial_cmp(&a.total)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    expenses.sort_by(|a, b| {
+        b.total
+            .abs()
+            .partial_cmp(&a.total.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    income.extend(expenses);
+    income
+}
+
+#[derive(Default)]
+struct CategorySummaryBuilder {
+    total: f64,
+    transactions: Vec<TransactionTableRow>,
+}
+
+fn percent_of(value: f64, total: f64) -> i64 {
+    if total == 0.0 {
+        0
+    } else {
+        ((value / total) * 100.0).round() as i64
+    }
+}
+
+fn control_cluster_html(
     window_preset: WindowPreset,
     bucket_preset: BucketPreset,
+    show_category_summary: bool,
     anchor_date: Date,
     transactions_page_route: &Uri,
 ) -> Markup {
+    let window_presets = [
+        WindowPreset::Week,
+        WindowPreset::Fortnight,
+        WindowPreset::Month,
+        WindowPreset::Quarter,
+        WindowPreset::HalfYear,
+        WindowPreset::Year,
+    ];
     let bucket_presets = [
         BucketPreset::Week,
         BucketPreset::Fortnight,
@@ -680,36 +948,130 @@ fn bucket_controls_html(
         BucketPreset::HalfYear,
         BucketPreset::Year,
     ];
-    let bucket_links: Vec<(BucketPreset, String)> = bucket_presets
+    let summary_param = if show_category_summary {
+        "&summary=true"
+    } else {
+        ""
+    };
+    let window_links: Vec<(WindowPreset, String, bool)> = window_presets
         .iter()
         .map(|preset| {
             let href = format!(
-                "{route}?window={window}&bucket={bucket}&anchor={anchor}",
+                "{route}?window={window}&bucket={bucket}&anchor={anchor}{summary_param}",
+                route = transactions_page_route,
+                window = preset.as_query_value(),
+                bucket = bucket_preset.as_query_value(),
+                anchor = anchor_date,
+                summary_param = summary_param
+            );
+            let disabled = !window_preset_can_contain_bucket(*preset, bucket_preset);
+            (*preset, href, disabled)
+        })
+        .collect();
+    let bucket_links: Vec<(BucketPreset, String, bool)> = bucket_presets
+        .iter()
+        .map(|preset| {
+            let href = format!(
+                "{route}?window={window}&bucket={bucket}&anchor={anchor}{summary_param}",
                 route = transactions_page_route,
                 window = window_preset.as_query_value(),
                 bucket = preset.as_query_value(),
-                anchor = anchor_date
+                anchor = anchor_date,
+                summary_param = summary_param
             );
-            (*preset, href)
+            let disabled = !window_preset_can_contain_bucket(window_preset, *preset);
+            (*preset, href, disabled)
         })
         .collect();
 
+    let summary_href = format!(
+        "{route}?window={window}&bucket={bucket}&anchor={anchor}{summary_param}",
+        route = transactions_page_route,
+        window = window_preset.as_query_value(),
+        bucket = bucket_preset.as_query_value(),
+        anchor = anchor_date,
+        summary_param = if show_category_summary {
+            ""
+        } else {
+            "&summary=true"
+        }
+    );
+    let summary_label = if show_category_summary {
+        "Summary on"
+    } else {
+        "Summary off"
+    };
+
     html! {
-        div class="flex flex-wrap items-center gap-2 px-6 py-2 text-sm text-gray-600 dark:text-gray-300"
+        div class="flex flex-col gap-2 px-6 py-2 text-sm text-gray-600 dark:text-gray-300"
         {
-            span class="font-semibold text-gray-900 dark:text-white" { "Bucket:" }
-            @for (preset, href) in bucket_links {
-                @if preset == bucket_preset {
-                    span class="px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
-                    { (preset.label()) }
-                } @else {
-                    a
-                        class="px-2 py-1 rounded text-blue-600 hover:underline"
-                        href=(href)
-                    { (preset.label()) }
+            div class="flex flex-wrap items-center gap-3"
+            {
+                span class="font-semibold text-gray-900 dark:text-white min-w-[5.5rem]" { "Window:" }
+                div class="flex flex-wrap items-center gap-2"
+                {
+                @for (preset, href, disabled) in window_links {
+                    @if preset == window_preset {
+                        span class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
+                        { (window_preset_label(preset)) }
+                    } @else if disabled {
+                        span
+                            class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                            title="Select a smaller bucket size or a larger window to enable this option."
+                        { (window_preset_label(preset)) }
+                    } @else {
+                        a
+                            class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded text-blue-600 hover:underline"
+                            href=(href)
+                        { (window_preset_label(preset)) }
+                        }
+                    }
                 }
             }
+
+            div class="flex flex-wrap items-center gap-3"
+            {
+                span class="font-semibold text-gray-900 dark:text-white min-w-[5.5rem]" { "Bucket:" }
+                div class="flex flex-wrap items-center gap-2"
+                {
+                @for (preset, href, disabled) in bucket_links {
+                    @if preset == bucket_preset {
+                        span class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
+                        { (preset.label()) }
+                    } @else if disabled {
+                        span
+                            class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                            title="Select a larger window to enable this bucket size."
+                        { (preset.label()) }
+                    } @else {
+                        a
+                            class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded text-blue-600 hover:underline"
+                            href=(href)
+                        { (preset.label()) }
+                        }
+                    }
+                }
+            }
+
+            a
+                class="inline-flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-gray-900 dark:text-white hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700 self-start"
+                href=(summary_href)
+            {
+                span class={ "inline-flex h-3 w-3 rounded-full " (if show_category_summary { "bg-green-500" } else { "bg-gray-400" }) } {}
+                span { (summary_label) }
+            }
         }
+    }
+}
+
+fn window_preset_label(preset: WindowPreset) -> &'static str {
+    match preset {
+        WindowPreset::Week => "Week",
+        WindowPreset::Fortnight => "Fortnight",
+        WindowPreset::Month => "Month",
+        WindowPreset::Quarter => "Quarter",
+        WindowPreset::HalfYear => "Half-year",
+        WindowPreset::Year => "Year",
     }
 }
 
@@ -796,6 +1158,7 @@ mod tests {
             Query(WindowQuery {
                 window: Some(WindowPreset::Month),
                 bucket: None,
+                summary: None,
                 anchor: Some(today),
             }),
         )
@@ -827,6 +1190,7 @@ mod tests {
             Query(WindowQuery {
                 window: Some(WindowPreset::Month),
                 bucket: None,
+                summary: None,
                 anchor: Some(anchor),
             }),
         )
@@ -857,6 +1221,7 @@ mod tests {
             Query(WindowQuery {
                 window: Some(WindowPreset::Month),
                 bucket: None,
+                summary: None,
                 anchor: Some(anchor),
             }),
         )
@@ -885,6 +1250,7 @@ mod tests {
             Query(WindowQuery {
                 window: Some(WindowPreset::Week),
                 bucket: Some(BucketPreset::Month),
+                summary: None,
                 anchor: Some(transaction_date),
             }),
         )
@@ -899,6 +1265,7 @@ mod tests {
         let expected_url = transactions_page_url(
             WindowPreset::Month,
             BucketPreset::Month,
+            false,
             transaction_date,
         );
         assert_eq!(
@@ -1036,6 +1403,7 @@ mod tests {
             Query(WindowQuery {
                 window: Some(WindowPreset::Month),
                 bucket: None,
+                summary: None,
                 anchor: Some(today),
             }),
         )

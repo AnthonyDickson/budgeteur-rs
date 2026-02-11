@@ -130,14 +130,16 @@ pub async fn get_edit_transaction_page(
     let base_url = format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction_id);
     let edit_transaction_url = match query_params.redirect_url {
         Some(redirect_url) => {
-            let redirect_url_param =
-                serde_urlencoded::to_string([("redirect_url", redirect_url.as_str())])
-                    .inspect_err(|error| {
-                        tracing::error!(
-                            "Could not set redirect URL {redirect_url} due to encoding error: {error}"
-                        );
-                    })
-                    .ok();
+            let redirect_url_param = serde_urlencoded::to_string([(
+                "redirect_url",
+                redirect_url.as_str(),
+            )])
+            .inspect_err(|error| {
+                tracing::error!(
+                    "Could not set redirect URL {redirect_url} due to encoding error: {error}"
+                );
+            })
+            .ok();
 
             redirect_url_param
                 .map(|param| format!("{base_url}?{param}"))

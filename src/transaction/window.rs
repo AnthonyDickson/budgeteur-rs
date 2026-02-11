@@ -12,6 +12,8 @@ pub struct WindowQuery {
     pub window: Option<WindowPreset>,
     /// The bucket preset to group transactions by.
     pub bucket: Option<BucketPreset>,
+    /// Whether category summaries should be shown.
+    pub summary: Option<bool>,
     /// The anchor date that determines the current window.
     pub anchor: Option<Date>,
 }
