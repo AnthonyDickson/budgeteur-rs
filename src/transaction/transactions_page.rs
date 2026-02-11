@@ -8,7 +8,7 @@ use axum::{
 };
 use maud::{Markup, html};
 use rusqlite::Connection;
-use time::{Date, Duration, Month, OffsetDateTime};
+use time::{Date, Month, OffsetDateTime};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
@@ -24,8 +24,8 @@ use crate::{
 };
 
 use super::window::{
-    WindowNavLink, WindowNavigation, WindowPreset, WindowQuery, WindowRange, compute_window_range,
-    get_transaction_date_bounds, window_range_label,
+    BucketPreset, WindowNavLink, WindowNavigation, WindowPreset, WindowQuery, WindowRange,
+    compute_bucket_range, compute_window_range, get_transaction_date_bounds, window_range_label,
 };
 
 /// The max number of graphemes to display in the transaction table rows before
@@ -146,6 +146,9 @@ pub async fn get_transactions_page(
     let window_preset = query_params
         .window
         .unwrap_or(WindowPreset::default_preset());
+    let bucket_preset = query_params
+        .bucket
+        .unwrap_or(BucketPreset::default_preset());
     let anchor_date = match query_params.anchor {
         Some(anchor) => anchor,
         None => default_anchor_date(&state.local_timezone)?,
@@ -165,7 +168,7 @@ pub async fn get_transactions_page(
     });
     let has_any_transactions = bounds.is_some();
 
-    let redirect_url = get_redirect_url(window_preset, anchor_date);
+    let redirect_url = get_redirect_url(window_preset, bucket_preset, anchor_date);
 
     let excluded_tag_ids = get_excluded_tags(&connection)
         .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
@@ -179,13 +182,17 @@ pub async fn get_transactions_page(
             })
             .collect::<Vec<_>>();
 
-    let grouped_transactions = group_transactions_by_week(transactions, &excluded_tag_ids);
+    let grouped_transactions =
+        group_transactions_by_bucket(transactions, bucket_preset, &excluded_tag_ids);
 
     Ok(transactions_view(
         grouped_transactions,
         &window_nav,
         latest_link.as_ref(),
         has_any_transactions,
+        window_preset,
+        bucket_preset,
+        anchor_date,
     )
     .into_response())
 }
@@ -199,11 +206,16 @@ fn default_anchor_date(local_timezone: &str) -> Result<Date, Error> {
     Ok(OffsetDateTime::now_utc().to_offset(local_offset).date())
 }
 
-fn get_redirect_url(window_preset: WindowPreset, anchor_date: Date) -> Option<String> {
+fn get_redirect_url(
+    window_preset: WindowPreset,
+    bucket_preset: BucketPreset,
+    anchor_date: Date,
+) -> Option<String> {
     let redirect_url = format!(
-        "{}?window={}&anchor={}",
+        "{}?window={}&bucket={}&anchor={}",
         endpoints::TRANSACTIONS_VIEW,
         window_preset.as_query_value(),
+        bucket_preset.as_query_value(),
         anchor_date
     );
 
@@ -283,6 +295,7 @@ fn get_transaction_table_rows_in_range(
 fn window_navigation_html(
     window_nav: &WindowNavigation,
     latest_link: Option<&WindowNavLink>,
+    bucket_preset: BucketPreset,
     transactions_page_route: &Uri,
 ) -> Markup {
     let current_label = window_range_label(window_nav.range);
@@ -300,7 +313,7 @@ fn window_navigation_html(
                 @if let Some(prev) = &window_nav.prev {
                     li class="flex items-center justify-start row-start-1" {
                         a
-                            href={(transactions_page_route) "?" (&prev.href)}
+                            href={(transactions_page_route) "?" (&prev.href) "&bucket=" (bucket_preset.as_query_value())}
                             role="button"
                             class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
                         { (window_range_label(prev.range)) }
@@ -317,7 +330,7 @@ fn window_navigation_html(
                 @if let Some(next) = &window_nav.next {
                     li class="flex items-center justify-end row-start-1" {
                         a
-                            href={(transactions_page_route) "?" (&next.href)}
+                            href={(transactions_page_route) "?" (&next.href) "&bucket=" (bucket_preset.as_query_value())}
                             role="button"
                             class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
                         { (window_range_label(next.range)) }
@@ -329,7 +342,7 @@ fn window_navigation_html(
                 @if let Some(latest) = latest_link {
                     li class="flex items-center justify-center row-start-2 col-start-2" {
                         a
-                            href={(transactions_page_route) "?" (&latest.href)}
+                            href={(transactions_page_route) "?" (&latest.href) "&bucket=" (bucket_preset.as_query_value())}
                             role="button"
                             class="block px-3 pb-1 text-blue-600 hover:underline"
                         { "Latest" }
@@ -407,6 +420,9 @@ fn transactions_view(
     window_nav: &WindowNavigation,
     latest_link: Option<&WindowNavLink>,
     has_any_transactions: bool,
+    window_preset: WindowPreset,
+    bucket_preset: BucketPreset,
+    anchor_date: Date,
 ) -> Markup {
     let create_transaction_route = Uri::from_static(endpoints::NEW_TRANSACTION_VIEW);
     let import_transaction_route = Uri::from_static(endpoints::IMPORT_VIEW);
@@ -440,8 +456,20 @@ fn transactions_view(
                 div class="dark:bg-gray-800"
                 {
                     @if has_any_transactions {
-                        (window_navigation_html(window_nav, latest_link, &transactions_page_route))
+                        (window_navigation_html(
+                            window_nav,
+                            latest_link,
+                            bucket_preset,
+                            &transactions_page_route,
+                        ))
                     }
+
+                    (bucket_controls_html(
+                        window_preset,
+                        bucket_preset,
+                        anchor_date,
+                        &transactions_page_route,
+                    ))
 
                     table class="w-full my-2 text-sm text-left rtl:text-right
                         text-gray-500 dark:text-gray-400"
@@ -499,7 +527,12 @@ fn transactions_view(
                     }
 
                     @if has_any_transactions {
-                        (window_navigation_html(window_nav, latest_link, &transactions_page_route))
+                        (window_navigation_html(
+                            window_nav,
+                            latest_link,
+                            bucket_preset,
+                            &transactions_page_route,
+                        ))
                     }
                 }
             }
@@ -509,14 +542,15 @@ fn transactions_view(
     base("Transactions", &[], &content)
 }
 
-fn group_transactions_by_week(
+fn group_transactions_by_bucket(
     transactions: Vec<TransactionTableRow>,
+    bucket_preset: BucketPreset,
     excluded_tag_ids: &[TagId],
 ) -> Vec<DateBucket> {
     let mut buckets: Vec<DateBucket> = Vec::new();
 
     for transaction in transactions {
-        let bucket_range = week_bucket_range(transaction.date);
+        let bucket_range = compute_bucket_range(bucket_preset, transaction.date);
         let bucket = match buckets.last_mut() {
             Some(current) if current.range == bucket_range => current,
             _ => {
@@ -592,14 +626,6 @@ fn day_header_row_view(date: Date) -> Markup {
     }
 }
 
-fn week_bucket_range(date: Date) -> WindowRange {
-    let weekday_number = date.weekday().number_from_monday() as i64;
-    let start = date - Duration::days(weekday_number - 1);
-    let end = start + Duration::days(6);
-
-    WindowRange { start, end }
-}
-
 fn format_day_label(date: Date) -> String {
     format!("{:02} {}", date.day(), month_abbrev(date.month()))
 }
@@ -618,6 +644,53 @@ fn month_abbrev(month: Month) -> &'static str {
         Month::October => "Oct",
         Month::November => "Nov",
         Month::December => "Dec",
+    }
+}
+
+fn bucket_controls_html(
+    window_preset: WindowPreset,
+    bucket_preset: BucketPreset,
+    anchor_date: Date,
+    transactions_page_route: &Uri,
+) -> Markup {
+    let bucket_presets = [
+        BucketPreset::Week,
+        BucketPreset::Fortnight,
+        BucketPreset::Month,
+        BucketPreset::Quarter,
+        BucketPreset::HalfYear,
+        BucketPreset::Year,
+    ];
+    let bucket_links: Vec<(BucketPreset, String)> = bucket_presets
+        .iter()
+        .map(|preset| {
+            let href = format!(
+                "{route}?window={window}&bucket={bucket}&anchor={anchor}",
+                route = transactions_page_route,
+                window = window_preset.as_query_value(),
+                bucket = preset.as_query_value(),
+                anchor = anchor_date
+            );
+            (*preset, href)
+        })
+        .collect();
+
+    html! {
+        div class="flex flex-wrap items-center gap-2 px-6 py-2 text-sm text-gray-600 dark:text-gray-300"
+        {
+            span class="font-semibold text-gray-900 dark:text-white" { "Bucket:" }
+            @for (preset, href) in bucket_links {
+                @if preset == bucket_preset {
+                    span class="px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
+                    { (preset.label()) }
+                } @else {
+                    a
+                        class="px-2 py-1 rounded text-blue-600 hover:underline"
+                        href=(href)
+                    { (preset.label()) }
+                }
+            }
+        }
     }
 }
 
@@ -703,6 +776,7 @@ mod tests {
             State(state),
             Query(WindowQuery {
                 window: Some(WindowPreset::Month),
+                bucket: None,
                 anchor: Some(today),
             }),
         )
@@ -733,6 +807,7 @@ mod tests {
             State(state),
             Query(WindowQuery {
                 window: Some(WindowPreset::Month),
+                bucket: None,
                 anchor: Some(anchor),
             }),
         )
@@ -762,6 +837,7 @@ mod tests {
             State(state),
             Query(WindowQuery {
                 window: Some(WindowPreset::Month),
+                bucket: None,
                 anchor: Some(anchor),
             }),
         )
@@ -900,6 +976,7 @@ mod tests {
             State(state),
             Query(WindowQuery {
                 window: Some(WindowPreset::Month),
+                bucket: None,
                 anchor: Some(today),
             }),
         )

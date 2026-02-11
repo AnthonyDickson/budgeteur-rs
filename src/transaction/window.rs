@@ -10,6 +10,8 @@ use crate::Error;
 pub struct WindowQuery {
     /// The window preset to display.
     pub window: Option<WindowPreset>,
+    /// The bucket preset to group transactions by.
+    pub bucket: Option<BucketPreset>,
     /// The anchor date that determines the current window.
     pub anchor: Option<Date>,
 }
@@ -23,6 +25,45 @@ pub enum WindowPreset {
     Quarter,
     HalfYear,
     Year,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BucketPreset {
+    Week,
+    Fortnight,
+    Month,
+    Quarter,
+    HalfYear,
+    Year,
+}
+
+impl BucketPreset {
+    pub fn default_preset() -> Self {
+        Self::Week
+    }
+
+    pub fn as_query_value(self) -> &'static str {
+        match self {
+            Self::Week => "week",
+            Self::Fortnight => "fortnight",
+            Self::Month => "month",
+            Self::Quarter => "quarter",
+            Self::HalfYear => "half-year",
+            Self::Year => "year",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Week => "Week",
+            Self::Fortnight => "Fortnight",
+            Self::Month => "Month",
+            Self::Quarter => "Quarter",
+            Self::HalfYear => "Half-year",
+            Self::Year => "Year",
+        }
+    }
 }
 
 impl WindowPreset {
@@ -122,6 +163,17 @@ pub fn compute_window_range(preset: WindowPreset, anchor_date: Date) -> WindowRa
         WindowPreset::Quarter => quarter_bounds(anchor_date.year(), anchor_date.month()),
         WindowPreset::HalfYear => half_year_bounds(anchor_date.year(), anchor_date.month()),
         WindowPreset::Year => year_bounds(anchor_date.year()),
+    }
+}
+
+pub fn compute_bucket_range(preset: BucketPreset, anchor_date: Date) -> WindowRange {
+    match preset {
+        BucketPreset::Week => week_bounds(anchor_date),
+        BucketPreset::Fortnight => fortnight_bounds(anchor_date),
+        BucketPreset::Month => month_bounds(anchor_date.year(), anchor_date.month()),
+        BucketPreset::Quarter => quarter_bounds(anchor_date.year(), anchor_date.month()),
+        BucketPreset::HalfYear => half_year_bounds(anchor_date.year(), anchor_date.month()),
+        BucketPreset::Year => year_bounds(anchor_date.year()),
     }
 }
 

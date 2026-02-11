@@ -157,6 +157,7 @@ Home Expenses (expanded)
 - Category summary sections are collapsed by default and reset to collapsed on page refresh.
 - Use a dedicated toggle control with a large tap target to avoid accidental expansion.
 - Focus styles on the toggle control must be visible for keyboard users.
+- Provide bucket size controls (week/fortnight/month/quarter/half-year/year) to change grouping period.
 
 ### Pagination
 

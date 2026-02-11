@@ -182,6 +182,7 @@ Home Expenses (expanded)
 ### Query Parameters
 
 - **Decision**: Encode the window preset and anchor date in query params; defaults apply when absent.
+- **Decision**: Encode the bucket preset in query params; default to weekly buckets when absent.
 
 ### Grouping Scope (Windowed)
 

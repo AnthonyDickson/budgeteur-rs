@@ -3,10 +3,9 @@
 ## Stage One: Budgeting
 
 - Transaction grouping:
-  - Add category summary layer (per bucket) with `<details>/<summary>`, including “Other” + % calculations
-  - Add bucket size controls (week/fortnight/month/quarter/half-year/year) and wire into grouping + labels
-  - Add grouping toggle + control cluster UI; persist via query params (prefs later)
   - Enforce preset validation/auto-select when bucket size exceeds window preset
+  - Add category summary layer (per bucket) with `<details>/<summary>`, including “Other” + % calculations
+  - Add grouping toggle + control cluster UI; persist via query params (prefs later)
   - Extend tests for bucket totals/ordering, category summary rows, percentages, and “Other”
 - Add search/filtering to transactions page
 - Add account info to transactions
