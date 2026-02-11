@@ -7,12 +7,12 @@ Capture non-obvious decisions and constraints in the transaction table view whil
 ## Baseline (Existing Implementation)
 
 - **Route handler**: `get_transactions_page` in `src/transaction/transactions_page.rs`.
-- **Pagination**: Query params `page` and `per_page` with defaults from `PaginationConfig`.
+- **Navigation**: Windowed date-range navigation using query params `window`, `bucket`, `anchor`, and `summary`.
 - **Ordering**: Date descending, then ID ascending for stability after edits.
 - **Rendering**: Server-side table rows using Maud templates.
 - **Actions**: Edit uses redirect URL; delete is HTMX row-local.
 
-## Grouping Model (New)
+## Grouping Model
 
 Grouping is layered rather than mutually exclusive:
 
@@ -23,20 +23,20 @@ Grouping is layered rather than mutually exclusive:
    - The smallest bucket size is weekly; daily buckets are not a supported mode.
 
 2. **Category Summary (Grouped Totals, optional)**
-   - Within each date bucket, show a category breakdown list (tag totals + % of total expenses).
+   - Within each date bucket, show a category breakdown list (tag totals + % of total income/expenses).
    - Items are ordered by amount descending (largest category first).
    - Include an “Other” row for `None` tags.
-   - Each category row can expand to reveal a flat list of its transactions (date shown per row).
+   - Each category row can expand to reveal transactions grouped by day using the same transaction row layout.
 
 The UI can toggle the category summary layer on/off without changing the underlying query semantics.
 
 ## Non-Obvious Decisions
 
-### Pagination vs grouping
+### Window navigation vs grouping
 
-- **Decision**: Page first, then group within the page.
-- **Rationale**: Keeps query cost low and preserves current pagination semantics; avoids multi-page group headers.
-- **Tradeoff**: A group can be split across pages. This is acceptable for now and can be revisited later.
+- **Decision**: Window first, then group within the window.
+- **Rationale**: Keeps query cost low and preserves window navigation semantics; avoids multi-window group headers.
+- **Tradeoff**: A group can be split across windows only if the bucket is larger than the window; presets prevent this.
 
 ### Group ordering
 
@@ -45,7 +45,7 @@ The UI can toggle the category summary layer on/off without changing the underly
 
 ### Summary calculation scope
 
-- **Decision**: Category summary totals are computed from the transactions on the current page only.
+- **Decision**: Category summary totals are computed from the transactions in the current window only.
 - **Rationale**: Keeps summaries consistent with what the user sees without requiring full dataset scans.
 
 ### Empty buckets
@@ -76,7 +76,7 @@ The UI can toggle the category summary layer on/off without changing the underly
 - Prefer native HTML5 disclosure elements (`<details>`/`<summary>`) for collapsible UI.
 - Avoid custom JS unless a specific interaction is not achievable with native elements.
 - Preserve accessibility defaults (keyboard and screen reader affordances) when styling.
-- Grouping settings (date bucket period and tag grouping toggle) persist across page loads.
+- Grouping settings (date bucket period and tag grouping toggle) persist across page loads via query params.
 - Category summary sections are collapsed by default and reset to collapsed on page refresh.
 - Use a dedicated toggle control with a large tap target to avoid accidental expansion.
 - Ensure visible focus styling on the toggle control for keyboard users.
@@ -89,7 +89,7 @@ The UI can toggle the category summary layer on/off without changing the underly
 
 ### Existing fields (already available)
 
-- `amount`, `date`, `description`, `tag_name`, `id`
+- `amount`, `date`, `description`, `tag_name`, `tag_id`, `id`
 
 ### Additional fields (optional)
 
@@ -141,7 +141,7 @@ Home Expenses (expanded)
 - **Timezone**: Bucket calculations use the server timezone, which is assumed to match the user’s timezone (self-hosted).
 - **Range label format**: Always include the full four-digit year in date range labels for consistency across all bucket types.
 - **Percentages**: Compute as `category_total / total_income * 100` for income categories and `category_total / total_expenses * 100` for expense categories, rounded to the nearest integer.
-- **Income vs expenses**: In category summary, show expenses by default; include income row when present (matching screenshot).
+- **Income vs expenses**: In category summary, split per tag into income and expense sections when both exist.
 
 ## Error Handling
 
@@ -150,7 +150,7 @@ Home Expenses (expanded)
 
 ## Testing Expectations
 
-- Keep existing pagination tests passing.
+- Keep existing window navigation tests passing.
 - Add tests for:
   - Group headers rendering with correct range labels.
   - Category summary rows with percent calculations.
@@ -163,17 +163,16 @@ Home Expenses (expanded)
 
 ---
 
-**Document Version:** 0.1
-**Last Updated:** 2026-02-07
+**Document Version:** 0.2
+**Last Updated:** 2026-02-11
 **Status:** Draft
-**Changes from v0.0:** Initial grouping specification
+**Changes from v0.1:** Folded windowed navigation into baseline and updated category summary details
 
-
-## New Feature: Windowed Grouping + Date-Range Navigation (vNext)
+## Windowed Grouping + Date-Range Navigation
 
 ### Date-Range Navigation Model
 
-- **Decision**: Replace page-based pagination with date-range windows aligned to bucket boundaries.
+- **Decision**: Use date-range windows aligned to bucket boundaries.
 - **Decision**: Window presets (and only supported window sizes): last week, last fortnight, last month, last quarter, last half year, last year.
 - **Decision**: Presets smaller than the selected bucket are disabled with a tooltip explaining why.
 - **Decision**: If the selected bucket is larger than the current window, auto-select the smallest preset that can contain the bucket.
@@ -183,6 +182,7 @@ Home Expenses (expanded)
 
 - **Decision**: Encode the window preset and anchor date in query params; defaults apply when absent.
 - **Decision**: Encode the bucket preset in query params; default to weekly buckets when absent.
+- **Decision**: Encode the category summary toggle as `summary=true` in query params.
 
 ### Grouping Scope (Windowed)
 
@@ -191,7 +191,7 @@ Home Expenses (expanded)
 
 ### Redirect Continuity (Windowed)
 
-- **Decision**: Preserve window preset + anchor date + bucket + tag grouping + filters in `redirect_url`, excluding excluded-tag preferences.
+- **Decision**: Preserve window preset + anchor date + bucket + summary in `redirect_url`, excluding excluded-tag preferences.
 
 ### Import Behavior
 
@@ -206,21 +206,4 @@ Home Expenses (expanded)
 - Persist grouping settings in user prefs; allow query params to override.
 - Add filtering scoped to the current date window.
 - Move full-text search to a dedicated page to allow arbitrary time ranges.
-
-### Implementation Order (vNext)
-
-1. Extract the excluded-tag filter into a shared module used by dashboard + transactions.
-2. Replace page/per_page pagination with date-range window navigation (query params + defaults + UI).
-3. Implement date bucket grouping within the current window and compute header totals.
-4. Add category summary layer with expandable sections and keyboard-accessible toggles.
-5. Wire window/bucket interactions, preset validation, redirect continuity, and empty state text.
-6. Add/adjust tests for window navigation, grouping, totals/percentages, and “Other” tag handling.
-
-### File-Level Plan (vNext)
-
-- **Shared excluded-tag prefs**: extract from `src/dashboard/preferences.rs` into a shared module (e.g., `src/tag/preferences.rs` or `src/tag/excluded_tags.rs`), and update `src/dashboard/handlers.rs` + `src/dashboard/transaction.rs` to use it.
-- **Window query + navigation UI**: update `src/transaction/transactions_page.rs` to parse window preset + anchor date params, compute window boundaries, and render the range navigation controls.
-- **Grouping + bucket totals**: add grouping helpers in `src/transaction/transactions_page.rs` or a new `src/transaction/grouping.rs` module; compute bucket totals using the shared excluded-tag filter.
-- **Category summary + expand/collapse**: render category summary rows and expandable sections in `src/transaction/transactions_page.rs`; add toggle markup consistent with `<details>/<summary>` in `src/html.rs` if new shared styles are needed.
-- **Preset validation + auto-select**: enforce preset/window rules in `src/transaction/transactions_page.rs`; ensure redirect URLs include window preset + anchor date + bucket + tag grouping + filters.
-- **Tests**: update pagination tests in `src/transaction/transactions_page.rs` to cover window navigation, preset validation, bucket totals, percentage calculations, and “Other” grouping.
+- After importing transactions, advance the date window to include the latest data.

@@ -2,8 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Transaction grouping:
-  - Extend tests for bucket totals/ordering, category summary rows, percentages, and “Other”
 - Add search/filtering to transactions page
 - Add account info to transactions
   - Set during import

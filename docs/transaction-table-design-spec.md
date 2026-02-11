@@ -89,7 +89,7 @@ Shared styles (from `src/html.rs`) provide the base look:
 - On confirm, the row is removed from the table (`hx-swap="outerHTML"` with `hx-target="closest tr"`).
 - Errors target the global alert container.
 
-## Planned Feature: Grouped Transactions
+## Grouped Transactions
 
 The table will support grouped views inspired by the History screens. These views layer on top of the existing table and keep pagination and actions consistent.
 
@@ -150,70 +150,13 @@ Home Expenses (expanded)
 ### Interaction Notes
 
 - The grouping view preserves existing actions (Edit/Delete) when rows are transactional.
-- Pagination behavior remains unchanged; grouping happens within the current page of transactions.
-  This may result in groups being split across pages, which is acceptable for the first iteration.
+- Date-range navigation moves across fixed windows; grouping happens within the current window.
 - Empty date buckets (weeks with no transactions) are omitted from grouped views.
 - Grouping settings (date bucket period and tag grouping toggle) persist across page loads.
 - Category summary sections are collapsed by default and reset to collapsed on page refresh.
 - Use a dedicated toggle control with a large tap target to avoid accidental expansion.
 - Focus styles on the toggle control must be visible for keyboard users.
 - Provide bucket size controls (week/fortnight/month/quarter/half-year/year) to change grouping period.
-
-### Pagination
-
-```
-Back  1  2  3  ...  8  9  Next
-```
-
-- Displayed only when there are rows.
-- Centered pagination bar with page links, “Back”, “Next”, and ellipsis.
-- Current page is bold and marked with `aria-current="page"`.
-- Page size uses the configured default and is preserved across navigation.
-
-### Empty State
-
-```
-| Amount | Date | Description | Tags | Actions |
-| Nothing here yet.                         |
-```
-
-- When no transactions exist, the table body shows a single row with “Nothing here yet.”
-- Pagination is hidden in the empty state.
-
-## Data Ordering
-
-- Transactions are ordered by date descending (newest first).
-- IDs are used as a secondary sort to keep ordering stable after updates.
-
-## Responsiveness
-
-- Header actions wrap when needed (`flex-wrap`).
-- Table remains full width with smaller text (`text-sm`) to preserve readability.
-
-## Accessibility Notes
-
-- Pagination includes `aria-current` for the active page.
-- Truncated descriptions expose full text via `title`.
-- Destructive actions include confirmation dialog text with transaction description.
-
-## Source of Truth
-
-- UI: `src/transaction/transactions_page.rs`
-- Shared styles: `src/html.rs`
-
----
-
-**Document Version:** 1.1
-**Last Updated:** 2026-02-07
-**Status:** In Progress
-**Changes from v1.0:** Added grouped transaction view plans and layouts
-
-## New Feature: Windowed Grouping + Date-Range Navigation (vNext)
-
-This feature replaces page-based pagination with date-range windows while keeping grouped views intact.
-
-### Control Cluster
-
 - Group the window preset, date bucket period, and tag grouping toggle together as a single control cluster.
 
 ### Date-Range Navigation (Windowed)
@@ -227,32 +170,49 @@ Previous Range    Current Range Label    Next Range
 - Presets smaller than the selected bucket are disabled with a tooltip explaining why.
 - If the selected bucket is larger than the current window, auto-select the smallest preset that can contain the bucket.
 - Current range label reflects the active window (full four-digit years).
-
-### Windowed Interaction Notes
-
 - Date-range navigation loads a complete set of buckets within the selected window (no bucket splitting).
-- Category summary sections are collapsed by default and reset to collapsed on page refresh.
-- Use a dedicated toggle control with a large tap target to avoid accidental expansion.
-- Focus styles on the toggle control must be visible for keyboard users.
-- After importing transactions, advance the date window to include the latest data.
 
-### Windowed Empty State
+### Empty State (Windowed)
 
 ```
 | Amount | Date | Description | Tags | Actions |
 | No transactions in this range.           |
 ```
 
-- When no transactions exist in the current date window, the table body shows a single row with “No transactions in this range.”
+- When no transactions exist, the table body shows a single row with “Nothing here yet.”
 - Date-range navigation is hidden in the empty state.
 
-### Windowed Accessibility Notes
+## Data Ordering
+
+- Transactions are ordered by date descending (newest first).
+- IDs are used as a secondary sort to keep ordering stable after updates.
+
+## Responsiveness
+
+- Header actions wrap when needed (`flex-wrap`).
+- Table remains full width with smaller text (`text-sm`) to preserve readability.
+
+## Accessibility Notes
 
 - Date-range navigation includes `aria-current` for the active range.
-- The transactions table should be navigable by keyboard (including actions and expandable controls).
+- Truncated descriptions expose full text via `title`.
+- Destructive actions include confirmation dialog text with transaction description.
 
-### Potential Enhancements
+## Potential Enhancements
 
+- Persist grouping settings in user preferences; allow query params to override.
+- After importing transactions, advance the date window to include the latest data.
 - Add filtering scoped to the current date window.
 - Move full-text search to a dedicated page to allow arbitrary time ranges.
-- Persist grouping settings in user preferences; allow query params to override.
+
+## Source of Truth
+
+- UI: `src/transaction/transactions_page.rs`
+- Shared styles: `src/html.rs`
+
+---
+
+**Document Version:** 1.2
+**Last Updated:** 2026-02-11
+**Status:** In Progress
+**Changes from v1.1:** Folded windowed navigation into baseline; updated empty state copy
