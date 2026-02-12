@@ -53,11 +53,11 @@ pub fn save_excluded_tags(tag_ids: &[TagId], connection: &Connection) -> Result<
         [],
     )?;
 
-    // Insert new excluded tags
+    // Insert new excluded tags (ignore duplicates)
     for tag_id in tag_ids {
         transaction.execute(
             &format!(
-                "INSERT INTO {table} (tag_id) VALUES (?1)",
+                "INSERT OR IGNORE INTO {table} (tag_id) VALUES (?1)",
                 table = EXCLUDED_TAGS_TABLE
             ),
             [tag_id],
@@ -156,6 +156,19 @@ mod tests {
         let result = get_excluded_tags(&conn).unwrap();
 
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn save_excluded_tags_ignores_duplicates() {
+        let conn = get_test_connection();
+
+        let tag = create_tag(TagName::new("Tag1").unwrap(), &conn).unwrap();
+
+        save_excluded_tags(&[tag.id, tag.id], &conn).unwrap();
+
+        let result = get_excluded_tags(&conn).unwrap();
+
+        assert_eq!(result, vec![tag.id]);
     }
 
     #[test]
