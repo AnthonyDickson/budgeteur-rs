@@ -8,7 +8,7 @@ use crate::{
     transaction::TransactionId,
 };
 
-use super::window::{BucketPreset, WindowPreset, WindowRange};
+use super::range::{DateRange, IntervalPreset, RangePreset};
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct Transaction {
@@ -46,8 +46,8 @@ pub(crate) struct TransactionTableRow {
 }
 
 pub(crate) struct TransactionsViewOptions {
-    pub(crate) window_preset: WindowPreset,
-    pub(crate) bucket_preset: BucketPreset,
+    pub(crate) range_preset: RangePreset,
+    pub(crate) interval_preset: IntervalPreset,
     pub(crate) show_category_summary: bool,
     pub(crate) anchor_date: Date,
 }
@@ -77,7 +77,7 @@ impl TransactionTableRow {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct BucketTotals {
+pub(crate) struct IntervalTotals {
     pub(crate) income: f64,
     pub(crate) expenses: f64,
 }
@@ -89,18 +89,18 @@ pub(crate) struct DayGroup {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct DateBucket {
-    pub(crate) range: WindowRange,
-    pub(crate) totals: BucketTotals,
+pub(crate) struct DateInterval {
+    pub(crate) range: DateRange,
+    pub(crate) totals: IntervalTotals,
     pub(crate) days: Vec<DayGroup>,
     pub(crate) summary: Vec<CategorySummary>,
 }
 
-impl DateBucket {
-    pub(crate) fn new(range: WindowRange) -> Self {
+impl DateInterval {
+    pub(crate) fn new(range: DateRange) -> Self {
         Self {
             range,
-            totals: BucketTotals {
+            totals: IntervalTotals {
                 income: 0.0,
                 expenses: 0.0,
             },

@@ -21,22 +21,22 @@ use super::{
     grouping::{GroupingOptions, group_transactions},
     models::{Transaction, TransactionTableRow, TransactionsViewOptions},
     query::{SortOrder, get_transaction_table_rows_in_range},
-    view::transactions_view,
-    window::{
-        BucketPreset, WindowNavLink, WindowNavigation, WindowPreset, WindowQuery, WindowRange,
-        compute_window_range, get_transaction_date_bounds, smallest_window_for_bucket,
-        window_preset_can_contain_bucket,
+    range::{
+        DateRange, IntervalPreset, RangeNavLink, RangeNavigation, RangePreset, RangeQuery,
+        compute_range, get_transaction_date_bounds, range_preset_can_contain_interval,
+        smallest_range_for_interval,
     },
+    view::transactions_view,
 };
 
 struct TransactionsInputs {
     /// Normalized options derived from query params.
     options: NormalizedQuery,
     /// Optional min/max transaction dates for the data set.
-    bounds: Option<WindowRange>,
-    /// The date range for the active window.
-    window_range: WindowRange,
-    /// Tag IDs excluded from bucket totals and summaries.
+    bounds: Option<DateRange>,
+    /// The date range for the active range.
+    range: DateRange,
+    /// Tag IDs excluded from interval totals and summaries.
     excluded_tag_ids: Vec<TagId>,
     /// Tags available for exclusion controls.
     available_tags: Vec<Tag>,
@@ -46,29 +46,29 @@ struct TransactionsInputs {
 
 struct TransactionsViewModel {
     /// Grouped and summarized transactions for rendering.
-    grouped: Vec<super::models::DateBucket>,
-    /// Navigation model for window links.
-    window_nav: WindowNavigation,
-    /// Optional link to the latest window.
-    latest_link: Option<WindowNavLink>,
+    grouped: Vec<super::models::DateInterval>,
+    /// Navigation model for range links.
+    range_nav: RangeNavigation,
+    /// Optional link to the latest range.
+    latest_link: Option<RangeNavLink>,
     /// Whether the dataset contains any transactions at all.
     has_any_transactions: bool,
     /// Tags with exclusion state for controls.
     tags_with_status: Vec<TagWithExclusion>,
-    /// Redirect URL back to the current transactions window.
+    /// Redirect URL back to the current transactions range.
     redirect_url: String,
     /// Selected view options for the page.
     options: TransactionsViewOptions,
 }
 
 struct NormalizedQuery {
-    /// Window preset for navigation.
-    window_preset: WindowPreset,
-    /// Bucket preset for grouping.
-    bucket_preset: BucketPreset,
+    /// Range preset for navigation.
+    range_preset: RangePreset,
+    /// Interval preset for grouping.
+    interval_preset: IntervalPreset,
     /// Whether category summary mode is enabled.
     show_category_summary: bool,
-    /// Anchor date for window calculations.
+    /// Anchor date for range calculations.
     anchor_date: Date,
 }
 
@@ -98,7 +98,7 @@ impl FromRef<AppState> for TransactionsViewState {
 /// Render an overview of the user's transactions.
 pub async fn get_transactions_page(
     State(state): State<TransactionsViewState>,
-    Query(query_params): Query<WindowQuery>,
+    Query(query_params): Query<RangeQuery>,
 ) -> Result<Response, Error> {
     let now_local = current_local_date(&state.local_timezone)?;
     let options = match normalize_query(query_params, now_local) {
@@ -114,14 +114,14 @@ pub async fn get_transactions_page(
         .map_err(|_| Error::DatabaseLockError)?;
     let bounds = get_transaction_date_bounds(&connection)
         .inspect_err(|error| tracing::error!("could not get transaction bounds: {error}"))?;
-    let window_range = compute_window_range(options.window_preset, options.anchor_date);
+    let range = compute_range(options.range_preset, options.anchor_date);
     let excluded_tag_ids = get_excluded_tags(&connection)
         .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
     let available_tags = get_all_tags(&connection)
         .inspect_err(|error| tracing::error!("could not get tags: {error}"))?;
 
     let transactions =
-        get_transaction_table_rows_in_range(window_range, SortOrder::Descending, &connection)
+        get_transaction_table_rows_in_range(range, SortOrder::Descending, &connection)
             .inspect_err(|error| {
                 tracing::error!("could not get transaction table rows: {error}")
             })?;
@@ -129,7 +129,7 @@ pub async fn get_transactions_page(
     let model = build_transactions_view_model(TransactionsInputs {
         options,
         bounds,
-        window_range,
+        range,
         excluded_tag_ids,
         available_tags,
         transactions,
@@ -137,7 +137,7 @@ pub async fn get_transactions_page(
 
     Ok(transactions_view(
         model.grouped,
-        &model.window_nav,
+        &model.range_nav,
         model.latest_link.as_ref(),
         model.has_any_transactions,
         &model.tags_with_status,
@@ -167,8 +167,8 @@ fn build_redirect_param(redirect_url: &str) -> Option<String> {
 }
 
 fn transactions_page_url(
-    window_preset: WindowPreset,
-    bucket_preset: BucketPreset,
+    range_preset: RangePreset,
+    interval_preset: IntervalPreset,
     show_category_summary: bool,
     anchor_date: Date,
 ) -> String {
@@ -179,30 +179,30 @@ fn transactions_page_url(
     };
 
     format!(
-        "{}?window={}&bucket={}&anchor={}{summary_param}",
+        "{}?range={}&interval={}&anchor={}{summary_param}",
         endpoints::TRANSACTIONS_VIEW,
-        window_preset.as_query_value(),
-        bucket_preset.as_query_value(),
+        range_preset.as_query_value(),
+        interval_preset.as_query_value(),
         anchor_date,
     )
 }
 
-fn normalize_query(query: WindowQuery, now_local: Date) -> QueryDecision {
-    let requested_window_preset = query.window.unwrap_or(WindowPreset::default_preset());
-    let bucket_preset = query.bucket.unwrap_or(BucketPreset::default_preset());
+fn normalize_query(query: RangeQuery, now_local: Date) -> QueryDecision {
+    let requested_range_preset = query.range.unwrap_or(RangePreset::default_preset());
+    let interval_preset = query.interval.unwrap_or(IntervalPreset::default_preset());
     let show_category_summary = query.summary.unwrap_or(false);
     let anchor_date = query.anchor.unwrap_or(now_local);
-    let window_preset = if window_preset_can_contain_bucket(requested_window_preset, bucket_preset)
+    let range_preset = if range_preset_can_contain_interval(requested_range_preset, interval_preset)
     {
-        requested_window_preset
+        requested_range_preset
     } else {
-        smallest_window_for_bucket(bucket_preset)
+        smallest_range_for_interval(interval_preset)
     };
 
-    if window_preset != requested_window_preset {
+    if range_preset != requested_range_preset {
         let redirect_url = transactions_page_url(
-            window_preset,
-            bucket_preset,
+            range_preset,
+            interval_preset,
             show_category_summary,
             anchor_date,
         );
@@ -210,35 +210,28 @@ fn normalize_query(query: WindowQuery, now_local: Date) -> QueryDecision {
     }
 
     QueryDecision::Normalized(NormalizedQuery {
-        window_preset,
-        bucket_preset,
+        range_preset,
+        interval_preset,
         show_category_summary,
         anchor_date,
     })
 }
 
 fn build_transactions_view_model(input: TransactionsInputs) -> TransactionsViewModel {
-    let window_nav = WindowNavigation::new(
-        input.options.window_preset,
-        input.window_range,
-        input.bounds,
-    );
+    let range_nav = RangeNavigation::new(input.options.range_preset, input.range, input.bounds);
     let latest_link = input.bounds.and_then(|bounds| {
-        let latest_range = compute_window_range(input.options.window_preset, bounds.end);
-        if latest_range == input.window_range {
+        let latest_range = compute_range(input.options.range_preset, bounds.end);
+        if latest_range == input.range {
             None
         } else {
-            Some(WindowNavLink::new(
-                input.options.window_preset,
-                latest_range,
-            ))
+            Some(RangeNavLink::new(input.options.range_preset, latest_range))
         }
     });
     let has_any_transactions = input.bounds.is_some();
 
     let redirect_url = transactions_page_url(
-        input.options.window_preset,
-        input.options.bucket_preset,
+        input.options.range_preset,
+        input.options.interval_preset,
         input.options.show_category_summary,
         input.options.anchor_date,
     );
@@ -257,7 +250,7 @@ fn build_transactions_view_model(input: TransactionsInputs) -> TransactionsViewM
     let grouped = group_transactions(
         transaction_rows,
         GroupingOptions {
-            bucket_preset: input.options.bucket_preset,
+            interval_preset: input.options.interval_preset,
             excluded_tag_ids: &input.excluded_tag_ids,
             show_category_summary: input.options.show_category_summary,
         },
@@ -265,14 +258,14 @@ fn build_transactions_view_model(input: TransactionsInputs) -> TransactionsViewM
 
     TransactionsViewModel {
         grouped,
-        window_nav,
+        range_nav,
         latest_link,
         has_any_transactions,
         tags_with_status,
         redirect_url,
         options: TransactionsViewOptions {
-            window_preset: input.options.window_preset,
-            bucket_preset: input.options.bucket_preset,
+            range_preset: input.options.range_preset,
+            interval_preset: input.options.interval_preset,
             show_category_summary: input.options.show_category_summary,
             anchor_date: input.options.anchor_date,
         },
@@ -298,8 +291,8 @@ mod tests {
     };
 
     use super::{TransactionsViewState, get_transactions_page, transactions_page_url};
-    use crate::transaction::window::{
-        BucketPreset, WindowPreset, WindowQuery, compute_window_range, window_anchor_query,
+    use crate::transaction::range::{
+        IntervalPreset, RangePreset, RangeQuery, compute_range, range_anchor_query,
     };
 
     fn get_test_connection() -> Connection {
@@ -318,7 +311,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transactions_page_displays_windowed_data() {
+    async fn transactions_page_displays_range_data() {
         let conn = get_test_connection();
         let today = date!(2025 - 10 - 05);
 
@@ -359,9 +352,9 @@ mod tests {
 
         let response = get_transactions_page(
             State(state),
-            Query(WindowQuery {
-                window: Some(WindowPreset::Month),
-                bucket: None,
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
                 summary: None,
                 anchor: Some(today),
             }),
@@ -373,11 +366,11 @@ mod tests {
         assert_valid_html(&html);
         let table = must_get_table(&html);
         assert_table_has_transactions(table, &want_transactions);
-        assert_window_navigation_present(&html);
+        assert_range_navigation_present(&html);
     }
 
     #[tokio::test]
-    async fn transactions_page_shows_navigation_with_empty_window() {
+    async fn transactions_page_shows_navigation_with_empty_range() {
         let conn = get_test_connection();
         let transaction_date = date!(2025 - 10 - 05);
         let anchor = date!(2025 - 01 - 05);
@@ -391,9 +384,9 @@ mod tests {
 
         let response = get_transactions_page(
             State(state),
-            Query(WindowQuery {
-                window: Some(WindowPreset::Month),
-                bucket: None,
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
                 summary: None,
                 anchor: Some(anchor),
             }),
@@ -403,12 +396,12 @@ mod tests {
 
         let html = parse_html(response).await;
         assert_valid_html(&html);
-        assert_window_navigation_present(&html);
+        assert_range_navigation_present(&html);
         assert_empty_state_present(&html);
     }
 
     #[tokio::test]
-    async fn transactions_page_shows_latest_link_when_not_latest_window() {
+    async fn transactions_page_shows_latest_link_when_not_latest_range() {
         let conn = get_test_connection();
         let transaction_date = date!(2025 - 10 - 05);
         let anchor = date!(2025 - 08 - 05);
@@ -422,9 +415,9 @@ mod tests {
 
         let response = get_transactions_page(
             State(state),
-            Query(WindowQuery {
-                window: Some(WindowPreset::Month),
-                bucket: None,
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
                 summary: None,
                 anchor: Some(anchor),
             }),
@@ -434,7 +427,7 @@ mod tests {
 
         let html = parse_html(response).await;
         assert_valid_html(&html);
-        assert_latest_link_present(&html, WindowPreset::Month, transaction_date);
+        assert_latest_link_present(&html, RangePreset::Month, transaction_date);
     }
 
     #[tokio::test]
@@ -457,9 +450,9 @@ mod tests {
 
         let response = get_transactions_page(
             State(state),
-            Query(WindowQuery {
-                window: Some(WindowPreset::Month),
-                bucket: None,
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
                 summary: Some(true),
                 anchor: Some(today),
             }),
@@ -473,7 +466,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transactions_page_autoselects_window_when_bucket_exceeds_window() {
+    async fn transactions_page_autoselects_range_when_interval_exceeds_range() {
         let conn = get_test_connection();
         let transaction_date = date!(2025 - 10 - 05);
 
@@ -486,9 +479,9 @@ mod tests {
 
         let response = get_transactions_page(
             State(state),
-            Query(WindowQuery {
-                window: Some(WindowPreset::Week),
-                bucket: Some(BucketPreset::Month),
+            Query(RangeQuery {
+                range: Some(RangePreset::Week),
+                interval: Some(IntervalPreset::Month),
                 summary: None,
                 anchor: Some(transaction_date),
             }),
@@ -502,15 +495,15 @@ mod tests {
             .get("location")
             .expect("Missing redirect location header");
         let expected_url = transactions_page_url(
-            WindowPreset::Month,
-            BucketPreset::Month,
+            RangePreset::Month,
+            IntervalPreset::Month,
             false,
             transaction_date,
         );
         assert_eq!(
             location,
             expected_url.as_str(),
-            "Expected redirect to adjusted window preset"
+            "Expected redirect to adjusted range preset"
         );
     }
 
@@ -560,23 +553,23 @@ mod tests {
     }
 
     #[track_caller]
-    fn assert_window_navigation_present(html: &Html) {
+    fn assert_range_navigation_present(html: &Html) {
         let nav_selector = Selector::parse("nav.pagination > ul.pagination").unwrap();
         let nav = html
             .select(&nav_selector)
             .next()
-            .expect("No window navigation found");
+            .expect("No range navigation found");
 
         let current_selector = Selector::parse("[aria-current='page']").unwrap();
         nav.select(&current_selector)
             .next()
-            .expect("Window nav should include aria-current for range label");
+            .expect("Range nav should include aria-current for range label");
     }
 
     #[track_caller]
-    fn assert_latest_link_present(html: &Html, preset: WindowPreset, latest_date: Date) {
-        let latest_range = compute_window_range(preset, latest_date);
-        let latest_href = window_anchor_query(preset, latest_range.end);
+    fn assert_latest_link_present(html: &Html, preset: RangePreset, latest_date: Date) {
+        let latest_range = compute_range(preset, latest_date);
+        let latest_href = range_anchor_query(preset, latest_range.end);
         let link_selector = Selector::parse("a").unwrap();
         let latest_link = html
             .select(&link_selector)
@@ -653,9 +646,9 @@ mod tests {
 
         let response = get_transactions_page(
             State(state),
-            Query(WindowQuery {
-                window: Some(WindowPreset::Month),
-                bucket: None,
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
                 summary: None,
                 anchor: Some(today),
             }),
@@ -735,9 +728,9 @@ mod tests {
 
         let response = get_transactions_page(
             State(state),
-            Query(WindowQuery {
-                window: Some(WindowPreset::Month),
-                bucket: None,
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
                 summary: None,
                 anchor: Some(today),
             }),

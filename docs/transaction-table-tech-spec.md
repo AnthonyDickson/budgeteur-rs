@@ -7,7 +7,7 @@ Capture non-obvious decisions and constraints in the transaction table view whil
 ## Baseline (Existing Implementation)
 
 - **Route handler**: `get_transactions_page` in `src/transaction/transactions_page.rs`.
-- **Navigation**: Windowed date-range navigation using query params `window`, `bucket`, `anchor`, and `summary`.
+- **Navigation**: Range-based navigation using query params `range`, `interval`, `anchor`, and `summary`.
 - **Ordering**: Date descending, then ID ascending for stability after edits.
 - **Rendering**: Server-side table rows using Maud templates.
 - **Actions**: Edit uses redirect URL; delete is HTMX row-local.
@@ -16,14 +16,14 @@ Capture non-obvious decisions and constraints in the transaction table view whil
 
 Grouping is layered rather than mutually exclusive:
 
-1. **Date Bucket (History-style, default)**
+1. **Date Interval (History-style, default)**
    - Group transactions by a fixed time range (week by default).
    - Each group header shows a date range (e.g., `2 Sep - 8 Sep 2024`).
    - Within a group, transactions are ordered by date descending then ID ascending.
-   - The smallest bucket size is weekly; daily buckets are not a supported mode.
+   - The smallest interval size is weekly; daily intervals are not a supported mode.
 
 2. **Category Summary (Grouped Totals, optional)**
-   - Within each date bucket, show a category breakdown list (tag totals + % of total income/expenses).
+   - Within each date interval, show a category breakdown list (tag totals + % of total income/expenses).
    - Items are ordered by amount descending (largest category first).
    - Include an “Other” row for `None` tags.
    - Each category row can expand to reveal transactions grouped by day using the same transaction row layout.
@@ -32,11 +32,11 @@ The UI can toggle the category summary layer on/off without changing the underly
 
 ## Non-Obvious Decisions
 
-### Window navigation vs grouping
+### Range navigation vs grouping
 
-- **Decision**: Window first, then group within the window.
-- **Rationale**: Keeps query cost low and preserves window navigation semantics; avoids multi-window group headers.
-- **Tradeoff**: A group can be split across windows only if the bucket is larger than the window; presets prevent this.
+- **Decision**: Range first, then group within the range.
+- **Rationale**: Keeps query cost low and preserves range navigation semantics; avoids multi-range group headers.
+- **Tradeoff**: A group can be split across ranges only if the interval is larger than the range; presets prevent this.
 
 ### Group ordering
 
@@ -45,17 +45,17 @@ The UI can toggle the category summary layer on/off without changing the underly
 
 ### Summary calculation scope
 
-- **Decision**: Category summary totals are computed from the transactions in the current window only.
+- **Decision**: Category summary totals are computed from the transactions in the current range only.
 - **Rationale**: Keeps summaries consistent with what the user sees without requiring full dataset scans.
 
-### Empty buckets
+### Empty intervals
 
-- **Decision**: Omit empty date buckets (no transactions) from the grouped views.
+- **Decision**: Omit empty date intervals (no transactions) from the grouped views.
 
 ### Group header totals
 
-- **Decision**: Bucket headers show total income and total expenses as separate figures.
-- **Decision**: Totals are computed from all transactions in the bucket, excluding transactions with excluded tags (shared tag filter used by dashboard + transaction table).
+- **Decision**: Interval headers show total income and total expenses as separate figures.
+- **Decision**: Totals are computed from all transactions in the interval, excluding transactions with excluded tags (shared tag filter used by dashboard + transaction table).
 - **Decision**: Use negative sign formatting for expenses; accounting-style formatting is planned for later.
 
 ### Excluded tag filter
@@ -76,7 +76,7 @@ The UI can toggle the category summary layer on/off without changing the underly
 - Prefer native HTML5 disclosure elements (`<details>`/`<summary>`) for collapsible UI.
 - Avoid custom JS unless a specific interaction is not achievable with native elements.
 - Preserve accessibility defaults (keyboard and screen reader affordances) when styling.
-- Grouping settings (date bucket period and tag grouping toggle) persist across page loads via query params.
+- Grouping settings (date interval period and tag grouping toggle) persist across page loads via query params.
 - Category summary sections are collapsed by default and reset to collapsed on page refresh.
 - Use a dedicated toggle control with a large tap target to avoid accidental expansion.
 - Ensure visible focus styling on the toggle control for keyboard users.
@@ -102,7 +102,7 @@ The UI can toggle the category summary layer on/off without changing the underly
 
 ## UI Structure (Grouped)
 
-### Date Bucket View
+### Date Interval View
 
 ```
 2 Sep - 8 Sep 2024                             $800.00
@@ -115,7 +115,7 @@ The UI can toggle the category summary layer on/off without changing the underly
   Entertainment                 $2.97
 ```
 
-### Category Summary View (expandable within each date bucket)
+### Category Summary View (expandable within each date interval)
 
 ```
 2 Sep - 8 Sep 2024                    $800.00  -$937.36
@@ -133,13 +133,13 @@ Home Expenses (expanded)
 06 Sep  Insurance                      $0.00
 ```
 
-- Potential enhancement: optionally group expanded transactions by day or month for long ranges (e.g., yearly buckets).
+- Potential enhancement: optionally group expanded transactions by day or month for long ranges (e.g., yearly intervals).
 
 ## Calculation Notes
 
-- **Date bucket boundaries**: Use ISO week (Mon-Sun) by default. This should be configurable later.
-- **Timezone**: Bucket calculations use the server timezone, which is assumed to match the user’s timezone (self-hosted).
-- **Range label format**: Always include the full four-digit year in date range labels for consistency across all bucket types.
+- **Date interval boundaries**: Use ISO week (Mon-Sun) by default. This should be configurable later.
+- **Timezone**: Interval calculations use the server timezone, which is assumed to match the user’s timezone (self-hosted).
+- **Range label format**: Always include the full four-digit year in date range labels for consistency across all interval types.
 - **Percentages**: Compute as `category_total / total_income * 100` for income categories and `category_total / total_expenses * 100` for expense categories, rounded to the nearest integer.
 - **Income vs expenses**: In category summary, split per tag into income and expense sections when both exist.
 
@@ -150,7 +150,7 @@ Home Expenses (expanded)
 
 ## Testing Expectations
 
-- Keep existing window navigation tests passing.
+- Keep existing range navigation tests passing.
 - Add tests for:
   - Group headers rendering with correct range labels.
   - Category summary rows with percent calculations.
@@ -166,44 +166,44 @@ Home Expenses (expanded)
 **Document Version:** 0.2
 **Last Updated:** 2026-02-11
 **Status:** Draft
-**Changes from v0.1:** Folded windowed navigation into baseline and updated category summary details
+**Changes from v0.1:** Folded range-based navigation into baseline and updated category summary details
 
-## Windowed Grouping + Date-Range Navigation
+## Range-based Grouping + Date-Range Navigation
 
 ### Date-Range Navigation Model
 
-- **Decision**: Use date-range windows aligned to bucket boundaries.
-- **Decision**: Window presets (and only supported window sizes): last week, last fortnight, last month, last quarter, last half year, last year.
-- **Decision**: Presets smaller than the selected bucket are disabled with a tooltip explaining why.
-- **Decision**: If the selected bucket is larger than the current window, auto-select the smallest preset that can contain the bucket.
-- **Decision**: Navigation moves by the window size (based on the preset), not by the bucket size.
+- **Decision**: Use date ranges aligned to interval boundaries.
+- **Decision**: Range presets (and only supported range sizes): last week, last fortnight, last month, last quarter, last half year, last year.
+- **Decision**: Presets smaller than the selected interval are disabled with a tooltip explaining why.
+- **Decision**: If the selected interval is larger than the current range, auto-select the smallest preset that can contain the interval.
+- **Decision**: Navigation moves by the range size (based on the preset), not by the interval size.
 
 ### Query Parameters
 
-- **Decision**: Encode the window preset and anchor date in query params; defaults apply when absent.
-- **Decision**: Encode the bucket preset in query params; default to weekly buckets when absent.
+- **Decision**: Encode the range preset and anchor date in query params; defaults apply when absent.
+- **Decision**: Encode the interval preset in query params; default to weekly intervals when absent.
 - **Decision**: Encode the category summary toggle as `summary=true` in query params.
 
-### Grouping Scope (Windowed)
+### Grouping Scope (Range-based)
 
-- **Decision**: Fetch a complete set of buckets within the selected date window, then group within that window.
-- **Decision**: Category summary totals are computed from the transactions within the current date window.
+- **Decision**: Fetch a complete set of intervals within the selected date range, then group within that range.
+- **Decision**: Category summary totals are computed from the transactions within the current date range.
 
-### Redirect Continuity (Windowed)
+### Redirect Continuity (Range-based)
 
-- **Decision**: Preserve window preset + anchor date + bucket + summary in `redirect_url`, excluding excluded-tag preferences.
+- **Decision**: Preserve range preset + anchor date + interval + summary in `redirect_url`, excluding excluded-tag preferences.
 
 ### Import Behavior
 
-- **Decision**: After importing transactions, advance the date window to include the latest data.
+- **Decision**: After importing transactions, advance the date range to include the latest data.
 
-### Accessibility (Windowed)
+### Accessibility (Range-based)
 
 - **Decision**: Ensure all table actions and controls are keyboard-navigable.
 
-### Potential Enhancements (Windowed)
+### Potential Enhancements (Range-based)
 
 - Persist grouping settings in user prefs; allow query params to override.
-- Add filtering scoped to the current date window.
+- Add filtering scoped to the current date range.
 - Move full-text search to a dedicated page to allow arbitrary time ranges.
-- After importing transactions, advance the date window to include the latest data.
+- After importing transactions, advance the date range to include the latest data.

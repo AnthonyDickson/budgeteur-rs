@@ -1,4 +1,4 @@
-//! Windowed date-range helpers for the transactions page.
+//! Date-range helpers for the transactions page.
 
 use rusqlite::Connection;
 use serde::Deserialize;
@@ -7,20 +7,20 @@ use time::{Date, Duration, Month};
 use crate::Error;
 
 #[derive(Deserialize)]
-pub struct WindowQuery {
-    /// The window preset to display.
-    pub window: Option<WindowPreset>,
-    /// The bucket preset to group transactions by.
-    pub bucket: Option<BucketPreset>,
+pub struct RangeQuery {
+    /// The range preset to display.
+    pub range: Option<RangePreset>,
+    /// The interval preset to group transactions by.
+    pub interval: Option<IntervalPreset>,
     /// Whether category summaries should be shown.
     pub summary: Option<bool>,
-    /// The anchor date that determines the current window.
+    /// The anchor date that determines the current range.
     pub anchor: Option<Date>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum WindowPreset {
+pub enum RangePreset {
     Week,
     Fortnight,
     Month,
@@ -31,7 +31,7 @@ pub enum WindowPreset {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum BucketPreset {
+pub enum IntervalPreset {
     Week,
     Fortnight,
     Month,
@@ -40,7 +40,7 @@ pub enum BucketPreset {
     Year,
 }
 
-impl BucketPreset {
+impl IntervalPreset {
     pub fn default_preset() -> Self {
         Self::Week
     }
@@ -79,7 +79,7 @@ impl BucketPreset {
     }
 }
 
-impl WindowPreset {
+impl RangePreset {
     pub fn default_preset() -> Self {
         Self::Month
     }
@@ -108,34 +108,34 @@ impl WindowPreset {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WindowRange {
+pub struct DateRange {
     pub start: Date,
     pub end: Date,
 }
 
 #[derive(Debug, Clone)]
-pub struct WindowNavigation {
-    pub range: WindowRange,
-    pub prev: Option<WindowNavLink>,
-    pub next: Option<WindowNavLink>,
+pub struct RangeNavigation {
+    pub range: DateRange,
+    pub prev: Option<RangeNavLink>,
+    pub next: Option<RangeNavLink>,
 }
 
-impl WindowNavigation {
-    pub fn new(preset: WindowPreset, range: WindowRange, bounds: Option<WindowRange>) -> Self {
+impl RangeNavigation {
+    pub fn new(preset: RangePreset, range: DateRange, bounds: Option<DateRange>) -> Self {
         let prev_anchor = range.start - Duration::days(1);
         let next_anchor = range.end + Duration::days(1);
-        let prev_range = compute_window_range(preset, prev_anchor);
-        let next_range = compute_window_range(preset, next_anchor);
+        let prev_range = compute_range(preset, prev_anchor);
+        let next_range = compute_range(preset, next_anchor);
 
         let (prev, next) = match bounds {
             Some(bounds) => {
                 let prev = if prev_range.end >= bounds.start {
-                    Some(WindowNavLink::new(preset, prev_range))
+                    Some(RangeNavLink::new(preset, prev_range))
                 } else {
                     None
                 };
                 let next = if next_range.start <= bounds.end {
-                    Some(WindowNavLink::new(preset, next_range))
+                    Some(RangeNavLink::new(preset, next_range))
                 } else {
                     None
                 };
@@ -149,21 +149,21 @@ impl WindowNavigation {
 }
 
 #[derive(Debug, Clone)]
-pub struct WindowNavLink {
-    pub range: WindowRange,
+pub struct RangeNavLink {
+    pub range: DateRange,
     pub href: String,
 }
 
-impl WindowNavLink {
-    pub fn new(preset: WindowPreset, range: WindowRange) -> Self {
+impl RangeNavLink {
+    pub fn new(preset: RangePreset, range: DateRange) -> Self {
         Self {
             range,
-            href: window_anchor_query(preset, range.end),
+            href: range_anchor_query(preset, range.end),
         }
     }
 }
 
-pub fn get_transaction_date_bounds(connection: &Connection) -> Result<Option<WindowRange>, Error> {
+pub fn get_transaction_date_bounds(connection: &Connection) -> Result<Option<DateRange>, Error> {
     let mut stmt = connection
         .prepare("SELECT MIN(date) as min_date, MAX(date) as max_date FROM \"transaction\"")?;
     let mut rows = stmt.query([])?;
@@ -174,68 +174,68 @@ pub fn get_transaction_date_bounds(connection: &Connection) -> Result<Option<Win
     let max_date: Option<Date> = row.get(1)?;
 
     match (min_date, max_date) {
-        (Some(start), Some(end)) => Ok(Some(WindowRange { start, end })),
+        (Some(start), Some(end)) => Ok(Some(DateRange { start, end })),
         _ => Ok(None),
     }
 }
 
-pub fn compute_window_range(preset: WindowPreset, anchor_date: Date) -> WindowRange {
+pub fn compute_range(preset: RangePreset, anchor_date: Date) -> DateRange {
     match preset {
-        WindowPreset::Week => week_bounds(anchor_date),
-        WindowPreset::Fortnight => fortnight_bounds(anchor_date),
-        WindowPreset::Month => month_bounds(anchor_date.year(), anchor_date.month()),
-        WindowPreset::Quarter => quarter_bounds(anchor_date.year(), anchor_date.month()),
-        WindowPreset::HalfYear => half_year_bounds(anchor_date.year(), anchor_date.month()),
-        WindowPreset::Year => year_bounds(anchor_date.year()),
+        RangePreset::Week => week_bounds(anchor_date),
+        RangePreset::Fortnight => fortnight_bounds(anchor_date),
+        RangePreset::Month => month_bounds(anchor_date.year(), anchor_date.month()),
+        RangePreset::Quarter => quarter_bounds(anchor_date.year(), anchor_date.month()),
+        RangePreset::HalfYear => half_year_bounds(anchor_date.year(), anchor_date.month()),
+        RangePreset::Year => year_bounds(anchor_date.year()),
     }
 }
 
-pub fn compute_bucket_range(preset: BucketPreset, anchor_date: Date) -> WindowRange {
+pub fn compute_interval_range(preset: IntervalPreset, anchor_date: Date) -> DateRange {
     match preset {
-        BucketPreset::Week => week_bounds(anchor_date),
-        BucketPreset::Fortnight => fortnight_bounds(anchor_date),
-        BucketPreset::Month => month_bounds(anchor_date.year(), anchor_date.month()),
-        BucketPreset::Quarter => quarter_bounds(anchor_date.year(), anchor_date.month()),
-        BucketPreset::HalfYear => half_year_bounds(anchor_date.year(), anchor_date.month()),
-        BucketPreset::Year => year_bounds(anchor_date.year()),
+        IntervalPreset::Week => week_bounds(anchor_date),
+        IntervalPreset::Fortnight => fortnight_bounds(anchor_date),
+        IntervalPreset::Month => month_bounds(anchor_date.year(), anchor_date.month()),
+        IntervalPreset::Quarter => quarter_bounds(anchor_date.year(), anchor_date.month()),
+        IntervalPreset::HalfYear => half_year_bounds(anchor_date.year(), anchor_date.month()),
+        IntervalPreset::Year => year_bounds(anchor_date.year()),
     }
 }
 
-pub fn window_preset_can_contain_bucket(window: WindowPreset, bucket: BucketPreset) -> bool {
-    window.size_rank() >= bucket.size_rank()
+pub fn range_preset_can_contain_interval(range: RangePreset, interval: IntervalPreset) -> bool {
+    range.size_rank() >= interval.size_rank()
 }
 
-pub fn smallest_window_for_bucket(bucket: BucketPreset) -> WindowPreset {
-    match bucket {
-        BucketPreset::Week => WindowPreset::Week,
-        BucketPreset::Fortnight => WindowPreset::Fortnight,
-        BucketPreset::Month => WindowPreset::Month,
-        BucketPreset::Quarter => WindowPreset::Quarter,
-        BucketPreset::HalfYear => WindowPreset::HalfYear,
-        BucketPreset::Year => WindowPreset::Year,
+pub fn smallest_range_for_interval(interval: IntervalPreset) -> RangePreset {
+    match interval {
+        IntervalPreset::Week => RangePreset::Week,
+        IntervalPreset::Fortnight => RangePreset::Fortnight,
+        IntervalPreset::Month => RangePreset::Month,
+        IntervalPreset::Quarter => RangePreset::Quarter,
+        IntervalPreset::HalfYear => RangePreset::HalfYear,
+        IntervalPreset::Year => RangePreset::Year,
     }
 }
 
-pub fn window_range_label(range: WindowRange) -> String {
+pub fn range_label(range: DateRange) -> String {
     let start = format_date_label(range.start);
     let end = format_date_label(range.end);
 
     format!("{start} - {end}")
 }
 
-pub fn window_anchor_query(preset: WindowPreset, anchor: Date) -> String {
-    format!("window={}&anchor={}", preset.as_query_value(), anchor)
+pub fn range_anchor_query(preset: RangePreset, anchor: Date) -> String {
+    format!("range={}&anchor={}", preset.as_query_value(), anchor)
 }
 
-fn week_bounds(anchor_date: Date) -> WindowRange {
+fn week_bounds(anchor_date: Date) -> DateRange {
     let weekday_number = anchor_date.weekday().number_from_monday() as i64;
     let start = anchor_date - Duration::days(weekday_number - 1);
     let end = start + Duration::days(6);
 
-    WindowRange { start, end }
+    DateRange { start, end }
 }
 
-fn fortnight_bounds(anchor_date: Date) -> WindowRange {
+fn fortnight_bounds(anchor_date: Date) -> DateRange {
     let year = anchor_date.year();
     let month = anchor_date.month();
     let day = anchor_date.day();
@@ -246,22 +246,22 @@ fn fortnight_bounds(anchor_date: Date) -> WindowRange {
     };
     let start_day = if day <= 14 { 1 } else { 15 };
 
-    WindowRange {
+    DateRange {
         start: Date::from_calendar_date(year, month, start_day)
             .expect("invalid fortnight start date"),
         end: Date::from_calendar_date(year, month, end_day).expect("invalid fortnight end date"),
     }
 }
 
-fn month_bounds(year: i32, month: Month) -> WindowRange {
+fn month_bounds(year: i32, month: Month) -> DateRange {
     let start = Date::from_calendar_date(year, month, 1).expect("invalid month start date");
     let end = Date::from_calendar_date(year, month, last_day_of_month(year, month))
         .expect("invalid month end date");
 
-    WindowRange { start, end }
+    DateRange { start, end }
 }
 
-fn quarter_bounds(year: i32, month: Month) -> WindowRange {
+fn quarter_bounds(year: i32, month: Month) -> DateRange {
     let month_number = month_number(month);
     let quarter_start = ((month_number - 1) / 3) * 3 + 1;
     let quarter_end = quarter_start + 2;
@@ -269,14 +269,14 @@ fn quarter_bounds(year: i32, month: Month) -> WindowRange {
     let start_month = month_from_number(quarter_start);
     let end_month = month_from_number(quarter_end);
 
-    WindowRange {
+    DateRange {
         start: Date::from_calendar_date(year, start_month, 1).expect("invalid quarter start date"),
         end: Date::from_calendar_date(year, end_month, last_day_of_month(year, end_month))
             .expect("invalid quarter end date"),
     }
 }
 
-fn half_year_bounds(year: i32, month: Month) -> WindowRange {
+fn half_year_bounds(year: i32, month: Month) -> DateRange {
     let month_number = month_number(month);
     let (start_month, end_month) = if month_number <= 6 {
         (Month::January, Month::June)
@@ -284,7 +284,7 @@ fn half_year_bounds(year: i32, month: Month) -> WindowRange {
         (Month::July, Month::December)
     };
 
-    WindowRange {
+    DateRange {
         start: Date::from_calendar_date(year, start_month, 1)
             .expect("invalid half-year start date"),
         end: Date::from_calendar_date(year, end_month, last_day_of_month(year, end_month))
@@ -292,8 +292,8 @@ fn half_year_bounds(year: i32, month: Month) -> WindowRange {
     }
 }
 
-fn year_bounds(year: i32) -> WindowRange {
-    WindowRange {
+fn year_bounds(year: i32) -> DateRange {
+    DateRange {
         start: Date::from_calendar_date(year, Month::January, 1).expect("invalid year start date"),
         end: Date::from_calendar_date(year, Month::December, 31).expect("invalid year end date"),
     }

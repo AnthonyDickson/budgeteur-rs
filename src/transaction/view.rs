@@ -17,8 +17,8 @@ use crate::{
 
 use super::{
     grouping::{DayGroupRef, group_transactions_by_day},
-    models::{CategorySummaryKind, DateBucket, TransactionTableRow, TransactionsViewOptions},
-    window::{BucketPreset, WindowNavLink, WindowNavigation, WindowPreset, window_range_label},
+    models::{CategorySummaryKind, DateInterval, TransactionTableRow, TransactionsViewOptions},
+    range::{IntervalPreset, RangeNavLink, RangeNavigation, RangePreset, range_label},
 };
 
 /// The max number of graphemes to display in the transaction table rows before
@@ -26,9 +26,9 @@ use super::{
 const MAX_DESCRIPTION_GRAPHEMES: usize = 32;
 
 pub(crate) fn transactions_view(
-    grouped_transactions: Vec<DateBucket>,
-    window_nav: &WindowNavigation,
-    latest_link: Option<&WindowNavLink>,
+    grouped_transactions: Vec<DateInterval>,
+    range_nav: &RangeNavigation,
+    latest_link: Option<&RangeNavLink>,
     has_any_transactions: bool,
     tags_with_status: &[TagWithExclusion],
     redirect_url: &str,
@@ -43,7 +43,7 @@ pub(crate) fn transactions_view(
     let summary_has_rows = options.show_category_summary
         && grouped_transactions
             .iter()
-            .any(|bucket| !bucket.summary.is_empty());
+            .any(|interval| !interval.summary.is_empty());
     let show_empty_state =
         transactions_empty || (options.show_category_summary && !summary_has_rows);
     let empty_message = if options.show_category_summary && !summary_has_rows && !transactions_empty
@@ -91,10 +91,10 @@ pub(crate) fn transactions_view(
                 div class="dark:bg-gray-800"
                 {
                     @if has_any_transactions {
-                        (window_navigation_html(
-                            window_nav,
+                        (range_navigation_html(
+                            range_nav,
                             latest_link,
-                            options.bucket_preset,
+                            options.interval_preset,
                             options.show_category_summary,
                             &transactions_page_route,
                         ))
@@ -103,8 +103,8 @@ pub(crate) fn transactions_view(
                     div class="mt-3 border-t border-gray-200 dark:border-gray-700" {}
 
                     (control_cluster_html(
-                        options.window_preset,
-                        options.bucket_preset,
+                        options.range_preset,
+                        options.interval_preset,
                         options.show_category_summary,
                         options.anchor_date,
                         &transactions_page_route,
@@ -142,13 +142,13 @@ pub(crate) fn transactions_view(
 
                         tbody
                         {
-                            @for bucket in grouped_transactions {
-                                (bucket_header_row_view(&bucket))
+                            @for interval in grouped_transactions {
+                                (interval_header_row_view(&interval))
 
                                 @if options.show_category_summary {
-                                    (category_summary_view(&bucket))
+                                    (category_summary_view(&interval))
                                 } @else {
-                                    @for day in &bucket.days {
+                                    @for day in &interval.days {
                                         (day_header_row_view(day.date))
 
                                         @for transaction_row in &day.transactions {
@@ -174,10 +174,10 @@ pub(crate) fn transactions_view(
                     }
 
                     @if has_any_transactions {
-                        (window_navigation_html(
-                            window_nav,
+                        (range_navigation_html(
+                            range_nav,
                             latest_link,
-                            options.bucket_preset,
+                            options.interval_preset,
                             options.show_category_summary,
                             &transactions_page_route,
                         ))
@@ -195,10 +195,10 @@ pub(crate) fn transactions_view(
     base("Transactions", &[], &content)
 }
 
-fn window_navigation_html(
-    window_nav: &WindowNavigation,
-    latest_link: Option<&WindowNavLink>,
-    bucket_preset: BucketPreset,
+fn range_navigation_html(
+    range_nav: &RangeNavigation,
+    latest_link: Option<&RangeNavLink>,
+    interval_preset: IntervalPreset,
     show_category_summary: bool,
     transactions_page_route: &Uri,
 ) -> Markup {
@@ -207,42 +207,42 @@ fn window_navigation_html(
     } else {
         ""
     };
-    let current_label = window_range_label(window_nav.range);
+    let current_label = range_label(range_nav.range);
     let row_classes = if latest_link.is_some() {
         "grid-rows-2 gap-y-0.5"
     } else {
         "grid-rows-1"
     };
-    let prev_link = window_nav.prev.as_ref().map(|prev| {
+    let prev_link = range_nav.prev.as_ref().map(|prev| {
         (
-            window_range_label(prev.range),
+            range_label(prev.range),
             format!(
-                "{route}?{href}&bucket={bucket}{summary}",
+                "{route}?{href}&interval={interval}{summary}",
                 route = transactions_page_route,
                 href = prev.href,
-                bucket = bucket_preset.as_query_value(),
+                interval = interval_preset.as_query_value(),
                 summary = summary_param
             ),
         )
     });
-    let next_link = window_nav.next.as_ref().map(|next| {
+    let next_link = range_nav.next.as_ref().map(|next| {
         (
-            window_range_label(next.range),
+            range_label(next.range),
             format!(
-                "{route}?{href}&bucket={bucket}{summary}",
+                "{route}?{href}&interval={interval}{summary}",
                 route = transactions_page_route,
                 href = next.href,
-                bucket = bucket_preset.as_query_value(),
+                interval = interval_preset.as_query_value(),
                 summary = summary_param
             ),
         )
     });
     let latest_href = latest_link.map(|latest| {
         format!(
-            "{route}?{href}&bucket={bucket}{summary}",
+            "{route}?{href}&interval={interval}{summary}",
             route = transactions_page_route,
             href = latest.href,
-            bucket = bucket_preset.as_query_value(),
+            interval = interval_preset.as_query_value(),
             summary = summary_param
         )
     });
@@ -349,13 +349,13 @@ fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -
     }
 }
 
-fn bucket_header_row_view(bucket: &DateBucket) -> Markup {
-    let label = window_range_label(bucket.range);
-    let income = format_currency(bucket.totals.income);
-    let expenses = format_currency(bucket.totals.expenses);
+fn interval_header_row_view(interval: &DateInterval) -> Markup {
+    let label = range_label(interval.range);
+    let income = format_currency(interval.totals.income);
+    let expenses = format_currency(interval.totals.expenses);
 
     html! {
-        tr class="bg-gray-50 dark:bg-gray-700" data-bucket-header="true"
+        tr class="bg-gray-50 dark:bg-gray-700" data-interval-header="true"
         {
             td colspan="5" class="px-6 py-3"
             {
@@ -373,8 +373,8 @@ fn bucket_header_row_view(bucket: &DateBucket) -> Markup {
     }
 }
 
-fn category_summary_view(bucket: &DateBucket) -> Markup {
-    if bucket.summary.is_empty() {
+fn category_summary_view(interval: &DateInterval) -> Markup {
+    if interval.summary.is_empty() {
         return html! {};
     }
 
@@ -386,7 +386,7 @@ fn category_summary_view(bucket: &DateBucket) -> Markup {
         grouped_days: Vec<DayGroupRef<'a>>,
     }
 
-    let summaries = bucket
+    let summaries = interval
         .summary
         .iter()
         .map(|category| {
@@ -505,8 +505,8 @@ fn month_abbrev(month: Month) -> &'static str {
 }
 
 fn control_cluster_html(
-    window_preset: WindowPreset,
-    bucket_preset: BucketPreset,
+    range_preset: RangePreset,
+    interval_preset: IntervalPreset,
     show_category_summary: bool,
     anchor_date: Date,
     transactions_page_route: &Uri,
@@ -526,25 +526,25 @@ fn control_cluster_html(
     } else {
         "inline-flex h-3 w-3 rounded-full bg-gray-400"
     };
-    let window_links = build_window_links(
-        window_preset,
-        bucket_preset,
+    let range_links = build_range_links(
+        range_preset,
+        interval_preset,
         anchor_date,
         summary_param,
         transactions_page_route,
     );
-    let bucket_links = build_bucket_links(
-        window_preset,
-        bucket_preset,
+    let interval_links = build_interval_links(
+        range_preset,
+        interval_preset,
         anchor_date,
         summary_param,
         transactions_page_route,
     );
     let summary_href = format!(
-        "{route}?window={window}&bucket={bucket}&anchor={anchor}{summary_param}",
+        "{route}?range={range}&interval={interval}&anchor={anchor}{summary_param}",
         route = transactions_page_route,
-        window = window_preset.as_query_value(),
-        bucket = bucket_preset.as_query_value(),
+        range = range_preset.as_query_value(),
+        interval = interval_preset.as_query_value(),
         anchor = anchor_date,
         summary_param = summary_toggle_param
     );
@@ -559,10 +559,15 @@ fn control_cluster_html(
         {
             div class="flex flex-wrap items-center gap-3"
             {
-                span class="font-semibold text-gray-900 dark:text-white min-w-[5.5rem]" { "Window:" }
+                span
+                    class="font-semibold text-gray-900 dark:text-white min-w-[5.5rem]"
+                    title="The overall date span shown in the table."
+                {
+                    "Range:"
+                }
                 div class="flex flex-wrap items-center gap-2"
                 {
-                    @for link in window_links {
+                    @for link in range_links {
                         @match link.state {
                             ControlLinkState::Active => {
                             span class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -571,7 +576,7 @@ fn control_cluster_html(
                             ControlLinkState::Disabled => {
                             span
                                 class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded text-gray-400 dark:text-gray-500 cursor-not-allowed"
-                                title="Select a smaller bucket size or a larger window to enable this option."
+                                title="Select a smaller interval or a larger range to enable this option."
                             { (link.label) }
                             }
                             ControlLinkState::Enabled => {
@@ -587,10 +592,15 @@ fn control_cluster_html(
 
             div class="flex flex-wrap items-center gap-3"
             {
-                span class="font-semibold text-gray-900 dark:text-white min-w-[5.5rem]" { "Bucket:" }
+                span
+                    class="font-semibold text-gray-900 dark:text-white min-w-[5.5rem]"
+                    title="How transactions are grouped within the range."
+                {
+                    "Interval:"
+                }
                 div class="flex flex-wrap items-center gap-2"
                 {
-                    @for link in bucket_links {
+                    @for link in interval_links {
                         @match link.state {
                             ControlLinkState::Active => {
                             span class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -599,7 +609,7 @@ fn control_cluster_html(
                             ControlLinkState::Disabled => {
                             span
                                 class="inline-flex min-w-[5rem] items-center justify-center px-2 py-1 rounded text-gray-400 dark:text-gray-500 cursor-not-allowed"
-                                title="Select a larger window to enable this bucket size."
+                                title="Select a larger range to enable this interval."
                             { (link.label) }
                             }
                             ControlLinkState::Enabled => {
@@ -624,14 +634,14 @@ fn control_cluster_html(
     }
 }
 
-fn window_preset_label(preset: WindowPreset) -> &'static str {
+fn range_preset_label(preset: RangePreset) -> &'static str {
     match preset {
-        WindowPreset::Week => "Week",
-        WindowPreset::Fortnight => "Fortnight",
-        WindowPreset::Month => "Month",
-        WindowPreset::Quarter => "Quarter",
-        WindowPreset::HalfYear => "Half-year",
-        WindowPreset::Year => "Year",
+        RangePreset::Week => "Week",
+        RangePreset::Fortnight => "Fortnight",
+        RangePreset::Month => "Month",
+        RangePreset::Quarter => "Quarter",
+        RangePreset::HalfYear => "Half-year",
+        RangePreset::Year => "Year",
     }
 }
 
@@ -648,38 +658,39 @@ enum ControlLinkState {
     Disabled,
 }
 
-fn build_window_links(
-    window_preset: WindowPreset,
-    bucket_preset: BucketPreset,
+fn build_range_links(
+    range_preset: RangePreset,
+    interval_preset: IntervalPreset,
     anchor_date: Date,
     summary_param: &str,
     transactions_page_route: &Uri,
 ) -> Vec<ControlLink> {
-    let window_presets = [
-        WindowPreset::Week,
-        WindowPreset::Fortnight,
-        WindowPreset::Month,
-        WindowPreset::Quarter,
-        WindowPreset::HalfYear,
-        WindowPreset::Year,
+    let range_presets = [
+        RangePreset::Week,
+        RangePreset::Fortnight,
+        RangePreset::Month,
+        RangePreset::Quarter,
+        RangePreset::HalfYear,
+        RangePreset::Year,
     ];
 
-    window_presets
+    range_presets
         .iter()
         .map(|preset| {
-            let disabled = !super::window::window_preset_can_contain_bucket(*preset, bucket_preset);
+            let disabled =
+                !super::range::range_preset_can_contain_interval(*preset, interval_preset);
             let href = format!(
-                "{route}?window={window}&bucket={bucket}&anchor={anchor}{summary_param}",
+                "{route}?range={range}&interval={interval}&anchor={anchor}{summary_param}",
                 route = transactions_page_route,
-                window = preset.as_query_value(),
-                bucket = bucket_preset.as_query_value(),
+                range = preset.as_query_value(),
+                interval = interval_preset.as_query_value(),
                 anchor = anchor_date,
                 summary_param = summary_param
             );
-            let state = link_state(*preset == window_preset, disabled);
+            let state = link_state(*preset == range_preset, disabled);
 
             ControlLink {
-                label: window_preset_label(*preset),
+                label: range_preset_label(*preset),
                 href,
                 state,
             }
@@ -687,35 +698,35 @@ fn build_window_links(
         .collect()
 }
 
-fn build_bucket_links(
-    window_preset: WindowPreset,
-    bucket_preset: BucketPreset,
+fn build_interval_links(
+    range_preset: RangePreset,
+    interval_preset: IntervalPreset,
     anchor_date: Date,
     summary_param: &str,
     transactions_page_route: &Uri,
 ) -> Vec<ControlLink> {
-    let bucket_presets = [
-        BucketPreset::Week,
-        BucketPreset::Fortnight,
-        BucketPreset::Month,
-        BucketPreset::Quarter,
-        BucketPreset::HalfYear,
-        BucketPreset::Year,
+    let interval_presets = [
+        IntervalPreset::Week,
+        IntervalPreset::Fortnight,
+        IntervalPreset::Month,
+        IntervalPreset::Quarter,
+        IntervalPreset::HalfYear,
+        IntervalPreset::Year,
     ];
 
-    bucket_presets
+    interval_presets
         .iter()
         .map(|preset| {
-            let disabled = !super::window::window_preset_can_contain_bucket(window_preset, *preset);
+            let disabled = !super::range::range_preset_can_contain_interval(range_preset, *preset);
             let href = format!(
-                "{route}?window={window}&bucket={bucket}&anchor={anchor}{summary_param}",
+                "{route}?range={range}&interval={interval}&anchor={anchor}{summary_param}",
                 route = transactions_page_route,
-                window = window_preset.as_query_value(),
-                bucket = preset.as_query_value(),
+                range = range_preset.as_query_value(),
+                interval = preset.as_query_value(),
                 anchor = anchor_date,
                 summary_param = summary_param
             );
-            let state = link_state(*preset == bucket_preset, disabled);
+            let state = link_state(*preset == interval_preset, disabled);
 
             ControlLink {
                 label: preset.label(),

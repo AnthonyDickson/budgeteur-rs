@@ -62,7 +62,7 @@ Shared styles (from `src/html.rs`) provide the base look:
    - Formatted with `format_currency` for locale-style currency.
 2. **Date (visually hidden)**
    - The date column is present for accessibility but hidden visually (`sr-only`).
-   - Date context is provided by the date bucket and day headers in grouped views.
+   - Date context is provided by the date interval and day headers in grouped views.
 3. **Description**
    - Truncated to 32 graphemes with ellipsis to prevent table overflow.
    - Full description available via `title` tooltip when truncated.
@@ -95,17 +95,17 @@ The table will support grouped views inspired by the History screens. These view
 
 ### Grouping Modes
 
-1. **Date Bucket (History-style, default)**
-   - Groups transactions into week buckets with a range label.
-   - Within each bucket, transactions are grouped by day.
-   - The smallest bucket size is weekly; daily buckets are not a supported mode.
+1. **Date Interval (History-style, default)**
+   - Groups transactions into week intervals with a range label.
+   - Within each interval, transactions are grouped by day.
+   - The smallest interval size is weekly; daily intervals are not a supported mode.
 
-2. **Category Summary (optional, layered on date buckets)**
-   - Within each date bucket, show a category/tag summary list.
+2. **Category Summary (optional, layered on date intervals)**
+   - Within each date interval, show a category/tag summary list.
    - Each category can be expanded to reveal a flat list of its transactions (date shown per row).
    - Includes percent-of-total indicators and an “Other” row when needed.
 
-### Date Bucket Layout
+### Date Interval Layout
 
 ```
 2 Sep - 8 Sep 2024                             $800.00
@@ -118,16 +118,16 @@ The table will support grouped views inspired by the History screens. These view
   Entertainment                 $2.97
 ```
 
-- Date range labels always include the full four-digit year for consistency across all bucket types.
+- Date range labels always include the full four-digit year for consistency across all interval types.
 - The per-row date cell remains in the DOM but is visually hidden for accessibility.
 
 ### Group Header Totals
 
-- Each date bucket header displays two figures: total income and total expenses.
-- Totals are computed from all transactions in the bucket, excluding transactions that match excluded tags (shared with the dashboard).
+- Each date interval header displays two figures: total income and total expenses.
+- Totals are computed from all transactions in the interval, excluding transactions that match excluded tags (shared with the dashboard).
 - Expenses use the standard negative sign formatting; accounting-style formatting is planned for later.
 
-### Category Summary Layout (expandable within each date bucket)
+### Category Summary Layout (expandable within each date interval)
 
 ```
 2 Sep - 8 Sep 2024                    $800.00  -$937.36
@@ -144,35 +144,35 @@ Home Expenses (expanded)
 07 Sep  Utilities                      $42.85
 06 Sep  Insurance                      $0.00
 
-- Potential enhancement: optionally group expanded transactions by day or month for long ranges (e.g., yearly buckets).
+- Potential enhancement: optionally group expanded transactions by day or month for long ranges (e.g., yearly intervals).
 ```
 
 ### Interaction Notes
 
 - The grouping view preserves existing actions (Edit/Delete) when rows are transactional.
-- Date-range navigation moves across fixed windows; grouping happens within the current window.
-- Empty date buckets (weeks with no transactions) are omitted from grouped views.
-- Grouping settings (date bucket period and tag grouping toggle) persist across page loads.
+- Date-range navigation moves across fixed ranges; grouping happens within the current range.
+- Empty date intervals (weeks with no transactions) are omitted from grouped views.
+- Grouping settings (date interval period and tag grouping toggle) persist across page loads.
 - Category summary sections are collapsed by default and reset to collapsed on page refresh.
 - Use a dedicated toggle control with a large tap target to avoid accidental expansion.
 - Focus styles on the toggle control must be visible for keyboard users.
-- Provide bucket size controls (week/fortnight/month/quarter/half-year/year) to change grouping period.
-- Group the window preset, date bucket period, and tag grouping toggle together as a single control cluster.
+- Provide interval size controls (week/fortnight/month/quarter/half-year/year) to change grouping period.
+- Group the range preset, date interval period, and tag grouping toggle together as a single control cluster.
 
-### Date-Range Navigation (Windowed)
+### Date-Range Navigation (Range-based)
 
 ```
 Previous Range    Current Range Label    Next Range
 ```
 
-- Navigation moves backward/forward by a fixed date window aligned to bucket boundaries (no partial buckets).
-- Window presets (and only supported window sizes): last week, last fortnight, last month, last quarter, last half year, last year.
-- Presets smaller than the selected bucket are disabled with a tooltip explaining why.
-- If the selected bucket is larger than the current window, auto-select the smallest preset that can contain the bucket.
-- Current range label reflects the active window (full four-digit years).
-- Date-range navigation loads a complete set of buckets within the selected window (no bucket splitting).
+- Navigation moves backward/forward by a fixed date range aligned to interval boundaries (no partial intervals).
+- Range presets (and only supported range sizes): last week, last fortnight, last month, last quarter, last half year, last year.
+- Presets smaller than the selected interval are disabled with a tooltip explaining why.
+- If the selected interval is larger than the current range, auto-select the smallest preset that can contain the interval.
+- Current range label reflects the active range (full four-digit years).
+- Date-range navigation loads a complete set of intervals within the selected range (no interval splitting).
 
-### Empty State (Windowed)
+### Empty State (Range-based)
 
 ```
 | Amount | Date | Description | Tags | Actions |
@@ -201,8 +201,8 @@ Previous Range    Current Range Label    Next Range
 ## Potential Enhancements
 
 - Persist grouping settings in user preferences; allow query params to override.
-- After importing transactions, advance the date window to include the latest data.
-- Add filtering scoped to the current date window.
+- After importing transactions, advance the date range to include the latest data.
+- Add filtering scoped to the current date range.
 - Move full-text search to a dedicated page to allow arbitrary time ranges.
 
 ## Source of Truth
@@ -215,4 +215,4 @@ Previous Range    Current Range Label    Next Range
 **Document Version:** 1.2
 **Last Updated:** 2026-02-11
 **Status:** In Progress
-**Changes from v1.1:** Folded windowed navigation into baseline; updated empty state copy
+**Changes from v1.1:** Folded range-based navigation into baseline; updated empty state copy

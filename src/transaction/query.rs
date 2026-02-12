@@ -4,7 +4,7 @@ use rusqlite::Connection;
 
 use crate::{Error, tag::TagName};
 
-use super::{models::Transaction, window::WindowRange};
+use super::{models::Transaction, range::DateRange};
 
 /// The order to sort transactions in a query.
 pub(crate) enum SortOrder {
@@ -15,10 +15,10 @@ pub(crate) enum SortOrder {
     Descending,
 }
 
-/// Get transactions with sorting by date in a windowed date range.
+/// Get transactions with sorting by date in a range.
 ///
 /// # Arguments
-/// * `window_range` - Inclusive date range of transactions to return
+/// * `range` - Inclusive date range of transactions to return
 /// * `sort_order` - Sort direction for date field
 /// * `connection` - Database connection reference
 ///
@@ -28,7 +28,7 @@ pub(crate) enum SortOrder {
 /// - SQL query preparation or execution fails
 /// - Transaction row mapping fails
 pub(crate) fn get_transaction_table_rows_in_range(
-    window_range: WindowRange,
+    range: DateRange,
     sort_order: SortOrder,
     connection: &Connection,
 ) -> Result<Vec<Transaction>, Error> {
@@ -48,23 +48,20 @@ pub(crate) fn get_transaction_table_rows_in_range(
 
     connection
         .prepare(&query)?
-        .query_map(
-            [window_range.start.to_string(), window_range.end.to_string()],
-            |row| {
-                let tag_name = row
-                    .get::<usize, Option<String>>(4)?
-                    .map(|some_tag_name| TagName::new_unchecked(&some_tag_name));
+        .query_map([range.start.to_string(), range.end.to_string()], |row| {
+            let tag_name = row
+                .get::<usize, Option<String>>(4)?
+                .map(|some_tag_name| TagName::new_unchecked(&some_tag_name));
 
-                Ok(Transaction {
-                    id: row.get(0)?,
-                    amount: row.get(1)?,
-                    date: row.get(2)?,
-                    description: row.get(3)?,
-                    tag_name,
-                    tag_id: row.get(5)?,
-                })
-            },
-        )?
+            Ok(Transaction {
+                id: row.get(0)?,
+                amount: row.get(1)?,
+                date: row.get(2)?,
+                description: row.get(3)?,
+                tag_name,
+                tag_id: row.get(5)?,
+            })
+        })?
         .map(|transaction_result| transaction_result.map_err(Error::SqlError))
         .collect()
 }
@@ -78,7 +75,7 @@ mod tests {
         db::initialize,
         transaction::{
             Transaction, TransactionId, create_transaction,
-            models::Transaction as TableTransaction, window::WindowRange,
+            models::Transaction as TableTransaction, range::DateRange,
         },
     };
 
@@ -106,12 +103,11 @@ mod tests {
             create_transaction(transaction_builder, &conn).unwrap();
         }
 
-        let window_range = WindowRange {
+        let range = DateRange {
             start: today - Duration::days(4),
             end: today,
         };
-        let got =
-            get_transaction_table_rows_in_range(window_range, SortOrder::Ascending, &conn).unwrap();
+        let got = get_transaction_table_rows_in_range(range, SortOrder::Ascending, &conn).unwrap();
 
         assert_eq!(got.len(), 5, "got {} transactions, want 5", got.len());
     }
@@ -142,11 +138,11 @@ mod tests {
 
         want.sort_by(|a, b| a.date.cmp(&b.date).then(a.id.cmp(&b.id)));
 
-        let window_range = WindowRange {
+        let range = DateRange {
             start: today - Duration::days(1),
             end: today,
         };
-        let got = get_transaction_table_rows_in_range(window_range, SortOrder::Ascending, &conn)
+        let got = get_transaction_table_rows_in_range(range, SortOrder::Ascending, &conn)
             .expect("Could not query transactions");
 
         assert_eq!(want.len(), 6, "expected 6 transactions, got {}", want.len());

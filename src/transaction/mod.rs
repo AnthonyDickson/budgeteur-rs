@@ -16,11 +16,11 @@ mod form;
 mod grouping;
 mod models;
 mod query;
+mod range;
 #[cfg(test)]
 mod test_utils;
 mod transactions_page;
 mod view;
-mod window;
 
 pub use core::{
     Transaction, TransactionBuilder, TransactionId, create_transaction_table, get_transaction,

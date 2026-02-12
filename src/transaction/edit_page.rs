@@ -231,7 +231,7 @@ mod tests {
             local_timezone: "Etc/UTC".to_owned(),
             db_connection: Arc::new(Mutex::new(conn)),
         };
-        let redirect_url = "/transactions?window=month&anchor=2025-10-05".to_owned();
+        let redirect_url = "/transactions?range=month&anchor=2025-10-05".to_owned();
 
         let response = get_edit_transaction_page(
             State(state),
