@@ -12,10 +12,11 @@ use crate::{
         TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
     },
     navigation::NavBar,
+    tag::{ExcludedTagsViewConfig, TagWithExclusion, excluded_tags_controls},
 };
 
 use super::{
-    grouping::group_transactions_by_day,
+    grouping::{DayGroupRef, group_transactions_by_day},
     models::{CategorySummaryKind, DateBucket, TransactionTableRow, TransactionsViewOptions},
     window::{BucketPreset, WindowNavLink, WindowNavigation, WindowPreset, window_range_label},
 };
@@ -29,6 +30,8 @@ pub(crate) fn transactions_view(
     window_nav: &WindowNavigation,
     latest_link: Option<&WindowNavLink>,
     has_any_transactions: bool,
+    tags_with_status: &[TagWithExclusion],
+    redirect_url: &str,
     options: TransactionsViewOptions,
 ) -> Markup {
     let create_transaction_route = Uri::from_static(endpoints::NEW_TRANSACTION_VIEW);
@@ -38,7 +41,9 @@ pub(crate) fn transactions_view(
     // Cache this result so it can be accessed after `grouped_transactions` is moved by for loop.
     let transactions_empty = grouped_transactions.is_empty();
     let summary_has_rows = options.show_category_summary
-        && grouped_transactions.iter().any(|bucket| !bucket.summary.is_empty());
+        && grouped_transactions
+            .iter()
+            .any(|bucket| !bucket.summary.is_empty());
     let show_empty_state =
         transactions_empty || (options.show_category_summary && !summary_has_rows);
     let empty_message = if options.show_category_summary && !summary_has_rows && !transactions_empty
@@ -47,13 +52,26 @@ pub(crate) fn transactions_view(
     } else {
         "No transactions in this range."
     };
+    let excluded_tags_view = excluded_tags_controls(
+        tags_with_status,
+        ExcludedTagsViewConfig {
+            heading: "Filter Out Tags",
+            description: "Exclude transactions with these tags from summary totals and percentages:",
+            endpoint: endpoints::TRANSACTIONS_EXCLUDED_TAGS,
+            hx_target: Some("#transactions-content"),
+            hx_swap: Some("innerHTML"),
+            hx_trigger: Some("change"),
+            redirect_url: Some(redirect_url),
+            form_id: Some("transactions-excluded-tags"),
+        },
+    );
 
     let content = html! {
         (nav_bar)
 
         div class=(PAGE_CONTAINER_STYLE)
         {
-            div class="relative"
+            div class="relative" id="transactions-content"
             {
                 div class="flex justify-between flex-wrap items-end mb-4"
                 {
@@ -163,6 +181,11 @@ pub(crate) fn transactions_view(
                             options.show_category_summary,
                             &transactions_page_route,
                         ))
+                    }
+
+                    div class="mt-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900"
+                    {
+                        (excluded_tags_view)
                     }
                 }
             }
@@ -279,6 +302,10 @@ fn transaction_row_view(row: &TransactionTableRow) -> Markup {
 fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -> Markup {
     let amount_str = format_currency(row.amount);
     let (description, tooltip) = format_description(&row.description);
+    let confirm_message = format!(
+        "Are you sure you want to delete the transaction '{}'? This cannot be undone.",
+        row.description
+    );
 
     html! {
         tr class=(row_class) data-transaction-row="true"
@@ -308,10 +335,7 @@ fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -
 
                     button
                         hx-delete=(row.delete_url)
-                        hx-confirm={
-                            "Are you sure you want to delete the transaction '"
-                            (row.description) "'? This cannot be undone."
-                        }
+                        hx-confirm=(confirm_message)
                         hx-target="closest tr"
                         hx-target-error="#alert-container"
                         hx-swap="outerHTML"
@@ -354,8 +378,47 @@ fn category_summary_view(bucket: &DateBucket) -> Markup {
         return html! {};
     }
 
+    struct CategorySummaryView<'a> {
+        category: &'a super::models::CategorySummary,
+        percent_label: String,
+        total_display: String,
+        total_class: &'static str,
+        grouped_days: Vec<DayGroupRef<'a>>,
+    }
+
+    let summaries = bucket
+        .summary
+        .iter()
+        .map(|category| {
+            let percent_label = format!(
+                "{}% of total {}",
+                category.percent,
+                match category.kind {
+                    CategorySummaryKind::Income => "income",
+                    CategorySummaryKind::Expense => "expenses",
+                }
+            );
+            let total_class = match category.kind {
+                CategorySummaryKind::Income => {
+                    "text-right tabular-nums text-green-700 dark:text-green-300"
+                }
+                CategorySummaryKind::Expense => {
+                    "text-right tabular-nums text-red-700 dark:text-red-300"
+                }
+            };
+
+            CategorySummaryView {
+                category,
+                percent_label,
+                total_display: format_currency(category.total),
+                total_class,
+                grouped_days: group_transactions_by_day(&category.transactions),
+            }
+        })
+        .collect::<Vec<_>>();
+
     html! {
-        @for category in &bucket.summary {
+        @for summary in summaries {
             tr class="border-b border-gray-200 dark:border-gray-700" data-category-summary="true"
             {
                 td colspan="5" class="px-6 py-2"
@@ -367,29 +430,16 @@ fn category_summary_view(bucket: &DateBucket) -> Markup {
                             span class="flex flex-col"
                             {
                                 span class="font-medium text-gray-900 dark:text-white"
-                                { (&category.label) }
+                                { (&summary.category.label) }
                                 span class="text-xs text-gray-500 dark:text-gray-400"
                                 {
-                                    (format!(
-                                        "{}% of total {}",
-                                        category.percent,
-                                        match category.kind {
-                                            CategorySummaryKind::Income => "income",
-                                            CategorySummaryKind::Expense => "expenses",
-                                        }
-                                    ))
+                                    (&summary.percent_label)
                                 }
                             }
                             span class="flex items-center gap-3 text-sm"
                             {
-                                span class={
-                                    "text-right tabular-nums " (if category.kind == CategorySummaryKind::Income {
-                                        "text-green-700 dark:text-green-300"
-                                    } else {
-                                        "text-red-700 dark:text-red-300"
-                                    })
-                                }
-                                { (format_currency(category.total)) }
+                                span class=(summary.total_class)
+                                { (&summary.total_display) }
                                 span class="text-gray-400 group-open:rotate-90 transition-transform" { "›" }
                             }
                         }
@@ -400,9 +450,9 @@ fn category_summary_view(bucket: &DateBucket) -> Markup {
                             {
                                 tbody class="divide-y divide-gray-200 dark:divide-gray-700"
                                 {
-                                    @for day in group_transactions_by_day(&category.transactions) {
+                                    @for day in &summary.grouped_days {
                                         (day_header_row_view(day.date))
-                                        @for transaction in day.transactions {
+                                        @for transaction in &day.transactions {
                                             (transaction_row_view_with_class(
                                                 transaction,
                                                 "bg-white dark:bg-gray-800"
@@ -466,6 +516,16 @@ fn control_cluster_html(
     } else {
         ""
     };
+    let summary_toggle_param = if show_category_summary {
+        ""
+    } else {
+        "&summary=true"
+    };
+    let summary_dot_class = if show_category_summary {
+        "inline-flex h-3 w-3 rounded-full bg-green-500"
+    } else {
+        "inline-flex h-3 w-3 rounded-full bg-gray-400"
+    };
     let window_links = build_window_links(
         window_preset,
         bucket_preset,
@@ -486,11 +546,7 @@ fn control_cluster_html(
         window = window_preset.as_query_value(),
         bucket = bucket_preset.as_query_value(),
         anchor = anchor_date,
-        summary_param = if show_category_summary {
-            ""
-        } else {
-            "&summary=true"
-        }
+        summary_param = summary_toggle_param
     );
     let summary_label = if show_category_summary {
         "Summary on"
@@ -561,7 +617,7 @@ fn control_cluster_html(
                 class="inline-flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-gray-900 dark:text-white hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700 self-start"
                 href=(summary_href)
             {
-                span class={ "inline-flex h-3 w-3 rounded-full " (if show_category_summary { "bg-green-500" } else { "bg-gray-400" }) } {}
+                span class=(summary_dot_class) {}
                 span { (summary_label) }
             }
         }

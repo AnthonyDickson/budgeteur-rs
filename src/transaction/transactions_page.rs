@@ -10,7 +10,10 @@ use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error, endpoints,
-    tag::{TagId, get_excluded_tags},
+    tag::{
+        Tag, TagId, TagWithExclusion, build_tags_with_exclusion_status, get_all_tags,
+        get_excluded_tags,
+    },
     timezone::get_local_offset,
 };
 
@@ -35,6 +38,8 @@ struct TransactionsInputs {
     window_range: WindowRange,
     /// Tag IDs excluded from bucket totals and summaries.
     excluded_tag_ids: Vec<TagId>,
+    /// Tags available for exclusion controls.
+    available_tags: Vec<Tag>,
     /// Raw transaction rows from the database.
     transactions: Vec<Transaction>,
 }
@@ -48,6 +53,10 @@ struct TransactionsViewModel {
     latest_link: Option<WindowNavLink>,
     /// Whether the dataset contains any transactions at all.
     has_any_transactions: bool,
+    /// Tags with exclusion state for controls.
+    tags_with_status: Vec<TagWithExclusion>,
+    /// Redirect URL back to the current transactions window.
+    redirect_url: String,
     /// Selected view options for the page.
     options: TransactionsViewOptions,
 }
@@ -108,6 +117,8 @@ pub async fn get_transactions_page(
     let window_range = compute_window_range(options.window_preset, options.anchor_date);
     let excluded_tag_ids = get_excluded_tags(&connection)
         .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
+    let available_tags = get_all_tags(&connection)
+        .inspect_err(|error| tracing::error!("could not get tags: {error}"))?;
 
     let transactions =
         get_transaction_table_rows_in_range(window_range, SortOrder::Descending, &connection)
@@ -120,6 +131,7 @@ pub async fn get_transactions_page(
         bounds,
         window_range,
         excluded_tag_ids,
+        available_tags,
         transactions,
     });
 
@@ -128,6 +140,8 @@ pub async fn get_transactions_page(
         &model.window_nav,
         model.latest_link.as_ref(),
         model.has_any_transactions,
+        &model.tags_with_status,
+        &model.redirect_url,
         model.options,
     )
     .into_response())
@@ -142,19 +156,7 @@ fn current_local_date(local_timezone: &str) -> Result<Date, Error> {
     Ok(OffsetDateTime::now_utc().to_offset(local_offset).date())
 }
 
-fn get_redirect_url(
-    window_preset: WindowPreset,
-    bucket_preset: BucketPreset,
-    show_category_summary: bool,
-    anchor_date: Date,
-) -> Option<String> {
-    let redirect_url = transactions_page_url(
-        window_preset,
-        bucket_preset,
-        show_category_summary,
-        anchor_date,
-    );
-
+fn build_redirect_param(redirect_url: &str) -> Option<String> {
     serde_urlencoded::to_string([("redirect_url", &redirect_url)])
         .inspect_err(|error| {
             tracing::error!(
@@ -234,19 +236,22 @@ fn build_transactions_view_model(input: TransactionsInputs) -> TransactionsViewM
     });
     let has_any_transactions = input.bounds.is_some();
 
-    let redirect_url = get_redirect_url(
+    let redirect_url = transactions_page_url(
         input.options.window_preset,
         input.options.bucket_preset,
         input.options.show_category_summary,
         input.options.anchor_date,
     );
+    let redirect_param = build_redirect_param(&redirect_url);
 
+    let tags_with_status =
+        build_tags_with_exclusion_status(input.available_tags, &input.excluded_tag_ids);
+
+    let redirect_param = redirect_param.as_deref();
     let transaction_rows = input
         .transactions
         .into_iter()
-        .map(|transaction| {
-            TransactionTableRow::new_from_transaction(transaction, redirect_url.as_deref())
-        })
+        .map(|transaction| TransactionTableRow::new_from_transaction(transaction, redirect_param))
         .collect::<Vec<_>>();
 
     let grouped = group_transactions(
@@ -263,6 +268,8 @@ fn build_transactions_view_model(input: TransactionsInputs) -> TransactionsViewM
         window_nav,
         latest_link,
         has_any_transactions,
+        tags_with_status,
+        redirect_url,
         options: TransactionsViewOptions {
             window_preset: input.options.window_preset,
             bucket_preset: input.options.bucket_preset,
@@ -710,6 +717,66 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn transactions_page_shows_excluded_tags_controls() {
+        let conn = get_test_connection();
+        let today = date!(2025 - 10 - 05);
+
+        let groceries = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
+        let rent = create_tag(TagName::new_unchecked("Rent"), &conn).unwrap();
+        save_excluded_tags(&[groceries.id], &conn).unwrap();
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(WindowQuery {
+                window: Some(WindowPreset::Month),
+                bucket: None,
+                summary: None,
+                anchor: Some(today),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+
+        let checkbox_selector =
+            Selector::parse("input[type='checkbox'][name='excluded_tags']").unwrap();
+        let checkboxes: Vec<_> = html.select(&checkbox_selector).collect();
+        assert_eq!(checkboxes.len(), 2, "Expected two excluded tag checkboxes");
+
+        let mut found_groceries = false;
+        let mut found_rent = false;
+
+        for checkbox in checkboxes {
+            let value = checkbox
+                .value()
+                .attr("value")
+                .expect("Checkbox missing value attribute");
+            let is_checked = checkbox.value().attr("checked").is_some();
+
+            if value == groceries.id.to_string() {
+                found_groceries = true;
+                assert!(is_checked, "Groceries should be marked as excluded");
+            } else if value == rent.id.to_string() {
+                found_rent = true;
+                assert!(
+                    !is_checked,
+                    "Rent should not be marked as excluded by default"
+                );
+            }
+        }
+
+        assert!(found_groceries, "Groceries checkbox should be present");
+        assert!(found_rent, "Rent checkbox should be present");
     }
 
     async fn parse_html(response: Response) -> Html {

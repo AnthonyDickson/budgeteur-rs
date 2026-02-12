@@ -95,6 +95,12 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
     let nav_bar = NavBar::new(endpoints::TAGS_VIEW).into_html();
 
     let table_row = |tag_with_url: &TagWithEditUrl| {
+        let delete_url = endpoints::format_endpoint(endpoints::DELETE_TAG, tag_with_url.tag.id);
+        let confirm_message = format!(
+            "Are you sure you want to delete '{}'? This will remove it from {} transaction(s).",
+            tag_with_url.tag.name, tag_with_url.transaction_count
+        );
+
         html!(
             tr class=(TABLE_ROW_STYLE)
             {
@@ -121,12 +127,8 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
                         }
 
                         button
-                            hx-delete={"/api/tags/" (tag_with_url.tag.id)}
-                            hx-confirm={
-                                "Are you sure you want to delete '"
-                                (tag_with_url.tag.name) "'? This will remove it from "
-                                (tag_with_url.transaction_count) " transaction(s)."
-                            }
+                            hx-delete=(delete_url)
+                            hx-confirm=(confirm_message)
                             hx-target="closest tr"
                             hx-target-error="#alert-container"
                             hx-swap="delete"
