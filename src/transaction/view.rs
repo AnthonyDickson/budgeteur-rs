@@ -37,6 +37,16 @@ pub(crate) fn transactions_view(
     let nav_bar = NavBar::new(endpoints::TRANSACTIONS_VIEW).into_html();
     // Cache this result so it can be accessed after `grouped_transactions` is moved by for loop.
     let transactions_empty = grouped_transactions.is_empty();
+    let summary_has_rows = options.show_category_summary
+        && grouped_transactions.iter().any(|bucket| !bucket.summary.is_empty());
+    let show_empty_state =
+        transactions_empty || (options.show_category_summary && !summary_has_rows);
+    let empty_message = if options.show_category_summary && !summary_has_rows && !transactions_empty
+    {
+        "No transactions in this summary after exclusions."
+    } else {
+        "No transactions in this range."
+    };
 
     let content = html! {
         (nav_bar)
@@ -130,11 +140,15 @@ pub(crate) fn transactions_view(
                                 }
                             }
 
-                            @if transactions_empty {
+                            @if show_empty_state {
                                 tr
                                 {
-                                    td colspan="5" class="px-6 py-4 text-center" {
-                                        "No transactions in this range."
+                                    td
+                                        colspan="5"
+                                        data-empty-state="true"
+                                        class="px-6 py-4 text-center"
+                                    {
+                                        (empty_message)
                                     }
                                 }
                             }

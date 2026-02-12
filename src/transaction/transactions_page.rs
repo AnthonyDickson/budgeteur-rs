@@ -286,7 +286,7 @@ mod tests {
 
     use crate::{
         db::initialize,
-        tag::{TagName, create_tag},
+        tag::{TagName, create_tag, save_excluded_tags},
         transaction::{Transaction, create_transaction},
     };
 
@@ -431,6 +431,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn transactions_page_shows_summary_empty_state_when_all_excluded() {
+        let conn = get_test_connection();
+        let today = date!(2025 - 10 - 05);
+
+        let tag = create_tag(TagName::new_unchecked("Excluded"), &conn).unwrap();
+        save_excluded_tags(&[tag.id], &conn).unwrap();
+        create_transaction(
+            Transaction::build(50.0, today, "Excluded transaction").tag_id(Some(tag.id)),
+            &conn,
+        )
+        .unwrap();
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(WindowQuery {
+                window: Some(WindowPreset::Month),
+                bucket: None,
+                summary: Some(true),
+                anchor: Some(today),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+        assert_summary_empty_state_present(&html);
+    }
+
+    #[tokio::test]
     async fn transactions_page_autoselects_window_when_bucket_exceeds_window() {
         let conn = get_test_connection();
         let transaction_date = date!(2025 - 10 - 05);
@@ -552,7 +587,7 @@ mod tests {
 
     #[track_caller]
     fn assert_empty_state_present(html: &Html) {
-        let empty_row_selector = Selector::parse("tbody tr td[colspan='5']").unwrap();
+        let empty_row_selector = Selector::parse("tbody tr td[data-empty-state='true']").unwrap();
         let empty_row = html
             .select(&empty_row_selector)
             .next()
@@ -561,6 +596,20 @@ mod tests {
         assert!(
             text.contains("No transactions in this range."),
             "Empty-state row did not include expected text: {text}"
+        );
+    }
+
+    #[track_caller]
+    fn assert_summary_empty_state_present(html: &Html) {
+        let empty_row_selector = Selector::parse("tbody tr td[data-empty-state='true']").unwrap();
+        let empty_row = html
+            .select(&empty_row_selector)
+            .next()
+            .expect("No empty-state row found");
+        let text = empty_row.text().collect::<String>();
+        assert!(
+            text.contains("No transactions in this summary after exclusions."),
+            "Summary empty-state row did not include expected text: {text}"
         );
     }
 
