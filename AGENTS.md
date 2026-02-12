@@ -25,6 +25,8 @@
   the code easier to reason about or make the project easier to maintain and extend.
 - Avoid comments that just restate what the code is doing, focus on comments that explain unintuitive code, rationale
   or important invariants.
+- Prefer imports at the top of the file over inline, qualified imports
+- When acquiring the shared DB connection in handlers, avoid `unwrap()`; log lock errors and return `Error::DatabaseLockError`.
 - Prefer `Error`’s `IntoResponse` for page endpoints; insert errors into forms or use `AlertTemplate` for fragments.
 - Use `bacon.toml` jobs for quality checks (`cargo check`, `cargo clippy`, `cargo doc`).
 
