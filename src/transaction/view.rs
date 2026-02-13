@@ -18,7 +18,11 @@ use crate::{
 use super::{
     grouping::{DayGroupRef, group_transactions_by_day},
     models::{CategorySummaryKind, DateInterval, TransactionTableRow, TransactionsViewOptions},
-    range::{IntervalPreset, RangeNavLink, RangeNavigation, RangePreset, range_label},
+    range::{
+        IntervalPreset, RangeNavLink, RangeNavigation, RangePreset, range_label,
+        range_preset_can_contain_interval,
+    },
+    transactions_page::TransactionsQuery,
 };
 
 /// The max number of graphemes to display in the transaction table rows before
@@ -202,49 +206,45 @@ fn range_navigation_html(
     show_category_summary: bool,
     transactions_page_route: &Uri,
 ) -> Markup {
-    let summary_param = if show_category_summary {
-        "&summary=true"
-    } else {
-        ""
-    };
     let current_label = range_label(range_nav.range);
     let row_classes = if latest_link.is_some() {
         "grid-rows-2 gap-y-0.5"
     } else {
         "grid-rows-1"
     };
+    let route = transactions_page_route.path();
     let prev_link = range_nav.prev.as_ref().map(|prev| {
         (
             range_label(prev.range),
-            format!(
-                "{route}?{href}&interval={interval}{summary}",
-                route = transactions_page_route,
-                href = prev.href,
-                interval = interval_preset.as_query_value(),
-                summary = summary_param
-            ),
+            TransactionsQuery::new(
+                range_nav.preset,
+                interval_preset,
+                prev.anchor_date,
+                show_category_summary,
+            )
+            .to_url(route),
         )
     });
     let next_link = range_nav.next.as_ref().map(|next| {
         (
             range_label(next.range),
-            format!(
-                "{route}?{href}&interval={interval}{summary}",
-                route = transactions_page_route,
-                href = next.href,
-                interval = interval_preset.as_query_value(),
-                summary = summary_param
-            ),
+            TransactionsQuery::new(
+                range_nav.preset,
+                interval_preset,
+                next.anchor_date,
+                show_category_summary,
+            )
+            .to_url(route),
         )
     });
     let latest_href = latest_link.map(|latest| {
-        format!(
-            "{route}?{href}&interval={interval}{summary}",
-            route = transactions_page_route,
-            href = latest.href,
-            interval = interval_preset.as_query_value(),
-            summary = summary_param
+        TransactionsQuery::new(
+            range_nav.preset,
+            interval_preset,
+            latest.anchor_date,
+            show_category_summary,
         )
+        .to_url(route)
     });
 
     html! {
@@ -511,43 +511,22 @@ fn control_cluster_html(
     anchor_date: Date,
     transactions_page_route: &Uri,
 ) -> Markup {
-    let summary_param = if show_category_summary {
-        "&summary=true"
-    } else {
-        ""
-    };
-    let summary_toggle_param = if show_category_summary {
-        ""
-    } else {
-        "&summary=true"
-    };
     let summary_dot_class = if show_category_summary {
         "inline-flex h-3 w-3 rounded-full bg-green-500"
     } else {
         "inline-flex h-3 w-3 rounded-full bg-gray-400"
     };
-    let range_links = build_range_links(
+    let base_query = TransactionsQuery::new(
         range_preset,
         interval_preset,
         anchor_date,
-        summary_param,
-        transactions_page_route,
+        show_category_summary,
     );
-    let interval_links = build_interval_links(
-        range_preset,
-        interval_preset,
-        anchor_date,
-        summary_param,
-        transactions_page_route,
-    );
-    let summary_href = format!(
-        "{route}?range={range}&interval={interval}&anchor={anchor}{summary_param}",
-        route = transactions_page_route,
-        range = range_preset.as_query_value(),
-        interval = interval_preset.as_query_value(),
-        anchor = anchor_date,
-        summary_param = summary_toggle_param
-    );
+    let range_links = build_range_links(base_query, transactions_page_route);
+    let interval_links = build_interval_links(base_query, transactions_page_route);
+    let summary_href = base_query
+        .with_summary(!show_category_summary)
+        .to_url(transactions_page_route.path());
     let summary_label = if show_category_summary {
         "Summary on"
     } else {
@@ -659,10 +638,7 @@ enum ControlLinkState {
 }
 
 fn build_range_links(
-    range_preset: RangePreset,
-    interval_preset: IntervalPreset,
-    anchor_date: Date,
-    summary_param: &str,
+    base_query: TransactionsQuery,
     transactions_page_route: &Uri,
 ) -> Vec<ControlLink> {
     let range_presets = [
@@ -678,16 +654,11 @@ fn build_range_links(
         .iter()
         .map(|preset| {
             let disabled =
-                !super::range::range_preset_can_contain_interval(*preset, interval_preset);
-            let href = format!(
-                "{route}?range={range}&interval={interval}&anchor={anchor}{summary_param}",
-                route = transactions_page_route,
-                range = preset.as_query_value(),
-                interval = interval_preset.as_query_value(),
-                anchor = anchor_date,
-                summary_param = summary_param
-            );
-            let state = link_state(*preset == range_preset, disabled);
+                !range_preset_can_contain_interval(*preset, base_query.interval_preset());
+            let href = base_query
+                .with_range_preset(*preset)
+                .to_url(transactions_page_route.path());
+            let state = link_state(*preset == base_query.range_preset(), disabled);
 
             ControlLink {
                 label: range_preset_label(*preset),
@@ -699,10 +670,7 @@ fn build_range_links(
 }
 
 fn build_interval_links(
-    range_preset: RangePreset,
-    interval_preset: IntervalPreset,
-    anchor_date: Date,
-    summary_param: &str,
+    base_query: TransactionsQuery,
     transactions_page_route: &Uri,
 ) -> Vec<ControlLink> {
     let interval_presets = [
@@ -717,16 +685,11 @@ fn build_interval_links(
     interval_presets
         .iter()
         .map(|preset| {
-            let disabled = !super::range::range_preset_can_contain_interval(range_preset, *preset);
-            let href = format!(
-                "{route}?range={range}&interval={interval}&anchor={anchor}{summary_param}",
-                route = transactions_page_route,
-                range = range_preset.as_query_value(),
-                interval = preset.as_query_value(),
-                anchor = anchor_date,
-                summary_param = summary_param
-            );
-            let state = link_state(*preset == interval_preset, disabled);
+            let disabled = !range_preset_can_contain_interval(base_query.range_preset(), *preset);
+            let href = base_query
+                .with_interval_preset(*preset)
+                .to_url(transactions_page_route.path());
+            let state = link_state(*preset == base_query.interval_preset(), disabled);
 
             ControlLink {
                 label: preset.label(),

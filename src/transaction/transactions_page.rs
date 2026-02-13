@@ -61,6 +61,9 @@ struct TransactionsViewModel {
     options: TransactionsViewOptions,
 }
 
+/// Internal, validated selection of range/interval options after normalization.
+///
+/// This is the source of truth for behavior (defaults applied, range >= interval enforced).
 struct NormalizedQuery {
     /// Range preset for navigation.
     range_preset: RangePreset,
@@ -70,6 +73,88 @@ struct NormalizedQuery {
     show_category_summary: bool,
     /// Anchor date for range calculations.
     anchor_date: Date,
+}
+
+/// URL encoding helper for transactions query params.
+///
+/// This is used to build consistent links and redirect URLs from already-normalized values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TransactionsQuery {
+    range_preset: RangePreset,
+    interval_preset: IntervalPreset,
+    anchor_date: Date,
+    show_category_summary: bool,
+}
+
+impl TransactionsQuery {
+    pub(crate) fn new(
+        range_preset: RangePreset,
+        interval_preset: IntervalPreset,
+        anchor_date: Date,
+        show_category_summary: bool,
+    ) -> Self {
+        Self {
+            range_preset,
+            interval_preset,
+            anchor_date,
+            show_category_summary,
+        }
+    }
+
+    fn from_normalized(options: &NormalizedQuery) -> Self {
+        Self::new(
+            options.range_preset,
+            options.interval_preset,
+            options.anchor_date,
+            options.show_category_summary,
+        )
+    }
+
+    pub(crate) fn range_preset(self) -> RangePreset {
+        self.range_preset
+    }
+
+    pub(crate) fn interval_preset(self) -> IntervalPreset {
+        self.interval_preset
+    }
+
+    pub(crate) fn with_range_preset(self, range_preset: RangePreset) -> Self {
+        Self {
+            range_preset,
+            ..self
+        }
+    }
+
+    pub(crate) fn with_interval_preset(self, interval_preset: IntervalPreset) -> Self {
+        Self {
+            interval_preset,
+            ..self
+        }
+    }
+
+    pub(crate) fn with_summary(self, show_category_summary: bool) -> Self {
+        Self {
+            show_category_summary,
+            ..self
+        }
+    }
+
+    pub(crate) fn to_query_string(self) -> String {
+        let mut query = format!(
+            "range={}&interval={}&anchor={}",
+            self.range_preset.as_query_value(),
+            self.interval_preset.as_query_value(),
+            self.anchor_date
+        );
+        if self.show_category_summary {
+            query.push_str("&summary=true");
+        }
+        query
+    }
+
+    pub(crate) fn to_url(self, route: &str) -> String {
+        format!("{route}?{}", self.to_query_string())
+    }
 }
 
 enum QueryDecision {
@@ -166,27 +251,6 @@ fn build_redirect_param(redirect_url: &str) -> Option<String> {
         .ok()
 }
 
-fn transactions_page_url(
-    range_preset: RangePreset,
-    interval_preset: IntervalPreset,
-    show_category_summary: bool,
-    anchor_date: Date,
-) -> String {
-    let summary_param = if show_category_summary {
-        "&summary=true"
-    } else {
-        ""
-    };
-
-    format!(
-        "{}?range={}&interval={}&anchor={}{summary_param}",
-        endpoints::TRANSACTIONS_VIEW,
-        range_preset.as_query_value(),
-        interval_preset.as_query_value(),
-        anchor_date,
-    )
-}
-
 fn normalize_query(query: RangeQuery, now_local: Date) -> QueryDecision {
     let requested_range_preset = query.range.unwrap_or(RangePreset::default_preset());
     let interval_preset = query.interval.unwrap_or(IntervalPreset::default_preset());
@@ -200,12 +264,13 @@ fn normalize_query(query: RangeQuery, now_local: Date) -> QueryDecision {
     };
 
     if range_preset != requested_range_preset {
-        let redirect_url = transactions_page_url(
+        let redirect_url = TransactionsQuery::new(
             range_preset,
             interval_preset,
-            show_category_summary,
             anchor_date,
-        );
+            show_category_summary,
+        )
+        .to_url(endpoints::TRANSACTIONS_VIEW);
         return QueryDecision::Redirect(redirect_url);
     }
 
@@ -224,17 +289,13 @@ fn build_transactions_view_model(input: TransactionsInputs) -> TransactionsViewM
         if latest_range == input.range {
             None
         } else {
-            Some(RangeNavLink::new(input.options.range_preset, latest_range))
+            Some(RangeNavLink::new(latest_range))
         }
     });
     let has_any_transactions = input.bounds.is_some();
 
-    let redirect_url = transactions_page_url(
-        input.options.range_preset,
-        input.options.interval_preset,
-        input.options.show_category_summary,
-        input.options.anchor_date,
-    );
+    let redirect_url =
+        TransactionsQuery::from_normalized(&input.options).to_url(endpoints::TRANSACTIONS_VIEW);
     let redirect_param = build_redirect_param(&redirect_url);
 
     let tags_with_status =
@@ -290,10 +351,9 @@ mod tests {
         transaction::{Transaction, create_transaction},
     };
 
-    use super::{TransactionsViewState, get_transactions_page, transactions_page_url};
-    use crate::transaction::range::{
-        IntervalPreset, RangePreset, RangeQuery, compute_range, range_anchor_query,
-    };
+    use super::{TransactionsQuery, TransactionsViewState, get_transactions_page};
+    use crate::endpoints;
+    use crate::transaction::range::{IntervalPreset, RangePreset, RangeQuery, compute_range};
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -494,12 +554,13 @@ mod tests {
             .headers()
             .get("location")
             .expect("Missing redirect location header");
-        let expected_url = transactions_page_url(
+        let expected_url = TransactionsQuery::new(
             RangePreset::Month,
             IntervalPreset::Month,
-            false,
             transaction_date,
-        );
+            false,
+        )
+        .to_url(endpoints::TRANSACTIONS_VIEW);
         assert_eq!(
             location,
             expected_url.as_str(),
@@ -569,7 +630,13 @@ mod tests {
     #[track_caller]
     fn assert_latest_link_present(html: &Html, preset: RangePreset, latest_date: Date) {
         let latest_range = compute_range(preset, latest_date);
-        let latest_href = range_anchor_query(preset, latest_range.end);
+        let latest_href = TransactionsQuery::new(
+            preset,
+            IntervalPreset::default_preset(),
+            latest_range.end,
+            false,
+        )
+        .to_url(endpoints::TRANSACTIONS_VIEW);
         let link_selector = Selector::parse("a").unwrap();
         let latest_link = html
             .select(&link_selector)
@@ -579,8 +646,8 @@ mod tests {
             .value()
             .attr("href")
             .expect("Latest link missing href");
-        assert!(
-            href.contains(&latest_href),
+        assert_eq!(
+            href, latest_href,
             "Latest link href did not include expected query. want {latest_href}, got {href}"
         );
     }

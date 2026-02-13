@@ -118,6 +118,7 @@ pub struct RangeNavigation {
     pub range: DateRange,
     pub prev: Option<RangeNavLink>,
     pub next: Option<RangeNavLink>,
+    pub preset: RangePreset,
 }
 
 impl RangeNavigation {
@@ -130,12 +131,12 @@ impl RangeNavigation {
         let (prev, next) = match bounds {
             Some(bounds) => {
                 let prev = if prev_range.end >= bounds.start {
-                    Some(RangeNavLink::new(preset, prev_range))
+                    Some(RangeNavLink::new(prev_range))
                 } else {
                     None
                 };
                 let next = if next_range.start <= bounds.end {
-                    Some(RangeNavLink::new(preset, next_range))
+                    Some(RangeNavLink::new(next_range))
                 } else {
                     None
                 };
@@ -144,21 +145,26 @@ impl RangeNavigation {
             None => (None, None),
         };
 
-        Self { range, prev, next }
+        Self {
+            range,
+            prev,
+            next,
+            preset,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct RangeNavLink {
     pub range: DateRange,
-    pub href: String,
+    pub anchor_date: Date,
 }
 
 impl RangeNavLink {
-    pub fn new(preset: RangePreset, range: DateRange) -> Self {
+    pub fn new(range: DateRange) -> Self {
         Self {
             range,
-            href: range_anchor_query(preset, range.end),
+            anchor_date: range.end,
         }
     }
 }
@@ -221,10 +227,6 @@ pub fn range_label(range: DateRange) -> String {
     let end = format_date_label(range.end);
 
     format!("{start} - {end}")
-}
-
-pub fn range_anchor_query(preset: RangePreset, anchor: Date) -> String {
-    format!("range={}&anchor={}", preset.as_query_value(), anchor)
 }
 
 fn week_bounds(anchor_date: Date) -> DateRange {
