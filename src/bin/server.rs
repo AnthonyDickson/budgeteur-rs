@@ -79,7 +79,7 @@ async fn main() {
         eprint!("{} is not a valid timezone name.", args.timezone.unwrap());
         exit(1);
     };
-    let app_config = AppState::new(conn, &secret, &timezone, Default::default());
+    let app_config = AppState::new(conn, &secret, &timezone);
 
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));

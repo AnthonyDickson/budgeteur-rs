@@ -129,7 +129,22 @@ pub async fn get_edit_transaction_page(
 
     let base_url = format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction_id);
     let edit_transaction_url = match query_params.redirect_url {
-        Some(redirect_url) => format!("{base_url}?redirect_url={redirect_url}"),
+        Some(redirect_url) => {
+            let redirect_url_param = serde_urlencoded::to_string([(
+                "redirect_url",
+                redirect_url.as_str(),
+            )])
+            .inspect_err(|error| {
+                tracing::error!(
+                    "Could not set redirect URL {redirect_url} due to encoding error: {error}"
+                );
+            })
+            .ok();
+
+            redirect_url_param
+                .map(|param| format!("{base_url}?{param}"))
+                .unwrap_or(base_url)
+        }
         None => base_url,
     };
 
@@ -202,6 +217,51 @@ mod tests {
             assert_valid_html(&document);
             assert_correct_form(&document, transaction.id, expected_type);
         }
+    }
+
+    #[tokio::test]
+    async fn edit_transaction_preserves_redirect_url_query() {
+        let conn = get_test_connection();
+        let transaction = create_transaction(
+            Transaction::build(12.0, OffsetDateTime::now_utc().date(), "test"),
+            &conn,
+        )
+        .expect("could not create test transaction");
+        let state = EditTransactionPageState {
+            local_timezone: "Etc/UTC".to_owned(),
+            db_connection: Arc::new(Mutex::new(conn)),
+        };
+        let redirect_url = "/transactions?range=month&anchor=2025-10-05".to_owned();
+
+        let response = get_edit_transaction_page(
+            State(state),
+            Path(transaction.id),
+            Query(QueryParams {
+                redirect_url: Some(redirect_url.clone()),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let document = parse_html(response).await;
+        assert_valid_html(&document);
+
+        let expected_query = serde_urlencoded::to_string([("redirect_url", redirect_url.as_str())])
+            .expect("Could not encode redirect_url");
+        let expected_endpoint =
+            endpoints::format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction.id);
+        let expected_hx_put = format!("{expected_endpoint}?{expected_query}");
+        let form = document
+            .select(&scraper::Selector::parse("form").unwrap())
+            .next()
+            .expect("No form found");
+        let hx_put = form.value().attr("hx-put").expect("No hx-put found");
+
+        assert_eq!(
+            hx_put, expected_hx_put,
+            "want form with attribute hx-put=\"{}\", got {}",
+            expected_hx_put, hx_put
+        );
     }
 
     #[track_caller]

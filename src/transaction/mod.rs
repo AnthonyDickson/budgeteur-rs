@@ -11,10 +11,16 @@ mod create_page;
 mod delete_endpoint;
 mod edit_endpoint;
 mod edit_page;
+mod excluded_tags_endpoint;
 mod form;
+mod grouping;
+mod models;
+mod query;
+mod range;
 #[cfg(test)]
 mod test_utils;
 mod transactions_page;
+mod view;
 
 pub use core::{
     Transaction, TransactionBuilder, TransactionId, create_transaction_table, get_transaction,
@@ -23,9 +29,12 @@ pub use core::{
 pub use create_endpoint::create_transaction_endpoint;
 pub use create_page::get_create_transaction_page;
 pub use delete_endpoint::delete_transaction_endpoint;
-pub use edit_endpoint::edit_tranction_endpoint;
+pub use edit_endpoint::edit_transaction_endpoint;
 pub use edit_page::get_edit_transaction_page;
+pub use excluded_tags_endpoint::update_transactions_excluded_tags;
 pub use transactions_page::get_transactions_page;
 
 #[cfg(test)]
-pub use core::{count_transactions, create_transaction};
+pub use core::count_transactions;
+#[cfg(test)]
+pub use core::create_transaction;

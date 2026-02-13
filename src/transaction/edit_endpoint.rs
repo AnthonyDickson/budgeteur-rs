@@ -52,7 +52,7 @@ pub struct QueryParams {
 }
 
 #[debug_handler]
-pub async fn edit_tranction_endpoint(
+pub async fn edit_transaction_endpoint(
     State(state): State<EditTransactionState>,
     Path(transaction_id): Path<TransactionId>,
     Query(query_params): Query<QueryParams>,
@@ -155,7 +155,7 @@ mod test {
             core::TransactionType,
             create_transaction,
             edit_endpoint::{
-                EditTransactionForm, EditTransactionState, QueryParams, edit_tranction_endpoint,
+                EditTransactionForm, EditTransactionState, QueryParams, edit_transaction_endpoint,
             },
             get_transaction,
         },
@@ -188,7 +188,7 @@ mod test {
             };
             let redirect_url = "foo/bar?page=123&per_page=20".to_owned();
 
-            let response = edit_tranction_endpoint(
+            let response = edit_transaction_endpoint(
                 State(state.clone()),
                 Path(1),
                 Query(QueryParams {

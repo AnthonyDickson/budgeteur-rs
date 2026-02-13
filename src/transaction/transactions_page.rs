@@ -3,105 +3,179 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{FromRef, Query, State},
-    http::Uri,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
 };
-use maud::{Markup, html};
 use rusqlite::Connection;
-use serde::Deserialize;
-use time::Date;
-use unicode_segmentation::UnicodeSegmentation;
+use time::{Date, OffsetDateTime};
 
 use crate::{
     AppState, Error, endpoints,
-    html::{
-        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
-        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
+    tag::{
+        Tag, TagId, TagWithExclusion, build_tags_with_exclusion_status, get_all_tags,
+        get_excluded_tags,
     },
-    navigation::NavBar,
-    pagination::{PaginationConfig, PaginationIndicator, create_pagination_indicators},
-    tag::TagName,
-    transaction::{TransactionId, core::count_transactions},
+    timezone::get_local_offset,
 };
 
-/// The max number of graphemes to display in the transaction table rows before
-/// trunctating and displaying elipses.
-const MAX_DESCRIPTION_GRAPHEMES: usize = 32;
+use super::{
+    grouping::{GroupingOptions, group_transactions},
+    models::{Transaction, TransactionTableRow, TransactionsViewOptions},
+    query::{SortOrder, get_transaction_table_rows_in_range},
+    range::{
+        DateRange, IntervalPreset, RangeNavLink, RangeNavigation, RangePreset, RangeQuery,
+        compute_range, get_transaction_date_bounds, range_preset_can_contain_interval,
+        smallest_range_for_interval,
+    },
+    view::transactions_view,
+};
+
+struct TransactionsInputs {
+    /// Normalized options derived from query params.
+    options: NormalizedQuery,
+    /// Optional min/max transaction dates for the data set.
+    bounds: Option<DateRange>,
+    /// The date range for the active range.
+    range: DateRange,
+    /// Tag IDs excluded from interval totals and summaries.
+    excluded_tag_ids: Vec<TagId>,
+    /// Tags available for exclusion controls.
+    available_tags: Vec<Tag>,
+    /// Raw transaction rows from the database.
+    transactions: Vec<Transaction>,
+}
+
+struct TransactionsViewModel {
+    /// Grouped and summarized transactions for rendering.
+    grouped: Vec<super::models::DateInterval>,
+    /// Navigation model for range links.
+    range_nav: RangeNavigation,
+    /// Optional link to the latest range.
+    latest_link: Option<RangeNavLink>,
+    /// Whether the dataset contains any transactions at all.
+    has_any_transactions: bool,
+    /// Tags with exclusion state for controls.
+    tags_with_status: Vec<TagWithExclusion>,
+    /// Redirect URL back to the current transactions range.
+    redirect_url: String,
+    /// Selected view options for the page.
+    options: TransactionsViewOptions,
+}
+
+/// Internal, validated selection of range/interval options after normalization.
+///
+/// This is the source of truth for behavior (defaults applied, range >= interval enforced).
+struct NormalizedQuery {
+    /// Range preset for navigation.
+    range_preset: RangePreset,
+    /// Interval preset for grouping.
+    interval_preset: IntervalPreset,
+    /// Whether category summary mode is enabled.
+    show_category_summary: bool,
+    /// Anchor date for range calculations.
+    anchor_date: Date,
+}
+
+/// URL encoding helper for transactions query params.
+///
+/// This is used to build consistent links and redirect URLs from already-normalized values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TransactionsQuery {
+    range_preset: RangePreset,
+    interval_preset: IntervalPreset,
+    anchor_date: Date,
+    show_category_summary: bool,
+}
+
+impl TransactionsQuery {
+    pub(crate) fn new(
+        range_preset: RangePreset,
+        interval_preset: IntervalPreset,
+        anchor_date: Date,
+        show_category_summary: bool,
+    ) -> Self {
+        Self {
+            range_preset,
+            interval_preset,
+            anchor_date,
+            show_category_summary,
+        }
+    }
+
+    fn from_normalized(options: &NormalizedQuery) -> Self {
+        Self::new(
+            options.range_preset,
+            options.interval_preset,
+            options.anchor_date,
+            options.show_category_summary,
+        )
+    }
+
+    pub(crate) fn range_preset(self) -> RangePreset {
+        self.range_preset
+    }
+
+    pub(crate) fn interval_preset(self) -> IntervalPreset {
+        self.interval_preset
+    }
+
+    pub(crate) fn with_range_preset(self, range_preset: RangePreset) -> Self {
+        Self {
+            range_preset,
+            ..self
+        }
+    }
+
+    pub(crate) fn with_interval_preset(self, interval_preset: IntervalPreset) -> Self {
+        Self {
+            interval_preset,
+            ..self
+        }
+    }
+
+    pub(crate) fn with_summary(self, show_category_summary: bool) -> Self {
+        Self {
+            show_category_summary,
+            ..self
+        }
+    }
+
+    pub(crate) fn to_query_string(self) -> String {
+        let mut query = format!(
+            "range={}&interval={}&anchor={}",
+            self.range_preset.as_query_value(),
+            self.interval_preset.as_query_value(),
+            self.anchor_date
+        );
+        if self.show_category_summary {
+            query.push_str("&summary=true");
+        }
+        query
+    }
+
+    pub(crate) fn to_url(self, route: &str) -> String {
+        format!("{route}?{}", self.to_query_string())
+    }
+}
+
+enum QueryDecision {
+    Redirect(String),
+    Normalized(NormalizedQuery),
+}
 
 /// The state needed for the transactions page.
 #[derive(Debug, Clone)]
 pub struct TransactionsViewState {
     /// The database connection for managing transactions.
     db_connection: Arc<Mutex<Connection>>,
-    /// Configuration for pagination controls.
-    pagination_config: PaginationConfig,
+    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
+    local_timezone: String,
 }
 
 impl FromRef<AppState> for TransactionsViewState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
-            pagination_config: state.pagination_config.clone(),
-        }
-    }
-}
-
-/// Controls paginations of transactions table.
-#[derive(Deserialize)]
-pub struct Pagination {
-    /// The page number to display. Starts from 1.
-    page: Option<u64>,
-    /// The maximum number of transactions to display per page.
-    per_page: Option<u64>,
-}
-
-#[derive(Debug, PartialEq)]
-struct Transaction {
-    /// The ID of the transaction.
-    id: TransactionId,
-    /// The amount of money spent or earned in this transaction.
-    amount: f64,
-    /// When the transaction happened.
-    date: Date,
-    /// A text description of what the transaction was for.
-    description: String,
-    /// The name of the transactions tag.
-    tag_name: Option<TagName>,
-}
-
-/// Renders a transaction with its tags as a table row.
-#[derive(Debug, PartialEq)]
-struct TransactionTableRow {
-    /// The amount of money spent or earned in this transaction.
-    amount: f64,
-    /// When the transaction happened.
-    date: Date,
-    /// A text description of what the transaction was for.
-    description: String,
-    /// The name of the transactions tag.
-    tag_name: Option<TagName>,
-    /// The API path to edit this transaction
-    edit_url: String,
-    /// The API path to delete this transaction
-    delete_url: String,
-}
-
-impl TransactionTableRow {
-    fn new_from_transaction(transaction: Transaction, redirect_url: Option<&str>) -> Self {
-        let mut edit_url =
-            endpoints::format_endpoint(endpoints::EDIT_TRANSACTION_VIEW, transaction.id);
-
-        if let Some(redirect_url) = redirect_url {
-            edit_url = format!("{edit_url}?{redirect_url}");
-        }
-
-        Self {
-            amount: transaction.amount,
-            date: transaction.date,
-            description: transaction.description,
-            tag_name: transaction.tag_name,
-            edit_url,
-            delete_url: endpoints::format_endpoint(endpoints::DELETE_TRANSACTION, transaction.id),
+            local_timezone: state.local_timezone.clone(),
         }
     }
 }
@@ -109,47 +183,65 @@ impl TransactionTableRow {
 /// Render an overview of the user's transactions.
 pub async fn get_transactions_page(
     State(state): State<TransactionsViewState>,
-    Query(query_params): Query<Pagination>,
+    Query(query_params): Query<RangeQuery>,
 ) -> Result<Response, Error> {
-    let current_page = query_params
-        .page
-        .unwrap_or(state.pagination_config.default_page);
-    let per_page = query_params
-        .per_page
-        .unwrap_or(state.pagination_config.default_page_size);
-
-    let limit = per_page;
-    let offset = (current_page - 1) * per_page;
-    let connection = state.db_connection.lock().unwrap();
-    let page_count = {
-        let transaction_count = count_transactions(&connection)
-            .inspect_err(|error| tracing::error!("could not count transactions: {error}"))?;
-        (transaction_count as f64 / per_page as f64).ceil() as u64
+    let now_local = current_local_date(&state.local_timezone)?;
+    let options = match normalize_query(query_params, now_local) {
+        QueryDecision::Normalized(options) => options,
+        QueryDecision::Redirect(redirect_url) => {
+            return Ok(Redirect::to(&redirect_url).into_response());
+        }
     };
-
-    let redirect_url = get_redirect_url(current_page, per_page);
+    let connection = state
+        .db_connection
+        .lock()
+        .inspect_err(|error| tracing::error!("could not acquire database lock: {error}"))
+        .map_err(|_| Error::DatabaseLockError)?;
+    let bounds = get_transaction_date_bounds(&connection)
+        .inspect_err(|error| tracing::error!("could not get transaction bounds: {error}"))?;
+    let range = compute_range(options.range_preset, options.anchor_date);
+    let excluded_tag_ids = get_excluded_tags(&connection)
+        .inspect_err(|error| tracing::error!("could not get excluded tags: {error}"))?;
+    let available_tags = get_all_tags(&connection)
+        .inspect_err(|error| tracing::error!("could not get tags: {error}"))?;
 
     let transactions =
-        get_transaction_table_rows_paginated(limit, offset, SortOrder::Descending, &connection)
-            .inspect_err(|error| tracing::error!("could not get transaction table rows: {error}"))?
-            .into_iter()
-            .map(|transaction| {
-                TransactionTableRow::new_from_transaction(transaction, redirect_url.as_deref())
-            })
-            .collect();
+        get_transaction_table_rows_in_range(range, SortOrder::Descending, &connection)
+            .inspect_err(|error| {
+                tracing::error!("could not get transaction table rows: {error}")
+            })?;
 
-    let max_pages = state.pagination_config.max_pages;
-    let pagination_indicators = create_pagination_indicators(current_page, page_count, max_pages);
+    let model = build_transactions_view_model(TransactionsInputs {
+        options,
+        bounds,
+        range,
+        excluded_tag_ids,
+        available_tags,
+        transactions,
+    });
 
-    Ok(transactions_view(transactions, &pagination_indicators, per_page).into_response())
+    Ok(transactions_view(
+        model.grouped,
+        &model.range_nav,
+        model.latest_link.as_ref(),
+        model.has_any_transactions,
+        &model.tags_with_status,
+        &model.redirect_url,
+        model.options,
+    )
+    .into_response())
 }
 
-fn get_redirect_url(page: u64, per_page: u64) -> Option<String> {
-    let redirect_url = format!(
-        "{}?page={page}&per_page={per_page}",
-        endpoints::TRANSACTIONS_VIEW
-    );
+fn current_local_date(local_timezone: &str) -> Result<Date, Error> {
+    let Some(local_offset) = get_local_offset(local_timezone) else {
+        tracing::error!("Invalid timezone {}", local_timezone);
+        return Err(Error::InvalidTimezoneError(local_timezone.to_owned()));
+    };
 
+    Ok(OffsetDateTime::now_utc().to_offset(local_offset).date())
+}
+
+fn build_redirect_param(redirect_url: &str) -> Option<String> {
     serde_urlencoded::to_string([("redirect_url", &redirect_url)])
         .inspect_err(|error| {
             tracing::error!(
@@ -159,279 +251,86 @@ fn get_redirect_url(page: u64, per_page: u64) -> Option<String> {
         .ok()
 }
 
-/// The order to sort transactions in a [TransactionQuery].
-enum SortOrder {
-    /// Sort in order of increasing value.
-    // TODO: Remove #[allow(dead_code)] once Ascending is used
-    #[allow(dead_code)]
-    Ascending,
-    /// Sort in order of decreasing value.
-    Descending,
-}
-
-/// Get transactions with pagination and sorting by date.
-///
-/// # Arguments
-/// * `limit` - Maximum number of transactions to return
-/// * `offset` - Number of transactions to skip
-/// * `sort_order` - Sort direction for date field
-/// * `connection` - Database connection reference
-///
-/// # Errors
-/// Returns [Error::SqlError] if:
-/// - Database connection fails
-/// - SQL query preparation or execution fails
-/// - Transaction row mapping fails
-fn get_transaction_table_rows_paginated(
-    limit: u64,
-    offset: u64,
-    sort_order: SortOrder,
-    connection: &Connection,
-) -> Result<Vec<Transaction>, Error> {
-    let order_clause = match sort_order {
-        SortOrder::Ascending => "ORDER BY date ASC",
-        SortOrder::Descending => "ORDER BY date DESC",
+fn normalize_query(query: RangeQuery, now_local: Date) -> QueryDecision {
+    let requested_range_preset = query.range.unwrap_or(RangePreset::default_preset());
+    let interval_preset = query.interval.unwrap_or(IntervalPreset::default_preset());
+    let show_category_summary = query.summary.unwrap_or(false);
+    let anchor_date = query.anchor.unwrap_or(now_local);
+    let range_preset = if range_preset_can_contain_interval(requested_range_preset, interval_preset)
+    {
+        requested_range_preset
+    } else {
+        smallest_range_for_interval(interval_preset)
     };
 
-    // Sort by date, and then ID to keep transaction order stable after updates
-    let query = format!(
-        "SELECT \"transaction\".id, amount, date, description, tag.name FROM \"transaction\" \
-        LEFT JOIN tag ON \"transaction\".tag_id = tag.id \
-        {}, \"transaction\".id ASC \
-        LIMIT {} OFFSET {}",
-        order_clause, limit, offset
+    if range_preset != requested_range_preset {
+        let redirect_url = TransactionsQuery::new(
+            range_preset,
+            interval_preset,
+            anchor_date,
+            show_category_summary,
+        )
+        .to_url(endpoints::TRANSACTIONS_VIEW);
+        return QueryDecision::Redirect(redirect_url);
+    }
+
+    QueryDecision::Normalized(NormalizedQuery {
+        range_preset,
+        interval_preset,
+        show_category_summary,
+        anchor_date,
+    })
+}
+
+fn build_transactions_view_model(input: TransactionsInputs) -> TransactionsViewModel {
+    let range_nav = RangeNavigation::new(input.options.range_preset, input.range, input.bounds);
+    let latest_link = input.bounds.and_then(|bounds| {
+        let latest_range = compute_range(input.options.range_preset, bounds.end);
+        if latest_range == input.range {
+            None
+        } else {
+            Some(RangeNavLink::new(latest_range))
+        }
+    });
+    let has_any_transactions = input.bounds.is_some();
+
+    let redirect_url =
+        TransactionsQuery::from_normalized(&input.options).to_url(endpoints::TRANSACTIONS_VIEW);
+    let redirect_param = build_redirect_param(&redirect_url);
+
+    let tags_with_status =
+        build_tags_with_exclusion_status(input.available_tags, &input.excluded_tag_ids);
+
+    let redirect_param = redirect_param.as_deref();
+    let transaction_rows = input
+        .transactions
+        .into_iter()
+        .map(|transaction| TransactionTableRow::new_from_transaction(transaction, redirect_param))
+        .collect::<Vec<_>>();
+
+    let grouped = group_transactions(
+        transaction_rows,
+        GroupingOptions {
+            interval_preset: input.options.interval_preset,
+            excluded_tag_ids: &input.excluded_tag_ids,
+            show_category_summary: input.options.show_category_summary,
+        },
     );
 
-    connection
-        .prepare(&query)?
-        .query_map([], |row| {
-            let tag_name = row
-                .get::<usize, Option<String>>(4)?
-                .map(|some_tag_name| TagName::new_unchecked(&some_tag_name));
-
-            Ok(Transaction {
-                id: row.get(0)?,
-                amount: row.get(1)?,
-                date: row.get(2)?,
-                description: row.get(3)?,
-                tag_name,
-            })
-        })?
-        .map(|transaction_result| transaction_result.map_err(Error::SqlError))
-        .collect()
-}
-
-fn pagination_indicator_html(
-    indicator: &PaginationIndicator,
-    transactions_page_route: &Uri,
-    per_page: u64,
-) -> Markup {
-    html! {
-        li class="flex items-center"
-        {
-            @match indicator {
-                PaginationIndicator::Page(page) => {
-                    a
-                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
-                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                    {
-                        (page)
-                    }
-                }
-                PaginationIndicator::CurrPage(page) => {
-                    p
-                        aria-current="page"
-                        class="block px-3 py-2 rounded-sm font-bold text-black dark:text-white"
-                    {
-                        (page)
-                    }
-                }
-                PaginationIndicator::Ellipsis => {
-                    span class="px-3 py-2 text-gray-400 select-none" { "..." }
-                }
-                PaginationIndicator::BackButton(page) => {
-                    a
-                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
-                        role="button"
-                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                    {
-                        "Back"
-                    }
-                }
-                PaginationIndicator::NextButton(page) => {
-                    a
-                        href={(transactions_page_route) "?page=" (page) "&per_page=" (per_page)}
-                        role="button"
-                        class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                    {
-                        "Next"
-                    }
-                }
-            }
-        }
+    TransactionsViewModel {
+        grouped,
+        range_nav,
+        latest_link,
+        has_any_transactions,
+        tags_with_status,
+        redirect_url,
+        options: TransactionsViewOptions {
+            range_preset: input.options.range_preset,
+            interval_preset: input.options.interval_preset,
+            show_category_summary: input.options.show_category_summary,
+            anchor_date: input.options.anchor_date,
+        },
     }
-}
-
-fn transaction_row_view(row: &TransactionTableRow) -> Markup {
-    let amount_str = format_currency(row.amount);
-    let description_length = row.description.graphemes(true).count();
-
-    // Truncate long descriptions to prevent visual artifacts from the table growing too wide.
-    let (description, tooltip) = if description_length <= MAX_DESCRIPTION_GRAPHEMES {
-        (row.description.clone(), None)
-    } else {
-        let description: String = row
-            .description
-            .graphemes(true)
-            .take(MAX_DESCRIPTION_GRAPHEMES - 3)
-            .collect();
-        let description = description + "...";
-        (description, Some(&row.description))
-    };
-
-    html! {
-        tr class=(TABLE_ROW_STYLE)
-        {
-            td class="px-6 py-4 text-right" { (amount_str) }
-            td class=(TABLE_CELL_STYLE) { (row.date) }
-            td class=(TABLE_CELL_STYLE) title=[tooltip] { (description) }
-            td class=(TABLE_CELL_STYLE)
-            {
-                @if let Some(ref tag_name) = row.tag_name {
-                    span class=(TAG_BADGE_STYLE)
-                    {
-                        (tag_name)
-                    }
-                } @else {
-                    span class="text-gray-400 dark:text-gray-500" { "-" }
-                }
-            }
-            td class=(TABLE_CELL_STYLE)
-            {
-                div class="flex gap-4"
-                {
-                    a href=(row.edit_url) class=(LINK_STYLE)
-                    {
-                        "Edit"
-                    }
-
-                    button
-                        hx-delete=(row.delete_url)
-                        hx-confirm={
-                            "Are you sure you want to delete the transaction '"
-                            (row.description) "'? This cannot be undone."
-                        }
-                        hx-target="closest tr"
-                        hx-target-error="#alert-container"
-                        hx-swap="outerHTML"
-                        class=(BUTTON_DELETE_STYLE)
-                    {
-                       "Delete"
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn transactions_view(
-    transactions: Vec<TransactionTableRow>,
-    pagination: &[PaginationIndicator],
-    per_page: u64,
-) -> Markup {
-    let create_transaction_route = Uri::from_static(endpoints::NEW_TRANSACTION_VIEW);
-    let import_transaction_route = Uri::from_static(endpoints::IMPORT_VIEW);
-    let transactions_page_route = Uri::from_static(endpoints::TRANSACTIONS_VIEW);
-    let nav_bar = NavBar::new(endpoints::TRANSACTIONS_VIEW).into_html();
-    // Cache this result so it can be accessed after `transactions` is moved by for loop.
-    let transactions_empty = transactions.is_empty();
-
-    let content = html! {
-        (nav_bar)
-
-        div class=(PAGE_CONTAINER_STYLE)
-        {
-            div class="relative"
-            {
-                div class="flex justify-between flex-wrap items-end"
-                {
-                    h1 class="text-xl font-bold" { "Transactions" }
-
-                    a href=(import_transaction_route) class=(LINK_STYLE)
-                    {
-                        "Import Transactions"
-                    }
-
-                    a href=(create_transaction_route) class=(LINK_STYLE)
-                    {
-                        "Create Transaction"
-                    }
-                }
-
-                div class="dark:bg-gray-800"
-                {
-                    table class="w-full text-sm text-left rtl:text-right
-                        text-gray-500 dark:text-gray-400"
-                    {
-                        thead class=(TABLE_HEADER_STYLE)
-                        {
-                            tr
-                            {
-                                th scope="col" class="px-6 py-3 text-right"
-                                {
-                                    "Amount"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Date"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Description"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Tags"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Actions"
-                                }
-                            }
-                        }
-
-                        tbody
-                        {
-                            @for transaction_row in transactions {
-                                (transaction_row_view(&transaction_row))
-                            }
-
-                            @if transactions_empty {
-                                tr
-                                {
-                                    th { "Nothing here yet." }
-                                }
-                            }
-                        }
-                    }
-
-                    @if !transactions_empty {
-                        nav class="pagination flex justify-center my-8"
-                        {
-                            ul class="pagination flex list-none gap-2 p-0 m-0"
-                            {
-                                @for indicator in pagination {
-                                    (pagination_indicator_html(indicator, &transactions_page_route, per_page))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    base("Transactions", &[], &content)
 }
 
 #[cfg(test)]
@@ -443,18 +342,18 @@ mod tests {
         response::Response,
     };
     use rusqlite::Connection;
-    use scraper::{ElementRef, Html, Selector, selectable::Selectable};
-    use time::macros::date;
+    use scraper::{ElementRef, Html, Selector};
+    use time::{Date, macros::date};
 
     use crate::{
         db::initialize,
-        endpoints,
-        pagination::{PaginationConfig, PaginationIndicator},
-        tag::{TagName, create_tag},
+        tag::{TagName, create_tag, save_excluded_tags},
         transaction::{Transaction, create_transaction},
     };
 
-    use super::{Pagination, TransactionsViewState, get_transactions_page};
+    use super::{TransactionsQuery, TransactionsViewState, get_transactions_page};
+    use crate::endpoints;
+    use crate::transaction::range::{IntervalPreset, RangePreset, RangeQuery, compute_range};
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -472,69 +371,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transactions_page_displays_paged_data() {
+    async fn transactions_page_displays_range_data() {
         let conn = get_test_connection();
         let today = date!(2025 - 10 - 05);
 
-        // Create 30 transactions in the database
-        for i in 1..=30 {
+        for i in 1..=3 {
             create_transaction(Transaction::build(i as f64, today, ""), &conn).unwrap();
         }
 
         let state = TransactionsViewState {
             db_connection: Arc::new(Mutex::new(conn)),
-            pagination_config: PaginationConfig {
-                max_pages: 5,
-                ..Default::default()
-            },
+            local_timezone: "Etc/UTC".to_owned(),
         };
-        let per_page = 3;
-        let page = 5;
         let want_transactions = [
             Transaction {
-                id: 13,
-                amount: 13.0,
+                id: 1,
+                amount: 1.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
                 tag_id: None,
             },
             Transaction {
-                id: 14,
-                amount: 14.0,
+                id: 2,
+                amount: 2.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
                 tag_id: None,
             },
             Transaction {
-                id: 15,
-                amount: 15.0,
+                id: 3,
+                amount: 3.0,
                 date: today,
                 description: "".to_owned(),
                 import_id: None,
                 tag_id: None,
             },
-        ];
-        let want_indicators = [
-            PaginationIndicator::BackButton(4),
-            PaginationIndicator::Page(1),
-            PaginationIndicator::Ellipsis,
-            PaginationIndicator::Page(3),
-            PaginationIndicator::Page(4),
-            PaginationIndicator::CurrPage(5),
-            PaginationIndicator::Page(6),
-            PaginationIndicator::Page(7),
-            PaginationIndicator::Ellipsis,
-            PaginationIndicator::Page(10),
-            PaginationIndicator::NextButton(6),
         ];
 
         let response = get_transactions_page(
             State(state),
-            Query(Pagination {
-                page: Some(page),
-                per_page: Some(per_page),
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
+                summary: None,
+                anchor: Some(today),
             }),
         )
         .await
@@ -544,8 +426,146 @@ mod tests {
         assert_valid_html(&html);
         let table = must_get_table(&html);
         assert_table_has_transactions(table, &want_transactions);
-        let pagination = must_get_pagination_indicator(&html);
-        assert_correct_pagination_indicators(pagination, per_page, &want_indicators);
+        assert_range_navigation_present(&html);
+    }
+
+    #[tokio::test]
+    async fn transactions_page_shows_navigation_with_empty_range() {
+        let conn = get_test_connection();
+        let transaction_date = date!(2025 - 10 - 05);
+        let anchor = date!(2025 - 01 - 05);
+
+        create_transaction(Transaction::build(1.0, transaction_date, ""), &conn).unwrap();
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
+                summary: None,
+                anchor: Some(anchor),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+        assert_range_navigation_present(&html);
+        assert_empty_state_present(&html);
+    }
+
+    #[tokio::test]
+    async fn transactions_page_shows_latest_link_when_not_latest_range() {
+        let conn = get_test_connection();
+        let transaction_date = date!(2025 - 10 - 05);
+        let anchor = date!(2025 - 08 - 05);
+
+        create_transaction(Transaction::build(1.0, transaction_date, ""), &conn).unwrap();
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
+                summary: None,
+                anchor: Some(anchor),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+        assert_latest_link_present(&html, RangePreset::Month, transaction_date);
+    }
+
+    #[tokio::test]
+    async fn transactions_page_shows_summary_empty_state_when_all_excluded() {
+        let conn = get_test_connection();
+        let today = date!(2025 - 10 - 05);
+
+        let tag = create_tag(TagName::new_unchecked("Excluded"), &conn).unwrap();
+        save_excluded_tags(&[tag.id], &conn).unwrap();
+        create_transaction(
+            Transaction::build(50.0, today, "Excluded transaction").tag_id(Some(tag.id)),
+            &conn,
+        )
+        .unwrap();
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
+                summary: Some(true),
+                anchor: Some(today),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+        assert_summary_empty_state_present(&html);
+    }
+
+    #[tokio::test]
+    async fn transactions_page_autoselects_range_when_interval_exceeds_range() {
+        let conn = get_test_connection();
+        let transaction_date = date!(2025 - 10 - 05);
+
+        create_transaction(Transaction::build(1.0, transaction_date, ""), &conn).unwrap();
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(RangeQuery {
+                range: Some(RangePreset::Week),
+                interval: Some(IntervalPreset::Month),
+                summary: None,
+                anchor: Some(transaction_date),
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::SEE_OTHER);
+        let location = response
+            .headers()
+            .get("location")
+            .expect("Missing redirect location header");
+        let expected_url = TransactionsQuery::new(
+            RangePreset::Month,
+            IntervalPreset::Month,
+            transaction_date,
+            false,
+        )
+        .to_url(endpoints::TRANSACTIONS_VIEW);
+        assert_eq!(
+            location,
+            expected_url.as_str(),
+            "Expected redirect to adjusted range preset"
+        );
     }
 
     #[track_caller]
@@ -557,7 +577,7 @@ mod tests {
 
     #[track_caller]
     fn assert_table_has_transactions(table: ElementRef, transactions: &[Transaction]) {
-        let row_selector = Selector::parse("tbody tr").unwrap();
+        let row_selector = Selector::parse("tbody tr[data-transaction-row='true']").unwrap();
         let table_rows: Vec<ElementRef<'_>> = table.select(&row_selector).collect();
 
         assert_eq!(
@@ -594,173 +614,70 @@ mod tests {
     }
 
     #[track_caller]
-    fn must_get_pagination_indicator(html: &Html) -> ElementRef<'_> {
-        html.select(&Selector::parse("nav.pagination > ul.pagination").unwrap())
+    fn assert_range_navigation_present(html: &Html) {
+        let nav_selector = Selector::parse("nav.pagination > ul.pagination").unwrap();
+        let nav = html
+            .select(&nav_selector)
             .next()
-            .expect("No pagination indicator found")
+            .expect("No range navigation found");
+
+        let current_selector = Selector::parse("[aria-current='page']").unwrap();
+        nav.select(&current_selector)
+            .next()
+            .expect("Range nav should include aria-current for range label");
     }
 
     #[track_caller]
-    fn assert_correct_pagination_indicators(
-        pagination_indicator: ElementRef,
-        want_per_page: u64,
-        want_indicators: &[PaginationIndicator],
-    ) {
-        let li_selector = Selector::parse("li").unwrap();
-        let list_items: Vec<ElementRef> = pagination_indicator.select(&li_selector).collect();
-        let list_len = list_items.len();
-        let want_len = want_indicators.len();
-        assert_eq!(list_len, want_len, "got {list_len} pages, want {want_len}");
-
+    fn assert_latest_link_present(html: &Html, preset: RangePreset, latest_date: Date) {
+        let latest_range = compute_range(preset, latest_date);
+        let latest_href = TransactionsQuery::new(
+            preset,
+            IntervalPreset::default_preset(),
+            latest_range.end,
+            false,
+        )
+        .to_url(endpoints::TRANSACTIONS_VIEW);
         let link_selector = Selector::parse("a").unwrap();
+        let latest_link = html
+            .select(&link_selector)
+            .find(|link| link.text().collect::<String>().trim() == "Latest")
+            .expect("No Latest link found");
+        let href = latest_link
+            .value()
+            .attr("href")
+            .expect("Latest link missing href");
+        assert_eq!(
+            href, latest_href,
+            "Latest link href did not include expected query. want {latest_href}, got {href}"
+        );
+    }
 
-        for (i, (list_item, want_indicator)) in list_items.iter().zip(want_indicators).enumerate() {
-            match *want_indicator {
-                PaginationIndicator::CurrPage(want_page) => {
-                    assert!(
-                        list_item.select(&link_selector).next().is_none(),
-                        "The current page indicator should not contain a link"
-                    );
+    #[track_caller]
+    fn assert_empty_state_present(html: &Html) {
+        let empty_row_selector = Selector::parse("tbody tr td[data-empty-state='true']").unwrap();
+        let empty_row = html
+            .select(&empty_row_selector)
+            .next()
+            .expect("No empty-state row found");
+        let text = empty_row.text().collect::<String>();
+        assert!(
+            text.contains("No transactions in this range."),
+            "Empty-state row did not include expected text: {text}"
+        );
+    }
 
-                    let paragraph_selector =
-                        Selector::parse("p").expect("Could not create selector 'p'");
-                    let paragraph = list_item
-                        .select(&paragraph_selector)
-                        .next()
-                        .expect("Current page indicator should have a paragraph element ('<p>')");
-
-                    assert_eq!(paragraph.attr("aria-current"), Some("page"));
-
-                    let text = {
-                        let text = paragraph.text().collect::<String>();
-                        text.trim().to_owned()
-                    };
-
-                    let got_page_number: u64 = text.parse().unwrap_or_else(|_| {
-                        panic!(
-                            "Could not parse \"{text}\" as a u64 for list item {i} in {}",
-                            list_item.html()
-                        )
-                    });
-
-                    assert_eq!(
-                        want_page,
-                        got_page_number,
-                        "want page number {want_page}, got {got_page_number} for list item {i} in {}",
-                        pagination_indicator.html()
-                    );
-                }
-                PaginationIndicator::Page(want_page) => {
-                    let link = list_item.select(&link_selector).next().unwrap_or_else(|| {
-                        panic!("Could not get link (<a> tag) for list item {i}")
-                    });
-                    let link_text = {
-                        let text = link.text().collect::<String>();
-                        text.trim().to_owned()
-                    };
-                    let got_page_number = link_text.parse::<u64>().unwrap_or_else(|_| {
-                        panic!(
-                            "Could not parse page number {link_text} for page {want_page} as usize"
-                        )
-                    });
-
-                    assert_eq!(
-                        want_page,
-                        got_page_number,
-                        "want page number {want_page}, got {got_page_number} for list item {i} in {}",
-                        pagination_indicator.html()
-                    );
-
-                    let link_target = link.attr("href").unwrap_or_else(|| {
-                        panic!("Link for page {want_page} did not have href element")
-                    });
-                    let want_target = format!(
-                        "{}?page={want_page}&per_page={want_per_page}",
-                        endpoints::TRANSACTIONS_VIEW
-                    );
-                    assert_eq!(
-                        want_target, link_target,
-                        "Got incorrect page link for page {want_page}"
-                    );
-                }
-                PaginationIndicator::Ellipsis => {
-                    assert!(
-                        list_item.select(&link_selector).next().is_none(),
-                        "Item {i} should not contain a link tag (<a>) in {}",
-                        pagination_indicator.html()
-                    );
-                    let got_text = list_item.text().collect::<String>();
-                    let got_text = got_text.trim();
-                    assert_eq!(got_text, "...");
-                }
-                PaginationIndicator::NextButton(want_page) => {
-                    let link = list_item.select(&link_selector).next().unwrap_or_else(|| {
-                        panic!("Could not get link (<a> tag) for list item {i}")
-                    });
-                    let link_text = {
-                        let text = link.text().collect::<String>();
-                        text.trim().to_owned()
-                    };
-                    assert_eq!(
-                        "Next", link_text,
-                        "want link text \"Next\", got \"{link_text}\""
-                    );
-
-                    let role = link
-                        .attr("role")
-                        .expect("The next button did not have \"role\" attribute.");
-                    assert_eq!(
-                        role, "button",
-                        "The next page anchor tag should be marked as a button."
-                    );
-
-                    let link_target = link
-                        .attr("href")
-                        .expect("Link for next button did not have href element");
-                    let want_target = format!(
-                        "{}?page={want_page}&per_page={want_per_page}",
-                        endpoints::TRANSACTIONS_VIEW
-                    );
-                    assert_eq!(
-                        want_target, link_target,
-                        "Got link to {link_target} for next button, want {want_page}"
-                    );
-                }
-                PaginationIndicator::BackButton(want_page) => {
-                    let link = list_item.select(&link_selector).next().unwrap_or_else(|| {
-                        panic!("Could not get link (<a> tag) for list item {i}")
-                    });
-                    let link_text = {
-                        let text = link.text().collect::<String>();
-                        text.trim().to_owned()
-                    };
-                    assert_eq!(
-                        "Back", link_text,
-                        "want link text \"Back\", got \"{link_text}\""
-                    );
-
-                    let role = link
-                        .attr("role")
-                        .expect("The back button did not have \"role\" attribute.");
-                    assert_eq!(
-                        role, "button",
-                        "The back button's anchor tag should be marked as a button."
-                    );
-
-                    let link_target = link
-                        .attr("href")
-                        .expect("Link for back button did not have href element");
-                    let want_target = format!(
-                        "{}?page={want_page}&per_page={want_per_page}",
-                        endpoints::TRANSACTIONS_VIEW
-                    );
-                    assert_eq!(
-                        want_target, link_target,
-                        "Got link to {link_target} for back button, want {want_page}"
-                    );
-                }
-            }
-        }
+    #[track_caller]
+    fn assert_summary_empty_state_present(html: &Html) {
+        let empty_row_selector = Selector::parse("tbody tr td[data-empty-state='true']").unwrap();
+        let empty_row = html
+            .select(&empty_row_selector)
+            .next()
+            .expect("No empty-state row found");
+        let text = empty_row.text().collect::<String>();
+        assert!(
+            text.contains("No transactions in this summary after exclusions."),
+            "Summary empty-state row did not include expected text: {text}"
+        );
     }
 
     #[tokio::test]
@@ -791,14 +708,16 @@ mod tests {
 
         let state = TransactionsViewState {
             db_connection: Arc::new(Mutex::new(conn)),
-            pagination_config: PaginationConfig::default(),
+            local_timezone: "Etc/UTC".to_owned(),
         };
 
         let response = get_transactions_page(
             State(state),
-            Query(Pagination {
-                page: Some(1),
-                per_page: Some(10),
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
+                summary: None,
+                anchor: Some(today),
             }),
         )
         .await
@@ -823,7 +742,7 @@ mod tests {
 
         // Check table rows for tag content
         let table_rows = html
-            .select(&Selector::parse("tbody tr").unwrap())
+            .select(&Selector::parse("tbody tr[data-transaction-row='true']").unwrap())
             .collect::<Vec<_>>();
         assert_eq!(table_rows.len(), 3, "Should have 3 transaction rows");
 
@@ -860,6 +779,66 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn transactions_page_shows_excluded_tags_controls() {
+        let conn = get_test_connection();
+        let today = date!(2025 - 10 - 05);
+
+        let groceries = create_tag(TagName::new_unchecked("Groceries"), &conn).unwrap();
+        let rent = create_tag(TagName::new_unchecked("Rent"), &conn).unwrap();
+        save_excluded_tags(&[groceries.id], &conn).unwrap();
+
+        let state = TransactionsViewState {
+            db_connection: Arc::new(Mutex::new(conn)),
+            local_timezone: "Etc/UTC".to_owned(),
+        };
+
+        let response = get_transactions_page(
+            State(state),
+            Query(RangeQuery {
+                range: Some(RangePreset::Month),
+                interval: None,
+                summary: None,
+                anchor: Some(today),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let html = parse_html(response).await;
+        assert_valid_html(&html);
+
+        let checkbox_selector =
+            Selector::parse("input[type='checkbox'][name='excluded_tags']").unwrap();
+        let checkboxes: Vec<_> = html.select(&checkbox_selector).collect();
+        assert_eq!(checkboxes.len(), 2, "Expected two excluded tag checkboxes");
+
+        let mut found_groceries = false;
+        let mut found_rent = false;
+
+        for checkbox in checkboxes {
+            let value = checkbox
+                .value()
+                .attr("value")
+                .expect("Checkbox missing value attribute");
+            let is_checked = checkbox.value().attr("checked").is_some();
+
+            if value == groceries.id.to_string() {
+                found_groceries = true;
+                assert!(is_checked, "Groceries should be marked as excluded");
+            } else if value == rent.id.to_string() {
+                found_rent = true;
+                assert!(
+                    !is_checked,
+                    "Rent should not be marked as excluded by default"
+                );
+            }
+        }
+
+        assert!(found_groceries, "Groceries checkbox should be present");
+        assert!(found_rent, "Rent checkbox should be present");
+    }
+
     async fn parse_html(response: Response) -> Html {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX)
@@ -868,76 +847,5 @@ mod tests {
         let text = String::from_utf8_lossy(&body).to_string();
 
         Html::parse_document(&text)
-    }
-}
-
-#[cfg(test)]
-mod database_tests {
-    use rusqlite::Connection;
-    use time::{Duration, OffsetDateTime, macros::date};
-
-    use crate::{
-        db::initialize,
-        transaction::{
-            Transaction, TransactionId, create_transaction,
-            transactions_page::{
-                SortOrder, Transaction as TableTransaction, get_transaction_table_rows_paginated,
-            },
-        },
-    };
-
-    fn get_test_connection() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        initialize(&conn).unwrap();
-        conn
-    }
-
-    #[test]
-    fn get_transactions_with_limit() {
-        let conn = get_test_connection();
-
-        let today = OffsetDateTime::now_utc().date();
-
-        for i in 1..=10 {
-            let transaction_builder = Transaction::build(
-                i as f64,
-                today - Duration::days(i),
-                &format!("transaction #{i}"),
-            );
-
-            create_transaction(transaction_builder, &conn).unwrap();
-        }
-
-        let got = get_transaction_table_rows_paginated(5, 0, SortOrder::Ascending, &conn).unwrap();
-
-        assert_eq!(got.len(), 5, "got {} transactions, want 5", got.len());
-    }
-
-    #[test]
-    fn get_transactions_with_offset() {
-        let conn = get_test_connection();
-        let offset = 10;
-        let limit = 5;
-        let today = date!(2025 - 10 - 05);
-        let mut want = Vec::new();
-        for i in 1..20 {
-            let transaction = create_transaction(Transaction::build(i as f64, today, ""), &conn)
-                .expect("Could not create transaction");
-
-            if i > offset && i <= offset + limit {
-                want.push(TableTransaction {
-                    id: i as TransactionId,
-                    amount: transaction.amount,
-                    date: transaction.date,
-                    description: transaction.description.clone(),
-                    tag_name: None,
-                });
-            }
-        }
-
-        let got = get_transaction_table_rows_paginated(limit, offset, SortOrder::Ascending, &conn)
-            .expect("Could not query transactions");
-
-        assert_eq!(want, got);
     }
 }

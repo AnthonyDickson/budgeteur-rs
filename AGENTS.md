@@ -20,6 +20,13 @@
 ## Coding Style & Naming Conventions
 
 - Follow Rust standard style: `snake_case` for functions/variables, `PascalCase` for types.
+- Prefer a simple and functional programming style.
+- Avoid adding abstraction unless it would significantly reduce the amount of code to write, improve readability, make
+  the code easier to reason about or make the project easier to maintain and extend.
+- Avoid comments that just restate what the code is doing, focus on comments that explain unintuitive code, rationale
+  or important invariants.
+- Prefer imports at the top of the file over inline, qualified imports
+- When acquiring the shared DB connection in handlers, avoid `unwrap()`; log lock errors and return `Error::DatabaseLockError`.
 - Prefer `Error`’s `IntoResponse` for page endpoints; insert errors into forms or use `AlertTemplate` for fragments.
 - Use `bacon.toml` jobs for quality checks (`cargo check`, `cargo clippy`, `cargo doc`).
 
@@ -45,3 +52,14 @@
 
 - For local development, use the `SECRET` environment variable (provided by `nix develop` or manually).
 - The default server runs on HTTP; use a reverse proxy for HTTPS in real deployments.
+
+## Date/Time Conventions
+
+- Prefer explicit window presets (week/fortnight/month/quarter/half-year/year) for date-range navigation and include full four-digit years on both ends of range labels.
+- Default “now” calculations to the user’s local timezone via `get_local_offset`, not UTC.
+- For windowed navigation, use target date ranges as link text to make direction unambiguous.
+
+## Dev Process
+
+- When finished implementing or refactoring something, run `cargo test -q` and `cargo clippy --quiet`.
+- When replacing a subsystem (e.g., pagination → windows), remove unused modules/tests rather than silencing dead-code warnings.

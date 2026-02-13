@@ -79,6 +79,8 @@ pub const AUTO_TAG_ALL: &str = "/api/auto-tag/all";
 pub const AUTO_TAG_UNTAGGED: &str = "/api/auto-tag/untagged";
 /// The route to update dashboard excluded tags.
 pub const DASHBOARD_EXCLUDED_TAGS: &str = "/api/dashboard/excluded-tags";
+/// The route to update transaction excluded tags.
+pub const TRANSACTIONS_EXCLUDED_TAGS: &str = "/api/transactions/excluded-tags";
 
 /// Replace the parameter in `endpoint_path` with `id`.
 ///
@@ -177,6 +179,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_ALL);
         assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_UNTAGGED);
         assert_endpoint_is_valid_uri(endpoints::DASHBOARD_EXCLUDED_TAGS);
+        assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_EXCLUDED_TAGS);
     }
 
     #[test]

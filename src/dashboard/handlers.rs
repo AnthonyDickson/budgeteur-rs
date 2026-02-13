@@ -10,9 +10,7 @@ use axum::{
 use axum_extra::extract::Form;
 use maud::{Markup, PreEscaped, html};
 use rusqlite::Connection;
-use serde::Deserialize;
 use std::{
-    collections::HashSet,
     ops::RangeInclusive,
     sync::{Arc, Mutex},
 };
@@ -27,14 +25,17 @@ use crate::{
         charts::{
             DashboardChart, balances_chart, charts_inline_script, expenses_chart, net_income_chart,
         },
-        preferences::{get_excluded_tags, save_excluded_tags},
         tables::{monthly_summary_table, summary_statistics_table},
         transaction::{Transaction, get_transactions_in_date_range},
     },
     endpoints,
     html::{HeadElement, base, link},
     navigation::NavBar,
-    tag::{Tag, TagId, get_all_tags},
+    tag::{
+        ExcludedTagsForm, ExcludedTagsViewConfig, TagId, TagWithExclusion,
+        build_tags_with_exclusion_status, excluded_tags_controls, get_all_tags, get_excluded_tags,
+        save_excluded_tags,
+    },
     timezone::get_local_offset,
 };
 
@@ -60,26 +61,6 @@ impl FromRef<AppState> for DashboardState {
             local_timezone: state.local_timezone.clone(),
         }
     }
-}
-
-/// Form data for updating excluded tags.
-#[derive(Deserialize)]
-pub struct ExcludedTagsForm {
-    /// List of tag IDs to exclude from dashboard summaries
-    #[serde(default)]
-    pub excluded_tags: Vec<TagId>,
-}
-
-/// A tag paired with its exclusion status for the dashboard filter UI.
-///
-/// Used to render checkboxes that allow users to exclude specific tags
-/// from dashboard calculations.
-#[derive(Debug, Clone)]
-struct TagWithExclusion {
-    /// The tag
-    tag: Tag,
-    /// Whether this tag is currently excluded from dashboard summaries
-    is_excluded: bool,
 }
 
 /// Holds all the data needed to render the dashboard.
@@ -211,14 +192,7 @@ fn build_dashboard_data(
     let available_tags = get_all_tags(connection)
         .inspect_err(|error| tracing::error!("could not get tags: {error}"))?;
 
-    let excluded_set: HashSet<_> = excluded_tag_ids.iter().collect();
-    let tags_with_status: Vec<TagWithExclusion> = available_tags
-        .into_iter()
-        .map(|tag| TagWithExclusion {
-            is_excluded: excluded_set.contains(&tag.id),
-            tag,
-        })
-        .collect();
+    let tags_with_status = build_tags_with_exclusion_status(available_tags, excluded_tag_ids);
 
     let local_timezone = get_local_offset(local_timezone_name).ok_or_else(|| {
         tracing::error!("Invalid timezone {}", local_timezone_name);
@@ -395,7 +369,19 @@ fn dashboard_content_partial(
     tag_stats: &[TagExpenseStats],
     displayed_month_label: &str,
 ) -> Markup {
-    let excluded_tags_endpoint = endpoints::DASHBOARD_EXCLUDED_TAGS;
+    let excluded_tags_view = excluded_tags_controls(
+        tags_with_status,
+        ExcludedTagsViewConfig {
+            heading: "Filter Out Tags",
+            description: "Exclude transactions with these tags from the charts and table above:",
+            endpoint: endpoints::DASHBOARD_EXCLUDED_TAGS,
+            hx_target: Some("#dashboard-content"),
+            hx_swap: Some("innerHTML"),
+            hx_trigger: Some("change"),
+            redirect_url: None,
+            form_id: None,
+        },
+    );
 
     html!(
         section
@@ -433,55 +419,7 @@ fn dashboard_content_partial(
             (PreEscaped(charts_inline_script(charts)))
         }
 
-        @if !tags_with_status.is_empty() {
-            div class="mb-8 w-full"
-            {
-                h3 class="text-xl font-semibold mb-4" { "Filter Out Tags" }
-
-                form
-                    hx-post=(excluded_tags_endpoint)
-                    hx-target="#dashboard-content"
-                    hx-target-error="#alert-container"
-                    hx-swap="innerHTML"
-                    hx-trigger="change"
-                    class="bg-gray-50 dark:bg-gray-800 p-4 rounded"
-                {
-                    p class="text-sm text-gray-600 dark:text-gray-400 mb-3"
-                    {
-                        "Exclude transactions with these tags from the charts and table above:"
-                    }
-
-                    div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
-                    {
-                        @for tag_status in tags_with_status {
-                            label class="flex items-center space-x-2"
-                            {
-                                input
-                                    type="checkbox"
-                                    name="excluded_tags"
-                                    value=(tag_status.tag.id)
-                                    checked[tag_status.is_excluded]
-                                    class="rounded-sm border-gray-300
-                                        text-blue-600 shadow-xs
-                                        focus:border-blue-300 focus:ring-3
-                                        focus:ring-blue-200/50"
-                                ;
-
-                                span
-                                    class="inline-flex items-center
-                                        px-2.5 py-0.5
-                                        text-xs font-semibold text-blue-800
-                                        bg-blue-100 rounded-full
-                                        dark:bg-blue-900 dark:text-blue-300"
-                                {
-                                    (tag_status.tag.name)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        (excluded_tags_view)
     )
 }
 
@@ -524,7 +462,8 @@ mod tests {
     use rusqlite::Connection;
     use std::sync::{Arc, Mutex};
 
-    use super::{ExcludedTagsForm, get_dashboard_page};
+    use super::get_dashboard_page;
+    use crate::tag::ExcludedTagsForm;
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
