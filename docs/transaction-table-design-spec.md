@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Transactions page presents a tabular view of all transactions with pagination, quick actions, and tag context. It uses the shared table styles and navigation layout across the app while keeping the primary workflow (scan -> edit/delete -> paginate) fast and predictable.
+The Transactions page presents a tabular view of transactions with range-based navigation, interval grouping, quick actions, tag context, and an excluded-tag filter for summary totals. It uses the shared table styles and navigation layout across the app while keeping the primary workflow (scan -> edit/delete -> jump ranges) fast and predictable.
 
 ## Goals
 
@@ -20,10 +20,13 @@ Transactions Page
     │   ├── Title: "Transactions"
     │   ├── Link: "Import Transactions"
     │   └── Link: "Create Transaction"
+    ├── Range Navigation (top)
+    ├── Control Cluster (range, interval, summary toggle)
     ├── Table
     │   ├── Header Row
     │   └── Body Rows (0..N)
-    └── Pagination (only when rows exist)
+    ├── Range Navigation (bottom)
+    └── Excluded Tags Filter
 ```
 
 ## Visual Design
@@ -50,6 +53,21 @@ Shared styles (from `src/html.rs`) provide the base look:
 - Table header: uppercase, smaller text, light gray background.
 - Table rows: white background with separators; dark mode inverse colors.
 - Table cells: consistent horizontal/vertical padding.
+
+### Range Navigation
+
+- Displayed above and below the table when the dataset has any transactions.
+- Three-column layout with previous range, current range label, and next range.
+- When not on the latest range, a “Latest” link appears beneath the range label.
+
+### Control Cluster
+
+- Placed below the top range navigation.
+- Contains three controls:
+  - **Range** presets (Week, Fortnight, Month, Quarter, Half-year, Year).
+  - **Interval** presets (Week, Fortnight, Month, Quarter, Half-year, Year).
+  - **Summary toggle** button with a status dot and “Summary on/off” label.
+- Disabled presets are gray and include a tooltip explaining why they are disabled.
 
 ### Column Layout
 
@@ -91,7 +109,8 @@ Shared styles (from `src/html.rs`) provide the base look:
 
 ## Grouped Transactions
 
-The table will support grouped views inspired by the History screens. These views layer on top of the existing table and keep pagination and actions consistent.
+The table supports grouped views inspired by the History screens in [Budgeteur](https://github.com/AnthonyDickson/budgeteur).
+These views layer on top of the existing table and keep actions consistent.
 
 ### Grouping Modes
 
@@ -102,8 +121,8 @@ The table will support grouped views inspired by the History screens. These view
 
 2. **Category Summary (optional, layered on date intervals)**
    - Within each date interval, show a category/tag summary list.
-   - Each category can be expanded to reveal a flat list of its transactions (date shown per row).
-   - Includes percent-of-total indicators and an “Other” row when needed.
+   - Each category can be expanded to reveal its transactions grouped by day.
+   - Includes percent-of-total indicators (e.g., “58% of total expenses”) and an “Other” row when needed.
 
 ### Date Interval Layout
 
@@ -158,6 +177,7 @@ Home Expenses (expanded)
 - Focus styles on the toggle control must be visible for keyboard users.
 - Provide interval size controls (week/fortnight/month/quarter/half-year/year) to change grouping period.
 - Group the range preset, date interval period, and tag grouping toggle together as a single control cluster.
+- The excluded-tag filter updates summary totals and percentages without removing transactions from the table.
 
 ### Date-Range Navigation (Range-based)
 
@@ -166,11 +186,12 @@ Previous Range    Current Range Label    Next Range
 ```
 
 - Navigation moves backward/forward by a fixed date range aligned to interval boundaries (no partial intervals).
-- Range presets (and only supported range sizes): last week, last fortnight, last month, last quarter, last half year, last year.
+- Range presets (and only supported range sizes): week, fortnight, month, quarter, half-year, year.
 - Presets smaller than the selected interval are disabled with a tooltip explaining why.
 - If the selected interval is larger than the current range, auto-select the smallest preset that can contain the interval.
 - Current range label reflects the active range (full four-digit years).
 - Date-range navigation loads a complete set of intervals within the selected range (no interval splitting).
+- When the current range is not the latest, show a “Latest” link beneath the range label to allow navigation even if there are no adjacent ranges.
 
 ### Empty State (Range-based)
 
@@ -179,8 +200,9 @@ Previous Range    Current Range Label    Next Range
 | No transactions in this range.           |
 ```
 
-- When no transactions exist, the table body shows a single row with “Nothing here yet.”
-- Date-range navigation is hidden in the empty state.
+- When the current range has no transactions, the table body shows a single row with “No transactions in this range.”
+- When summary mode has no rows due to exclusions, the table body shows “No transactions in this summary after exclusions.”
+- Range navigation is shown if any transactions exist in the dataset, even when the current range is empty. It is hidden only when there are no transactions at all.
 
 ## Data Ordering
 
@@ -197,6 +219,13 @@ Previous Range    Current Range Label    Next Range
 - Date-range navigation includes `aria-current` for the active range.
 - Truncated descriptions expose full text via `title`.
 - Destructive actions include confirmation dialog text with transaction description.
+- Summary sections use native `<details>` / `<summary>` elements for keyboard and screen reader support.
+
+## Excluded Tags Filter
+
+- Rendered as a titled block (“Filter Out Tags”) below the table.
+- Displays tags in a checkbox grid; excluded tags are checked on load.
+- Changing a checkbox updates summary totals/percentages and keeps the user on the same range.
 
 ## Potential Enhancements
 
@@ -208,11 +237,12 @@ Previous Range    Current Range Label    Next Range
 ## Source of Truth
 
 - UI: `src/transaction/transactions_page.rs`
+- Rendering: `src/transaction/view.rs`
 - Shared styles: `src/html.rs`
 
 ---
 
-**Document Version:** 1.2
-**Last Updated:** 2026-02-11
+**Document Version:** 1.3
+**Last Updated:** 2026-02-13
 **Status:** In Progress
-**Changes from v1.1:** Folded range-based navigation into baseline; updated empty state copy
+**Changes from v1.2:** Documented control cluster, latest link, excluded-tag filter, and summary empty state
