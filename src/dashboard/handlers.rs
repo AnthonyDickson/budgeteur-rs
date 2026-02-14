@@ -393,7 +393,7 @@ fn dashboard_content_partial(
                 @for chart in charts {
                     div
                         id=(chart.id)
-                        class="min-h-[380px] rounded dark:bg-gray-100"
+                        class="min-h-[240px] sm:min-h-[300px] md:min-h-[340px] lg:min-h-[380px] rounded dark:bg-gray-100"
                     {}
                 }
             }

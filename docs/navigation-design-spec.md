@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the current navigation design and implementation for Budgeteur, then outline the proposed mobile/tablet bottom navigation update.
+Define the current navigation design and implementation for Budgeteur.
 
 ## Current Design
 
@@ -15,9 +15,9 @@ Define the current navigation design and implementation for Budgeteur, then outl
 - Uses standard link styling with hover and active-state treatments.
 - Active link is visually highlighted.
 
-### Mobile Layout
-- Top navigation bar includes a hamburger button.
-- Links are hidden by default and expand into a vertical list when the hamburger is toggled.
+### Mobile/Tablet Layout
+- Top header (logo/title) stays at the top.
+- Primary navigation moves to a fixed bottom bar with a “More” popover.
 
 ### Visual Style
 - Light theme uses white backgrounds and gray borders; dark theme uses dark backgrounds and muted text.
@@ -25,7 +25,8 @@ Define the current navigation design and implementation for Budgeteur, then outl
 - Uses Tailwind utility classes for spacing, typography, and colors.
 
 ### Accessibility
-- Hamburger button has `aria-controls` and `aria-expanded` and toggles the menu’s visibility.
+- Bottom nav uses `aria-current="page"` for the active item.
+- “More” is implemented with `details/summary` for keyboard access without JS.
 - Links use normal anchor semantics.
 
 ## Current Implementation
@@ -39,15 +40,12 @@ Define the current navigation design and implementation for Budgeteur, then outl
 ### Structure
 - Top-level `<nav>` contains:
   - Brand/logo link to `/`.
-  - Hamburger button (shown at small breakpoints).
-  - Links container with `ul > li > a`.
-- The links container is hidden at small breakpoints and shown from `md` up via `md:block`.
-- Link styles include active and inactive variants with `md:` overrides.
+  - Desktop links container with `ul > li > a` shown from `lg` and up.
+- Bottom nav is rendered as a second `<nav>` and shown below `lg`.
+- Link styles include active and inactive variants with `lg:` overrides for desktop.
 
 ### Interaction
-- Mobile expansion is driven by a small JS toggle in `static/app.js` that:
-  - Toggles the `hidden` class on the menu.
-  - Updates `aria-expanded` on the button.
+- “More” uses native `details/summary` toggling (no JS).
 
 ### Call Sites
 - `NavBar` is included in most page templates, e.g.
@@ -66,8 +64,6 @@ Define the current navigation design and implementation for Budgeteur, then outl
   - `src/tag/edit.rs`
   - `src/rule/create.rs`
   - `src/rule/edit.rs`
-
-## Proposed Changes
 
 ### Goals
 - Keep the current desktop navigation style and behavior.
@@ -112,5 +108,20 @@ Define the current navigation design and implementation for Budgeteur, then outl
 - Keep desktop styles unchanged to avoid regressions.
 - Ensure `static/app.js` does not conflict with the new layout (hamburger may be removed or hidden on small screens).
 
+## Implementation Decisions (Ad-Hoc)
+- **Bottom nav styling:** Container uses `rounded-xl`; pill buttons use `rounded-lg` for a slightly tighter look.
+- **Bottom nav width/gutters:** Wrapper uses `max-w-screen-xl` with a consistent `px-4` gutter to match page containers on landscape.
+- **Z-index layering:** Bottom nav uses `z-40` so it sits above page content but below alerts.
+- **ECharts tooltip stacking:** `.echarts-tooltip` forced to `z-index: 30` to prevent tooltips covering the bottom nav.
+- **Body padding:** `pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-0` on `body` to protect content from the fixed bottom nav.
+- **Chart height responsiveness:** Dashboard chart containers use `min-h-[240px] sm:min-h-[300px] md:min-h-[340px] lg:min-h-[380px]` to keep axis labels visible on small/landscape screens.
+
 ### Future Enhancement (Optional)
 - Consider progressively revealing hidden items inline on tablet widths, and hiding “More” when there is sufficient space.
+
+---
+
+**Document Version:** 1.0
+**Last Updated:** 2026-02-15
+**Status:** Implemented
+**Changes from v0.x:** Formalized mobile bottom nav, responsive breakpoints, layout adjustments, and implementation decisions

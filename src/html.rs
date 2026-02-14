@@ -105,6 +105,11 @@ pub fn base(title: &str, head_elements: &[HeadElement], content: &Markup) -> Mar
                     #indicator.htmx-request.htmx-indicator {
                         display: inline;
                     }
+
+                    /* Keep chart tooltips below the fixed bottom nav, but above page content. */
+                    .echarts-tooltip {
+                        z-index: 30 !important;
+                    }
                     "#
                 }
 
@@ -123,7 +128,7 @@ pub fn base(title: &str, head_elements: &[HeadElement], content: &Markup) -> Mar
 
             body
                 hx-ext="response-targets"
-                class="container max-w-full min-h-screen bg-gray-50 dark:bg-gray-900"
+                class="container max-w-full min-h-screen bg-gray-50 dark:bg-gray-900 pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-0"
             {
                 (content)
 

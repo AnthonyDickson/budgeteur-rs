@@ -8,6 +8,7 @@ use crate::endpoints;
 ///
 /// It will change appearance if `is_current` is set to
 /// `true`. Only one link should be set as active at any one time.
+#[derive(Clone)]
 struct Link<'a> {
     url: &'a str,
     title: &'a str,
@@ -15,24 +16,18 @@ struct Link<'a> {
 }
 
 impl Link<'_> {
-    fn into_html(self) -> Markup {
-        let Link {
-            url,
-            title,
-            is_current,
-        } = self;
-
-        let style = if is_current {
-            "block py-2 px-3 text-white bg-blue-700 rounded-sm md:bg-transparent
-        md:text-blue-700 md:p-0 dark:text-white md:dark:text-blue-500"
+    fn into_desktop_html(self) -> Markup {
+        let style = if self.is_current {
+            "block py-2 px-3 text-white bg-blue-700 rounded-sm lg:bg-transparent
+        lg:text-blue-700 lg:p-0 dark:text-white lg:dark:text-blue-500"
         } else {
             "block py-2 px-3 text-gray-900 rounded-sm hover:bg-gray-100
-        md:hover:bg-transparent md:border-0 md:hover:text-blue-700 md:p-0
-        dark:text-white md:dark:hover:text-blue-500 dark:hover:bg-gray-700
-        dark:hover:text-white md:dark:hover:bg-transparent"
+        lg:hover:bg-transparent lg:border-0 lg:hover:text-blue-700 lg:p-0
+        dark:text-white lg:dark:hover:text-blue-500 dark:hover:bg-gray-700
+        dark:hover:text-white lg:dark:hover:bg-transparent"
         };
 
-        html!( a href=(url) class=(style) { (title) } )
+        html!( a href=(self.url) class=(style) { (self.title) } )
     }
 }
 
@@ -84,6 +79,50 @@ impl NavBar<'_> {
 
     pub fn into_html(self) -> Markup {
         let links = self.links;
+        let more_is_active = links.iter().any(|link| {
+            (link.url == endpoints::TAGS_VIEW || link.url == endpoints::RULES_VIEW)
+                && link.is_current
+        });
+        let bottom_link_class = |is_current: bool| -> &'static str {
+            if is_current {
+                "flex w-full min-w-0 items-center justify-center rounded-lg \
+                bg-blue-50 px-2.5 py-2 text-xs font-semibold leading-tight \
+                text-blue-700 shadow-sm sm:px-4 sm:text-sm \
+                dark:bg-blue-900/30 dark:text-blue-200"
+            } else {
+                "flex w-full min-w-0 items-center justify-center rounded-lg \
+                px-2.5 py-2 text-xs font-semibold leading-tight text-gray-600 \
+                sm:px-4 sm:text-sm \
+                hover:bg-blue-50/70 hover:text-blue-700 dark:text-gray-300 \
+                dark:hover:bg-blue-900/20 dark:hover:text-blue-200"
+            }
+        };
+        let more_summary_class = |is_active: bool| -> &'static str {
+            if is_active {
+                "list-none [&::-webkit-details-marker]:hidden flex w-full min-w-0 \
+                items-center justify-center rounded-lg bg-blue-50 px-2.5 py-2 \
+                text-xs font-semibold leading-tight sm:px-4 sm:text-sm \
+                text-blue-700 shadow-sm cursor-pointer \
+                dark:bg-blue-900/30 dark:text-blue-200"
+            } else {
+                "list-none [&::-webkit-details-marker]:hidden flex w-full min-w-0 \
+                items-center justify-center rounded-lg px-2.5 py-2 text-xs \
+                font-semibold leading-tight sm:px-4 sm:text-sm \
+                text-gray-600 cursor-pointer hover:bg-blue-50/70 hover:text-blue-700 \
+                dark:text-gray-300 dark:hover:bg-blue-900/20 \
+                dark:hover:text-blue-200"
+            }
+        };
+        let more_item_class = |is_current: bool| -> &'static str {
+            if is_current {
+                "block rounded-lg bg-blue-50 px-3 py-2 text-blue-700 \
+                dark:bg-blue-900/30 dark:text-blue-200"
+            } else {
+                "block rounded-lg px-3 py-2 text-gray-700 hover:bg-gray-100 \
+                hover:text-blue-700 dark:text-gray-200 dark:hover:bg-gray-800/80 \
+                dark:hover:text-blue-200"
+            }
+        };
 
         // Template adapted from https://flowbite.com/docs/components/navbar/#default-navbar
         html!(
@@ -109,45 +148,90 @@ impl NavBar<'_> {
                         }
                     }
 
-                    button
-                        data-collapse-toggle="nav-bar-default"
-                        type="button"
-                        aria-controls="nav-bar-default"
-                        aria-expanded="false"
-                        class="inline-flex items-center p-2 w-10 h-10 justify-center
-                        text-sm text-gray-500 rounded md:hidden
-                        hover:bg-gray-100 focus:outline-hidden focus:ring-2
-                        focus:ring-gray-200 dark:text-gray-400
-                        dark:hover:bg-gray-700 dark:focus:ring-gray-600"
-                    {
-                        span class="sr-only" { "Open main menu" }
-                        svg
-                            viewBox="0 0 17 14"
-                            fill="none"
-                            class="w-5 h-5"
-                            aria-hidden="true"
-                            xmlns="http://www.w3.org/2000/svg"
-                        {
-                            path
-                                stroke="currentColor"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M1 1h15M1 7h15M1 13h15"
-                            {}
-                        }
-                    }
-                    div class="hidden w-full md:block md:w-auto" id="nav-bar-default"
+                    div class="hidden w-full lg:block lg:w-auto"
                     {
                         ul
-                            class="font-medium flex flex-col p-4 md:p-0 mt-4
+                            class="font-medium flex flex-col p-4 lg:p-0 mt-4
                             border border-gray-100 rounded bg-gray-50
-                            md:flex-row md:space-x-8 rtl:space-x-reverse md:mt-0
-                            md:border-0 md:bg-white dark:bg-gray-800
-                            md:dark:bg-gray-900 dark:border-gray-700"
+                            lg:flex-row lg:space-x-8 rtl:space-x-reverse lg:mt-0
+                            lg:border-0 lg:bg-white dark:bg-gray-800
+                            lg:dark:bg-gray-900 dark:border-gray-700"
                         {
-                            @for link in links {
-                                li { (link.into_html()) }
+                            @for link in links.clone().into_iter() {
+                                li { (link.into_desktop_html()) }
+                            }
+                        }
+                    }
+                }
+            }
+
+            nav class="fixed inset-x-0 bottom-0 z-40 lg:hidden"
+            {
+                div class="mx-auto max-w-screen-xl px-4 pb-4"
+                {
+                    div
+                        class="rounded-xl border border-gray-200 bg-white/95
+                        shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/95"
+                    {
+                        ul
+                            class="grid grid-cols-4 gap-2 px-4 py-3 text-xs font-semibold
+                            text-gray-600 dark:text-gray-300"
+                            aria-label="Primary"
+                        {
+                            @for link in links.iter() {
+                                @if link.url == endpoints::DASHBOARD_VIEW
+                                    || link.url == endpoints::TRANSACTIONS_VIEW
+                                    || link.url == endpoints::ACCOUNTS
+                                {
+                                    li class="min-w-0" {
+                                        a
+                                            href=(link.url)
+                                            class=(bottom_link_class(link.is_current))
+                                            aria-current=[link.is_current.then_some("page")]
+                                        {
+                                            span class="truncate" { (link.title) }
+                                        }
+                                    }
+                                }
+                            }
+
+                            li class="min-w-0" {
+                                details
+                                    class="group relative"
+                                {
+                                    summary
+                                        class=(more_summary_class(more_is_active))
+                                        aria-current=[more_is_active.then_some("page")]
+                                    {
+                                        span class="truncate" { "More" }
+                                    }
+
+                                    div
+                                        class="absolute bottom-full right-0 mb-3 w-40 rounded-xl
+                                        border border-gray-200 bg-white/95 p-2 shadow-xl
+                                        backdrop-blur dark:border-gray-700 dark:bg-gray-900/95"
+                                    {
+                                        ul class="flex flex-col gap-1 text-sm font-medium"
+                                        {
+                                            @for link in links.iter() {
+                                                @if link.url == endpoints::TAGS_VIEW
+                                                    || link.url == endpoints::RULES_VIEW
+                                                    || link.url == endpoints::LOG_OUT
+                                                {
+                                                    li {
+                                                        a
+                                                            href=(link.url)
+                                                            class=(more_item_class(link.is_current))
+                                                            aria-current=[link.is_current.then_some("page")]
+                                                        {
+                                                            (link.title)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
