@@ -25,6 +25,7 @@
   of nodes and attributes.
 - Refactor common testing functions into a separate module.
 - Ensure page layout fits on smartphone screen
+- Clean up/simplify HTML structure (e.g., remove redundant div wrappers), use semantic elements where possible
 - Review UI design
   - [ ] Button states, ensure there is visual feedback for both hover and click (active) states
   - [ ] Rounded edge radii consistency---currently buttons use `rounded` but container uses `rounded-lg`
