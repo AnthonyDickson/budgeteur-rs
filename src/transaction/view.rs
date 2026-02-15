@@ -313,6 +313,11 @@ fn transaction_row_view(row: &TransactionTableRow) -> Markup {
 
 fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -> Markup {
     let amount_str = format_currency(row.amount);
+    let amount_class = if row.amount < 0.0 {
+        "text-red-700 dark:text-red-300"
+    } else {
+        "text-green-700 dark:text-green-300"
+    };
     let (description, tooltip) = format_description(&row.description);
     let confirm_message = format!(
         "Are you sure you want to delete the transaction '{}'? This cannot be undone.",
@@ -322,7 +327,7 @@ fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -
     html! {
         tr class=(row_class) data-transaction-row="true"
         {
-            td class="px-6 py-4 text-right" { (amount_str) }
+            td class={ "px-6 py-4 text-right " (amount_class) } { (amount_str) }
             td class="sr-only" { (row.date) }
             td class=(TABLE_CELL_STYLE) title=[tooltip] { (description) }
             td class=(TABLE_CELL_STYLE)
@@ -393,6 +398,11 @@ fn transaction_cards_view(
                         div class="px-4 py-3 space-y-3"
                         {
                             @for transaction_row in &day.transactions {
+                                @let amount_class = if transaction_row.amount < 0.0 {
+                                    "text-red-700 dark:text-red-300"
+                                } else {
+                                    "text-green-700 dark:text-green-300"
+                                };
                                 div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/30"
                                     data-transaction-card="true"
                                 {
@@ -400,7 +410,7 @@ fn transaction_cards_view(
                                     {
                                         div class="text-sm font-medium text-gray-900 dark:text-white"
                                         { (format_description(&transaction_row.description).0) }
-                                        div class="text-sm tabular-nums text-right text-gray-900 dark:text-white whitespace-nowrap"
+                                        div class={ "text-sm tabular-nums text-right whitespace-nowrap " (amount_class) }
                                         { (format_currency(transaction_row.amount)) }
                                     }
 
