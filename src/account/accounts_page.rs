@@ -187,7 +187,7 @@ fn accounts_cards_view(accounts: &[AccountTableRow], create_account_page_url: &s
         div class="lg:hidden space-y-4"
         {
             @for account in accounts {
-                div class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                div class="rounded border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
                     data-account-card="true"
                 {
                     div class="flex items-start justify-between gap-3"
@@ -226,7 +226,7 @@ fn accounts_cards_view(accounts: &[AccountTableRow], create_account_page_url: &s
             }
 
             @if accounts.is_empty() {
-                div class="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                div class="rounded border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
                 {
                     "No accounts found. Create an account "
                     a href=(create_account_page_url) class=(LINK_STYLE)

@@ -62,9 +62,8 @@ pub const TAG_BADGE_STYLE: &str = "inline-flex items-center px-2.5 py-0.5 \
     dark:bg-blue-900 dark:text-blue-300";
 
 // Page container
-pub const PAGE_CONTAINER_STYLE: &str =
-    "flex flex-col items-stretch w-full px-6 py-8 mx-auto lg:py-5 \
-    lg:items-center lg:w-auto text-gray-900 dark:text-white";
+pub const PAGE_CONTAINER_STYLE: &str = "flex flex-col items-stretch w-full px-4 py-8 mx-auto lg:py-5 \
+    lg:items-center lg:w-auto lg:px-6 text-gray-900 dark:text-white";
 
 pub enum HeadElement {
     /// The file path or URL to a JavaScript script.

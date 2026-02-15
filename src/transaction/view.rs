@@ -69,11 +69,7 @@ pub(crate) fn transactions_view(
             form_id: Some("transactions-excluded-tags"),
         },
     );
-    let table_wrapper_class = if options.show_category_summary {
-        "w-full overflow-x-auto lg:overflow-visible"
-    } else {
-        "hidden lg:block"
-    };
+    let table_wrapper_class = "hidden lg:block";
 
     let content = html! {
         (nav_bar)
@@ -97,7 +93,7 @@ pub(crate) fn transactions_view(
                     }
                 }
 
-                div class="dark:bg-gray-800"
+                div class="rounded bg-gray-50 dark:bg-gray-800 overflow-hidden"
                 {
                     @if has_any_transactions {
                         (range_navigation_html(
@@ -119,7 +115,9 @@ pub(crate) fn transactions_view(
                         &transactions_page_route,
                     ))
 
-                    @if !options.show_category_summary {
+                    @if options.show_category_summary {
+                        (summary_cards_view(&grouped_transactions, show_empty_state, empty_message))
+                    } @else {
                         (transaction_cards_view(&grouped_transactions, show_empty_state, empty_message))
                     }
 
@@ -199,10 +197,11 @@ pub(crate) fn transactions_view(
                         ))
                     }
 
-                    div class="mt-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900"
-                    {
-                        (excluded_tags_view)
-                    }
+                }
+
+                div class="mt-4 rounded bg-gray-50 dark:bg-gray-900"
+                {
+                    (excluded_tags_view)
                 }
             }
         }
@@ -220,7 +219,7 @@ fn range_navigation_html(
 ) -> Markup {
     let current_label = range_label(range_nav.range);
     let row_classes = if latest_link.is_some() {
-        "grid-rows-2 gap-y-0.5"
+        "grid-rows-[auto_auto] gap-y-0"
     } else {
         "grid-rows-1"
     };
@@ -375,7 +374,7 @@ fn transaction_cards_view(
         div class="lg:hidden space-y-6"
         {
             @for interval in grouped_transactions {
-                div class="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                div class="rounded border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800"
                 {
                     div class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-900 bg-gray-50 dark:bg-gray-700/70 dark:text-white"
                     {
@@ -403,7 +402,7 @@ fn transaction_cards_view(
                                 } else {
                                     "text-green-700 dark:text-green-300"
                                 };
-                                div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/30"
+                                div class="rounded border border-gray-200 bg-gray-50 px-3 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/30"
                                     data-transaction-card="true"
                                 {
                                     div class="flex items-start justify-between gap-3"
@@ -440,6 +439,149 @@ fn transaction_cards_view(
                                                 class=(BUTTON_DELETE_STYLE)
                                             {
                                                "Delete"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            @if show_empty_state {
+                div class="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                {
+                    (empty_message)
+                }
+            }
+        }
+    }
+}
+
+fn summary_cards_view(
+    grouped_transactions: &[DateInterval],
+    show_empty_state: bool,
+    empty_message: &str,
+) -> Markup {
+    html! {
+        div class="lg:hidden space-y-6"
+        {
+            @for interval in grouped_transactions {
+                div class="rounded border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800"
+                {
+                    div class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-900 bg-gray-50 dark:bg-gray-700/70 dark:text-white"
+                    {
+                        span { (range_label(interval.range)) }
+                        span class="flex items-center gap-3 text-xs"
+                        {
+                            span class="text-green-700 dark:text-green-300 whitespace-nowrap"
+                            { (format_currency(interval.totals.income)) }
+                            span class="text-red-700 dark:text-red-300 whitespace-nowrap"
+                            { (format_currency(interval.totals.expenses)) }
+                        }
+                    }
+
+                    @for summary in interval.summary.iter().map(|category| {
+                        let percent_label = format!(
+                            "{}% of total {}",
+                            category.percent,
+                            match category.kind {
+                                CategorySummaryKind::Income => "income",
+                                CategorySummaryKind::Expense => "expenses",
+                            }
+                        );
+                        let total_class = match category.kind {
+                            CategorySummaryKind::Income => {
+                                "text-right tabular-nums text-green-700 dark:text-green-300"
+                            }
+                            CategorySummaryKind::Expense => {
+                                "text-right tabular-nums text-red-700 dark:text-red-300"
+                            }
+                        };
+                        let total_display = format_currency(category.total);
+                        let grouped_days = group_transactions_by_day(&category.transactions);
+
+                        (category, percent_label, total_display, total_class, grouped_days)
+                    }) {
+                        @let category = summary.0;
+                        @let percent_label = &summary.1;
+                        @let total_display = &summary.2;
+                        @let total_class = summary.3;
+                        @let grouped_days = &summary.4;
+
+                        details class="group border-t border-gray-200 px-4 py-3 dark:border-gray-700"
+                        {
+                            summary class="flex items-center justify-between cursor-pointer select-none list-none"
+                            {
+                                span class="flex flex-col"
+                                {
+                                    span class="text-sm font-medium text-gray-900 dark:text-white"
+                                    { (&category.label) }
+                                    span class="text-xs text-gray-500 dark:text-gray-400"
+                                    { (percent_label) }
+                                }
+                                span class="flex items-center gap-3 text-sm"
+                                {
+                                    span class=(total_class) { (total_display) }
+                                    span class="text-gray-400 group-open:rotate-90 transition-transform" { "›" }
+                                }
+                            }
+
+                            div class="mt-3 space-y-4"
+                            {
+                                @for day in grouped_days {
+                                    div class="text-[0.65rem] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                                    { (format_day_label(day.date)) }
+
+                                    div class="space-y-3"
+                                    {
+                                        @for transaction_row in &day.transactions {
+                                            @let amount_class = if transaction_row.amount < 0.0 {
+                                                "text-red-700 dark:text-red-300"
+                                            } else {
+                                                "text-green-700 dark:text-green-300"
+                                            };
+                                            div class="rounded border border-gray-200 bg-gray-50 px-3 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/30"
+                                                data-transaction-card="true"
+                                            {
+                                                div class="flex items-start justify-between gap-3"
+                                                {
+                                                    div class="text-sm font-medium text-gray-900 dark:text-white"
+                                                    { (format_description(&transaction_row.description).0) }
+                                                    div class={ "text-sm tabular-nums text-right whitespace-nowrap " (amount_class) }
+                                                    { (format_currency(transaction_row.amount)) }
+                                                }
+
+                                                div class="mt-3 flex items-center justify-between gap-3 border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-gray-700/80 dark:text-gray-400"
+                                                {
+                                                    div class="flex items-center gap-2"
+                                                    {
+                                                        @if let Some(ref tag_name) = transaction_row.tag_name {
+                                                            span class=(TAG_BADGE_STYLE) { (tag_name) }
+                                                        } @else {
+                                                            span { "-" }
+                                                        }
+                                                    }
+
+                                                    div class="flex items-center gap-4 text-sm text-gray-900 dark:text-white"
+                                                    {
+                                                        a href=(transaction_row.edit_url) class=(LINK_STYLE) { "Edit" }
+                                                        button
+                                                            hx-delete=(transaction_row.delete_url)
+                                                            hx-confirm={
+                                                                "Are you sure you want to delete the transaction '"
+                                                                (transaction_row.description) "'? This cannot be undone."
+                                                            }
+                                                            hx-target="closest [data-transaction-card='true']"
+                                                            hx-target-error="#alert-container"
+                                                            hx-swap="outerHTML"
+                                                            class=(BUTTON_DELETE_STYLE)
+                                                        {
+                                                           "Delete"
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
