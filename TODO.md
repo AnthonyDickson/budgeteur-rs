@@ -15,7 +15,6 @@
     - Net balance for last month
     - Current month is previous month's balance plus mean net income over the last 12 months minus the specified amount
     - Projections for the next ten months are the above value plus the mean net income over the last 12 months
-- Navigation: Mobile should use bottom navigation. See example 1 <https://www.justinmind.com/blog/mobile-navigation/>
 - Update values to use accounting formatting
   - Zero filled up to two decimal places for floats
   - Parantheses instead of minus symbol for negative values
@@ -25,6 +24,9 @@
   of nodes and attributes.
 - Refactor common testing functions into a separate module.
 - Ensure page layout fits on smartphone screen
+  - Transactions table
+  - Accounts table
+- Clean up/simplify HTML structure (e.g., remove redundant div wrappers), use semantic elements where possible
 - Review UI design
   - [ ] Button states, ensure there is visual feedback for both hover and click (active) states
   - [ ] Rounded edge radii consistency---currently buttons use `rounded` but container uses `rounded-lg`

@@ -388,12 +388,12 @@ fn dashboard_content_partial(
             id="charts"
             class="w-full mx-auto mb-4"
         {
-            div class="grid grid-cols-1 xl:grid-cols-2 gap-4"
+            div class="grid grid-cols-1 lg:grid-cols-2 gap-4"
             {
                 @for chart in charts {
                     div
                         id=(chart.id)
-                        class="min-h-[380px] rounded dark:bg-gray-100"
+                        class="min-h-[240px] sm:min-h-[300px] md:min-h-[340px] lg:min-h-[380px] rounded dark:bg-gray-100"
                     {}
                 }
             }
@@ -403,7 +403,7 @@ fn dashboard_content_partial(
             id="tables"
             class="w-full mx-auto mb-4"
         {
-            div class="grid grid-cols-1 xl:grid-cols-2 gap-4"
+            div class="grid grid-cols-1 lg:grid-cols-2 gap-4"
             {
                 @for table in tables {
                     (table)
