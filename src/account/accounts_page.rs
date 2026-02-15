@@ -116,54 +116,59 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
                     }
                 }
 
-                div class="dark:bg-gray-800"
+                (accounts_cards_view(accounts, create_account_page_url))
+
+                div class="hidden lg:block dark:bg-gray-800"
                 {
-                    table class="w-full text-sm text-left rtl:text-right
-                        text-gray-500 dark:text-gray-400"
+                    div class="w-full overflow-x-auto lg:overflow-visible"
                     {
-                        thead class=(TABLE_HEADER_STYLE)
+                        table class="w-full text-sm text-left rtl:text-right
+                            text-gray-500 dark:text-gray-400"
                         {
-                            tr
+                            thead class=(TABLE_HEADER_STYLE)
                             {
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Name"
-                                }
-                                th scope="col" class="px-6 py-3 text-right"
-                                {
-                                    "Balance"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Date"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Actions"
-                                }
-                            }
-                        }
-
-                        tbody
-                        {
-                            @for account in accounts {
-                                (table_row(account))
-                            }
-
-                            @if accounts.is_empty() {
                                 tr
                                 {
-                                    td
-                                        colspan="3"
-                                        class="px-6 py-4 text-center
-                                            text-gray-500 dark:text-gray-400"
+                                    th scope="col" class=(TABLE_CELL_STYLE)
                                     {
-                                        "No accounts  found. Create an account "
-                                        a href=(create_account_page_url) class=(LINK_STYLE)
+                                        "Name"
+                                    }
+                                    th scope="col" class="px-6 py-3 text-right"
+                                    {
+                                        "Balance"
+                                    }
+                                    th scope="col" class=(TABLE_CELL_STYLE)
+                                    {
+                                        "Date"
+                                    }
+                                    th scope="col" class=(TABLE_CELL_STYLE)
+                                    {
+                                        "Actions"
+                                    }
+                                }
+                            }
+
+                            tbody
+                            {
+                                @for account in accounts {
+                                    (table_row(account))
+                                }
+
+                                @if accounts.is_empty() {
+                                    tr
+                                    {
+                                        td
+                                            colspan="4"
+                                            class="px-6 py-4 text-center
+                                                text-gray-500 dark:text-gray-400"
                                         {
-                                            "here"
+                                            "No accounts  found. Create an account "
+                                            a href=(create_account_page_url) class=(LINK_STYLE)
+                                            {
+                                                "here"
+                                            }
+                                            "."
                                         }
-                                        "."
                                     }
                                 }
                             }
@@ -175,6 +180,64 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
     );
 
     base("Accounts", &[], &content)
+}
+
+fn accounts_cards_view(accounts: &[AccountTableRow], create_account_page_url: &str) -> Markup {
+    html!(
+        div class="lg:hidden space-y-4"
+        {
+            @for account in accounts {
+                div class="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                    data-account-card="true"
+                {
+                    div class="flex items-start justify-between gap-3"
+                    {
+                        div class="text-sm font-semibold text-gray-900 dark:text-white"
+                        { (account.name) }
+                        div class="text-sm tabular-nums text-right text-gray-900 dark:text-white"
+                        { (format_currency(account.balance)) }
+                    }
+
+                    div class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                    { (account.date) }
+
+                    div class="mt-2 flex items-center gap-4 text-sm"
+                    {
+                        a href=(account.edit_url) class=(LINK_STYLE)
+                        {
+                            "Edit"
+                        }
+
+                        button
+                            hx-delete=(account.delete_url)
+                            hx-confirm={
+                                "Are you sure you want to delete the account '"
+                                (account.name) "'? This cannot be undone."
+                            }
+                            hx-target="closest [data-account-card='true']"
+                            hx-target-error="#alert-container"
+                            hx-swap="outerHTML"
+                            class=(BUTTON_DELETE_STYLE)
+                        {
+                           "Delete"
+                        }
+                    }
+                }
+            }
+
+            @if accounts.is_empty() {
+                div class="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                {
+                    "No accounts found. Create an account "
+                    a href=(create_account_page_url) class=(LINK_STYLE)
+                    {
+                        "here"
+                    }
+                    "."
+                }
+            }
+        }
+    )
 }
 
 /// Renders the accounts page showing all accounts.
@@ -432,10 +495,10 @@ mod accounts_template_tests {
 
     #[track_caller]
     fn must_get_no_data_paragraph(html: &Html) -> ElementRef<'_> {
-        let paragraph_selector = Selector::parse("td[colspan='3']").unwrap();
+        let paragraph_selector = Selector::parse("td[colspan='4']").unwrap();
         html.select(&paragraph_selector)
             .next()
-            .expect("Could not find table cell with colspan='3' in HTML")
+            .expect("Could not find table cell with colspan='4' in HTML")
     }
 
     #[track_caller]
