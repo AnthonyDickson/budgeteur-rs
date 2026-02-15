@@ -65,6 +65,32 @@ pub const TAG_BADGE_STYLE: &str = "inline-flex items-center px-2.5 py-0.5 \
 pub const PAGE_CONTAINER_STYLE: &str = "flex flex-col items-stretch w-full px-4 py-8 mx-auto lg:py-5 \
     lg:items-center lg:w-auto lg:px-6 text-gray-900 dark:text-white";
 
+pub fn edit_delete_action_links(
+    edit_url: &str,
+    delete_url: &str,
+    confirm_message: &str,
+    hx_target: &str,
+    hx_swap: &str,
+) -> Markup {
+    html! {
+        a href=(edit_url) class=(LINK_STYLE)
+        {
+            "Edit"
+        }
+
+        button
+            hx-delete=(delete_url)
+            hx-confirm=(confirm_message)
+            hx-target=(hx_target)
+            hx-target-error="#alert-container"
+            hx-swap=(hx_swap)
+            class=(BUTTON_DELETE_STYLE)
+        {
+            "Delete"
+        }
+    }
+}
+
 pub enum HeadElement {
     /// The file path or URL to a JavaScript script.
     ScriptLink(String),

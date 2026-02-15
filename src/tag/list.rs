@@ -15,8 +15,8 @@ use rusqlite::Connection;
 use crate::{
     AppState, Error, endpoints,
     html::{
-        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
-        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base,
+        LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE, TABLE_HEADER_STYLE, TABLE_ROW_STYLE,
+        TAG_BADGE_STYLE, base, edit_delete_action_links,
     },
     navigation::NavBar,
     tag::{Tag, TagId, get_all_tags},
@@ -121,21 +121,13 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
                 {
                     div class="flex gap-4"
                     {
-                        a href=(tag_with_url.edit_url) class=(LINK_STYLE)
-                        {
-                            "Edit"
-                        }
-
-                        button
-                            hx-delete=(delete_url)
-                            hx-confirm=(confirm_message)
-                            hx-target="closest tr"
-                            hx-target-error="#alert-container"
-                            hx-swap="delete"
-                            class=(BUTTON_DELETE_STYLE)
-                        {
-                           "Delete"
-                        }
+                        (edit_delete_action_links(
+                            &tag_with_url.edit_url,
+                            &delete_url,
+                            &confirm_message,
+                            "closest tr",
+                            "delete",
+                        ))
                     }
                 }
             }
@@ -159,7 +151,9 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
                     }
                 }
 
-                div class="dark:bg-gray-800"
+                (tags_cards_view(tags, new_tag_route))
+
+                div class="hidden lg:block dark:bg-gray-800 lg:max-w-5xl lg:w-full lg:mx-auto"
                 {
                     table class="w-full text-sm text-left rtl:text-right
                         text-gray-500 dark:text-gray-400"
@@ -193,7 +187,7 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
                                 tr
                                 {
                                     td
-                                        colspan="4"
+                                        colspan="3"
                                         class="px-6 py-4 text-center
                                             text-gray-500 dark:text-gray-400"
                                     {
@@ -213,6 +207,70 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
     );
 
     base("Tags", &[], &content)
+}
+
+fn tags_cards_view(tags: &[TagWithEditUrl], new_tag_route: &str) -> Markup {
+    struct TagCardView<'a> {
+        tag_name: &'a str,
+        transaction_count: u32,
+        edit_url: &'a str,
+        delete_url: String,
+        confirm_message: String,
+    }
+
+    let cards = tags
+        .iter()
+        .map(|tag_with_url| TagCardView {
+            tag_name: tag_with_url.tag.name.as_ref(),
+            transaction_count: tag_with_url.transaction_count,
+            edit_url: &tag_with_url.edit_url,
+            delete_url: endpoints::format_endpoint(endpoints::DELETE_TAG, tag_with_url.tag.id),
+            confirm_message: format!(
+                "Are you sure you want to delete '{}'? This will remove it from {} transaction(s).",
+                tag_with_url.tag.name, tag_with_url.transaction_count
+            ),
+        })
+        .collect::<Vec<_>>();
+
+    html!(
+        div class="lg:hidden space-y-4"
+        {
+            @for card in &cards {
+                div class="rounded border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                    data-tag-card="true"
+                {
+                    div class="flex items-start justify-between gap-3"
+                    {
+                        span class=(TAG_BADGE_STYLE) { (card.tag_name) }
+                        span class="text-sm tabular-nums text-gray-900 dark:text-white"
+                        { (card.transaction_count) }
+                    }
+
+                    div class="mt-2 flex items-center gap-4 text-sm"
+                    {
+                        (edit_delete_action_links(
+                            card.edit_url,
+                            &card.delete_url,
+                            &card.confirm_message,
+                            "closest [data-tag-card='true']",
+                            "outerHTML",
+                        ))
+                    }
+                }
+            }
+
+            @if cards.is_empty() {
+                div class="rounded border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                {
+                    "No tags created yet. "
+                    a href=(new_tag_route) class=(LINK_STYLE)
+                    {
+                        "Create your first tag"
+                    }
+                }
+            }
+        }
+    )
 }
 
 #[cfg(test)]

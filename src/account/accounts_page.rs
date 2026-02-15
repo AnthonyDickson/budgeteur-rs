@@ -14,8 +14,8 @@ use crate::{
     AppState, Error,
     endpoints::{self, format_endpoint},
     html::{
-        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
-        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, base, format_currency,
+        LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE, TABLE_HEADER_STYLE, TABLE_ROW_STYLE,
+        base, edit_delete_action_links, format_currency,
     },
     navigation::NavBar,
 };
@@ -75,24 +75,16 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
                 {
                     div class="flex gap-4"
                     {
-                        a href=(account.edit_url) class=(LINK_STYLE)
-                        {
-                            "Edit"
-                        }
-
-                        button
-                            hx-delete=(account.delete_url)
-                            hx-confirm={
-                                "Are you sure you want to delete the account '"
-                                (account.name) "'? This cannot be undone."
-                            }
-                            hx-target="closest tr"
-                            hx-target-error="#alert-container"
-                            hx-swap="delete"
-                            class=(BUTTON_DELETE_STYLE)
-                        {
-                           "Delete"
-                        }
+                        (edit_delete_action_links(
+                            &account.edit_url,
+                            &account.delete_url,
+                            &format!(
+                                "Are you sure you want to delete the account '{}'? This cannot be undone.",
+                                account.name
+                            ),
+                            "closest tr",
+                            "delete",
+                        ))
                     }
                 }
             }
@@ -118,7 +110,7 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
 
                 (accounts_cards_view(accounts, create_account_page_url))
 
-                div class="hidden lg:block dark:bg-gray-800"
+                div class="hidden lg:block dark:bg-gray-800 lg:max-w-5xl lg:w-full lg:mx-auto"
                 {
                     div class="w-full overflow-x-auto lg:overflow-visible"
                     {
@@ -203,24 +195,16 @@ fn accounts_cards_view(accounts: &[AccountTableRow], create_account_page_url: &s
 
                     div class="mt-2 flex items-center gap-4 text-sm"
                     {
-                        a href=(account.edit_url) class=(LINK_STYLE)
-                        {
-                            "Edit"
-                        }
-
-                        button
-                            hx-delete=(account.delete_url)
-                            hx-confirm={
-                                "Are you sure you want to delete the account '"
-                                (account.name) "'? This cannot be undone."
-                            }
-                            hx-target="closest [data-account-card='true']"
-                            hx-target-error="#alert-container"
-                            hx-swap="outerHTML"
-                            class=(BUTTON_DELETE_STYLE)
-                        {
-                           "Delete"
-                        }
+                        (edit_delete_action_links(
+                            &account.edit_url,
+                            &account.delete_url,
+                            &format!(
+                                "Are you sure you want to delete the account '{}'? This cannot be undone.",
+                                account.name
+                            ),
+                            "closest [data-account-card='true']",
+                            "outerHTML",
+                        ))
                     }
                 }
             }

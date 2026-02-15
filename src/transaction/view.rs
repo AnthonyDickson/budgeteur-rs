@@ -8,8 +8,8 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     endpoints,
     html::{
-        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
-        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
+        LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE, TABLE_HEADER_STYLE, TABLE_ROW_STYLE,
+        TAG_BADGE_STYLE, base, edit_delete_action_links, format_currency,
     },
     navigation::NavBar,
     tag::{ExcludedTagsViewConfig, TagWithExclusion, excluded_tags_controls},
@@ -28,6 +28,14 @@ use super::{
 /// The max number of graphemes to display in the transaction table rows before
 /// truncating and displaying ellipses.
 const MAX_DESCRIPTION_GRAPHEMES: usize = 32;
+
+fn amount_class(amount: f64) -> &'static str {
+    if amount < 0.0 {
+        "text-red-700 dark:text-red-300"
+    } else {
+        "text-green-700 dark:text-green-300"
+    }
+}
 
 pub(crate) fn transactions_view(
     grouped_transactions: Vec<DateInterval>,
@@ -93,7 +101,7 @@ pub(crate) fn transactions_view(
                     }
                 }
 
-                div class="rounded bg-gray-50 dark:bg-gray-800 overflow-hidden"
+                div class="rounded bg-gray-50 dark:bg-gray-800 overflow-hidden lg:max-w-5xl lg:w-full lg:mx-auto"
                 {
                     @if has_any_transactions {
                         (range_navigation_html(
@@ -312,11 +320,7 @@ fn transaction_row_view(row: &TransactionTableRow) -> Markup {
 
 fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -> Markup {
     let amount_str = format_currency(row.amount);
-    let amount_class = if row.amount < 0.0 {
-        "text-red-700 dark:text-red-300"
-    } else {
-        "text-green-700 dark:text-green-300"
-    };
+    let amount_class = amount_class(row.amount);
     let (description, tooltip) = format_description(&row.description);
     let confirm_message = format!(
         "Are you sure you want to delete the transaction '{}'? This cannot be undone.",
@@ -344,21 +348,58 @@ fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -
             {
                 div class="flex gap-4"
                 {
-                    a href=(row.edit_url) class=(LINK_STYLE)
-                    {
-                        "Edit"
-                    }
+                    (edit_delete_action_links(
+                        &row.edit_url,
+                        &row.delete_url,
+                        &confirm_message,
+                        "closest tr",
+                        "delete",
+                    ))
+                }
+            }
+        }
+    }
+}
 
-                    button
-                        hx-delete=(row.delete_url)
-                        hx-confirm=(confirm_message)
-                        hx-target="closest tr"
-                        hx-target-error="#alert-container"
-                        hx-swap="outerHTML"
-                        class=(BUTTON_DELETE_STYLE)
-                    {
-                       "Delete"
+fn transaction_card_row(transaction_row: &TransactionTableRow) -> Markup {
+    let amount_class = amount_class(transaction_row.amount);
+    let (description, _) = format_description(&transaction_row.description);
+
+    html! {
+        div class="rounded border border-gray-200 bg-gray-50 px-3 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/30"
+            data-transaction-card="true"
+        {
+            div class="flex items-start justify-between gap-3"
+            {
+                div class="text-sm font-medium text-gray-900 dark:text-white"
+                { (description) }
+                div class={ "text-sm tabular-nums text-right whitespace-nowrap " (amount_class) }
+                { (format_currency(transaction_row.amount)) }
+            }
+
+            div class="mt-3 flex items-center justify-between gap-3 border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-gray-700/80 dark:text-gray-400"
+            {
+                div class="flex items-center gap-2"
+                {
+                    @if let Some(ref tag_name) = transaction_row.tag_name {
+                        span class=(TAG_BADGE_STYLE) { (tag_name) }
+                    } @else {
+                        span { "-" }
                     }
+                }
+
+                div class="flex items-center gap-4 text-sm text-gray-900 dark:text-white"
+                {
+                    (edit_delete_action_links(
+                        &transaction_row.edit_url,
+                        &transaction_row.delete_url,
+                        &format!(
+                            "Are you sure you want to delete the transaction '{}'? This cannot be undone.",
+                            transaction_row.description
+                        ),
+                        "closest [data-transaction-card='true']",
+                        "delete",
+                    ))
                 }
             }
         }
@@ -397,52 +438,7 @@ fn transaction_cards_view(
                         div class="px-4 py-3 space-y-3"
                         {
                             @for transaction_row in &day.transactions {
-                                @let amount_class = if transaction_row.amount < 0.0 {
-                                    "text-red-700 dark:text-red-300"
-                                } else {
-                                    "text-green-700 dark:text-green-300"
-                                };
-                                div class="rounded border border-gray-200 bg-gray-50 px-3 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/30"
-                                    data-transaction-card="true"
-                                {
-                                    div class="flex items-start justify-between gap-3"
-                                    {
-                                        div class="text-sm font-medium text-gray-900 dark:text-white"
-                                        { (format_description(&transaction_row.description).0) }
-                                        div class={ "text-sm tabular-nums text-right whitespace-nowrap " (amount_class) }
-                                        { (format_currency(transaction_row.amount)) }
-                                    }
-
-                                    div class="mt-3 flex items-center justify-between gap-3 border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-gray-700/80 dark:text-gray-400"
-                                    {
-                                        div class="flex items-center gap-2"
-                                        {
-                                            @if let Some(ref tag_name) = transaction_row.tag_name {
-                                                span class=(TAG_BADGE_STYLE) { (tag_name) }
-                                            } @else {
-                                                span { "-" }
-                                            }
-                                        }
-
-                                        div class="flex items-center gap-4 text-sm text-gray-900 dark:text-white"
-                                        {
-                                            a href=(transaction_row.edit_url) class=(LINK_STYLE) { "Edit" }
-                                            button
-                                                hx-delete=(transaction_row.delete_url)
-                                                hx-confirm={
-                                                    "Are you sure you want to delete the transaction '"
-                                                    (transaction_row.description) "'? This cannot be undone."
-                                                }
-                                                hx-target="closest [data-transaction-card='true']"
-                                                hx-target-error="#alert-container"
-                                                hx-swap="outerHTML"
-                                                class=(BUTTON_DELETE_STYLE)
-                                            {
-                                               "Delete"
-                                            }
-                                        }
-                                    }
-                                }
+                                (transaction_card_row(transaction_row))
                             }
                         }
                     }
@@ -464,10 +460,54 @@ fn summary_cards_view(
     show_empty_state: bool,
     empty_message: &str,
 ) -> Markup {
+    struct SummaryCardView<'a> {
+        category: &'a super::models::CategorySummary,
+        percent_label: String,
+        total_display: String,
+        total_class: &'static str,
+        grouped_days: Vec<DayGroupRef<'a>>,
+    }
+
+    let summaries_by_interval = grouped_transactions
+        .iter()
+        .map(|interval| {
+            interval
+                .summary
+                .iter()
+                .map(|category| {
+                    let percent_label = format!(
+                        "{}% of total {}",
+                        category.percent,
+                        match category.kind {
+                            CategorySummaryKind::Income => "income",
+                            CategorySummaryKind::Expense => "expenses",
+                        }
+                    );
+                    let total_class = match category.kind {
+                        CategorySummaryKind::Income => {
+                            "text-right tabular-nums text-green-700 dark:text-green-300"
+                        }
+                        CategorySummaryKind::Expense => {
+                            "text-right tabular-nums text-red-700 dark:text-red-300"
+                        }
+                    };
+
+                    SummaryCardView {
+                        category,
+                        percent_label,
+                        total_display: format_currency(category.total),
+                        total_class,
+                        grouped_days: group_transactions_by_day(&category.transactions),
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
     html! {
         div class="lg:hidden space-y-6"
         {
-            @for interval in grouped_transactions {
+            @for (interval, summaries) in grouped_transactions.iter().zip(&summaries_by_interval) {
                 div class="rounded border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800"
                 {
                     div class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-900 bg-gray-50 dark:bg-gray-700/70 dark:text-white"
@@ -482,34 +522,7 @@ fn summary_cards_view(
                         }
                     }
 
-                    @for summary in interval.summary.iter().map(|category| {
-                        let percent_label = format!(
-                            "{}% of total {}",
-                            category.percent,
-                            match category.kind {
-                                CategorySummaryKind::Income => "income",
-                                CategorySummaryKind::Expense => "expenses",
-                            }
-                        );
-                        let total_class = match category.kind {
-                            CategorySummaryKind::Income => {
-                                "text-right tabular-nums text-green-700 dark:text-green-300"
-                            }
-                            CategorySummaryKind::Expense => {
-                                "text-right tabular-nums text-red-700 dark:text-red-300"
-                            }
-                        };
-                        let total_display = format_currency(category.total);
-                        let grouped_days = group_transactions_by_day(&category.transactions);
-
-                        (category, percent_label, total_display, total_class, grouped_days)
-                    }) {
-                        @let category = summary.0;
-                        @let percent_label = &summary.1;
-                        @let total_display = &summary.2;
-                        @let total_class = summary.3;
-                        @let grouped_days = &summary.4;
-
+                    @for summary in summaries {
                         details class="group border-t border-gray-200 px-4 py-3 dark:border-gray-700"
                         {
                             summary class="flex items-center justify-between cursor-pointer select-none list-none"
@@ -517,72 +530,27 @@ fn summary_cards_view(
                                 span class="flex flex-col"
                                 {
                                     span class="text-sm font-medium text-gray-900 dark:text-white"
-                                    { (&category.label) }
+                                    { (&summary.category.label) }
                                     span class="text-xs text-gray-500 dark:text-gray-400"
-                                    { (percent_label) }
+                                    { (&summary.percent_label) }
                                 }
                                 span class="flex items-center gap-3 text-sm"
                                 {
-                                    span class=(total_class) { (total_display) }
+                                    span class=(summary.total_class) { (&summary.total_display) }
                                     span class="text-gray-400 group-open:rotate-90 transition-transform" { "›" }
                                 }
                             }
 
                             div class="mt-3 space-y-4"
                             {
-                                @for day in grouped_days {
+                                @for day in &summary.grouped_days {
                                     div class="text-[0.65rem] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
                                     { (format_day_label(day.date)) }
 
                                     div class="space-y-3"
                                     {
                                         @for transaction_row in &day.transactions {
-                                            @let amount_class = if transaction_row.amount < 0.0 {
-                                                "text-red-700 dark:text-red-300"
-                                            } else {
-                                                "text-green-700 dark:text-green-300"
-                                            };
-                                            div class="rounded border border-gray-200 bg-gray-50 px-3 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/30"
-                                                data-transaction-card="true"
-                                            {
-                                                div class="flex items-start justify-between gap-3"
-                                                {
-                                                    div class="text-sm font-medium text-gray-900 dark:text-white"
-                                                    { (format_description(&transaction_row.description).0) }
-                                                    div class={ "text-sm tabular-nums text-right whitespace-nowrap " (amount_class) }
-                                                    { (format_currency(transaction_row.amount)) }
-                                                }
-
-                                                div class="mt-3 flex items-center justify-between gap-3 border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-gray-700/80 dark:text-gray-400"
-                                                {
-                                                    div class="flex items-center gap-2"
-                                                    {
-                                                        @if let Some(ref tag_name) = transaction_row.tag_name {
-                                                            span class=(TAG_BADGE_STYLE) { (tag_name) }
-                                                        } @else {
-                                                            span { "-" }
-                                                        }
-                                                    }
-
-                                                    div class="flex items-center gap-4 text-sm text-gray-900 dark:text-white"
-                                                    {
-                                                        a href=(transaction_row.edit_url) class=(LINK_STYLE) { "Edit" }
-                                                        button
-                                                            hx-delete=(transaction_row.delete_url)
-                                                            hx-confirm={
-                                                                "Are you sure you want to delete the transaction '"
-                                                                (transaction_row.description) "'? This cannot be undone."
-                                                            }
-                                                            hx-target="closest [data-transaction-card='true']"
-                                                            hx-target-error="#alert-container"
-                                                            hx-swap="outerHTML"
-                                                            class=(BUTTON_DELETE_STYLE)
-                                                        {
-                                                           "Delete"
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            (transaction_card_row(transaction_row))
                                         }
                                     }
                                 }

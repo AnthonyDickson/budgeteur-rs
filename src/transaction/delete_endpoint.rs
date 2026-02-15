@@ -4,10 +4,9 @@ use axum::{
     extract::{FromRef, Path, State},
     response::{IntoResponse, Response},
 };
-use maud::{Markup, html};
 use rusqlite::Connection;
 
-use crate::{AppState, Error, transaction::TransactionId};
+use crate::{AppState, Error, alert::Alert, transaction::TransactionId};
 
 /// The state needed to delete a transaction.
 #[derive(Debug, Clone)]
@@ -20,22 +19,6 @@ impl FromRef<AppState> for DeleteTransactionState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             db_connection: state.db_connection.clone(),
-        }
-    }
-}
-
-fn empty_transaction_table_row() -> Markup {
-    html! {
-        tr class="bg-white dark:bg-gray-800"
-        {
-            td class="px-6 py-4 text-right" { "-" }
-            td class="px-6 py-4" { "-" }
-            td class="px-6 py-4" { em { "Deleted" } }
-            td class="px-6 py-4"
-            {
-                span class="text-gray-400 dark:text-gray-500" { "-" }
-            }
-            td class="px-6 py-4" { "-" }
         }
     }
 }
@@ -54,8 +37,10 @@ pub async fn delete_transaction_endpoint(
     };
 
     match delete_transaction(transaction_id, &connection) {
-        // The status code has to be 200 OK or HTMX will not delete the table row.
-        Ok(row_affected) if row_affected != 0 => empty_transaction_table_row().into_response(),
+        Ok(row_affected) if row_affected != 0 => Alert::SuccessSimple {
+            message: "Transaction deleted successfully".to_owned(),
+        }
+        .into_response(),
         Ok(_) => Error::DeleteMissingTransaction.into_alert_response(),
         Err(error) => {
             tracing::error!("Could not delete transaction {transaction_id}: {error}");
