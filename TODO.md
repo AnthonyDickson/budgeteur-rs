@@ -23,9 +23,6 @@
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
 - Refactor common testing functions into a separate module.
-- Ensure page layout fits on smartphone screen
-  - Transactions table
-  - Accounts table
 - Clean up/simplify HTML structure (e.g., remove redundant div wrappers), use semantic elements where possible
 - Review UI design
   - [ ] Button states, ensure there is visual feedback for both hover and click (active) states

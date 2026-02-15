@@ -7,9 +7,8 @@ use maud::{Markup, html};
 use crate::{
     Error, endpoints,
     html::{
-        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
-        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, dollar_input_styles,
-        loading_spinner,
+        LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE, TABLE_HEADER_STYLE, TABLE_ROW_STYLE,
+        TAG_BADGE_STYLE, base, dollar_input_styles, edit_delete_action_links, loading_spinner,
     },
     navigation::NavBar,
     rule::{
@@ -64,24 +63,16 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                 {
                     div class="flex gap-4"
                     {
-                        a href=(rule.edit_url) class=(LINK_STYLE)
-                        {
-                            "Edit"
-                        }
-
-                        button
-                            hx-delete=(rule.delete_url)
-                            hx-confirm={
-                                "Are you sure you want to delete the rule '"
-                                (rule.rule.pattern) "' → '" (rule.tag.name) "'?"
-                            }
-                            hx-target="closest tr"
-                            hx-target-error="#alert-container"
-                            hx-swap="delete"
-                            class=(BUTTON_DELETE_STYLE)
-                        {
-                           "Delete"
-                        }
+                        (edit_delete_action_links(
+                            &rule.edit_url,
+                            &rule.delete_url,
+                            &format!(
+                                "Are you sure you want to delete the rule '{}' → '{}'?",
+                                rule.rule.pattern, rule.tag.name
+                            ),
+                            "closest tr",
+                            "delete",
+                        ))
                     }
                 }
             }
@@ -93,7 +84,7 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
 
         div class=(PAGE_CONTAINER_STYLE)
         {
-            div class="relative space-y-4"
+            div class="relative space-y-4 lg:max-w-5xl lg:w-full lg:mx-auto"
             {
                 h1 class="text-xl font-bold" { "Auto-Tagging Rules" }
 
@@ -172,7 +163,9 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                     }
                 }
 
-                div class="dark:bg-gray-800"
+                (rules_cards_view(rules, new_rule_route))
+
+                div class="hidden lg:block dark:bg-gray-800"
                 {
                     table class="w-full text-sm text-left rtl:text-right
                         text-gray-500 dark:text-gray-400"
@@ -206,7 +199,7 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                                 tr
                                 {
                                     td
-                                        colspan="4"
+                                        colspan="3"
                                         class="px-6 py-4 text-center
                                             text-gray-500 dark:text-gray-400"
                                     {
@@ -227,4 +220,55 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
     );
 
     base("Rules", &[dollar_input_styles()], &content)
+}
+
+fn rules_cards_view(rules: &[RuleWithTag], new_rule_route: &str) -> Markup {
+    html!(
+        div class="lg:hidden space-y-4"
+        {
+            @for rule_with_tag in rules {
+                div class="rounded border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                    data-rule-card="true"
+                {
+                    div class="flex items-start justify-between gap-3"
+                    {
+                        code class="bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 rounded-sm text-xs"
+                        {
+                            (rule_with_tag.rule.pattern)
+                        }
+                        span class=(TAG_BADGE_STYLE)
+                        {
+                            (rule_with_tag.tag.name)
+                        }
+                    }
+
+                    div class="mt-2 flex items-center gap-4 text-sm"
+                    {
+                        (edit_delete_action_links(
+                            &rule_with_tag.edit_url,
+                            &rule_with_tag.delete_url,
+                            &format!(
+                                "Are you sure you want to delete the rule '{}' → '{}'?",
+                                rule_with_tag.rule.pattern, rule_with_tag.tag.name
+                            ),
+                            "closest [data-rule-card='true']",
+                            "outerHTML",
+                        ))
+                    }
+                }
+            }
+
+            @if rules.is_empty() {
+                div class="rounded border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                {
+                    "No rules created yet. "
+                    a href=(new_rule_route) class=(LINK_STYLE)
+                    {
+                        "Create your first rule"
+                    }
+                    " to automatically tag transactions."
+                }
+            }
+        }
+    )
 }

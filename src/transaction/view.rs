@@ -8,8 +8,8 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     endpoints,
     html::{
-        BUTTON_DELETE_STYLE, LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE,
-        TABLE_HEADER_STYLE, TABLE_ROW_STYLE, TAG_BADGE_STYLE, base, format_currency,
+        LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE, TABLE_HEADER_STYLE, TABLE_ROW_STYLE,
+        TAG_BADGE_STYLE, base, edit_delete_action_links, format_currency,
     },
     navigation::NavBar,
     tag::{ExcludedTagsViewConfig, TagWithExclusion, excluded_tags_controls},
@@ -28,6 +28,14 @@ use super::{
 /// The max number of graphemes to display in the transaction table rows before
 /// truncating and displaying ellipses.
 const MAX_DESCRIPTION_GRAPHEMES: usize = 32;
+
+fn amount_class(amount: f64) -> &'static str {
+    if amount < 0.0 {
+        "text-red-700 dark:text-red-300"
+    } else {
+        "text-green-700 dark:text-green-300"
+    }
+}
 
 pub(crate) fn transactions_view(
     grouped_transactions: Vec<DateInterval>,
@@ -69,6 +77,7 @@ pub(crate) fn transactions_view(
             form_id: Some("transactions-excluded-tags"),
         },
     );
+    let table_wrapper_class = "hidden lg:block";
 
     let content = html! {
         (nav_bar)
@@ -92,7 +101,7 @@ pub(crate) fn transactions_view(
                     }
                 }
 
-                div class="dark:bg-gray-800"
+                div class="rounded bg-gray-50 dark:bg-gray-800 overflow-hidden lg:max-w-5xl lg:w-full lg:mx-auto"
                 {
                     @if has_any_transactions {
                         (range_navigation_html(
@@ -114,63 +123,72 @@ pub(crate) fn transactions_view(
                         &transactions_page_route,
                     ))
 
-                    table class="w-full my-2 text-sm text-left rtl:text-right
-                        text-gray-500 dark:text-gray-400"
+                    @if options.show_category_summary {
+                        (summary_cards_view(&grouped_transactions, show_empty_state, empty_message))
+                    } @else {
+                        (transaction_cards_view(&grouped_transactions, show_empty_state, empty_message))
+                    }
+
+                    div class=(table_wrapper_class)
                     {
-                        thead class=(TABLE_HEADER_STYLE)
+                        table class="w-full my-2 text-sm text-left rtl:text-right
+                            text-gray-500 dark:text-gray-400"
                         {
-                            tr
+                            thead class=(TABLE_HEADER_STYLE)
                             {
-                                th scope="col" class="px-6 py-3 text-right"
+                                tr
                                 {
-                                    "Amount"
-                                }
-                                th scope="col" class="sr-only"
-                                {
-                                    "Date"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Description"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Tags"
-                                }
-                                th scope="col" class=(TABLE_CELL_STYLE)
-                                {
-                                    "Actions"
-                                }
-                            }
-                        }
-
-                        tbody
-                        {
-                            @for interval in grouped_transactions {
-                                (interval_header_row_view(&interval))
-
-                                @if options.show_category_summary {
-                                    (category_summary_view(&interval))
-                                } @else {
-                                    @for day in &interval.days {
-                                        (day_header_row_view(day.date))
-
-                                        @for transaction_row in &day.transactions {
-                                            (transaction_row_view(transaction_row))
-                                        }
+                                    th scope="col" class="px-6 py-3 text-right"
+                                    {
+                                        "Amount"
+                                    }
+                                    th scope="col" class="sr-only"
+                                    {
+                                        "Date"
+                                    }
+                                    th scope="col" class=(TABLE_CELL_STYLE)
+                                    {
+                                        "Description"
+                                    }
+                                    th scope="col" class=(TABLE_CELL_STYLE)
+                                    {
+                                        "Tags"
+                                    }
+                                    th scope="col" class=(TABLE_CELL_STYLE)
+                                    {
+                                        "Actions"
                                     }
                                 }
                             }
 
-                            @if show_empty_state {
-                                tr
-                                {
-                                    td
-                                        colspan="5"
-                                        data-empty-state="true"
-                                        class="px-6 py-4 text-center"
+                            tbody
+                            {
+                                @for interval in grouped_transactions {
+                                    (interval_header_row_view(&interval))
+
+                                    @if options.show_category_summary {
+                                        (category_summary_view(&interval))
+                                    } @else {
+                                        @for day in &interval.days {
+                                            (day_header_row_view(day.date))
+
+                                            @for transaction_row in &day.transactions {
+                                                (transaction_row_view(transaction_row))
+                                            }
+                                        }
+                                    }
+                                }
+
+                                @if show_empty_state {
+                                    tr
                                     {
-                                        (empty_message)
+                                        td
+                                            colspan="5"
+                                            data-empty-state="true"
+                                            class="px-6 py-4 text-center"
+                                        {
+                                            (empty_message)
+                                        }
                                     }
                                 }
                             }
@@ -187,10 +205,11 @@ pub(crate) fn transactions_view(
                         ))
                     }
 
-                    div class="mt-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900"
-                    {
-                        (excluded_tags_view)
-                    }
+                }
+
+                div class="mt-4 rounded bg-gray-50 dark:bg-gray-900"
+                {
+                    (excluded_tags_view)
                 }
             }
         }
@@ -208,7 +227,7 @@ fn range_navigation_html(
 ) -> Markup {
     let current_label = range_label(range_nav.range);
     let row_classes = if latest_link.is_some() {
-        "grid-rows-2 gap-y-0.5"
+        "grid-rows-[auto_auto] gap-y-0"
     } else {
         "grid-rows-1"
     };
@@ -301,6 +320,7 @@ fn transaction_row_view(row: &TransactionTableRow) -> Markup {
 
 fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -> Markup {
     let amount_str = format_currency(row.amount);
+    let amount_class = amount_class(row.amount);
     let (description, tooltip) = format_description(&row.description);
     let confirm_message = format!(
         "Are you sure you want to delete the transaction '{}'? This cannot be undone.",
@@ -310,7 +330,7 @@ fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -
     html! {
         tr class=(row_class) data-transaction-row="true"
         {
-            td class="px-6 py-4 text-right" { (amount_str) }
+            td class={ "px-6 py-4 text-right " (amount_class) } { (amount_str) }
             td class="sr-only" { (row.date) }
             td class=(TABLE_CELL_STYLE) title=[tooltip] { (description) }
             td class=(TABLE_CELL_STYLE)
@@ -328,21 +348,222 @@ fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -
             {
                 div class="flex gap-4"
                 {
-                    a href=(row.edit_url) class=(LINK_STYLE)
+                    (edit_delete_action_links(
+                        &row.edit_url,
+                        &row.delete_url,
+                        &confirm_message,
+                        "closest tr",
+                        "delete",
+                    ))
+                }
+            }
+        }
+    }
+}
+
+fn transaction_card_row(transaction_row: &TransactionTableRow) -> Markup {
+    let amount_class = amount_class(transaction_row.amount);
+    let (description, _) = format_description(&transaction_row.description);
+
+    html! {
+        div class="rounded border border-gray-200 bg-gray-50 px-3 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/30"
+            data-transaction-card="true"
+        {
+            div class="flex items-start justify-between gap-3"
+            {
+                div class="text-sm font-medium text-gray-900 dark:text-white"
+                { (description) }
+                div class={ "text-sm tabular-nums text-right whitespace-nowrap " (amount_class) }
+                { (format_currency(transaction_row.amount)) }
+            }
+
+            div class="mt-3 flex items-center justify-between gap-3 border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-gray-700/80 dark:text-gray-400"
+            {
+                div class="flex items-center gap-2"
+                {
+                    @if let Some(ref tag_name) = transaction_row.tag_name {
+                        span class=(TAG_BADGE_STYLE) { (tag_name) }
+                    } @else {
+                        span { "-" }
+                    }
+                }
+
+                div class="flex items-center gap-4 text-sm text-gray-900 dark:text-white"
+                {
+                    (edit_delete_action_links(
+                        &transaction_row.edit_url,
+                        &transaction_row.delete_url,
+                        &format!(
+                            "Are you sure you want to delete the transaction '{}'? This cannot be undone.",
+                            transaction_row.description
+                        ),
+                        "closest [data-transaction-card='true']",
+                        "delete",
+                    ))
+                }
+            }
+        }
+    }
+}
+
+fn transaction_cards_view(
+    grouped_transactions: &[DateInterval],
+    show_empty_state: bool,
+    empty_message: &str,
+) -> Markup {
+    html! {
+        div class="lg:hidden space-y-6"
+        {
+            @for interval in grouped_transactions {
+                div class="rounded border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800"
+                {
+                    div class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-900 bg-gray-50 dark:bg-gray-700/70 dark:text-white"
                     {
-                        "Edit"
+                        span { (range_label(interval.range)) }
+                        span class="flex items-center gap-3 text-xs"
+                        {
+                            span class="text-green-700 dark:text-green-300 whitespace-nowrap"
+                            { (format_currency(interval.totals.income)) }
+                            span class="text-red-700 dark:text-red-300 whitespace-nowrap"
+                            { (format_currency(interval.totals.expenses)) }
+                        }
                     }
 
-                    button
-                        hx-delete=(row.delete_url)
-                        hx-confirm=(confirm_message)
-                        hx-target="closest tr"
-                        hx-target-error="#alert-container"
-                        hx-swap="outerHTML"
-                        class=(BUTTON_DELETE_STYLE)
-                    {
-                       "Delete"
+                    @for day in &interval.days {
+                        div class="px-4 pt-4 text-[0.65rem] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                        {
+                            (format_day_label(day.date))
+                        }
+
+                        div class="px-4 py-3 space-y-3"
+                        {
+                            @for transaction_row in &day.transactions {
+                                (transaction_card_row(transaction_row))
+                            }
+                        }
                     }
+                }
+            }
+
+            @if show_empty_state {
+                div class="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                {
+                    (empty_message)
+                }
+            }
+        }
+    }
+}
+
+fn summary_cards_view(
+    grouped_transactions: &[DateInterval],
+    show_empty_state: bool,
+    empty_message: &str,
+) -> Markup {
+    struct SummaryCardView<'a> {
+        category: &'a super::models::CategorySummary,
+        percent_label: String,
+        total_display: String,
+        total_class: &'static str,
+        grouped_days: Vec<DayGroupRef<'a>>,
+    }
+
+    let summaries_by_interval = grouped_transactions
+        .iter()
+        .map(|interval| {
+            interval
+                .summary
+                .iter()
+                .map(|category| {
+                    let percent_label = format!(
+                        "{}% of total {}",
+                        category.percent,
+                        match category.kind {
+                            CategorySummaryKind::Income => "income",
+                            CategorySummaryKind::Expense => "expenses",
+                        }
+                    );
+                    let total_class = match category.kind {
+                        CategorySummaryKind::Income => {
+                            "text-right tabular-nums text-green-700 dark:text-green-300"
+                        }
+                        CategorySummaryKind::Expense => {
+                            "text-right tabular-nums text-red-700 dark:text-red-300"
+                        }
+                    };
+
+                    SummaryCardView {
+                        category,
+                        percent_label,
+                        total_display: format_currency(category.total),
+                        total_class,
+                        grouped_days: group_transactions_by_day(&category.transactions),
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    html! {
+        div class="lg:hidden space-y-6"
+        {
+            @for (interval, summaries) in grouped_transactions.iter().zip(&summaries_by_interval) {
+                div class="rounded border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-gray-700 dark:bg-gray-800"
+                {
+                    div class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-900 bg-gray-50 dark:bg-gray-700/70 dark:text-white"
+                    {
+                        span { (range_label(interval.range)) }
+                        span class="flex items-center gap-3 text-xs"
+                        {
+                            span class="text-green-700 dark:text-green-300 whitespace-nowrap"
+                            { (format_currency(interval.totals.income)) }
+                            span class="text-red-700 dark:text-red-300 whitespace-nowrap"
+                            { (format_currency(interval.totals.expenses)) }
+                        }
+                    }
+
+                    @for summary in summaries {
+                        details class="group border-t border-gray-200 px-4 py-3 dark:border-gray-700"
+                        {
+                            summary class="flex items-center justify-between cursor-pointer select-none list-none"
+                            {
+                                span class="flex flex-col"
+                                {
+                                    span class="text-sm font-medium text-gray-900 dark:text-white"
+                                    { (&summary.category.label) }
+                                    span class="text-xs text-gray-500 dark:text-gray-400"
+                                    { (&summary.percent_label) }
+                                }
+                                span class="flex items-center gap-3 text-sm"
+                                {
+                                    span class=(summary.total_class) { (&summary.total_display) }
+                                    span class="text-gray-400 group-open:rotate-90 transition-transform" { "›" }
+                                }
+                            }
+
+                            div class="mt-3 space-y-4"
+                            {
+                                @for day in &summary.grouped_days {
+                                    div class="text-[0.65rem] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                                    { (format_day_label(day.date)) }
+
+                                    div class="space-y-3"
+                                    {
+                                        @for transaction_row in &day.transactions {
+                                            (transaction_card_row(transaction_row))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            @if show_empty_state {
+                div class="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                {
+                    (empty_message)
                 }
             }
         }
@@ -364,8 +585,8 @@ fn interval_header_row_view(interval: &DateInterval) -> Markup {
                     span { (label) }
                     span class="flex items-center gap-4"
                     {
-                        span class="text-green-700 dark:text-green-300" { (income) }
-                        span class="text-red-700 dark:text-red-300" { (expenses) }
+                        span class="text-green-700 dark:text-green-300 whitespace-nowrap" { (income) }
+                        span class="text-red-700 dark:text-red-300 whitespace-nowrap" { (expenses) }
                     }
                 }
             }
