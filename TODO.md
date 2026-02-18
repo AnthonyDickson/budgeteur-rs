@@ -2,6 +2,8 @@
 
 ## Stage One: Budgeting
 
+- Set default settings in transaction page to month range, month interval and summary on.
+- Set redirect on automatic logout to previous page (currently redirects to dashboard)
 - Add search/filtering to transactions page
 - Add account info to transactions
   - Set during import
@@ -23,6 +25,10 @@
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
 - Refactor common testing functions into a separate module.
+- Fix legend overlapping monthly expense breakdown chart on mobile
+- Fix long single words (e.g., "UNICHEMMAINSTPHARMACYHOAUCKLAND") in transaction card view (mobile) pushing amount cell
+  out of view. Instead of truncating on grapheme count, maybe truncate on width? Could define a max width and truncate
+  with dots similiar to bottom nav (mobile)
 - Clean up/simplify HTML structure (e.g., remove redundant div wrappers), use semantic elements where possible
 - Review UI design
   - [ ] Button states, ensure there is visual feedback for both hover and click (active) states
