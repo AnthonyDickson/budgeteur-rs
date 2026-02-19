@@ -18,22 +18,24 @@ pub struct RangeQuery {
     pub anchor: Option<Date>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum RangePreset {
     Week,
     Fortnight,
+    #[default]
     Month,
     Quarter,
     HalfYear,
     Year,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum IntervalPreset {
     Week,
     Fortnight,
+    #[default]
     Month,
     Quarter,
     HalfYear,
@@ -41,10 +43,6 @@ pub enum IntervalPreset {
 }
 
 impl IntervalPreset {
-    pub fn default_preset() -> Self {
-        Self::Week
-    }
-
     pub fn as_query_value(self) -> &'static str {
         match self {
             Self::Week => "week",
@@ -80,10 +78,6 @@ impl IntervalPreset {
 }
 
 impl RangePreset {
-    pub fn default_preset() -> Self {
-        Self::Month
-    }
-
     pub fn as_query_value(self) -> &'static str {
         match self {
             Self::Week => "week",

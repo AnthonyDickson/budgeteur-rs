@@ -2,7 +2,7 @@
 
 ## Stage One: Budgeting
 
-- Set default settings in transaction page to month range, month interval and summary on.
+- When navigating to `/transactions`, redirect to fill out URL with default query params
 - Set redirect on automatic logout to previous page (currently redirects to dashboard)
 - Add search/filtering to transactions page
 - Add account info to transactions
