@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Set redirect on automatic logout to previous page (currently redirects to dashboard)
 - Add search/filtering to transactions page
 - Add account info to transactions
   - Set during import
