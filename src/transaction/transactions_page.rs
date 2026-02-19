@@ -252,6 +252,10 @@ fn build_redirect_param(redirect_url: &str) -> Option<String> {
 }
 
 fn normalize_query(query: RangeQuery, now_local: Date) -> QueryDecision {
+    let has_missing_params = query.range.is_none()
+        || query.interval.is_none()
+        || query.summary.is_none()
+        || query.anchor.is_none();
     let requested_range_preset = query.range.unwrap_or_default();
     let interval_preset = query.interval.unwrap_or_default();
     let show_category_summary = query.summary.unwrap_or(true);
@@ -263,7 +267,7 @@ fn normalize_query(query: RangeQuery, now_local: Date) -> QueryDecision {
         smallest_range_for_interval(interval_preset)
     };
 
-    if range_preset != requested_range_preset {
+    if has_missing_params || range_preset != requested_range_preset {
         let redirect_url = TransactionsQuery::new(
             range_preset,
             interval_preset,
@@ -351,7 +355,10 @@ mod tests {
         transaction::{Transaction, create_transaction},
     };
 
-    use super::{TransactionsQuery, TransactionsViewState, get_transactions_page};
+    use super::{
+        QueryDecision, TransactionsQuery, TransactionsViewState, get_transactions_page,
+        normalize_query,
+    };
     use crate::endpoints;
     use crate::transaction::range::{IntervalPreset, RangePreset, RangeQuery, compute_range};
 
@@ -414,8 +421,8 @@ mod tests {
             State(state),
             Query(RangeQuery {
                 range: Some(RangePreset::Month),
-                interval: None,
-                summary: None,
+                interval: Some(IntervalPreset::Month),
+                summary: Some(true),
                 anchor: Some(today),
             }),
         )
@@ -446,8 +453,8 @@ mod tests {
             State(state),
             Query(RangeQuery {
                 range: Some(RangePreset::Month),
-                interval: None,
-                summary: None,
+                interval: Some(IntervalPreset::Month),
+                summary: Some(true),
                 anchor: Some(anchor),
             }),
         )
@@ -477,8 +484,8 @@ mod tests {
             State(state),
             Query(RangeQuery {
                 range: Some(RangePreset::Month),
-                interval: None,
-                summary: None,
+                interval: Some(IntervalPreset::Month),
+                summary: Some(true),
                 anchor: Some(anchor),
             }),
         )
@@ -512,7 +519,7 @@ mod tests {
             State(state),
             Query(RangeQuery {
                 range: Some(RangePreset::Month),
-                interval: None,
+                interval: Some(IntervalPreset::Month),
                 summary: Some(true),
                 anchor: Some(today),
             }),
@@ -542,7 +549,7 @@ mod tests {
             Query(RangeQuery {
                 range: Some(RangePreset::Week),
                 interval: Some(IntervalPreset::Month),
-                summary: None,
+                summary: Some(true),
                 anchor: Some(transaction_date),
             }),
         )
@@ -565,6 +572,30 @@ mod tests {
             location,
             expected_url.as_str(),
             "Expected redirect to adjusted range preset"
+        );
+    }
+
+    #[test]
+    fn normalize_query_redirects_when_default_params_missing() {
+        let now = date!(2025 - 10 - 05);
+        let query = RangeQuery {
+            range: None,
+            interval: None,
+            summary: None,
+            anchor: None,
+        };
+
+        let decision = normalize_query(query, now);
+        let QueryDecision::Redirect(redirect_url) = decision else {
+            panic!("Expected redirect for missing default query params");
+        };
+
+        let expected_url =
+            TransactionsQuery::new(RangePreset::Month, IntervalPreset::Month, now, true)
+                .to_url(endpoints::TRANSACTIONS_VIEW);
+        assert_eq!(
+            redirect_url, expected_url,
+            "Expected redirect to include default query params"
         );
     }
 
@@ -711,8 +742,8 @@ mod tests {
             State(state),
             Query(RangeQuery {
                 range: Some(RangePreset::Month),
-                interval: None,
-                summary: None,
+                interval: Some(IntervalPreset::Month),
+                summary: Some(true),
                 anchor: Some(today),
             }),
         )
@@ -793,8 +824,8 @@ mod tests {
             State(state),
             Query(RangeQuery {
                 range: Some(RangePreset::Month),
-                interval: None,
-                summary: None,
+                interval: Some(IntervalPreset::Month),
+                summary: Some(true),
                 anchor: Some(today),
             }),
         )
