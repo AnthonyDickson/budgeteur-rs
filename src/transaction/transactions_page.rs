@@ -252,9 +252,9 @@ fn build_redirect_param(redirect_url: &str) -> Option<String> {
 }
 
 fn normalize_query(query: RangeQuery, now_local: Date) -> QueryDecision {
-    let requested_range_preset = query.range.unwrap_or(RangePreset::default_preset());
-    let interval_preset = query.interval.unwrap_or(IntervalPreset::default_preset());
-    let show_category_summary = query.summary.unwrap_or(false);
+    let requested_range_preset = query.range.unwrap_or_default();
+    let interval_preset = query.interval.unwrap_or_default();
+    let show_category_summary = query.summary.unwrap_or(true);
     let anchor_date = query.anchor.unwrap_or(now_local);
     let range_preset = if range_preset_can_contain_interval(requested_range_preset, interval_preset)
     {
@@ -558,7 +558,7 @@ mod tests {
             RangePreset::Month,
             IntervalPreset::Month,
             transaction_date,
-            false,
+            true,
         )
         .to_url(endpoints::TRANSACTIONS_VIEW);
         assert_eq!(
@@ -630,13 +630,9 @@ mod tests {
     #[track_caller]
     fn assert_latest_link_present(html: &Html, preset: RangePreset, latest_date: Date) {
         let latest_range = compute_range(preset, latest_date);
-        let latest_href = TransactionsQuery::new(
-            preset,
-            IntervalPreset::default_preset(),
-            latest_range.end,
-            false,
-        )
-        .to_url(endpoints::TRANSACTIONS_VIEW);
+        let latest_href =
+            TransactionsQuery::new(preset, Default::default(), latest_range.end, true)
+                .to_url(endpoints::TRANSACTIONS_VIEW);
         let link_selector = Selector::parse("a").unwrap();
         let latest_link = html
             .select(&link_selector)
