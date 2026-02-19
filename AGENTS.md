@@ -61,5 +61,5 @@
 
 ## Dev Process
 
-- When finished implementing or refactoring something, run `cargo test -q` and `cargo clippy --quiet`.
+- When finished implementing or refactoring something, run `cargo test -q`, `cargo clippy -q` and `cargo fmt`.
 - When replacing a subsystem (e.g., pagination → windows), remove unused modules/tests rather than silencing dead-code warnings.

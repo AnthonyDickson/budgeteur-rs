@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     Form,
-    extract::{FromRef, State},
+    extract::{FromRef, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -21,14 +21,14 @@ use crate::{
     app_state::create_cookie_key,
     auth::{
         DEFAULT_COOKIE_DURATION, User, UserID, get_user_by_id, invalidate_auth_cookie,
-        set_auth_cookie,
+        normalize_redirect_url, set_auth_cookie,
     },
     endpoints,
     html::{base, loading_spinner, log_in_register, password_input},
     timezone::get_local_offset,
 };
 
-fn log_in_form(password: &str, error_message: Option<&str>) -> Markup {
+fn log_in_form(password: &str, error_message: Option<&str>, redirect_url: Option<&str>) -> Markup {
     html! {
         form
             hx-post=(endpoints::LOG_IN_API)
@@ -36,6 +36,10 @@ fn log_in_form(password: &str, error_message: Option<&str>) -> Markup {
             hx-disabled-elt="#password, #submit-button"
             class="space-y-4 md:space-y-6"
         {
+            @if let Some(redirect_url) = redirect_url {
+                input type="hidden" name="redirect_url" value=(redirect_url);
+            }
+
             (password_input(password, 0, error_message))
 
             div class="flex items-center gap-x-3"
@@ -92,9 +96,22 @@ fn log_in_form(password: &str, error_message: Option<&str>) -> Markup {
     }
 }
 
+fn parse_redirect_url(raw_url: Option<&str>, source: &str) -> Option<String> {
+    match raw_url.and_then(normalize_redirect_url) {
+        Some(redirect_url) => Some(redirect_url),
+        None => {
+            if let Some(redirect_url) = raw_url {
+                tracing::warn!("Invalid redirect URL from {source}: {redirect_url}");
+            }
+            None
+        }
+    }
+}
+
 /// Display the log-in page.
-pub async fn get_log_in_page() -> Response {
-    let log_in_form = log_in_form("", None);
+pub async fn get_log_in_page(Query(query): Query<RedirectQuery>) -> Response {
+    let redirect_url = parse_redirect_url(query.redirect_url.as_deref(), "log-in query");
+    let log_in_form = log_in_form("", None, redirect_url.as_deref());
     let content = log_in_register("Log in to your account", &log_in_form);
     base("Log In", &[], &content).into_response()
 }
@@ -169,6 +186,8 @@ pub async fn post_log_in(
     jar: PrivateCookieJar,
     Form(user_data): Form<LogInData>,
 ) -> Response {
+    let redirect_url = parse_redirect_url(user_data.redirect_url.as_deref(), "log-in form");
+    let redirect_url = redirect_url.as_deref();
     let user: User = match get_user_by_id(
         UserID::new(1),
         &state
@@ -181,6 +200,7 @@ pub async fn post_log_in(
             return log_in_form(
                 "",
                 Some("Password not set, go to the registration page and set your password"),
+                redirect_url,
             )
             .into_response();
         }
@@ -189,6 +209,7 @@ pub async fn post_log_in(
             return log_in_form(
                 "",
                 Some("An internal error occurred. Please try again later."),
+                redirect_url,
             )
             .into_response();
         }
@@ -201,13 +222,14 @@ pub async fn post_log_in(
             return log_in_form(
                 "",
                 Some("An internal error occurred. Please try again later."),
+                redirect_url,
             )
             .into_response();
         }
     };
 
     if !is_password_valid {
-        return log_in_form("", Some(INVALID_CREDENTIALS_ERROR_MSG)).into_response();
+        return log_in_form("", Some(INVALID_CREDENTIALS_ERROR_MSG), redirect_url).into_response();
     }
 
     let cookie_duration = if user_data.remember_me.is_some() {
@@ -221,11 +243,13 @@ pub async fn post_log_in(
         None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
     };
 
+    let redirect_url = redirect_url.unwrap_or(endpoints::DASHBOARD_VIEW);
+
     set_auth_cookie(jar.clone(), user.id, cookie_duration, local_timezone)
         .map(|updated_jar| {
             (
                 StatusCode::SEE_OTHER,
-                HxRedirect(endpoints::DASHBOARD_VIEW.to_owned()),
+                HxRedirect(redirect_url.to_owned()),
                 updated_jar,
             )
         })
@@ -238,6 +262,11 @@ pub async fn post_log_in(
             )
         })
         .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct RedirectQuery {
+    pub redirect_url: Option<String>,
 }
 
 /// The raw data entered by the user in the log-in form.
@@ -256,6 +285,10 @@ pub struct LogInData {
     /// The `Some` variant should be interpreted as `true` irregardless of the
     /// string value, and the `None` variant should be interpreted as `false`.
     pub remember_me: Option<String>,
+
+    /// Optional URL to redirect to after logging in.
+    /// Only accepted from the log-in form submission.
+    pub redirect_url: Option<String>,
 }
 
 #[cfg(test)]
@@ -268,7 +301,7 @@ mod log_in_page_tests {
 
     use axum::{
         Form,
-        extract::State,
+        extract::{Query, State},
         http::{StatusCode, header::CONTENT_TYPE},
     };
     use axum_extra::extract::PrivateCookieJar;
@@ -278,12 +311,13 @@ mod log_in_page_tests {
     use crate::{auth::user::create_user_table, endpoints};
 
     use super::{
-        INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, User, get_log_in_page, post_log_in,
+        INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, RedirectQuery, User, get_log_in_page,
+        post_log_in,
     };
 
     #[tokio::test]
     async fn log_in_page_displays_form() {
-        let response = get_log_in_page().await;
+        let response = get_log_in_page(Query(RedirectQuery { redirect_url: None })).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert!(
@@ -356,6 +390,7 @@ mod log_in_page_tests {
         let form = LogInData {
             password: "wrongpassword".to_string(),
             remember_me: None,
+            redirect_url: None,
         };
         let response = post_log_in(State(state), jar, Form(form)).await;
 
@@ -396,6 +431,36 @@ mod log_in_page_tests {
         assert!(
             p_text.contains("Password not set"),
             "error message should contain string \"{INVALID_CREDENTIALS_ERROR_MSG}\" but got \"{p_text}\""
+        );
+    }
+
+    #[tokio::test]
+    async fn log_in_page_preserves_redirect_url() {
+        let redirect_url = "/transactions?range=month&anchor=2025-10-05".to_string();
+        let response = get_log_in_page(Query(RedirectQuery {
+            redirect_url: Some(redirect_url.clone()),
+        }))
+        .await;
+
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+        let document = scraper::Html::parse_document(&text);
+        assert_valid_html(&document);
+
+        let input_selector = scraper::Selector::parse("input[name=redirect_url]").unwrap();
+        let inputs = document.select(&input_selector).collect::<Vec<_>>();
+        assert_eq!(
+            inputs.len(),
+            1,
+            "want 1 redirect_url input, got {}",
+            inputs.len()
+        );
+        let input = inputs.first().unwrap();
+        assert_eq!(
+            input.value().attr("value"),
+            Some(redirect_url.as_str()),
+            "expected redirect_url value to be preserved"
         );
     }
 
@@ -475,12 +540,62 @@ mod log_in_tests {
             LogInData {
                 password: "test".to_string(),
                 remember_me: None,
+                redirect_url: None,
             },
         )
         .await;
 
         assert_hx_redirect(&response, endpoints::DASHBOARD_VIEW);
         assert_set_cookie(&response);
+    }
+
+    #[tokio::test]
+    async fn log_in_redirects_to_requested_url() {
+        let state = get_test_app_config(Some(&User {
+            id: UserID::new(1),
+            password_hash: PasswordHash::new(
+                ValidatedPassword::new_unchecked("test"),
+                PasswordHash::DEFAULT_COST,
+            )
+            .expect("Could not create test user"),
+        }));
+        let redirect_url = "/transactions?range=month&anchor=2025-10-05";
+
+        let response = new_log_in_request(
+            state,
+            LogInData {
+                password: "test".to_string(),
+                remember_me: None,
+                redirect_url: Some(redirect_url.to_string()),
+            },
+        )
+        .await;
+
+        assert_hx_redirect(&response, redirect_url);
+    }
+
+    #[tokio::test]
+    async fn log_in_falls_back_on_invalid_redirect_url() {
+        let state = get_test_app_config(Some(&User {
+            id: UserID::new(1),
+            password_hash: PasswordHash::new(
+                ValidatedPassword::new_unchecked("test"),
+                PasswordHash::DEFAULT_COST,
+            )
+            .expect("Could not create test user"),
+        }));
+
+        let response = new_log_in_request(
+            state,
+            LogInData {
+                password: "test".to_string(),
+                remember_me: None,
+                redirect_url: Some("https://example.com".to_string()),
+            },
+        )
+        .await;
+
+        assert_hx_redirect(&response, endpoints::DASHBOARD_VIEW);
     }
 
     /// Test helper macro to assert that two date times are within one second
@@ -585,6 +700,7 @@ mod log_in_tests {
             LogInData {
                 password: "wrongpassword".to_string(),
                 remember_me: None,
+                redirect_url: None,
             },
         )
         .await;
