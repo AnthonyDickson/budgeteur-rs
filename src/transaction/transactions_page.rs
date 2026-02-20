@@ -146,9 +146,11 @@ impl TransactionsQuery {
             self.interval_preset.as_query_value(),
             self.anchor_date
         );
-        if self.show_category_summary {
-            query.push_str("&summary=true");
-        }
+        query.push_str(if self.show_category_summary {
+            "&summary=true"
+        } else {
+            "&summary=false"
+        });
         query
     }
 
@@ -596,6 +598,18 @@ mod tests {
         assert_eq!(
             redirect_url, expected_url,
             "Expected redirect to include default query params"
+        );
+    }
+
+    #[test]
+    fn transactions_query_includes_summary_false_param() {
+        let now = date!(2025 - 10 - 05);
+        let query = TransactionsQuery::new(RangePreset::Month, IntervalPreset::Month, now, false)
+            .to_query_string();
+
+        assert!(
+            query.contains("summary=false"),
+            "Expected summary=false in query string, got {query}"
         );
     }
 
