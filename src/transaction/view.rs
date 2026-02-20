@@ -363,7 +363,7 @@ fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -
 
 fn transaction_card_row(transaction_row: &TransactionTableRow) -> Markup {
     let amount_class = amount_class(transaction_row.amount);
-    let (description, _) = format_description(&transaction_row.description);
+    let description = transaction_row.description.as_str();
 
     html! {
         div class="rounded border border-gray-200 bg-gray-50 px-3 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/30"
@@ -371,9 +371,10 @@ fn transaction_card_row(transaction_row: &TransactionTableRow) -> Markup {
         {
             div class="flex items-start justify-between gap-3"
             {
-                div class="text-sm font-medium text-gray-900 dark:text-white"
+                div class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-white"
+                    title=(description)
                 { (description) }
-                div class={ "text-sm tabular-nums text-right whitespace-nowrap " (amount_class) }
+                div class={ "shrink-0 text-sm tabular-nums text-right whitespace-nowrap " (amount_class) }
                 { (format_currency(transaction_row.amount)) }
             }
 

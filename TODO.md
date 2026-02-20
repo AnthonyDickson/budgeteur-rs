@@ -2,9 +2,23 @@
 
 ## Stage One: Budgeting
 
-- Add search/filtering to transactions page
+- Fix legend overlapping monthly expense breakdown chart on mobile
+- Use HTML5 elements where possible: https://dev.to/maxprilutskiy/html5-elements-you-didnt-know-you-need-gan
+- Refactor common testing functions into a separate module.
+- Clean up/simplify HTML structure (e.g., remove redundant div wrappers), use semantic elements where possible
+- Update unit tests to parse HTML document tree for checking for the existence
+  of nodes and attributes.
+- Review UI design
+  - [ ] Button states, ensure there is visual feedback for both hover and click (active) states
+  - [ ] Rounded edge radii consistency---currently buttons use `rounded` but container uses `rounded-lg`
+  - [ ] Autofocus on registration form
+- Add feature to quickly tag untagged transactions
+  - When transactions are imported, add them to a table
+- Add support for Wise CSV exports
+  - Complicated by multiple currencies
 - Add account info to transactions
   - Set during import
+- Add search/filtering to transactions page
 - Add page/widget on dashboard where you can check the impact of spending a specified amount:
   - Input for a positive amount, assume one-off
   - Net income chart
@@ -15,25 +29,6 @@
     - Net balance for last month
     - Current month is previous month's balance plus mean net income over the last 12 months minus the specified amount
     - Projections for the next ten months are the above value plus the mean net income over the last 12 months
-- Update values to use accounting formatting
-  - Zero filled up to two decimal places for floats
-  - Parantheses instead of minus symbol for negative values
-  - Align digits and decimal point
-- Use HTML5 elements where possible: https://dev.to/maxprilutskiy/html5-elements-you-didnt-know-you-need-gan
-- Update unit tests to parse HTML document tree for checking for the existence
-  of nodes and attributes.
-- Refactor common testing functions into a separate module.
-- Fix legend overlapping monthly expense breakdown chart on mobile
-- Fix long single words (e.g., "UNICHEMMAINSTPHARMACYHOAUCKLAND") in transaction card view (mobile) pushing amount cell
-  out of view. Instead of truncating on grapheme count, maybe truncate on width? Could define a max width and truncate
-  with dots similiar to bottom nav (mobile)
-- Clean up/simplify HTML structure (e.g., remove redundant div wrappers), use semantic elements where possible
-- Review UI design
-  - [ ] Button states, ensure there is visual feedback for both hover and click (active) states
-  - [ ] Rounded edge radii consistency---currently buttons use `rounded` but container uses `rounded-lg`
-  - [ ] Autofocus on registration form
-- Add support for Wise CSV exports
-  - Complicated by multiple currencies
 
 ## Stage Two: Tracking Net Worth
 
