@@ -3,7 +3,7 @@
 //! Provides HTML table components for displaying monthly financial summaries.
 
 use maud::{Markup, PreEscaped, html};
-use time::Date;
+use time::{Date, format_description::BorrowedFormatItem, macros::format_description};
 
 use crate::{
     dashboard::{
@@ -205,8 +205,10 @@ pub(super) fn monthly_summary_table(
                         {
                             th scope="col" class=(TABLE_HEADER_FIRST_CELL_STYLE) { "" }
 
-                            @for label in &labels {
-                                th scope="col" class={(TABLE_HEADER_CELL_STYLE) " font-semibold"} { (label) }
+                            @for (month, label) in sorted_months.iter().zip(labels.iter()) {
+                                th scope="col" class={(TABLE_HEADER_CELL_STYLE) " font-semibold"} {
+                                    time datetime=(month_datetime_attr(*month)) { (label) }
+                                }
                             }
                         }
                     }
@@ -295,4 +297,12 @@ pub(super) fn monthly_summary_table(
             }
         }
     }
+}
+
+const MONTH_ATTRIBUTE_FORMAT: &[BorrowedFormatItem] =
+    format_description!("[year]-[month repr:numerical padding:zero]");
+
+fn month_datetime_attr(date: Date) -> String {
+    date.format(MONTH_ATTRIBUTE_FORMAT)
+        .unwrap_or_else(|_| date.to_string())
 }

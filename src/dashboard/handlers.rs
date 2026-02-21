@@ -69,7 +69,7 @@ struct DashboardData {
     charts: [DashboardChart; 3],
     tables: Vec<Markup>,
     tag_stats: Vec<TagExpenseStats>,
-    displayed_month_label: String,
+    displayed_month: Date,
 }
 
 /// Display a page with an overview of the user's data.
@@ -92,7 +92,7 @@ pub async fn get_dashboard_page(State(state): State<DashboardState>) -> Result<R
             &data.charts,
             &data.tables,
             &data.tag_stats,
-            &data.displayed_month_label,
+            data.displayed_month,
         )
         .into_response()),
         None => Ok(dashboard_no_data_view(nav_bar).into_response()),
@@ -142,7 +142,7 @@ pub async fn update_excluded_tags(
         &data.charts,
         &data.tables,
         &data.tag_stats,
-        &data.displayed_month_label,
+        data.displayed_month,
     )
     .into_response()
 }
@@ -230,7 +230,6 @@ fn build_dashboard_data(
     let last_complete_month = (today.replace_day(1).unwrap() - Duration::days(1))
         .replace_day(1)
         .unwrap();
-    let displayed_month_label = format_month_year_label(last_complete_month);
     let tag_stats = calculate_tag_expense_statistics(&transactions, last_complete_month);
 
     Ok(Some(DashboardData {
@@ -238,7 +237,7 @@ fn build_dashboard_data(
         charts,
         tables,
         tag_stats,
-        displayed_month_label,
+        displayed_month: last_complete_month,
     }))
 }
 
@@ -321,16 +320,11 @@ fn dashboard_view<'a>(
     charts: &[DashboardChart],
     tables: &[Markup],
     tag_stats: &[TagExpenseStats],
-    displayed_month_label: &str,
+    displayed_month: Date,
 ) -> Markup {
     let nav_bar = nav_bar.into_html();
-    let content = dashboard_content_partial(
-        tags_with_status,
-        charts,
-        tables,
-        tag_stats,
-        displayed_month_label,
-    );
+    let content =
+        dashboard_content_partial(tags_with_status, charts, tables, tag_stats, displayed_month);
 
     let scripts = [
         HeadElement::ScriptLink("/static/echarts.6.0.0.min.js".to_owned()),
@@ -367,7 +361,7 @@ fn dashboard_content_partial(
     charts: &[DashboardChart],
     tables: &[Markup],
     tag_stats: &[TagExpenseStats],
-    displayed_month_label: &str,
+    displayed_month: Date,
 ) -> Markup {
     let excluded_tags_view = excluded_tags_controls(
         tags_with_status,
@@ -382,6 +376,7 @@ fn dashboard_content_partial(
             form_id: None,
         },
     );
+    let expense_cards = expense_cards_view(tag_stats, displayed_month);
 
     html!(
         section
@@ -411,7 +406,7 @@ fn dashboard_content_partial(
             }
         }
 
-        (expense_cards_view(tag_stats, displayed_month_label))
+        (expense_cards)
 
         // ⚠️ CRITICAL: Charts must be initialized inline, not in <head>
         // HTMX swaps don't trigger DOMContentLoaded. DO NOT MOVE.
@@ -421,25 +416,6 @@ fn dashboard_content_partial(
 
         (excluded_tags_view)
     )
-}
-
-fn format_month_year_label(date: Date) -> String {
-    use time::Month;
-    let month_name = match date.month() {
-        Month::January => "January",
-        Month::February => "February",
-        Month::March => "March",
-        Month::April => "April",
-        Month::May => "May",
-        Month::June => "June",
-        Month::July => "July",
-        Month::August => "August",
-        Month::September => "September",
-        Month::October => "October",
-        Month::November => "November",
-        Month::December => "December",
-    };
-    format!("{} {}", month_name, date.year())
 }
 
 #[cfg(test)]

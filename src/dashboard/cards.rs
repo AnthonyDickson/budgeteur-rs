@@ -3,6 +3,7 @@
 //! See `expenses-by-tag-design-spec.md` for UI specifications.
 
 use maud::{Markup, html};
+use time::{Date, Month, format_description::BorrowedFormatItem, macros::format_description};
 
 use crate::{
     dashboard::aggregation::TagExpenseStats,
@@ -68,13 +69,13 @@ fn format_percentage(value: f64) -> String {
 /// Renders the expense cards section.
 ///
 /// Shows empty state if no tags, helper card if ≤2 tags.
-pub(super) fn expense_cards_view(
-    tag_stats: &[TagExpenseStats],
-    displayed_month_label: &str,
-) -> Markup {
+pub(super) fn expense_cards_view(tag_stats: &[TagExpenseStats], displayed_month: Date) -> Markup {
     if tag_stats.is_empty() {
         return empty_state_view();
     }
+
+    let datetime = month_datetime_attr(displayed_month);
+    let displayed_month_label = format_month_year_label(displayed_month);
 
     html! {
         section class="w-full mx-auto mt-8 mb-8" {
@@ -84,7 +85,9 @@ pub(super) fn expense_cards_view(
                     "Expenses by Tag"
                 }
                 span class="text-sm text-gray-600 dark:text-gray-400" {
-                    (displayed_month_label)
+                    time datetime=(datetime) {
+                        (displayed_month_label)
+                    }
                 }
             }
 
@@ -101,6 +104,32 @@ pub(super) fn expense_cards_view(
             }
         }
     }
+}
+
+const MONTH_ATTRIBUTE_FORMAT: &[BorrowedFormatItem] =
+    format_description!("[year]-[month repr:numerical padding:zero]");
+
+fn month_datetime_attr(date: Date) -> String {
+    date.format(MONTH_ATTRIBUTE_FORMAT)
+        .unwrap_or_else(|_| date.to_string())
+}
+
+fn format_month_year_label(date: Date) -> String {
+    let month_name = match date.month() {
+        Month::January => "January",
+        Month::February => "February",
+        Month::March => "March",
+        Month::April => "April",
+        Month::May => "May",
+        Month::June => "June",
+        Month::July => "July",
+        Month::August => "August",
+        Month::September => "September",
+        Month::October => "October",
+        Month::November => "November",
+        Month::December => "December",
+    };
+    format!("{} {}", month_name, date.year())
 }
 
 /// Renders a single expense card for a tag.
@@ -314,6 +343,7 @@ mod tests {
     //! (e.g., both show "5%"), they MUST show the same card state.
 
     use scraper::{Html, Selector};
+    use time::macros::date;
 
     use super::*;
 
@@ -515,7 +545,7 @@ mod tests {
     #[test]
     fn renders_empty_state_when_no_tags() {
         let stats: Vec<TagExpenseStats> = vec![];
-        let html = parse_html(&expense_cards_view(&stats, "December 2024"));
+        let html = parse_html(&expense_cards_view(&stats, date!(2024 - 12 - 01)));
 
         // Check for semantic structure
         let h3_selector = Selector::parse("h3").unwrap();
@@ -538,7 +568,7 @@ mod tests {
     #[test]
     fn renders_helper_card_when_few_tags() {
         let stats = vec![create_test_stat("Food", 100.0, 100.0, 5, 100.0)];
-        let html = parse_html(&expense_cards_view(&stats, "December 2024"));
+        let html = parse_html(&expense_cards_view(&stats, date!(2024 - 12 - 01)));
 
         // Check for tip card by class
         let tip_selector = Selector::parse(".bg-blue-50").unwrap();
@@ -566,7 +596,7 @@ mod tests {
             create_test_stat("Transport", 50.0, 50.0, 5, 20.0),
             create_test_stat("Utilities", 40.0, 40.0, 5, 15.0),
         ];
-        let html = parse_html(&expense_cards_view(&stats, "December 2024"));
+        let html = parse_html(&expense_cards_view(&stats, date!(2024 - 12 - 01)));
 
         // Should have 3 expense cards
         let card_selector = Selector::parse(".bg-white.dark\\:bg-gray-800").unwrap();
@@ -600,7 +630,7 @@ mod tests {
     #[test]
     fn displays_month_label_correctly() {
         let stats = vec![create_test_stat("Food", 100.0, 100.0, 5, 100.0)];
-        let html = parse_html(&expense_cards_view(&stats, "December 2024"));
+        let html = parse_html(&expense_cards_view(&stats, date!(2024 - 12 - 01)));
 
         // Check for month label in header
         let header_selector = Selector::parse(".text-sm.text-gray-600").unwrap();
@@ -691,7 +721,7 @@ mod tests {
     #[test]
     fn card_grid_has_responsive_classes() {
         let stats = vec![create_test_stat("Food", 100.0, 100.0, 5, 100.0)];
-        let html = parse_html(&expense_cards_view(&stats, "December 2024"));
+        let html = parse_html(&expense_cards_view(&stats, date!(2024 - 12 - 01)));
 
         let grid_selector = Selector::parse(".grid").unwrap();
         let grid = html

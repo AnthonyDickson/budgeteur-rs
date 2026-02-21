@@ -2,7 +2,7 @@
 
 use axum::http::Uri;
 use maud::{Markup, html};
-use time::{Date, Month};
+use time::{Date, Month, format_description::BorrowedFormatItem, macros::format_description};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
@@ -19,7 +19,7 @@ use super::{
     grouping::{DayGroupRef, group_transactions_by_day},
     models::{CategorySummaryKind, DateInterval, TransactionTableRow, TransactionsViewOptions},
     range::{
-        IntervalPreset, RangeNavLink, RangeNavigation, RangePreset, range_label,
+        DateRange, IntervalPreset, RangeNavLink, RangeNavigation, RangePreset, range_label,
         range_preset_can_contain_interval,
     },
     transactions_page::TransactionsQuery,
@@ -225,7 +225,7 @@ fn range_navigation_html(
     show_category_summary: bool,
     transactions_page_route: &Uri,
 ) -> Markup {
-    let current_label = range_label(range_nav.range);
+    let current_range = range_nav.range;
     let row_classes = if latest_link.is_some() {
         "grid-rows-[auto_auto] gap-y-0"
     } else {
@@ -234,7 +234,7 @@ fn range_navigation_html(
     let route = transactions_page_route.path();
     let prev_link = range_nav.prev.as_ref().map(|prev| {
         (
-            range_label(prev.range),
+            prev.range,
             TransactionsQuery::new(
                 range_nav.preset,
                 interval_preset,
@@ -246,7 +246,7 @@ fn range_navigation_html(
     });
     let next_link = range_nav.next.as_ref().map(|next| {
         (
-            range_label(next.range),
+            next.range,
             TransactionsQuery::new(
                 range_nav.preset,
                 interval_preset,
@@ -271,13 +271,13 @@ fn range_navigation_html(
         {
             ul class={ "pagination grid grid-cols-3 gap-x-4 p-0 m-0 items-center w-full " (row_classes) }
             {
-                @if let Some((label, href)) = prev_link {
+                @if let Some((range, href)) = prev_link {
                     li class="flex items-center justify-start row-start-1" {
                         a
                             href=(href)
                             role="button"
                             class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                        { (label) }
+                        { (range_time_label(range)) }
                     }
                 } @else {
                     li class="flex items-center justify-start row-start-1" {}
@@ -286,15 +286,15 @@ fn range_navigation_html(
                     span
                         aria-current="page"
                         class="block px-3 py-2 rounded-sm font-bold text-black dark:text-white"
-                    { (current_label) }
+                    { (range_time_label(current_range)) }
                 }
-                @if let Some((label, href)) = next_link {
+                @if let Some((range, href)) = next_link {
                     li class="flex items-center justify-end row-start-1" {
                         a
                             href=(href)
                             role="button"
                             class="block px-3 py-2 rounded-sm text-blue-600 hover:underline"
-                        { (label) }
+                        { (range_time_label(range)) }
                     }
                 } @else {
                     li class="flex items-center justify-end row-start-1" {}
@@ -331,7 +331,7 @@ fn transaction_row_view_with_class(row: &TransactionTableRow, row_class: &str) -
         tr class=(row_class) data-transaction-row="true"
         {
             td class={ "px-6 py-4 text-right " (amount_class) } { (amount_str) }
-            td class="sr-only" { (row.date) }
+            td class="sr-only" { time datetime=(date_datetime_attr(row.date)) { (row.date) } }
             td class=(TABLE_CELL_STYLE) title=[tooltip] { (description) }
             td class=(TABLE_CELL_STYLE)
             {
@@ -420,7 +420,7 @@ fn transaction_cards_view(
                 {
                     div class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-900 bg-gray-50 dark:bg-gray-700/70 dark:text-white"
                     {
-                        span { (range_label(interval.range)) }
+                        span { (range_time_label(interval.range)) }
                         span class="flex items-center gap-3 text-xs"
                         {
                             span class="text-green-700 dark:text-green-300 whitespace-nowrap"
@@ -433,7 +433,7 @@ fn transaction_cards_view(
                     @for day in &interval.days {
                         div class="px-4 pt-4 text-[0.65rem] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
                         {
-                            (format_day_label(day.date))
+                            (day_time_label(day.date))
                         }
 
                         div class="px-4 py-3 space-y-3"
@@ -513,7 +513,7 @@ fn summary_cards_view(
                 {
                     div class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-900 bg-gray-50 dark:bg-gray-700/70 dark:text-white"
                     {
-                        span { (range_label(interval.range)) }
+                        span { (range_time_label(interval.range)) }
                         span class="flex items-center gap-3 text-xs"
                         {
                             span class="text-green-700 dark:text-green-300 whitespace-nowrap"
@@ -546,7 +546,7 @@ fn summary_cards_view(
                             {
                                 @for day in &summary.grouped_days {
                                     div class="text-[0.65rem] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-                                    { (format_day_label(day.date)) }
+                                    { (day_time_label(day.date)) }
 
                                     div class="space-y-3"
                                     {
@@ -572,7 +572,6 @@ fn summary_cards_view(
 }
 
 fn interval_header_row_view(interval: &DateInterval) -> Markup {
-    let label = range_label(interval.range);
     let income = format_currency(interval.totals.income);
     let expenses = format_currency(interval.totals.expenses);
 
@@ -583,7 +582,7 @@ fn interval_header_row_view(interval: &DateInterval) -> Markup {
             {
                 div class="flex items-center justify-between font-semibold text-gray-900 dark:text-white"
                 {
-                    span { (label) }
+                    span { (range_time_label(interval.range)) }
                     span class="flex items-center gap-4"
                     {
                         span class="text-green-700 dark:text-green-300 whitespace-nowrap" { (income) }
@@ -692,7 +691,7 @@ fn category_summary_view(interval: &DateInterval) -> Markup {
 }
 
 fn day_header_row_view(date: Date) -> Markup {
-    let label = format_day_label(date);
+    let label = day_time_label(date);
 
     html! {
         tr class="bg-gray-50 dark:bg-gray-800" data-day-header="true"
@@ -723,6 +722,40 @@ fn month_abbrev(month: Month) -> &'static str {
         Month::October => "Oct",
         Month::November => "Nov",
         Month::December => "Dec",
+    }
+}
+
+const DATE_ATTRIBUTE_FORMAT: &[BorrowedFormatItem] =
+    format_description!("[year]-[month repr:numerical padding:zero]-[day padding:zero]");
+
+fn date_datetime_attr(date: Date) -> String {
+    date.format(DATE_ATTRIBUTE_FORMAT)
+        .unwrap_or_else(|_| date.to_string())
+}
+
+fn range_datetime_attr(range: DateRange) -> String {
+    format!(
+        "{}/{}",
+        date_datetime_attr(range.start),
+        date_datetime_attr(range.end)
+    )
+}
+
+fn range_time_label(range: DateRange) -> Markup {
+    let datetime = range_datetime_attr(range);
+    let label = range_label(range);
+
+    html! {
+        time datetime=(datetime) { (label) }
+    }
+}
+
+fn day_time_label(date: Date) -> Markup {
+    let datetime = date_datetime_attr(date);
+    let label = format_day_label(date);
+
+    html! {
+        time datetime=(datetime) { (label) }
     }
 }
 
