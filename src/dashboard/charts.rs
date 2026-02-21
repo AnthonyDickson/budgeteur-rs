@@ -10,10 +10,10 @@
 
 use charming::{
     Chart,
-    component::{Axis, Grid, Legend, Title, VisualMap, VisualMapPiece},
+    component::{Axis, Grid, Legend, LegendType, Title, VisualMap, VisualMapPiece},
     element::{
         AxisLabel, AxisPointer, AxisPointerType, AxisType, Emphasis, EmphasisFocus, JsFunction,
-        Tooltip, Trigger,
+        Orient, TextStyle, Tooltip, Trigger,
     },
     series::{Line, bar},
 };
@@ -154,16 +154,27 @@ pub(super) fn expenses_chart(transactions: &[Transaction]) -> Chart {
                 .text("Monthly Expenses")
                 .subtext("Last twelve months, grouped by tag")
                 .left(20)
-                .top("1%"),
+                .top(6),
         )
         .tooltip(currency_tooltip())
-        .legend(Legend::new().left(250).top("1%"))
+        .legend(
+            Legend::new()
+                .type_(LegendType::Scroll)
+                .orient(Orient::Horizontal)
+                .left("center")
+                .bottom(4)
+                .width("86%")
+                .item_gap(10)
+                .item_width(12)
+                .item_height(12)
+                .text_style(TextStyle::new().font_size(12)),
+        )
         .grid(
             Grid::new()
                 .left("3%")
                 .right("4%")
-                .bottom("3%")
-                .top(90)
+                .bottom(48)
+                .top(64)
                 .contain_label(true),
         )
         .x_axis(Axis::new().type_(AxisType::Category).data(labels))

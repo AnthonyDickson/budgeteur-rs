@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Fix legend overlapping monthly expense breakdown chart on mobile
 - Use HTML5 elements where possible: https://dev.to/maxprilutskiy/html5-elements-you-didnt-know-you-need-gan
 - Refactor common testing functions into a separate module.
 - Clean up/simplify HTML structure (e.g., remove redundant div wrappers), use semantic elements where possible
