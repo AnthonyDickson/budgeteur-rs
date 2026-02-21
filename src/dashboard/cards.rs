@@ -516,26 +516,54 @@ mod tests {
 
     #[test]
     fn progress_bar_has_minimum_width_for_small_percentages() {
-        let html = progress_bar(0.5).into_string();
-        // Should render with 3% width (minimum for rounded corners to show)
-        assert!(html.contains("width: 3.0%"));
+        let html = parse_html(&progress_bar(0.5));
+        let bar_selector = Selector::parse("[role='progressbar'] > div.bg-blue-600").unwrap();
+        let bar = html
+            .select(&bar_selector)
+            .next()
+            .expect("Should render inner progress bar");
+        let style = bar
+            .value()
+            .attr("style")
+            .expect("Inner progress bar missing style attribute");
+        assert_eq!(style, "width: 3.0%");
     }
 
     #[test]
     fn progress_bar_empty_for_zero_percentage() {
-        let html = progress_bar(0.0).into_string();
-        // Should have the container but no inner bar
-        assert!(html.contains("progressbar"));
-        assert!(!html.contains("bg-blue-600"));
+        let html = parse_html(&progress_bar(0.0));
+        let container_selector = Selector::parse("[role='progressbar']").unwrap();
+        assert!(
+            html.select(&container_selector).next().is_some(),
+            "Should render progressbar container"
+        );
+        let bar_selector = Selector::parse("[role='progressbar'] > div.bg-blue-600").unwrap();
+        assert_eq!(
+            html.select(&bar_selector).count(),
+            0,
+            "Zero percentage should not render inner bar"
+        );
     }
 
     #[test]
     fn progress_bar_clamps_negative_values() {
-        let html = progress_bar(-5.0).into_string();
-        // Should render as 0 (no bar)
-        assert!(html.contains("progressbar"));
-        assert!(html.contains("aria-valuenow=\"0\""));
-        assert!(!html.contains("bg-blue-600"));
+        let html = parse_html(&progress_bar(-5.0));
+        let container_selector = Selector::parse("[role='progressbar']").unwrap();
+        let container = html
+            .select(&container_selector)
+            .next()
+            .expect("Should render progressbar container");
+        assert_eq!(
+            container.value().attr("aria-valuenow"),
+            Some("0"),
+            "Negative percentage should clamp aria-valuenow to 0"
+        );
+        let bar_selector = Selector::parse("[role='progressbar'] > div.bg-blue-600").unwrap();
+        assert_eq!(
+            html.select(&bar_selector).count(),
+            0,
+            "Negative percentage should not render inner bar"
+        );
     }
 
     fn parse_html(markup: &Markup) -> Html {
@@ -584,7 +612,7 @@ mod tests {
             .map(|el| el.text().collect::<String>())
             .collect();
         assert!(
-            h4_texts.iter().any(|t| t.contains("Tip")),
+            h4_texts.iter().any(|t| t.trim() == "Tip"),
             "Should have 'Tip' heading"
         );
     }
@@ -677,9 +705,11 @@ mod tests {
             .expect("Card should have aria-label");
 
         let aria_label = card.value().attr("aria-label").unwrap();
-        assert!(aria_label.contains("Food expenses"));
-        assert!(aria_label.contains("$150.00"));
-        assert!(aria_label.contains("up 50%"));
+        let expected = create_card_aria_label(&stat, determine_card_state(&stat));
+        assert_eq!(
+            aria_label, expected,
+            "Card aria-label did not match expected description"
+        );
     }
 
     #[test]
@@ -696,8 +726,14 @@ mod tests {
         );
 
         // Check for up arrow
-        let trend_text: String = html.select(&red_selector).next().unwrap().text().collect();
-        assert!(trend_text.contains("↑") || trend_text.contains("above usual"));
+        let expected_trend = format!(
+            "↑ +{}% above usual",
+            format_percentage(stat.percentage_change)
+        );
+        let has_trend = red_elements
+            .iter()
+            .any(|element| element.text().collect::<String>().trim() == expected_trend);
+        assert!(has_trend, "Should render overspending trend text");
     }
 
     #[test]
@@ -714,8 +750,10 @@ mod tests {
         );
 
         // Check for celebration emoji
-        let text: String = html.html();
-        assert!(text.contains("🎉"), "Should have celebration emoji");
+        let has_celebration = green_elements
+            .iter()
+            .any(|element| element.text().collect::<String>().contains("🎉"));
+        assert!(has_celebration, "Should have celebration emoji");
     }
 
     #[test]

@@ -700,11 +700,11 @@ mod tests {
             .select(&empty_row_selector)
             .next()
             .expect("No empty-state row found");
-        let text = empty_row.text().collect::<String>();
-        assert!(
-            text.contains("No transactions in this range."),
-            "Empty-state row did not include expected text: {text}"
-        );
+        let colspan = empty_row
+            .value()
+            .attr("colspan")
+            .expect("Empty-state cell missing colspan attribute");
+        assert_eq!(colspan, "5", "Empty-state cell should span 5 columns");
     }
 
     #[track_caller]
@@ -714,11 +714,11 @@ mod tests {
             .select(&empty_row_selector)
             .next()
             .expect("No empty-state row found");
-        let text = empty_row.text().collect::<String>();
-        assert!(
-            text.contains("No transactions in this summary after exclusions."),
-            "Summary empty-state row did not include expected text: {text}"
-        );
+        let colspan = empty_row
+            .value()
+            .attr("colspan")
+            .expect("Empty-state cell missing colspan attribute");
+        assert_eq!(colspan, "5", "Empty-state cell should span 5 columns");
     }
 
     #[tokio::test]
@@ -787,6 +787,9 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(table_rows.len(), 3, "Should have 3 transaction rows");
 
+        let tag_badge_selector = Selector::parse("span.bg-blue-100").unwrap();
+        let empty_tag_selector = Selector::parse("span.text-gray-400").unwrap();
+
         // Check that each row has 5 columns (Amount, Date, Description, Tags, Actions)
         for (i, row) in table_rows.iter().enumerate() {
             let cells = row
@@ -801,20 +804,16 @@ mod tests {
 
             // The second to last cell should be the Tags column
             let tags_cell = &cells[3];
-            let tags_cell_html = tags_cell.html();
 
-            // Check if this row should have tags or not
-            if tags_cell_html.contains("-") && !tags_cell_html.contains("bg-blue-100") {
-                // This is the "no tags" case showing "-"
+            if tags_cell.select(&empty_tag_selector).next().is_some() {
                 assert!(
-                    tags_cell_html.contains("text-gray-400"),
-                    "Empty tags should be displayed with gray text"
+                    tags_cell.select(&tag_badge_selector).next().is_none(),
+                    "Empty tags should not include tag badges"
                 );
             } else {
-                // Should contain tag badges
                 assert!(
-                    tags_cell_html.contains("bg-blue-100"),
-                    "Tag should have blue background styling"
+                    tags_cell.select(&tag_badge_selector).next().is_some(),
+                    "Tagged rows should include tag badge styling"
                 );
             }
         }

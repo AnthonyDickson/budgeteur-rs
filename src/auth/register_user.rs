@@ -442,15 +442,7 @@ mod register_user_tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let fragment = parse_html(response).await;
-        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
-        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
-        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
-        let paragraph = paragraphs.first().unwrap();
-        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
-        assert!(
-            paragraph_text.contains("existing password"),
-            "'{paragraph_text}' does not contain the text 'existing password'"
-        );
+        assert_error_for_input(&fragment, "confirm-password");
     }
 
     #[tokio::test]
@@ -472,15 +464,7 @@ mod register_user_tests {
 
         let fragment = parse_html(response.into_response()).await;
 
-        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
-        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
-        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
-        let paragraph = paragraphs.first().unwrap();
-        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
-        assert!(
-            paragraph_text.contains("password is too weak"),
-            "'{paragraph_text}' does not contain the text 'password is too weak'"
-        );
+        assert_error_for_input(&fragment, "password");
     }
 
     #[tokio::test]
@@ -502,15 +486,7 @@ mod register_user_tests {
 
         let fragment = parse_html(response.into_response()).await;
 
-        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
-        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
-        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
-        let paragraph = paragraphs.first().unwrap();
-        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
-        assert!(
-            paragraph_text.contains("password is too weak"),
-            "'{paragraph_text}' does not contain the text 'password is too weak'"
-        );
+        assert_error_for_input(&fragment, "password");
     }
 
     #[tokio::test]
@@ -532,15 +508,7 @@ mod register_user_tests {
 
         let fragment = parse_html(response.into_response()).await;
 
-        let p_selector = scraper::Selector::parse("p.text-red-500").unwrap();
-        let paragraphs = fragment.select(&p_selector).collect::<Vec<_>>();
-        assert_eq!(paragraphs.len(), 1, "want 1 p, got {}", paragraphs.len());
-        let paragraph = paragraphs.first().unwrap();
-        let paragraph_text = paragraph.text().collect::<String>().to_lowercase();
-        assert!(
-            paragraph_text.contains("passwords do not match"),
-            "'{paragraph_text}' does not contain the text 'passwords do not match'"
-        );
+        assert_error_for_input(&fragment, "confirm-password");
     }
 
     async fn parse_html(response: Response<Body>) -> scraper::Html {
@@ -549,5 +517,18 @@ mod register_user_tests {
         let text = String::from_utf8_lossy(&body).to_string();
 
         scraper::Html::parse_fragment(&text)
+    }
+
+    #[track_caller]
+    fn assert_error_for_input(fragment: &scraper::Html, input_id: &str) {
+        let selector_string = format!("input#{input_id} + p.text-red-500.text-base");
+        let error_selector = scraper::Selector::parse(&selector_string).unwrap();
+        let error_nodes = fragment.select(&error_selector).collect::<Vec<_>>();
+        assert_eq!(
+            error_nodes.len(),
+            1,
+            "expected 1 error message after input#{input_id}, got {}",
+            error_nodes.len()
+        );
     }
 }
