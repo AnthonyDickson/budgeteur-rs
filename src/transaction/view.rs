@@ -19,8 +19,8 @@ use super::{
     grouping::{DayGroupRef, group_transactions_by_day},
     models::{CategorySummaryKind, DateInterval, TransactionTableRow, TransactionsViewOptions},
     range::{
-        DateRange, IntervalPreset, RangeNavLink, RangeNavigation, RangePreset, range_label,
-        range_preset_can_contain_interval,
+        DateRange, IntervalPreset, RangeNavLink, RangeNavigation, RangePreset, compute_range,
+        range_label, range_preset_can_contain_interval,
     },
     transactions_page::TransactionsQuery,
 };
@@ -269,7 +269,43 @@ fn range_navigation_html(
     html! {
         nav class="pagination flex justify-center"
         {
-            ul class={ "pagination grid grid-cols-3 gap-x-4 p-0 m-0 items-center w-full " (row_classes) }
+            ul class="pagination flex items-center justify-between w-full px-2 py-2 lg:hidden"
+            {
+                li class="flex items-center justify-start"
+                {
+                    @if let Some((_, ref href)) = prev_link {
+                        a
+                            href=(href)
+                            role="button"
+                            class="inline-flex items-center rounded px-2 py-1 text-sm text-blue-600 hover:underline"
+                        { "Prev" }
+                    } @else {
+                        span class="inline-flex items-center rounded px-2 py-1 text-sm text-gray-400 dark:text-gray-500"
+                        { "Prev" }
+                    }
+                }
+
+                li class="flex-1 text-center font-semibold text-gray-900 dark:text-white px-2"
+                {
+                    span aria-current="page" { (range_time_label(current_range)) }
+                }
+
+                li class="flex items-center justify-end"
+                {
+                    @if let Some((_, ref href)) = next_link {
+                        a
+                            href=(href)
+                            role="button"
+                            class="inline-flex items-center rounded px-2 py-1 text-sm text-blue-600 hover:underline"
+                        { "Next" }
+                    } @else {
+                        span class="inline-flex items-center rounded px-2 py-1 text-sm text-gray-400 dark:text-gray-500"
+                        { "Next" }
+                    }
+                }
+            }
+
+            ul class={ "pagination hidden lg:grid grid-cols-3 gap-x-4 p-0 m-0 items-center w-full " (row_classes) }
             {
                 @if let Some((range, href)) = prev_link {
                     li class="flex items-center justify-start row-start-1" {
@@ -787,9 +823,12 @@ fn control_cluster_html(
     } else {
         "Summary off"
     };
+    let range = compute_range(range_preset, anchor_date);
+    let range_label = range_time_label(range);
+    let interval_label = interval_preset.label();
 
-    html! {
-        div class="flex flex-col gap-2 px-6 py-2 text-sm text-gray-600 dark:text-gray-300"
+    let controls = html! {
+        div class="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300"
         {
             div class="flex flex-wrap items-center gap-3"
             {
@@ -864,6 +903,42 @@ fn control_cluster_html(
                 span class=(summary_dot_class) {}
                 span { (summary_label) }
             }
+        }
+    };
+
+    html! {
+        div class="lg:hidden border-b border-gray-200 dark:border-gray-700"
+        {
+            details class="bg-transparent"
+            {
+                summary class="list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-3 px-6 py-3 cursor-pointer"
+                {
+                    div class="flex flex-col gap-1"
+                    {
+                        span class="text-sm font-semibold text-gray-900 dark:text-white"
+                        {
+                            (range_label)
+                        }
+                        span class="text-xs text-gray-500 dark:text-gray-400"
+                        {
+                            "Interval: " (interval_label) " · " (summary_label)
+                        }
+                    }
+                    span class="text-xs font-semibold text-blue-600 dark:text-blue-400"
+                    {
+                        "Filters"
+                    }
+                }
+                div class="border-t border-gray-200 dark:border-gray-700 px-6 py-3"
+                {
+                    (controls)
+                }
+            }
+        }
+
+        div class="hidden lg:block px-6 py-2"
+        {
+            (controls)
         }
     }
 }
