@@ -310,10 +310,7 @@ mod log_in_page_tests {
 
     use crate::{auth::user::create_user_table, endpoints};
 
-    use super::{
-        INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, RedirectQuery, User, get_log_in_page,
-        post_log_in,
-    };
+    use super::{LogInData, LoginState, RedirectQuery, User, get_log_in_page, post_log_in};
 
     #[tokio::test]
     async fn log_in_page_displays_form() {
@@ -416,22 +413,7 @@ mod log_in_page_tests {
         assert_eq!(forms.len(), 1, "want 1 form, got {}", forms.len());
         let form = forms.first().unwrap();
 
-        let p_selector = scraper::Selector::parse("p").unwrap();
-        let p = form.select(&p_selector).collect::<Vec<_>>();
-        let p = p.first();
-
-        assert!(
-            p.is_some(),
-            "could not find p tag for error messsage in form"
-        );
-
-        let p = p.unwrap();
-
-        let p_text = p.text().collect::<String>();
-        assert!(
-            p_text.contains("Password not set"),
-            "error message should contain string \"{INVALID_CREDENTIALS_ERROR_MSG}\" but got \"{p_text}\""
-        );
+        assert_password_error_present(form);
     }
 
     #[tokio::test]
@@ -488,6 +470,19 @@ mod log_in_page_tests {
             "Got HTML parsing errors: {:?}\n{}",
             html.errors,
             html.html()
+        );
+    }
+
+    #[track_caller]
+    fn assert_password_error_present(form: &scraper::ElementRef<'_>) {
+        let error_selector =
+            scraper::Selector::parse("input#password + p.text-red-500.text-base").unwrap();
+        let error_nodes = form.select(&error_selector).collect::<Vec<_>>();
+        assert_eq!(
+            error_nodes.len(),
+            1,
+            "expected 1 password error message, got {}",
+            error_nodes.len()
         );
     }
 }
@@ -769,14 +764,18 @@ mod log_in_tests {
     async fn assert_body_contains_message(response: Response<Body>, message: &str) {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-
         let text = String::from_utf8_lossy(&body).to_string();
-
-        assert!(
-            text.contains(message),
-            "response body should contain the text '{}' but got {}",
+        let fragment = scraper::Html::parse_fragment(&text);
+        let error_selector = scraper::Selector::parse("p.text-red-500.text-base").unwrap();
+        let error = fragment
+            .select(&error_selector)
+            .next()
+            .expect("expected error message paragraph");
+        let error_text = error.text().collect::<String>();
+        assert_eq!(
+            error_text.trim(),
             message,
-            text
+            "response body should include error message \"{message}\", got \"{error_text}\""
         );
     }
 }

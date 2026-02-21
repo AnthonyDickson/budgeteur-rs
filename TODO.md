@@ -3,8 +3,6 @@
 ## Stage One: Budgeting
 
 - Refactor common testing functions into a separate module.
-- Update unit tests to parse HTML document tree for checking for the existence
-  of nodes and attributes.
 - Review UI design
   - [ ] Button states, ensure there is visual feedback for both hover and click (active) states
   - [ ] Rounded edge radii consistency---currently buttons use `rounded` but container uses `rounded-lg`
