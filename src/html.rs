@@ -12,7 +12,8 @@ pub const LINK_STYLE: &str = "text-blue-600 hover:text-blue-500 \
 
 // Button styles
 pub const BUTTON_PRIMARY_STYLE: &str = "w-full px-4 py-2 bg-blue-500
-    dark:bg-blue-600 disabled:bg-blue-700 hover:enabled:bg-blue-600 \
+    dark:bg-blue-600 disabled:bg-blue-700 disabled:cursor-not-allowed \
+    disabled:opacity-60 hover:enabled:bg-blue-600 \
     hover:enabled:dark:bg-blue-700 active:enabled:bg-blue-700 \
     active:enabled:dark:bg-blue-800 text-white rounded";
 
@@ -41,13 +42,34 @@ pub const FORM_RADIO_INPUT_STYLE: &str = "peer h-4 w-4 shrink-0 cursor-pointer \
     focus-visible:ring-blue-500 focus-visible:ring-offset-2 \
     focus-visible:ring-offset-white focus-visible:dark:ring-offset-gray-900";
 pub const FORM_RADIO_LABEL_STYLE: &str = "flex-1 rounded border border-gray-300 \
-    dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium \
-    text-gray-700 dark:text-white cursor-pointer transition \
-    hover:border-gray-400 hover:bg-gray-50 hover:text-gray-900 \
+    dark:border-gray-600 bg-white dark:bg-gray-700 px-2.5 py-1.5 text-xs font-medium \
+    text-gray-600 dark:text-gray-200 cursor-pointer transition \
+    hover:border-gray-400 hover:bg-gray-50 hover:text-gray-800 \
     hover:dark:border-gray-500 hover:dark:bg-gray-600 active:scale-[0.99] \
+    peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 \
+    peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white \
+    peer-focus-visible:dark:ring-offset-gray-900 \
+    after:text-[0.7rem] after:opacity-0 after:w-0 \
+    peer-checked:after:ml-1 peer-checked:after:w-auto \
+    peer-checked:after:opacity-100 peer-checked:after:content-['✓'] \
     peer-checked:border-blue-600 peer-checked:bg-blue-50 peer-checked:text-blue-700 \
     peer-checked:shadow-sm peer-checked:dark:border-blue-500 \
     peer-checked:dark:bg-blue-600/20 peer-checked:dark:text-blue-200";
+
+pub const FORM_DISMISS_LABEL_STYLE: &str = "inline-flex items-center rounded border \
+    border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-900/10 \
+    px-2.5 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200 cursor-pointer \
+    transition hover:border-amber-400 hover:bg-amber-200 hover:text-amber-950 \
+    hover:dark:border-amber-400/80 hover:dark:bg-amber-900/30 hover:dark:text-amber-100 \
+    active:scale-[0.99] peer-focus-visible:ring-2 peer-focus-visible:ring-amber-400 \
+    peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white \
+    peer-focus-visible:dark:ring-offset-gray-900 \
+    after:text-[0.7rem] after:opacity-0 after:w-0 \
+    peer-checked:after:ml-1 peer-checked:after:w-auto \
+    peer-checked:after:opacity-100 peer-checked:after:content-['✓'] \
+    peer-checked:border-amber-500 peer-checked:bg-amber-200 peer-checked:text-amber-900 \
+    peer-checked:shadow-sm peer-checked:dark:border-amber-400 \
+    peer-checked:dark:bg-amber-800/40 peer-checked:dark:text-amber-100";
 
 // Table styles
 pub const TABLE_HEADER_STYLE: &str = "text-xs text-gray-700 uppercase \
@@ -149,8 +171,6 @@ pub fn base(title: &str, head_elements: &[HeadElement], content: &Markup) -> Mar
                         HeadElement::Style(text) => style { (text) }
                     }
                 }
-
-                script src="/static/app.js" defer {}
             }
 
             body

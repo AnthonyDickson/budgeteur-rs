@@ -49,6 +49,7 @@ pub(crate) fn transactions_view(
     let create_transaction_route = Uri::from_static(endpoints::NEW_TRANSACTION_VIEW);
     let import_transaction_route = Uri::from_static(endpoints::IMPORT_VIEW);
     let transactions_page_route = Uri::from_static(endpoints::TRANSACTIONS_VIEW);
+    let untagged_transactions_route = Uri::from_static(endpoints::QUICK_TAGGING_VIEW);
     let nav_bar = NavBar::new(endpoints::TRANSACTIONS_VIEW).into_html();
     // Cache this result so it can be accessed after `grouped_transactions` is moved by for loop.
     let transactions_empty = grouped_transactions.is_empty();
@@ -89,6 +90,11 @@ pub(crate) fn transactions_view(
                 header class="flex justify-between flex-wrap items-end"
                 {
                     h1 class="text-xl font-bold" { "Transactions" }
+
+                    a href=(untagged_transactions_route) class=(LINK_STYLE)
+                    {
+                        "Quick Tagging"
+                    }
 
                     a href=(import_transaction_route) class=(LINK_STYLE)
                     {

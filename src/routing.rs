@@ -34,9 +34,9 @@ use crate::{
         get_tags_page, update_tag_endpoint,
     },
     transaction::{
-        create_transaction_endpoint, delete_transaction_endpoint, edit_transaction_endpoint,
-        get_create_transaction_page, get_edit_transaction_page, get_transactions_page,
-        update_transactions_excluded_tags,
+        apply_quick_tagging_endpoint, create_transaction_endpoint, delete_transaction_endpoint,
+        edit_transaction_endpoint, get_create_transaction_page, get_edit_transaction_page,
+        get_quick_tagging_page, get_transactions_page, update_transactions_excluded_tags,
     },
 };
 
@@ -62,6 +62,7 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::ROOT, get(get_index_page))
         .route(endpoints::DASHBOARD_VIEW, get(get_dashboard_page))
         .route(endpoints::TRANSACTIONS_VIEW, get(get_transactions_page))
+        .route(endpoints::QUICK_TAGGING_VIEW, get(get_quick_tagging_page))
         .route(
             endpoints::NEW_TRANSACTION_VIEW,
             get(get_create_transaction_page),
@@ -115,6 +116,10 @@ pub fn build_router(state: AppState) -> Router {
                 post(auto_tag_untagged_transactions_endpoint),
             )
             .route(endpoints::IMPORT, post(import_transactions))
+            .route(
+                endpoints::QUICK_TAGGING_APPLY,
+                post(apply_quick_tagging_endpoint),
+            )
             .route(
                 endpoints::DASHBOARD_EXCLUDED_TAGS,
                 post(update_excluded_tags),

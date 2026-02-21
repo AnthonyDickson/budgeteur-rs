@@ -26,6 +26,8 @@ pub const EDIT_RULE_VIEW: &str = "/rules/{rule_id}/edit";
 pub const RULES_VIEW: &str = "/rules";
 /// The page for importing transactions from CSV files.
 pub const IMPORT_VIEW: &str = "/transactions/import";
+/// The page for quickly tagging imported untagged transactions.
+pub const QUICK_TAGGING_VIEW: &str = "/transactions/quick_tagging";
 /// The route for getting the registration page.
 pub const REGISTER_VIEW: &str = "/register";
 /// The route for getting the log in page.
@@ -73,6 +75,8 @@ pub const TRANSACTIONS_API: &str = "/api/transactions";
 pub const DELETE_TRANSACTION: &str = "/api/transactions/{transaction_id}";
 /// The route to upload CSV files for importing transactions.
 pub const IMPORT: &str = "/api/import";
+/// The route to apply quick-tagging updates to untagged transactions.
+pub const QUICK_TAGGING_APPLY: &str = "/api/transactions/quick_tagging/apply";
 /// The route to apply auto-tagging to all transactions.
 pub const AUTO_TAG_ALL: &str = "/api/auto-tag/all";
 /// The route to apply auto-tagging to untagged transactions only.
@@ -152,6 +156,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::EDIT_RULE_VIEW);
         assert_endpoint_is_valid_uri(endpoints::RULES_VIEW);
         assert_endpoint_is_valid_uri(endpoints::IMPORT_VIEW);
+        assert_endpoint_is_valid_uri(endpoints::QUICK_TAGGING_VIEW);
         assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
         assert_endpoint_is_valid_uri(endpoints::FORGOT_PASSWORD_VIEW);
@@ -176,6 +181,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::TRANSACTIONS_API);
         assert_endpoint_is_valid_uri(endpoints::DELETE_TRANSACTION);
         assert_endpoint_is_valid_uri(endpoints::IMPORT);
+        assert_endpoint_is_valid_uri(endpoints::QUICK_TAGGING_APPLY);
         assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_ALL);
         assert_endpoint_is_valid_uri(endpoints::AUTO_TAG_UNTAGGED);
         assert_endpoint_is_valid_uri(endpoints::DASHBOARD_EXCLUDED_TAGS);

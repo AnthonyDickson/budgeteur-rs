@@ -7,7 +7,7 @@ use crate::{
     auth::create_user_table,
     rule::create_rule_table,
     tag::{create_excluded_tags_table, create_tag_table},
-    transaction::create_transaction_table,
+    transaction::{create_quick_tagging_table, create_transaction_table},
 };
 
 /// Create the all of the database tables for the application.
@@ -27,6 +27,7 @@ pub fn initialize(connection: &Connection) -> Result<(), Error> {
     create_tag_table(&transaction)?;
     create_rule_table(&transaction)?;
     create_transaction_table(&transaction)?;
+    create_quick_tagging_table(&transaction)?;
     create_excluded_tags_table(&transaction)?;
 
     transaction.commit()?;
