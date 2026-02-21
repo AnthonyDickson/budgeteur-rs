@@ -343,10 +343,7 @@ fn build_transactions_view_model(input: TransactionsInputs) -> TransactionsViewM
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use axum::{
-        extract::{Query, State},
-        response::Response,
-    };
+    use axum::extract::{Query, State};
     use rusqlite::Connection;
     use scraper::{ElementRef, Html, Selector};
     use time::{Date, macros::date};
@@ -362,21 +359,13 @@ mod tests {
         normalize_query,
     };
     use crate::endpoints;
+    use crate::test_utils::{assert_valid_html, parse_html_document};
     use crate::transaction::range::{IntervalPreset, RangePreset, RangeQuery, compute_range};
 
     fn get_test_connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
         conn
-    }
-
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors: {:?}",
-            html.errors
-        );
     }
 
     #[tokio::test]
@@ -431,7 +420,7 @@ mod tests {
         .await
         .unwrap();
 
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_valid_html(&html);
         let table = must_get_table(&html);
         assert_table_has_transactions(table, &want_transactions);
@@ -463,7 +452,7 @@ mod tests {
         .await
         .unwrap();
 
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_valid_html(&html);
         assert_range_navigation_present(&html);
         assert_empty_state_present(&html);
@@ -494,7 +483,7 @@ mod tests {
         .await
         .unwrap();
 
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_valid_html(&html);
         assert_latest_link_present(&html, RangePreset::Month, transaction_date);
     }
@@ -529,7 +518,7 @@ mod tests {
         .await
         .unwrap();
 
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_valid_html(&html);
         assert_summary_empty_state_present(&html);
     }
@@ -764,7 +753,7 @@ mod tests {
         .await
         .unwrap();
 
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_valid_html(&html);
 
         // Check that Tags column header exists
@@ -845,7 +834,7 @@ mod tests {
         .await
         .unwrap();
 
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_valid_html(&html);
 
         let checkbox_selector =
@@ -877,15 +866,5 @@ mod tests {
 
         assert!(found_groceries, "Groceries checkbox should be present");
         assert!(found_rent, "Rent checkbox should be present");
-    }
-
-    async fn parse_html(response: Response) -> Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX)
-            .await
-            .expect("Could not get response body");
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        Html::parse_document(&text)
     }
 }

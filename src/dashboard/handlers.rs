@@ -420,11 +420,7 @@ fn dashboard_content_partial(
 
 #[cfg(test)]
 mod tests {
-    use axum::{
-        body::Body,
-        extract::State,
-        http::{Response, StatusCode},
-    };
+    use axum::{extract::State, http::StatusCode};
     use scraper::{Html, Selector};
     use time::{Duration, OffsetDateTime};
 
@@ -432,6 +428,7 @@ mod tests {
         dashboard::handlers::{DashboardState, last_twelve_months},
         db::initialize,
         tag::{TagId, TagName, create_tag},
+        test_utils::{assert_valid_html, parse_html_document},
         transaction::{Transaction, create_transaction},
     };
 
@@ -469,7 +466,7 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
 
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_valid_html(&html);
 
         // Check that charts are present
@@ -492,7 +489,7 @@ mod tests {
         let response = get_dashboard_page(State(state)).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_tag_exclusion_controls_hidden(&html);
     }
 
@@ -519,7 +516,7 @@ mod tests {
         let response = get_dashboard_page(State(state)).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_tag_exclusion_controls_visible(&html, 2);
     }
 
@@ -532,23 +529,6 @@ mod tests {
             expected_count,
             "Should have {expected_count} tag checkboxes in {}",
             html.html()
-        );
-    }
-
-    async fn parse_html(response: Response<Body>) -> Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        Html::parse_document(&text)
-    }
-
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors: {:?}",
-            html.errors
         );
     }
 

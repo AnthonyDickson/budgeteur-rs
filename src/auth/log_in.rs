@@ -306,9 +306,12 @@ mod log_in_page_tests {
     };
     use axum_extra::extract::PrivateCookieJar;
     use rusqlite::Connection;
-    use scraper::Html;
 
-    use crate::{auth::user::create_user_table, endpoints};
+    use crate::{
+        auth::user::create_user_table,
+        endpoints,
+        test_utils::{assert_valid_html, parse_html_document, parse_html_fragment},
+    };
 
     use super::{LogInData, LoginState, RedirectQuery, User, get_log_in_page, post_log_in};
 
@@ -327,10 +330,7 @@ mod log_in_page_tests {
                 .starts_with("text/html")
         );
 
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-        let document = scraper::Html::parse_document(&text);
+        let document = parse_html_document(response).await;
         assert_valid_html(&document);
 
         let form_selector = scraper::Selector::parse("form").unwrap();
@@ -402,10 +402,7 @@ mod log_in_page_tests {
                 .starts_with("text/html")
         );
 
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-        let document = scraper::Html::parse_fragment(&text);
+        let document = parse_html_fragment(response).await;
         assert_valid_html(&document);
 
         let form_selector = scraper::Selector::parse("form").unwrap();
@@ -424,10 +421,7 @@ mod log_in_page_tests {
         }))
         .await;
 
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-        let document = scraper::Html::parse_document(&text);
+        let document = parse_html_document(response).await;
         assert_valid_html(&document);
 
         let input_selector = scraper::Selector::parse("input[name=redirect_url]").unwrap();
@@ -461,16 +455,6 @@ mod log_in_page_tests {
         }
 
         LoginState::new("foobar", "Etc/UTC", Arc::new(Mutex::new(connection)))
-    }
-
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors: {:?}\n{}",
-            html.errors,
-            html.html()
-        );
     }
 
     #[track_caller]

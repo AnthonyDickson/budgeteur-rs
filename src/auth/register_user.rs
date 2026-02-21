@@ -254,13 +254,13 @@ pub async fn register_user(
 
 #[cfg(test)]
 mod get_register_page_tests {
-    use axum::{
-        body::Body,
-        http::{Response, StatusCode, header::CONTENT_TYPE},
-    };
-    use scraper::Html;
+    use axum::http::{StatusCode, header::CONTENT_TYPE};
 
-    use crate::{auth::get_register_page, endpoints};
+    use crate::{
+        auth::get_register_page,
+        endpoints,
+        test_utils::{assert_valid_html, parse_html_document},
+    };
 
     #[tokio::test]
     async fn render_register_page() {
@@ -277,7 +277,7 @@ mod get_register_page_tests {
                 .starts_with("text/html")
         );
 
-        let document = parse_html(response).await;
+        let document = parse_html_document(response).await;
         assert_valid_html(&document);
 
         let h1_selector = scraper::Selector::parse("h1").unwrap();
@@ -350,22 +350,7 @@ mod get_register_page_tests {
         );
     }
 
-    async fn parse_html(response: Response<Body>) -> scraper::Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        scraper::Html::parse_document(&text)
-    }
-
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors: {:?}",
-            html.errors
-        );
-    }
+    // Shared helpers live in crate::test_utils.
 }
 
 #[cfg(test)]
@@ -373,12 +358,7 @@ mod register_user_tests {
     use std::sync::{Arc, Mutex};
 
     use axum::{
-        Form, Router,
-        body::Body,
-        extract::State,
-        http::{Response, StatusCode},
-        response::IntoResponse,
-        routing::post,
+        Form, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post,
     };
     use axum_extra::extract::PrivateCookieJar;
     use axum_test::TestServer;
@@ -388,6 +368,7 @@ mod register_user_tests {
         PasswordHash,
         auth::{create_user, create_user_table, register_user},
         endpoints,
+        test_utils::parse_html_fragment,
     };
 
     use super::{RegisterForm, RegistrationState};
@@ -441,7 +422,7 @@ mod register_user_tests {
         .await;
 
         assert_eq!(response.status(), StatusCode::OK);
-        let fragment = parse_html(response).await;
+        let fragment = parse_html_fragment(response).await;
         assert_error_for_input(&fragment, "confirm-password");
     }
 
@@ -462,7 +443,7 @@ mod register_user_tests {
             .await
             .text();
 
-        let fragment = parse_html(response.into_response()).await;
+        let fragment = parse_html_fragment(response.into_response()).await;
 
         assert_error_for_input(&fragment, "password");
     }
@@ -484,7 +465,7 @@ mod register_user_tests {
             .await
             .text();
 
-        let fragment = parse_html(response.into_response()).await;
+        let fragment = parse_html_fragment(response.into_response()).await;
 
         assert_error_for_input(&fragment, "password");
     }
@@ -506,17 +487,9 @@ mod register_user_tests {
             .await
             .text();
 
-        let fragment = parse_html(response.into_response()).await;
+        let fragment = parse_html_fragment(response.into_response()).await;
 
         assert_error_for_input(&fragment, "confirm-password");
-    }
-
-    async fn parse_html(response: Response<Body>) -> scraper::Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        scraper::Html::parse_fragment(&text)
     }
 
     #[track_caller]

@@ -361,6 +361,7 @@ mod accounts_template_tests {
         },
         endpoints::{self, format_endpoint},
         html::format_currency,
+        test_utils::assert_valid_html,
     };
 
     #[test]
@@ -509,14 +510,7 @@ mod accounts_template_tests {
         );
     }
 
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors: {:?}",
-            html.errors
-        );
-    }
+    // Shared helpers live in crate::test_utils.
 }
 
 #[cfg(test)]
@@ -526,7 +520,7 @@ mod get_accounts_page_tests {
         sync::{Arc, Mutex},
     };
 
-    use axum::{extract::State, http::StatusCode, response::Response};
+    use axum::{extract::State, http::StatusCode};
     use rusqlite::Connection;
     use scraper::{ElementRef, Html, Selector};
     use time::macros::date;
@@ -539,6 +533,7 @@ mod get_accounts_page_tests {
         },
         endpoints::{self, format_endpoint},
         html::format_currency,
+        test_utils::{assert_content_type, assert_valid_html, parse_html_document},
     };
 
     #[tokio::test]
@@ -579,7 +574,7 @@ mod get_accounts_page_tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_content_type(&response, "text/html; charset=utf-8");
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_valid_html(&html);
         let table = must_get_table(&html);
         assert_table_contains_accounts(table, &accounts);
@@ -670,29 +665,5 @@ mod get_accounts_page_tests {
         }
     }
 
-    #[track_caller]
-    fn assert_content_type(response: &Response, content_type: &str) {
-        let content_type_header = response
-            .headers()
-            .get("content-type")
-            .expect("content-type header missing");
-        assert_eq!(content_type_header, content_type);
-    }
-
-    async fn parse_html(response: Response) -> scraper::Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        scraper::Html::parse_document(&text)
-    }
-
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors: {:?}",
-            html.errors
-        );
-    }
+    // Shared helpers live in crate::test_utils.
 }
