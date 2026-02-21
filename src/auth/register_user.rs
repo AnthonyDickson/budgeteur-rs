@@ -21,8 +21,8 @@ use crate::{
     auth::{DEFAULT_COOKIE_DURATION, count_users, create_user, set_auth_cookie},
     endpoints,
     html::{
-        FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner, log_in_register,
-        password_input,
+        BUTTON_PRIMARY_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base, loading_spinner,
+        log_in_register, password_input,
     },
     timezone::get_local_offset,
 };
@@ -30,7 +30,11 @@ use crate::{
 /// The minimum number of characters the password should have to be considered valid on the client side (server-side validation is done on top of this validation).
 const PASSWORD_INPUT_MIN_LENGTH: u8 = 14;
 
-pub fn confirm_password_input(min_length: u8, error_message: Option<&str>) -> Markup {
+pub fn confirm_password_input(
+    min_length: u8,
+    error_message: Option<&str>,
+    autofocus: bool,
+) -> Markup {
     html! {
         div
         {
@@ -49,7 +53,7 @@ pub fn confirm_password_input(min_length: u8, error_message: Option<&str>) -> Ma
                 class=(FORM_TEXT_INPUT_STYLE)
                 required
                 minlength=(min_length)
-                autofocus[error_message.is_some()]
+                autofocus[autofocus]
             ;
 
             @if let Some(error_message) = error_message
@@ -66,6 +70,9 @@ fn registration_form(
     password_error_message: Option<&str>,
     confirm_password_error_message: Option<&str>,
 ) -> Markup {
+    let confirm_autofocus = confirm_password_error_message.is_some();
+    let password_autofocus = !confirm_autofocus;
+
     html! {
         form
             hx-post=(endpoints::USERS)
@@ -73,13 +80,21 @@ fn registration_form(
             hx-disabled-elt="#password, #submit-button"
             class="space-y-4 md:space-y-6"
         {
-            (password_input(password, PASSWORD_INPUT_MIN_LENGTH, password_error_message))
-            (confirm_password_input(PASSWORD_INPUT_MIN_LENGTH, confirm_password_error_message))
+            (password_input(
+                password,
+                PASSWORD_INPUT_MIN_LENGTH,
+                password_error_message,
+                password_autofocus,
+            ))
+            (confirm_password_input(
+                PASSWORD_INPUT_MIN_LENGTH,
+                confirm_password_error_message,
+                confirm_autofocus,
+            ))
 
             button
                 type="submit" id="submit-button" tabindex="0"
-                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
-                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+                class=(BUTTON_PRIMARY_STYLE)
             {
                 span class="inline htmx-indicator" id="indicator"
                 {

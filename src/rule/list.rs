@@ -97,8 +97,9 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                             hx-indicator="#loading-all-indicator"
                             hx-swap="none"
                             class="px-4 py-2 bg-blue-600 hover:bg-blue-700
-                                disabled:opacity-50 text-white text-sm font-medium
-                                rounded transition-colors focus:outline-hidden
+                                active:enabled:bg-blue-800 disabled:opacity-50
+                                text-white text-sm font-medium rounded transition-colors
+                                focus:outline-hidden
                                 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
                                 flex items-center"
                         {
@@ -119,8 +120,8 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                             hx-indicator="#loading-untagged-indicator"
                             hx-swap="none"
                             class="px-4 py-2 bg-green-600 hover:bg-green-700
-                                disabled:opacity-50 text-white text-sm
-                                font-medium rounded transition-colors
+                                active:enabled:bg-green-800 disabled:opacity-50
+                                text-white text-sm font-medium rounded transition-colors
                                 focus:outline-hidden focus:ring-2
                                 focus:ring-green-500 focus:ring-offset-2 flex
                                 items-center"

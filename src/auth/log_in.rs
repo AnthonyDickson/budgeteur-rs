@@ -24,7 +24,7 @@ use crate::{
         normalize_redirect_url, set_auth_cookie,
     },
     endpoints,
-    html::{base, loading_spinner, log_in_register, password_input},
+    html::{BUTTON_PRIMARY_STYLE, base, loading_spinner, log_in_register, password_input},
     timezone::get_local_offset,
 };
 
@@ -40,7 +40,7 @@ fn log_in_form(password: &str, error_message: Option<&str>, redirect_url: Option
                 input type="hidden" name="redirect_url" value=(redirect_url);
             }
 
-            (password_input(password, 0, error_message))
+            (password_input(password, 0, error_message, true))
 
             div class="flex items-center gap-x-3"
             {
@@ -61,8 +61,7 @@ fn log_in_form(password: &str, error_message: Option<&str>, redirect_url: Option
 
             button
                 type="submit" id="submit-button" tabindex="0"
-                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
-                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+                class=(BUTTON_PRIMARY_STYLE)
             {
                 span class="inline htmx-indicator" id="indicator"
                 {

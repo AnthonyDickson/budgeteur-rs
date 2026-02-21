@@ -9,7 +9,7 @@ use maud::{Markup, html};
 
 use crate::{
     Error, endpoints,
-    html::{FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base},
+    html::{BUTTON_PRIMARY_STYLE, FORM_LABEL_STYLE, FORM_TEXT_INPUT_STYLE, base},
     navigation::NavBar,
     rule::{
         db::{get_rule, update_rule},
@@ -208,8 +208,7 @@ fn edit_rule_form_view(
 
             button
                 type="submit"
-                class="w-full px-4 py-2 bg-blue-500 dark:bg-blue-600 disabled:bg-blue-700
-                    hover:enabled:bg-blue-600 hover:enabled:dark:bg-blue-700 text-white rounded"
+                class=(BUTTON_PRIMARY_STYLE)
             {
                 "Update Rule"
             }

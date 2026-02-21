@@ -13,17 +13,18 @@ pub const LINK_STYLE: &str = "text-blue-600 hover:text-blue-500 \
 // Button styles
 pub const BUTTON_PRIMARY_STYLE: &str = "w-full px-4 py-2 bg-blue-500
     dark:bg-blue-600 disabled:bg-blue-700 hover:enabled:bg-blue-600 \
-    hover:enabled:dark:bg-blue-700 text-white rounded";
+    hover:enabled:dark:bg-blue-700 active:enabled:bg-blue-700 \
+    active:enabled:dark:bg-blue-800 text-white rounded";
 
 pub const BUTTON_SECONDARY_STYLE: &str = "w-full py-2.5 px-5 mb-2 \
     text-sm font-medium text-gray-900 bg-white rounded border border-gray-200 \
-    hover:bg-gray-100 hover:text-blue-700 focus:z-10 dark:bg-gray-800 \
-    dark:text-gray-400 dark:border-gray-600 dark:hover:text-white \
-    dark:hover:bg-gray-700";
+    hover:bg-gray-100 hover:text-blue-700 active:bg-gray-200 active:text-blue-800 \
+    focus:z-10 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 \
+    dark:hover:text-white dark:hover:bg-gray-700 dark:active:bg-gray-600";
 
 pub const BUTTON_DELETE_STYLE: &str = "text-red-600 hover:text-red-500 \
-    dark:text-red-500 dark:hover:text-red-400 underline bg-transparent \
-    border-none cursor-pointer";
+    dark:text-red-500 dark:hover:text-red-400 active:text-red-700 \
+    dark:active:text-red-300 underline bg-transparent border-none cursor-pointer";
 
 // Form styles
 pub const FORM_CONTAINER_STYLE: &str = "flex flex-col items-center px-6 py-8 \
@@ -226,7 +227,7 @@ pub fn log_in_register(form_title: &str, form: &Markup) -> Markup {
                 "Budgeteur"
             }
 
-            div class="w-full bg-white rounded-lg shadow dark:border md:mt-0 sm:max-w-md xl:p-0 dark:bg-gray-800 dark:border-gray-700"
+            div class="w-full bg-white rounded shadow dark:border md:mt-0 sm:max-w-md xl:p-0 dark:bg-gray-800 dark:border-gray-700"
             {
                 div class="p-6 space-y-4 md:space-y-6 sm:p-8"
                 {
@@ -242,7 +243,12 @@ pub fn log_in_register(form_title: &str, form: &Markup) -> Markup {
     }
 }
 
-pub fn password_input(password: &str, min_length: u8, error_message: Option<&str>) -> Markup {
+pub fn password_input(
+    password: &str,
+    min_length: u8,
+    error_message: Option<&str>,
+    autofocus: bool,
+) -> Markup {
     html! {
         div
         {
@@ -260,7 +266,7 @@ pub fn password_input(password: &str, min_length: u8, error_message: Option<&str
                 placeholder="••••••••"
                 class=(FORM_TEXT_INPUT_STYLE)
                 required
-                autofocus
+                autofocus[autofocus]
                 value=(password)
                 minlength=(min_length);
 

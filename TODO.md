@@ -2,10 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Review UI design
-  - [ ] Button states, ensure there is visual feedback for both hover and click (active) states
-  - [ ] Rounded edge radii consistency---currently buttons use `rounded` but container uses `rounded-lg`
-  - [ ] Autofocus on registration form
 - Add feature to quickly tag untagged transactions
   - When transactions are imported, add them to a table
 - Add support for Wise CSV exports
