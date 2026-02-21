@@ -171,8 +171,6 @@ pub fn base(title: &str, head_elements: &[HeadElement], content: &Markup) -> Mar
                         HeadElement::Style(text) => style { (text) }
                     }
                 }
-
-                script src="/static/app.js" defer {}
             }
 
             body

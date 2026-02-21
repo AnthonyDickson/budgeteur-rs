@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Remove obsolete `static/app.js`
 - Rework nav
   - Navbar should contain links to pages for creating new transactions, accounts, tags, rules as dropdowns as well as
     links to transaction imports and quick tagging
