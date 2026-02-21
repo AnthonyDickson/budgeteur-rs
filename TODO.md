@@ -3,7 +3,7 @@
 ## Stage One: Budgeting
 
 - Review UI design
-  - [ ] Button states, ensure there is visual feedback for both hover and click (active) states
+  - [x] Button states, ensure there is visual feedback for both hover and click (active) states
   - [ ] Rounded edge radii consistency---currently buttons use `rounded` but container uses `rounded-lg`
   - [ ] Autofocus on registration form
 - Add feature to quickly tag untagged transactions

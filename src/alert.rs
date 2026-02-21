@@ -119,7 +119,7 @@ fn alert_template(alert: Alert) -> Markup {
                             button
                                 type="button"
                                 class={"inline-flex rounded-md p-1.5
-                                    hover:bg-black/5 focus:outline-hidden
+                                    hover:bg-black/5 active:bg-black/10 focus:outline-hidden
                                     focus:ring-2 focus:ring-offset-2"
                                     (button_style)}
                                 onclick="this.parentElement.parentElement.parentElement.parentElement.remove()"
