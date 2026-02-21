@@ -4,6 +4,9 @@
 
 - Add feature to quickly tag untagged transactions
   - When transactions are imported, add them to a table
+- Rework nav
+  - Navbar should contain links to pages for creating new transactions, accounts, tags, rules as dropdowns as well as
+    links to transaction imports and quick tagging
 - Add support for Wise CSV exports
   - Complicated by multiple currencies
 - Add account info to transactions
