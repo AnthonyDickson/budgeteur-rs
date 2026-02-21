@@ -125,13 +125,12 @@ mod view_tests {
     use crate::{
         db::initialize,
         endpoints,
+        test_utils::{
+            assert_content_type, assert_status_ok, assert_valid_html, parse_html_document,
+        },
         transaction::{
-            create_page::CreateTransactionPageState,
-            get_create_transaction_page,
-            test_utils::{
-                assert_html_content_type, assert_status_ok, assert_transaction_type_inputs,
-                assert_valid_html, parse_html,
-            },
+            create_page::CreateTransactionPageState, get_create_transaction_page,
+            test_utils::assert_transaction_type_inputs,
         },
     };
 
@@ -152,8 +151,8 @@ mod view_tests {
         let response = get_create_transaction_page(State(state)).await.unwrap();
 
         assert_status_ok(&response);
-        assert_html_content_type(&response);
-        let document = parse_html(response).await;
+        assert_content_type(&response, "text/html; charset=utf-8");
+        let document = parse_html_document(response).await;
         assert_valid_html(&document);
         assert_correct_form(&document, "expense");
     }

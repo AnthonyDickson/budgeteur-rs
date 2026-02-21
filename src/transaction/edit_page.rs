@@ -171,13 +171,13 @@ mod tests {
     use crate::{
         db::initialize,
         endpoints,
+        test_utils::{
+            assert_content_type, assert_status_ok, assert_valid_html, parse_html_document,
+        },
         transaction::{
             Transaction, create_transaction,
             edit_page::{EditTransactionPageState, QueryParams, get_edit_transaction_page},
-            test_utils::{
-                assert_html_content_type, assert_status_ok, assert_transaction_type_inputs,
-                assert_valid_html, parse_html,
-            },
+            test_utils::assert_transaction_type_inputs,
         },
     };
 
@@ -212,8 +212,8 @@ mod tests {
             .unwrap();
 
             assert_status_ok(&response);
-            assert_html_content_type(&response);
-            let document = parse_html(response).await;
+            assert_content_type(&response, "text/html; charset=utf-8");
+            let document = parse_html_document(response).await;
             assert_valid_html(&document);
             assert_correct_form(&document, transaction.id, expected_type);
         }
@@ -243,7 +243,7 @@ mod tests {
         .await
         .unwrap();
 
-        let document = parse_html(response).await;
+        let document = parse_html_document(response).await;
         assert_valid_html(&document);
 
         let expected_query = serde_urlencoded::to_string([("redirect_url", redirect_url.as_str())])

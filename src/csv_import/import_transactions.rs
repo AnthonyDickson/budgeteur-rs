@@ -262,7 +262,6 @@ mod import_transactions_tests {
         response::Response,
     };
     use rusqlite::Connection;
-    use scraper::Html;
     use time::macros::date;
 
     use crate::{
@@ -273,6 +272,7 @@ mod import_transactions_tests {
         endpoints,
         rule::create_rule,
         tag::{TagId, TagName, create_tag},
+        test_utils::{assert_content_type, assert_valid_html, parse_html_fragment},
         transaction::count_transactions,
     };
 
@@ -511,17 +511,8 @@ mod import_transactions_tests {
         assert_alert_error_message(response, "Import failed").await;
     }
 
-    #[track_caller]
-    fn assert_content_type(response: &Response, content_type: &str) {
-        let content_type_header = response
-            .headers()
-            .get("content-type")
-            .expect("content-type header missing");
-        assert_eq!(content_type_header, content_type);
-    }
-
     async fn assert_alert_error_message(response: Response, expected_message: &str) {
-        let html = parse_html(response).await;
+        let html = parse_html_fragment(response).await;
         assert_valid_html(&html);
 
         let alert_container = html
@@ -539,7 +530,7 @@ mod import_transactions_tests {
     }
 
     async fn assert_alert_success_message(response: Response, expected_message: &str) {
-        let html = parse_html(response).await;
+        let html = parse_html_fragment(response).await;
         assert_valid_html(&html);
 
         let alert_container = html
@@ -561,7 +552,7 @@ mod import_transactions_tests {
         expected_message: &str,
         expected_details_contains: &str,
     ) {
-        let html = parse_html(response).await;
+        let html = parse_html_fragment(response).await;
         assert_valid_html(&html);
 
         let alert_container = html
@@ -656,23 +647,6 @@ mod import_transactions_tests {
             .unwrap();
 
         Multipart::from_request(request, &{}).await.unwrap()
-    }
-
-    async fn parse_html(response: Response) -> Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        Html::parse_fragment(&text)
-    }
-
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors: {:?}",
-            html.errors
-        );
     }
 
     // Auto-tagging integration tests

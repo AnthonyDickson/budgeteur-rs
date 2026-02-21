@@ -186,10 +186,9 @@ mod edit_tag_endpoint_tests {
         Form,
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Response},
+        response::IntoResponse,
     };
     use rusqlite::Connection;
-    use scraper::{ElementRef, Html};
 
     use crate::{
         endpoints,
@@ -198,6 +197,11 @@ mod edit_tag_endpoint_tests {
             domain::TagFormData,
             edit::{EditTagPageState, UpdateTagEndpointState},
             get_edit_tag_page, update_tag_endpoint,
+        },
+        test_utils::{
+            assert_content_type, assert_form_error_message, assert_form_input_with_value,
+            assert_form_submit_button_with_text, assert_hx_endpoint, assert_hx_redirect,
+            assert_valid_html, must_get_form, parse_html_document, parse_html_fragment,
         },
     };
 
@@ -231,15 +235,9 @@ mod edit_tag_endpoint_tests {
         let response = get_edit_tag_page(Path(tag.id), State(state)).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response
-                .headers()
-                .get("content-type")
-                .expect("content-type header missing"),
-            "text/html; charset=utf-8"
-        );
+        assert_content_type(&response, "text/html; charset=utf-8");
 
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_valid_html(&html);
 
         let form = must_get_form(&html);
@@ -249,7 +247,7 @@ mod edit_tag_endpoint_tests {
             "hx-put",
         );
         assert_form_input_with_value(&form, "name", "text", tag_name.as_ref());
-        assert_form_submit_button(&form, "Update Tag");
+        assert_form_submit_button_with_text(&form, "Update Tag");
     }
 
     #[tokio::test]
@@ -263,11 +261,11 @@ mod edit_tag_endpoint_tests {
 
         assert_eq!(response.status(), StatusCode::OK);
 
-        let html = parse_html(response).await;
+        let html = parse_html_document(response).await;
         assert_valid_html(&html);
 
         let form = must_get_form(&html);
-        assert_error_message(&form, "Tag not found");
+        assert_form_error_message(&form, "Tag not found");
     }
 
     #[tokio::test]
@@ -321,146 +319,10 @@ mod edit_tag_endpoint_tests {
 
         assert_eq!(response.status(), StatusCode::OK);
 
-        let html = parse_fragment_html(response).await;
+        let html = parse_html_fragment(response).await;
         assert_valid_html(&html);
 
         let form = must_get_form(&html);
-        assert_error_message(&form, "Error: Tag name cannot be empty");
-    }
-
-    async fn parse_html(response: Response) -> Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        Html::parse_document(&text)
-    }
-
-    async fn parse_fragment_html(response: Response) -> Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        Html::parse_fragment(&text)
-    }
-
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors {:?} for HTML {}",
-            html.errors,
-            html.html()
-        );
-    }
-
-    #[track_caller]
-    fn must_get_form(html: &Html) -> ElementRef<'_> {
-        html.select(&scraper::Selector::parse("form").unwrap())
-            .next()
-            .expect("No form found")
-    }
-
-    #[track_caller]
-    fn assert_hx_endpoint(form: &ElementRef, endpoint: &str, attribute: &str) {
-        let hx_attr = form
-            .value()
-            .attr(attribute)
-            .unwrap_or_else(|| panic!("{attribute} attribute missing"));
-
-        assert_eq!(
-            hx_attr, endpoint,
-            "want form with attribute {attribute}=\"{endpoint}\", got {hx_attr:?}"
-        );
-    }
-
-    #[track_caller]
-    fn assert_form_input_with_value(form: &ElementRef, name: &str, type_: &str, value: &str) {
-        for input in form.select(&scraper::Selector::parse("input").unwrap()) {
-            let input_name = input.value().attr("name").unwrap_or_default();
-
-            if input_name == name {
-                let input_type = input.value().attr("type").unwrap_or_default();
-                let input_value = input.value().attr("value").unwrap_or_default();
-                let input_required = input.value().attr("required");
-
-                assert_eq!(
-                    input_type, type_,
-                    "want input with type \"{type_}\", got {input_type:?}"
-                );
-
-                assert_eq!(
-                    input_value, value,
-                    "want input with value \"{value}\", got {input_value:?}"
-                );
-
-                assert!(
-                    input_required.is_some(),
-                    "want input with name {name} to have the required attribute but got none"
-                );
-
-                return;
-            }
-        }
-
-        panic!("No input found with name \"{name}\", type \"{type_}\", and value \"{value}\"");
-    }
-
-    #[track_caller]
-    fn assert_form_submit_button(form: &ElementRef, text: &str) {
-        let submit_button = form
-            .select(&scraper::Selector::parse("button").unwrap())
-            .next()
-            .expect("No button found");
-
-        assert_eq!(
-            submit_button.value().attr("type").unwrap_or_default(),
-            "submit",
-            "want submit button with type=\"submit\""
-        );
-
-        let button_text = submit_button
-            .text()
-            .collect::<Vec<_>>()
-            .join("")
-            .trim()
-            .to_string();
-        assert_eq!(
-            button_text, text,
-            "want button text \"{text}\", got \"{button_text}\""
-        );
-    }
-
-    #[track_caller]
-    fn assert_error_message(form: &ElementRef, want_error_message: &str) {
-        let p = scraper::Selector::parse("p").unwrap();
-        let error_message = form
-            .select(&p)
-            .next()
-            .expect("No error message found")
-            .text()
-            .collect::<Vec<_>>()
-            .join("");
-        let got_error_message = error_message.trim();
-
-        assert_eq!(want_error_message, got_error_message);
-    }
-
-    #[track_caller]
-    fn assert_hx_redirect(response: &Response, endpoint: &str) {
-        assert_eq!(get_header(response, "hx-redirect"), endpoint);
-    }
-
-    #[track_caller]
-    fn get_header(response: &Response, header_name: &str) -> String {
-        let header_error_message = format!("Headers missing {header_name}");
-
-        response
-            .headers()
-            .get(header_name)
-            .expect(&header_error_message)
-            .to_str()
-            .expect("Could not convert to str")
-            .to_string()
+        assert_form_error_message(&form, "Error: Tag name cannot be empty");
     }
 }

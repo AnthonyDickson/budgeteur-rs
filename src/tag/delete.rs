@@ -61,12 +61,15 @@ mod delete_tag_endpoint_tests {
     use axum::{
         extract::{Path, State},
         http::StatusCode,
-        response::{IntoResponse, Response},
+        response::IntoResponse,
     };
     use rusqlite::Connection;
     use scraper::Html;
 
-    use crate::tag::{TagName, create_tag, create_tag_table, delete_tag_endpoint};
+    use crate::{
+        tag::{TagName, create_tag, create_tag_table, delete_tag_endpoint},
+        test_utils::{assert_valid_html, get_header, parse_html_fragment},
+    };
 
     use super::DeleteTagEndpointState;
 
@@ -109,40 +112,9 @@ mod delete_tag_endpoint_tests {
             "text/html; charset=utf-8"
         );
 
-        let html = parse_fragment_html(response).await;
+        let html = parse_html_fragment(response).await;
         assert_valid_html(&html);
         assert_error_content(&html, "Could not delete tag");
-    }
-
-    #[track_caller]
-    fn get_header(response: &Response, header_name: &str) -> String {
-        let header_error_message = format!("Headers missing {header_name}");
-
-        response
-            .headers()
-            .get(header_name)
-            .expect(&header_error_message)
-            .to_str()
-            .expect("Could not convert to str")
-            .to_string()
-    }
-
-    async fn parse_fragment_html(response: Response) -> Html {
-        let body = response.into_body();
-        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
-        let text = String::from_utf8_lossy(&body).to_string();
-
-        Html::parse_fragment(&text)
-    }
-
-    #[track_caller]
-    fn assert_valid_html(html: &Html) {
-        assert!(
-            html.errors.is_empty(),
-            "Got HTML parsing errors {:?} for HTML {}",
-            html.errors,
-            html.html()
-        );
     }
 
     #[track_caller]

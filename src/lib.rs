@@ -32,6 +32,8 @@ mod not_found;
 mod routing;
 mod rule;
 mod tag;
+#[cfg(test)]
+pub(crate) mod test_utils;
 mod timezone;
 mod transaction;
 

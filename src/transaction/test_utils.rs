@@ -1,42 +1,4 @@
-use axum::{body::Body, http::StatusCode, response::Response};
-use scraper::{ElementRef, Html};
-
-#[track_caller]
-pub fn assert_status_ok(response: &Response<Body>) {
-    assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[track_caller]
-pub fn assert_html_content_type(response: &Response<Body>) {
-    assert_eq!(
-        response
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "text/html; charset=utf-8"
-    );
-}
-
-#[track_caller]
-pub fn assert_valid_html(html: &Html) {
-    assert!(
-        html.errors.is_empty(),
-        "Got HTML parsing errors: {:?}",
-        html.errors
-    );
-}
-
-pub async fn parse_html(response: Response<Body>) -> Html {
-    let body = response.into_body();
-    let body = axum::body::to_bytes(body, usize::MAX)
-        .await
-        .expect("Could not get response body");
-    let text = String::from_utf8_lossy(&body).to_string();
-
-    Html::parse_document(&text)
-}
+use scraper::ElementRef;
 
 #[track_caller]
 pub fn assert_transaction_type_inputs(form: &ElementRef, checked_type: Option<&str>) {
