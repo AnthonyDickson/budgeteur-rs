@@ -69,16 +69,17 @@ This ensures the queue only ever shrinks outside of imports, avoiding accidental
 
 ## UI Notes
 
-- The quick-tagging UI uses per-row tag chips (radio inputs styled as pills) to minimize clicks.
+- The quick-tagging UI uses per-row tag chips (hidden inputs + pill labels) to minimize clicks.
 - Changes are applied in a single batch submit; dismissed rows are removed only on apply.
 - After a successful apply, fetch and render the next batch of untagged transactions.
 - When the queue is empty (initially or after apply), show a full-page empty state: "All done, no untagged transactions left" with a link back to the transactions page/import page.
 - A shared tag palette (single selection control applied to the focused row) is a potential future enhancement.
-- Table columns: Date, Description, Amount, Tag Chips, Dismiss.
-- Batch form shape: `tag_id[transaction_id]=tag_id` and `dismiss[]=transaction_id`.
+- Layout uses cards (not a table). Description is the primary line, with date + amount in a single meta row.
+- Batch form shape: `tag_id_<transaction_id>=<tag_id>` and `dismiss=<transaction_id>` (repeatable).
 - Validation errors are shown via a top-level alert.
 - Dismiss removes the transaction from the queue without changing its tag.
 - On success, show a confirmation alert such as "Applied tags to X transactions, dismissed Y".
+- Tag and dismiss inputs are mutually exclusive via a small page script (selecting one clears the other).
 
 ## Migration & Backfill
 

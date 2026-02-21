@@ -7,6 +7,8 @@ use axum::{
 };
 use rusqlite::Connection;
 
+use time::OffsetDateTime;
+
 use crate::{
     AppState, Error,
     alert::Alert,
@@ -16,7 +18,10 @@ use crate::{
         csv::parse_csv,
     },
     rule::{TaggingMode, TaggingResult, apply_rules_to_transactions},
-    transaction::{Transaction, TransactionBuilder, map_transaction_row},
+    transaction::{
+        Transaction, TransactionBuilder, insert_untagged_transactions_for_import,
+        map_transaction_row,
+    },
 };
 
 /// The state needed for importing transactions.
@@ -127,6 +132,23 @@ pub async fn import_transactions(
     } else {
         Ok(TaggingResult::empty())
     };
+
+    if !imported_transactions.is_empty() {
+        let created_at = OffsetDateTime::now_utc();
+        let transaction_ids = imported_transactions
+            .iter()
+            .map(|transaction| transaction.id)
+            .collect::<Vec<_>>();
+
+        insert_untagged_transactions_for_import(&transaction_ids, created_at, &tx)
+            .inspect_err(|error| tracing::error!("Failed to insert untagged queue: {error}"))
+            .map_err(|_| {
+                Alert::ErrorSimple {
+                    message: "Could not import transactions".to_owned(),
+                }
+                .into_response()
+            })?;
+    }
 
     for account in accounts {
         upsert_account(&account, &tx).map_err(|error| {

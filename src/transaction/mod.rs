@@ -16,6 +16,7 @@ mod form;
 mod grouping;
 mod models;
 mod query;
+mod quick_tagging;
 mod range;
 #[cfg(test)]
 mod test_utils;
@@ -32,6 +33,10 @@ pub use delete_endpoint::delete_transaction_endpoint;
 pub use edit_endpoint::edit_transaction_endpoint;
 pub use edit_page::get_edit_transaction_page;
 pub use excluded_tags_endpoint::update_transactions_excluded_tags;
+pub use quick_tagging::{
+    apply_quick_tagging_endpoint, create_quick_tagging_table, get_quick_tagging_page,
+    insert_untagged_transactions_for_import,
+};
 pub use transactions_page::get_transactions_page;
 
 #[cfg(test)]
