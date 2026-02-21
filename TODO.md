@@ -2,9 +2,8 @@
 
 ## Stage One: Budgeting
 
-- Use HTML5 elements where possible: https://dev.to/maxprilutskiy/html5-elements-you-didnt-know-you-need-gan
-- Refactor common testing functions into a separate module.
 - Clean up/simplify HTML structure (e.g., remove redundant div wrappers), use semantic elements where possible
+- Refactor common testing functions into a separate module.
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.
 - Review UI design

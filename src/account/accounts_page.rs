@@ -8,7 +8,7 @@ use axum::{
 };
 use maud::{Markup, html};
 use rusqlite::Connection;
-use time::Date;
+use time::{Date, format_description::BorrowedFormatItem, macros::format_description};
 
 use crate::{
     AppState, Error,
@@ -50,6 +50,17 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
 
     let table_row = |account: &AccountTableRow| {
         let balance_str = format_currency(account.balance);
+        let datetime = date_datetime_attr(account.date);
+        let action_links = edit_delete_action_links(
+            &account.edit_url,
+            &account.delete_url,
+            &format!(
+                "Are you sure you want to delete the account '{}'? This cannot be undone.",
+                account.name
+            ),
+            "closest tr",
+            "delete",
+        );
 
         html!(
             tr class=(TABLE_ROW_STYLE)
@@ -68,23 +79,14 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
 
                 td class=(TABLE_CELL_STYLE)
                 {
-                    (account.date)
+                    time datetime=(datetime) { (account.date) }
                 }
 
                 td class=(TABLE_CELL_STYLE)
                 {
                     div class="flex gap-4"
                     {
-                        (edit_delete_action_links(
-                            &account.edit_url,
-                            &account.delete_url,
-                            &format!(
-                                "Are you sure you want to delete the account '{}'? This cannot be undone.",
-                                account.name
-                            ),
-                            "closest tr",
-                            "delete",
-                        ))
+                        (action_links)
                     }
                 }
             }
@@ -191,7 +193,7 @@ fn accounts_cards_view(accounts: &[AccountTableRow], create_account_page_url: &s
                     }
 
                     div class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                    { (account.date) }
+                    { time datetime=(date_datetime_attr(account.date)) { (account.date) } }
 
                     div class="mt-2 flex items-center gap-4 text-sm"
                     {
@@ -222,6 +224,14 @@ fn accounts_cards_view(accounts: &[AccountTableRow], create_account_page_url: &s
             }
         }
     )
+}
+
+const DATE_ATTRIBUTE_FORMAT: &[BorrowedFormatItem] =
+    format_description!("[year]-[month repr:numerical padding:zero]-[day padding:zero]");
+
+fn date_datetime_attr(date: Date) -> String {
+    date.format(DATE_ATTRIBUTE_FORMAT)
+        .unwrap_or_else(|_| date.to_string())
 }
 
 /// Renders the accounts page showing all accounts.
