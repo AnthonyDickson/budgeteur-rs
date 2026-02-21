@@ -144,11 +144,6 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
                 header class="flex justify-between flex-wrap items-end"
                 {
                     h1 class="text-xl font-bold" { "Tags" }
-
-                    a href=(new_tag_route) class=(LINK_STYLE)
-                    {
-                        "Create Tag"
-                    }
                 }
 
                 (tags_cards_view(tags, new_tag_route))

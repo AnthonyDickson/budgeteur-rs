@@ -9,15 +9,31 @@ Define the current navigation design and implementation for Budgeteur.
 ### Information Architecture
 - Primary destinations: Dashboard, Transactions, Accounts, Tags, Rules, Log out.
 - Navigation is global and appears at the top of each authenticated page.
+- Primary destinations expose contextual actions via dropdowns (desktop) or expandable menus (mobile).
+- All page header action links are removed and moved into their relevant navigation menus.
+- Migration scope includes:
+  - Transactions header links: Quick Tagging, Import Transactions, Create Transaction.
+  - Accounts header link: Add Account.
+  - Tags header link: Create Tag.
+  - Rules header link: Create Rule.
+  - Quick Tagging header link: Back to Transactions.
+- Do not move non-header actions (e.g., tagging buttons on the Rules page).
+- Do not move empty-state links.
 
 ### Desktop Layout
 - Top navigation bar with logo on the left and horizontal links on the right.
+- Each primary destination with a submenu uses a toggle interaction; clicking the primary label opens/closes the submenu (no navigation).
+- Hovering (or keyboard focus) reveals a dropdown panel anchored to the nav item.
+- Dropdown panel includes the main page link (first) and any contextual actions beneath it.
 - Uses standard link styling with hover and active-state treatments.
 - Active link is visually highlighted.
 
 ### Mobile/Tablet Layout
 - Top header (logo/title) stays at the top.
-- Primary navigation moves to a fixed bottom bar with a “More” popover.
+- Primary navigation moves to a fixed bottom bar.
+- Tapping a nav item toggles its submenu, which expands upward from the bar.
+- Tapping the nav item does not navigate; navigation happens via the submenu link.
+- The submenu includes the main page link first, followed by contextual actions.
 
 ### Visual Style
 - Light theme uses white backgrounds and gray borders; dark theme uses dark backgrounds and muted text.
@@ -26,7 +42,7 @@ Define the current navigation design and implementation for Budgeteur.
 
 ### Accessibility
 - Bottom nav uses `aria-current="page"` for the active item.
-- “More” is implemented with `details/summary` for keyboard access without JS.
+- Dropdowns are keyboard accessible (Tab order; no arrow key handling required).
 - Links use normal anchor semantics.
 
 ## Current Implementation
@@ -45,7 +61,9 @@ Define the current navigation design and implementation for Budgeteur.
 - Link styles include active and inactive variants with `lg:` overrides for desktop.
 
 ### Interaction
-- “More” uses native `details/summary` toggling (no JS).
+- Desktop: hover or focus reveals dropdown menus; click toggles the submenu when one exists.
+- Mobile/tablet: tap toggles the submenu; only one submenu should be open at a time.
+- Tapping/clicking outside an open submenu closes it.
 
 ### Call Sites
 - `NavBar` is included in most page templates, e.g.
@@ -66,8 +84,9 @@ Define the current navigation design and implementation for Budgeteur.
   - `src/rule/edit.rs`
 
 ### Goals
-- Keep the current desktop navigation style and behavior.
-- Replace the mobile/tablet hamburger menu with a bottom navigation bar.
+- Keep the current desktop navigation style and behavior for main links.
+- Centralize contextual actions inside the main navigation (dropdowns/expanders).
+- Maintain the bottom navigation bar on mobile/tablet, with upward-expanding submenus.
 - Style the bottom bar similar to “example 6” from Justinmind’s mobile navigation article.
 
 ### Breakpoints
@@ -79,8 +98,14 @@ Define the current navigation design and implementation for Budgeteur.
 - Always show four items (fixed set):
   - Dashboard, Transactions, Accounts, More.
 - Additional items live behind “More”:
-  - Tags, Rules, Log out.
-- “More” opens a small popover above the bar via `details/summary`.
+  - Tags, Rules, Log out (flat list).
+- “More” does not use nested submenus on mobile/tablet; contextual actions for items in “More” are flattened into the list.
+- Desktop dropdowns still exist for those items on their primary destinations.
+- Each item with a submenu toggles an expand-up panel from the bar.
+- Items without submenus remain direct links.
+- Submenu entries are ordered:
+  - Primary page link first.
+  - Contextual actions beneath (e.g., Transactions → Import, Quick Tagging, Create).
 - Icons are a future enhancement; initial implementation can be text-only.
 - Each item shows an icon + label.
 - Active item gets a filled or highlighted pill/background treatment.
@@ -96,14 +121,18 @@ Define the current navigation design and implementation for Budgeteur.
 ### Accessibility
 - Add `aria-current="page"` on the active bottom nav item.
 - Keep link text visible (not icon-only) for clarity and touch targets.
-- Ensure “More” is keyboard accessible without JS (e.g., `details/summary` or focusable toggle).
-- When a hidden item is the active page, highlight “More” in the bar and mark the hidden item as active in the popover.
+- Ensure submenu toggles are keyboard accessible.
+- When a hidden item is the active page, highlight “More” in the bar and mark the hidden item as active in the submenu.
 
 ### Implementation Notes
 - Extend `NavBar` to render two nav variants:
-  - Desktop top nav (existing structure).
-  - Mobile/tablet bottom nav (new structure).
-- Keep “More” behavior CSS-only; do not add JS.
+  - Desktop top nav (existing structure + dropdown menus).
+  - Mobile/tablet bottom nav (upward-expanding submenus).
+- Menus include the primary page link as the first item.
+- All pages with header action links should move those actions into their relevant nav menus.
+- Keep desktop click behavior consistent with mobile: click toggles submenu when present.
+- Mobile/tablet uses a single open submenu at a time.
+- JS is allowed if needed for single-open submenu behavior and outside-click closing; otherwise prefer CSS-only toggles.
 - Switch responsive classes from `md` to `lg` to reserve the bottom nav for tablet/phone.
 - Keep desktop styles unchanged to avoid regressions.
 - Ensure `static/app.js` does not conflict with the new layout (hamburger may be removed or hidden on small screens).
@@ -121,7 +150,7 @@ Define the current navigation design and implementation for Budgeteur.
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2026-02-15
-**Status:** Implemented
-**Changes from v0.x:** Formalized mobile bottom nav, responsive breakpoints, layout adjustments, and implementation decisions
+**Document Version:** 1.1
+**Last Updated:** 2026-02-21
+**Status:** Planned
+**Changes from v1.0:** Centralized contextual actions into nav menus, added desktop dropdowns, and mobile upward-expanding submenus
