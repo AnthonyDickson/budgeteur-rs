@@ -2,7 +2,6 @@
 
 ## Stage One: Budgeting
 
-- Clean up/simplify HTML structure (e.g., remove redundant div wrappers), use semantic elements where possible
 - Refactor common testing functions into a separate module.
 - Update unit tests to parse HTML document tree for checking for the existence
   of nodes and attributes.

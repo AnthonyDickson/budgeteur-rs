@@ -137,11 +137,11 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
     let content = html!(
         (nav_bar)
 
-        div class=(PAGE_CONTAINER_STYLE)
+        main class=(PAGE_CONTAINER_STYLE)
         {
-            div class="relative"
+            section class="space-y-4"
             {
-                div class="flex justify-between flex-wrap items-end"
+                header class="flex justify-between flex-wrap items-end"
                 {
                     h1 class="text-xl font-bold" { "Tags" }
 
@@ -153,7 +153,7 @@ fn tags_view(tags: &[TagWithEditUrl]) -> Markup {
 
                 (tags_cards_view(tags, new_tag_route))
 
-                div class="hidden lg:block dark:bg-gray-800 lg:max-w-5xl lg:w-full lg:mx-auto"
+                section class="hidden lg:block dark:bg-gray-800 lg:max-w-5xl lg:w-full lg:mx-auto"
                 {
                     table class="w-full text-sm text-left rtl:text-right
                         text-gray-500 dark:text-gray-400"
@@ -233,10 +233,10 @@ fn tags_cards_view(tags: &[TagWithEditUrl], new_tag_route: &str) -> Markup {
         .collect::<Vec<_>>();
 
     html!(
-        div class="lg:hidden space-y-4"
+        ul class="lg:hidden space-y-4"
         {
             @for card in &cards {
-                div class="rounded border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                li class="rounded border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
                     data-tag-card="true"
                 {
                     div class="flex items-start justify-between gap-3"
@@ -260,7 +260,7 @@ fn tags_cards_view(tags: &[TagWithEditUrl], new_tag_route: &str) -> Markup {
             }
 
             @if cards.is_empty() {
-                div class="rounded border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                li class="rounded border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
                 {
                     "No tags created yet. "
                     a href=(new_tag_route) class=(LINK_STYLE)

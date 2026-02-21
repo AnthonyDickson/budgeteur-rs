@@ -82,11 +82,11 @@ pub(crate) fn transactions_view(
     let content = html! {
         (nav_bar)
 
-        div class=(PAGE_CONTAINER_STYLE)
+        main class=(PAGE_CONTAINER_STYLE)
         {
-            div class="relative" id="transactions-content"
+            section class="space-y-4" id="transactions-content"
             {
-                div class="flex justify-between flex-wrap items-end mb-4"
+                header class="flex justify-between flex-wrap items-end"
                 {
                     h1 class="text-xl font-bold" { "Transactions" }
 
@@ -101,7 +101,7 @@ pub(crate) fn transactions_view(
                     }
                 }
 
-                div class="rounded bg-gray-50 dark:bg-gray-800 overflow-hidden lg:max-w-5xl lg:w-full lg:mx-auto"
+                section class="rounded bg-gray-50 dark:bg-gray-800 overflow-hidden lg:max-w-5xl lg:w-full lg:mx-auto"
                 {
                     @if has_any_transactions {
                         (range_navigation_html(
@@ -207,7 +207,7 @@ pub(crate) fn transactions_view(
 
                 }
 
-                div class="mt-4 rounded bg-gray-50 dark:bg-gray-900"
+                aside class="rounded bg-gray-50 dark:bg-gray-900"
                 {
                     (excluded_tags_view)
                 }

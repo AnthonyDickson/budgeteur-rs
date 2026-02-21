@@ -96,11 +96,11 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
     let content = html!(
         (nav_bar)
 
-        div class=(PAGE_CONTAINER_STYLE)
+        main class=(PAGE_CONTAINER_STYLE)
         {
-            div class="relative"
+            section class="space-y-4"
             {
-                div class="flex justify-between flex-wrap items-end"
+                header class="flex justify-between flex-wrap items-end"
                 {
                     h1 class="text-xl font-bold" { "Accounts" }
 
@@ -112,57 +112,54 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
 
                 (accounts_cards_view(accounts, create_account_page_url))
 
-                div class="hidden lg:block dark:bg-gray-800 lg:max-w-5xl lg:w-full lg:mx-auto"
+                section class="hidden lg:block w-full overflow-x-auto lg:overflow-visible dark:bg-gray-800 lg:max-w-5xl lg:w-full lg:mx-auto"
                 {
-                    div class="w-full overflow-x-auto lg:overflow-visible"
+                    table class="w-full text-sm text-left rtl:text-right
+                        text-gray-500 dark:text-gray-400"
                     {
-                        table class="w-full text-sm text-left rtl:text-right
-                            text-gray-500 dark:text-gray-400"
+                        thead class=(TABLE_HEADER_STYLE)
                         {
-                            thead class=(TABLE_HEADER_STYLE)
+                            tr
                             {
-                                tr
+                                th scope="col" class=(TABLE_CELL_STYLE)
                                 {
-                                    th scope="col" class=(TABLE_CELL_STYLE)
-                                    {
-                                        "Name"
-                                    }
-                                    th scope="col" class="px-6 py-3 text-right"
-                                    {
-                                        "Balance"
-                                    }
-                                    th scope="col" class=(TABLE_CELL_STYLE)
-                                    {
-                                        "Date"
-                                    }
-                                    th scope="col" class=(TABLE_CELL_STYLE)
-                                    {
-                                        "Actions"
-                                    }
+                                    "Name"
+                                }
+                                th scope="col" class="px-6 py-3 text-right"
+                                {
+                                    "Balance"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Date"
+                                }
+                                th scope="col" class=(TABLE_CELL_STYLE)
+                                {
+                                    "Actions"
                                 }
                             }
+                        }
 
-                            tbody
-                            {
-                                @for account in accounts {
-                                    (table_row(account))
-                                }
+                        tbody
+                        {
+                            @for account in accounts {
+                                (table_row(account))
+                            }
 
-                                @if accounts.is_empty() {
-                                    tr
+                            @if accounts.is_empty() {
+                                tr
+                                {
+                                    td
+                                        colspan="4"
+                                        class="px-6 py-4 text-center
+                                            text-gray-500 dark:text-gray-400"
                                     {
-                                        td
-                                            colspan="4"
-                                            class="px-6 py-4 text-center
-                                                text-gray-500 dark:text-gray-400"
+                                        "No accounts  found. Create an account "
+                                        a href=(create_account_page_url) class=(LINK_STYLE)
                                         {
-                                            "No accounts  found. Create an account "
-                                            a href=(create_account_page_url) class=(LINK_STYLE)
-                                            {
-                                                "here"
-                                            }
-                                            "."
+                                            "here"
                                         }
+                                        "."
                                     }
                                 }
                             }
@@ -178,10 +175,10 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
 
 fn accounts_cards_view(accounts: &[AccountTableRow], create_account_page_url: &str) -> Markup {
     html!(
-        div class="lg:hidden space-y-4"
+        ul class="lg:hidden space-y-4"
         {
             @for account in accounts {
-                div class="rounded border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                li class="rounded border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
                     data-account-card="true"
                 {
                     div class="flex items-start justify-between gap-3"
@@ -212,7 +209,7 @@ fn accounts_cards_view(accounts: &[AccountTableRow], create_account_page_url: &s
             }
 
             @if accounts.is_empty() {
-                div class="rounded border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                li class="rounded border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
                 {
                     "No accounts found. Create an account "
                     a href=(create_account_page_url) class=(LINK_STYLE)

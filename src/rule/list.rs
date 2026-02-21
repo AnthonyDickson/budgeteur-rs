@@ -82,14 +82,14 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
     let content = html!(
         (nav_bar)
 
-        div class=(PAGE_CONTAINER_STYLE)
+        main class=(PAGE_CONTAINER_STYLE)
         {
-            div class="relative space-y-4 lg:max-w-5xl lg:w-full lg:mx-auto"
+            section class="space-y-4 lg:max-w-5xl lg:w-full lg:mx-auto"
             {
                 h1 class="text-xl font-bold" { "Auto-Tagging Rules" }
 
                 @if !rules.is_empty() {
-                    div class="flex gap-4"
+                    section class="flex gap-4"
                     {
                         button
                             hx-post=(auto_tag_all_route)
@@ -138,7 +138,7 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                     }
                 }
 
-                div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded"
+                aside class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded"
                 {
                     h3 class="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2"
                     {
@@ -155,7 +155,7 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                     }
                 }
 
-                div class="flex justify-between flex-wrap items-end"
+                header class="flex justify-between flex-wrap items-end"
                 {
                     a href=(new_rule_route) class=(LINK_STYLE)
                     {
@@ -165,7 +165,7 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
 
                 (rules_cards_view(rules, new_rule_route))
 
-                div class="hidden lg:block dark:bg-gray-800"
+                section class="hidden lg:block dark:bg-gray-800"
                 {
                     table class="w-full text-sm text-left rtl:text-right
                         text-gray-500 dark:text-gray-400"
@@ -224,10 +224,10 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
 
 fn rules_cards_view(rules: &[RuleWithTag], new_rule_route: &str) -> Markup {
     html!(
-        div class="lg:hidden space-y-4"
+        ul class="lg:hidden space-y-4"
         {
             @for rule_with_tag in rules {
-                div class="rounded border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                li class="rounded border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
                     data-rule-card="true"
                 {
                     div class="flex items-start justify-between gap-3"
@@ -259,7 +259,7 @@ fn rules_cards_view(rules: &[RuleWithTag], new_rule_route: &str) -> Markup {
             }
 
             @if rules.is_empty() {
-                div class="rounded border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                li class="rounded border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
                 {
                     "No rules created yet. "
                     a href=(new_rule_route) class=(LINK_STYLE)
