@@ -103,11 +103,6 @@ fn accounts_view(accounts: &[AccountTableRow]) -> Markup {
                 header class="flex justify-between flex-wrap items-end"
                 {
                     h1 class="text-xl font-bold" { "Accounts" }
-
-                    a href=(create_account_page_url) class=(LINK_STYLE)
-                    {
-                        "Add Account"
-                    }
                 }
 
                 (accounts_cards_view(accounts, create_account_page_url))

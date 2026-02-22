@@ -156,14 +156,6 @@ fn rules_view(rules: &[RuleWithTag]) -> Markup {
                     }
                 }
 
-                header class="flex justify-between flex-wrap items-end"
-                {
-                    a href=(new_rule_route) class=(LINK_STYLE)
-                    {
-                        "Create Rule"
-                    }
-                }
-
                 (rules_cards_view(rules, new_rule_route))
 
                 section class="hidden lg:block dark:bg-gray-800"

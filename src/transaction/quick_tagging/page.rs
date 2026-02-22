@@ -88,10 +88,6 @@ pub fn quick_tagging_queue_content(queue_rows: &[UntaggedTransactionRow], tags: 
             header class="flex flex-wrap items-end justify-between gap-2"
             {
                 h1 class="text-xl font-bold" { (PAGE_TITLE) }
-                a href=(transactions_route) class=(LINK_STYLE)
-                {
-                    "Back to Transactions"
-                }
             }
 
             form
