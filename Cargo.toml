@@ -15,7 +15,7 @@ axum-htmx = "0.8.1"
 axum-server = { version = "0.8.0" }
 bcrypt = "0.18.0"
 charming = "0.6.0"
-clap = { version = "4.5.59", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 csv = "1.4.0"
 maud = { version = "0.27.0", features = ["axum"] }
 md5 = "0.8.0"
