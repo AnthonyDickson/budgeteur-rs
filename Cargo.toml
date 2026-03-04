@@ -39,6 +39,6 @@ unicode-segmentation = "1.12.0"
 zxcvbn = "3.1.0"
 
 [dev-dependencies]
-axum-test = "18.7.0"
+axum-test = "19.0.0"
 scraper = "0.25.0"
 serde_html_form = "0.4.0"

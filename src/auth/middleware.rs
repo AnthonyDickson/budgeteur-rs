@@ -210,7 +210,7 @@ mod auth_guard_tests {
             .route(TEST_LOG_IN_ROUTE_PATH, post(stub_log_in_route))
             .with_state(state.clone());
 
-        TestServer::new(app).expect("Could not create test server.")
+        TestServer::new(app)
     }
 
     fn get_test_server_hx(cookie_duration: Duration) -> TestServer {
@@ -226,7 +226,7 @@ mod auth_guard_tests {
             .route_layer(middleware::from_fn_with_state(state.clone(), auth_guard_hx))
             .with_state(state.clone());
 
-        TestServer::new(app).expect("Could not create test server.")
+        TestServer::new(app)
     }
 
     #[tokio::test]

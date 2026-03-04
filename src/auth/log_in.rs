@@ -598,7 +598,7 @@ mod log_in_tests {
             .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(state);
 
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = TestServer::new(app);
 
         server
             .post(endpoints::LOG_IN_API)
@@ -613,7 +613,7 @@ mod log_in_tests {
         let app = Router::new()
             .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(state);
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = TestServer::new(app);
         let form = [("password", "test"), ("remember_me", "on")];
 
         let response = server.post(endpoints::LOG_IN_API).form(&form).await;
@@ -634,7 +634,7 @@ mod log_in_tests {
         let app = Router::new()
             .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(state);
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = TestServer::new(app);
         let form = [("password", "test"), ("remember_me", "on")];
 
         let response = server.post(endpoints::LOG_IN_API).form(&form).await;
@@ -654,7 +654,7 @@ mod log_in_tests {
         let app = Router::new()
             .route(endpoints::LOG_IN_API, post(post_log_in))
             .with_state(state);
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = TestServer::new(app);
         let form = [("password", "test")];
 
         let response = server.post(endpoints::LOG_IN_API).form(&form).await;
