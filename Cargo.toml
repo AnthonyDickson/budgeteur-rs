@@ -32,7 +32,7 @@ time = { version = "0.3.47", features = ["serde", "local-offset"] }
 time-tz = "2.0.0"
 tokio = { version = "1.49.0", features = ["full"] }
 tower-http = { version = "0.6.8", features = ["trace", "fs"] }
-tower-livereload = "0.10.2" # For debug builds only
+tower-livereload = "0.10.3" # For debug builds only
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 unicode-segmentation = "1.12.0"
