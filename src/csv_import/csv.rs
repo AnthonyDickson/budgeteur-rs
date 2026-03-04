@@ -310,8 +310,7 @@ fn parse_asb_bank_csv(text: &str) -> Result<ParseCSVResult, Error> {
     let (bank, branch, account_suffix) = sscanf::sscanf!(
         lines[HEADER_ACCOUNT_INFO],
         "Bank {String}; Branch {String}; Account {String}"
-    )
-    .map_err(|_| {
+    ).ok_or_else(|| {
         Error::InvalidCSV(
             format!("ASB bank statement missing header with format 'Bank XX; Branch XXXX; Account XXXXXXX-XX (Account Name)' on line {}", HEADER_ACCOUNT_INFO)
         )
@@ -326,7 +325,7 @@ fn parse_asb_bank_csv(text: &str) -> Result<ParseCSVResult, Error> {
         lines[HEADER_LEDGER_BALANCE],
         "Ledger Balance : {f64} as of {String}"
     )
-    .map_err(|_| {
+    .ok_or_else(|| {
         Error::InvalidCSV(format!(
             "ASB bank ledger balance on line {} should match 'Ledger Balance : <amount> as of <date>', but got '{}'",
             HEADER_LEDGER_BALANCE,
