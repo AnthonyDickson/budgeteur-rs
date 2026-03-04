@@ -402,7 +402,7 @@ mod register_user_tests {
             .route(endpoints::USERS, post(register_user))
             .with_state(get_test_app_config());
 
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = TestServer::new(app);
 
         server
             .post(endpoints::USERS)
@@ -447,7 +447,7 @@ mod register_user_tests {
             .route(endpoints::USERS, post(register_user))
             .with_state(get_test_app_config());
 
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = TestServer::new(app);
 
         let response = server
             .post(endpoints::USERS)
@@ -469,7 +469,7 @@ mod register_user_tests {
             .route(endpoints::USERS, post(register_user))
             .with_state(get_test_app_config());
 
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = TestServer::new(app);
 
         let response = server
             .post(endpoints::USERS)
@@ -491,7 +491,7 @@ mod register_user_tests {
             .route(endpoints::USERS, post(register_user))
             .with_state(get_test_app_config());
 
-        let server = TestServer::new(app).expect("Could not create test server.");
+        let server = TestServer::new(app);
 
         let response = server
             .post(endpoints::USERS)
