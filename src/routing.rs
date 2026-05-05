@@ -17,7 +17,7 @@ use crate::{
     },
     auth::{
         auth_guard, auth_guard_hx, get_forgot_password_page, get_log_in_page, get_log_out,
-        get_register_page, post_log_in, register_user,
+        post_log_in,
     },
     csv_import::{get_import_page, import_transactions},
     dashboard::{get_dashboard_page, update_excluded_tags},
@@ -47,12 +47,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(endpoints::LOG_IN_VIEW, get(get_log_in_page))
         .route(endpoints::LOG_IN_API, post(post_log_in))
         .route(endpoints::LOG_OUT, get(get_log_out))
-        .route(endpoints::REGISTER_VIEW, get(get_register_page))
         .route(
             endpoints::FORGOT_PASSWORD_VIEW,
             get(get_forgot_password_page),
         )
-        .route(endpoints::USERS, post(register_user))
         .route(
             endpoints::INTERNAL_ERROR_VIEW,
             get(get_internal_server_error_page),

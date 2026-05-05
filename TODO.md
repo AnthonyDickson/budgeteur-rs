@@ -2,10 +2,6 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-- Simplify registration:
-  - Remove registration page
-  - Update README.md to instruct users to use reset password script for setting initial password
-  - Make sure reset password binary can work without existing password row
 - Session actor and proper sessions instead of token just holding the user ID
   - Use [Kameo](https://github.com/tqwewe/kameo)
 - Reorganise project into workspaces?

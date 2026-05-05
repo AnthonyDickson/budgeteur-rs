@@ -5,7 +5,6 @@ mod log_out;
 mod middleware;
 mod password;
 mod redirect;
-mod register_user;
 mod token;
 mod user;
 
@@ -16,10 +15,8 @@ pub use log_out::get_log_out;
 pub use middleware::{auth_guard, auth_guard_hx};
 pub use password::{PasswordHash, ValidatedPassword};
 pub(super) use redirect::{build_log_in_redirect_url, normalize_redirect_url};
-pub use register_user::{get_register_page, register_user};
 pub(super) use token::Token;
 pub use user::{User, UserID, create_user_table, get_user_by_id};
-pub(super) use user::{count_users, create_user};
 
 #[cfg(test)]
 pub use cookie::COOKIE_TOKEN;

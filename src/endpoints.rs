@@ -28,8 +28,6 @@ pub const RULES_VIEW: &str = "/rules";
 pub const IMPORT_VIEW: &str = "/transactions/import";
 /// The page for quickly tagging imported untagged transactions.
 pub const QUICK_TAGGING_VIEW: &str = "/transactions/quick_tagging";
-/// The route for getting the registration page.
-pub const REGISTER_VIEW: &str = "/register";
 /// The route for getting the log in page.
 pub const LOG_IN_VIEW: &str = "/log_in";
 /// The route for instructions for resetting the user's password.
@@ -55,8 +53,6 @@ pub const COFFEE: &str = "/api/coffee";
 pub const LOG_IN_API: &str = "/api/log_in";
 /// The route for the client to log out the current user.
 pub const LOG_OUT: &str = "/api/log_out";
-/// The route to access users.
-pub const USERS: &str = "/api/users";
 /// The route to create a tag.
 pub const POST_TAG: &str = "/api/tag";
 /// The route to update a tag.
@@ -157,7 +153,6 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::RULES_VIEW);
         assert_endpoint_is_valid_uri(endpoints::IMPORT_VIEW);
         assert_endpoint_is_valid_uri(endpoints::QUICK_TAGGING_VIEW);
-        assert_endpoint_is_valid_uri(endpoints::REGISTER_VIEW);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_VIEW);
         assert_endpoint_is_valid_uri(endpoints::FORGOT_PASSWORD_VIEW);
         assert_endpoint_is_valid_uri(endpoints::INTERNAL_ERROR_VIEW);
@@ -171,7 +166,6 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::COFFEE);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_API);
         assert_endpoint_is_valid_uri(endpoints::LOG_OUT);
-        assert_endpoint_is_valid_uri(endpoints::USERS);
         assert_endpoint_is_valid_uri(endpoints::POST_TAG);
         assert_endpoint_is_valid_uri(endpoints::PUT_TAG);
         assert_endpoint_is_valid_uri(endpoints::DELETE_TAG);

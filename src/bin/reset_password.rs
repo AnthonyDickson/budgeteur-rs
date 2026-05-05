@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    io::{self},
+    io::{self, Write},
     path::Path,
     process::exit,
 };
@@ -9,7 +9,7 @@ use bcrypt::DEFAULT_COST;
 use clap::Parser;
 use rusqlite::Connection;
 
-use budgeteur_rs::{PasswordHash, User, UserID, ValidatedPassword, get_user_by_id};
+use budgeteur_rs::{PasswordHash, ValidatedPassword, initialize_db};
 
 /// A utility for changing the password for a registered user.
 #[derive(Parser, Debug)]
@@ -24,43 +24,43 @@ struct Args {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let db_path = Path::new(&args.db_path);
-    validate_db_path(db_path);
 
-    let user = get_user(db_path);
+    if !db_path.is_file() {
+        eprintln!("File does not exist at {db_path:#?}!");
+        if ask_to_create_db(db_path) {
+            create_db(db_path);
+        } else {
+            exit(0);
+        }
+    }
 
     let password_hash = match get_new_password_hash() {
         Some(password_hash) => password_hash,
         None => return Ok(()),
     };
-    update_password(db_path, user, password_hash)?;
+    update_password(db_path, password_hash)?;
 
     Ok(())
 }
 
-fn get_user(db_path: &Path) -> User {
-    println!("Loading user from from {db_path:#?}");
+fn ask_to_create_db(db_path: &Path) -> bool {
+    print!("Create a new database at {db_path:#?}? (Y/n) ");
+    std::io::stdout().flush().expect("Failed to flush stdout");
 
-    let conn = Connection::open(db_path)
-        .unwrap_or_else(|_| panic!("Could not open the database at {db_path:?}"));
+    let mut response = String::new();
+    std::io::stdin()
+        .read_line(&mut response)
+        .expect("Failed to read stdin");
 
-    get_user_by_id(UserID::new(1), &conn).expect("Could not get user with ID=1 in {db_path}.")
+    matches!(response.trim(), "y" | "Y")
 }
 
-fn validate_db_path(db_path: &Path) {
-    match db_path.extension() {
-        None => {
-            print_error("Database path must include a file extension (e.g., 'my_database.db').");
-            exit(1);
-        }
-        Some(extension) if extension.is_empty() => {
-            print_error("Database path must include a file extension (e.g., 'my_database.db').");
-            exit(1);
-        }
-        _ => {}
-    }
+fn create_db(db_path: &Path) {
+    let conn = Connection::open(db_path)
+        .unwrap_or_else(|error| panic!("Could not open database file at {db_path:#?}: {error:?}"));
 
-    if !db_path.is_file() {
-        eprintln!("File does not exist at {db_path:#?}!");
+    if let Err(error) = initialize_db(&conn) {
+        eprintln!("Could not initialize database: {error}");
         exit(1);
     }
 }
@@ -69,32 +69,26 @@ fn get_new_password_hash() -> Option<PasswordHash> {
     loop {
         println!();
 
-        let first_password = match rpassword::prompt_password("Enter a new password: ") {
-            Ok(string) => string,
-            Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
-                return None;
-            }
-            Err(error) => {
-                print_error(format!("Could not read password from stdin: {error}"));
-                return None;
-            }
-        };
+        let first_password = rpassword::prompt_password("Enter a new password: ")
+            .inspect_err(|error| {
+                if error.kind() != io::ErrorKind::UnexpectedEof {
+                    print_error(format!("Could not read password from stdin: {error}"));
+                }
+            })
+            .ok()?;
 
         if let Err(error) = ValidatedPassword::new(&first_password) {
             print_error(error);
             continue;
         }
 
-        let second_password = match rpassword::prompt_password("Enter the same password again: ") {
-            Ok(string) => string,
-            Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
-                return None;
-            }
-            Err(error) => {
-                print_error(format!("Could not read password from stdin: {error}"));
-                return None;
-            }
-        };
+        let second_password = rpassword::prompt_password("Enter the same password again: ")
+            .inspect_err(|error| {
+                if error.kind() != io::ErrorKind::UnexpectedEof {
+                    print_error(format!("Could not read password from stdin: {error}"));
+                }
+            })
+            .ok()?;
 
         if first_password != second_password {
             print_error("Passwords must match, try again.");
@@ -129,17 +123,13 @@ fn capitalise_first_char(string: &str) -> String {
     first.to_uppercase().chain(chars).collect()
 }
 
-fn update_password(
-    db_path: &Path,
-    user: User,
-    password: PasswordHash,
-) -> Result<(), rusqlite::Error> {
+fn update_password(db_path: &Path, password: PasswordHash) -> Result<(), rusqlite::Error> {
     let mut conn = Connection::open(db_path)?;
     let transaction = conn.transaction()?;
 
     let rows_affected = transaction.execute(
-        "UPDATE user SET password = ?1 WHERE user.id = ?2;",
-        (&password.to_string(), &user.id.as_u32()),
+        "INSERT OR REPLACE INTO user (id, password) VALUES (?1, ?2);",
+        (1, &password.to_string()),
     )?;
 
     if rows_affected != 1 {
