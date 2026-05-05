@@ -26,6 +26,7 @@ Define the design and behavior for a queue of imported transactions that remain 
 - Foreign key: `transaction_id REFERENCES "transaction"(id) ON DELETE CASCADE`
 
 Rationale:
+
 - Primary key ensures a single queue row per transaction.
 - `created_at` supports ordering the queue by most recently added.
 - `ON DELETE CASCADE` makes queue cleanup automatic when a transaction is deleted.

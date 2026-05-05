@@ -7,6 +7,7 @@ Define the current navigation design and implementation for Budgeteur.
 ## Current Design
 
 ### Information Architecture
+
 - Primary destinations: Dashboard, Transactions, Accounts, Tags, Rules, Log out.
 - Navigation is global and appears at the top of each authenticated page.
 - Primary destinations expose contextual actions via dropdowns (desktop) or expandable menus (mobile).
@@ -21,6 +22,7 @@ Define the current navigation design and implementation for Budgeteur.
 - Do not move empty-state links.
 
 ### Desktop Layout
+
 - Top navigation bar with logo on the left and horizontal links on the right.
 - Each primary destination with a submenu uses a toggle interaction; clicking the primary label opens/closes the submenu (no navigation).
 - Hovering (or keyboard focus) reveals a dropdown panel anchored to the nav item.
@@ -29,6 +31,7 @@ Define the current navigation design and implementation for Budgeteur.
 - Active link is visually highlighted.
 
 ### Mobile/Tablet Layout
+
 - Top header (logo/title) stays at the top.
 - Primary navigation moves to a fixed bottom bar.
 - Tapping a nav item toggles its submenu, which expands upward from the bar.
@@ -36,11 +39,13 @@ Define the current navigation design and implementation for Budgeteur.
 - The submenu includes the main page link first, followed by contextual actions.
 
 ### Visual Style
+
 - Light theme uses white backgrounds and gray borders; dark theme uses dark backgrounds and muted text.
 - Active state uses blue highlight.
 - Uses Tailwind utility classes for spacing, typography, and colors.
 
 ### Accessibility
+
 - Bottom nav uses `aria-current="page"` for the active item.
 - Dropdowns are keyboard accessible (Tab order; no arrow key handling required).
 - Links use normal anchor semantics.
@@ -48,12 +53,14 @@ Define the current navigation design and implementation for Budgeteur.
 ## Current Implementation
 
 ### Markup and Rendering
+
 - Navigation is rendered by `NavBar` in `src/navigation.rs`.
 - `NavBar::new(active_endpoint)` builds a fixed list of `Link` items.
 - The active link is determined by comparing the current endpoint to the link URL.
 - The logout link is never marked as active.
 
 ### Structure
+
 - Top-level `<nav>` contains:
   - Brand/logo link to `/`.
   - Desktop links container with `ul > li > a` shown from `lg` and up.
@@ -61,11 +68,13 @@ Define the current navigation design and implementation for Budgeteur.
 - Link styles include active and inactive variants with `lg:` overrides for desktop.
 
 ### Interaction
+
 - Desktop: hover or focus reveals dropdown menus; click toggles the submenu when one exists.
 - Mobile/tablet: tap toggles the submenu; only one submenu should be open at a time.
 - Tapping/clicking outside an open submenu closes it.
 
 ### Call Sites
+
 - `NavBar` is included in most page templates, e.g.
   - `src/dashboard/handlers.rs`
   - `src/transaction/transactions_page.rs` (via `transactions_view`)
@@ -84,16 +93,19 @@ Define the current navigation design and implementation for Budgeteur.
   - `src/rule/edit.rs`
 
 ### Goals
+
 - Keep the current desktop navigation style and behavior for main links.
 - Centralize contextual actions inside the main navigation (dropdowns/expanders).
 - Maintain the bottom navigation bar on mobile/tablet, with upward-expanding submenus.
 - Style the bottom bar similar to “example 6” from Justinmind’s mobile navigation article.
 
 ### Breakpoints
+
 - Bottom nav is shown for widths < 1024px.
 - Existing top nav is shown at ≥ 1024px.
 
 ### Bottom Navigation (Tablet/Phone)
+
 - Fixed bar at the bottom of the viewport.
 - Always show four items (fixed set):
   - Dashboard, Transactions, Accounts, More.
@@ -114,17 +126,20 @@ Define the current navigation design and implementation for Budgeteur.
 - Preserve dark/light theme parity.
 
 ### Layout Adjustments
+
 - Add safe-area spacing and bottom padding to main content so fixed bottom nav does not obscure page content.
 - Remove or hide the hamburger button and collapsible top menu on tablet/phone sizes.
 - Keep the top header (logo/title) visible on tablet/phone; only the nav links move to the bottom bar.
 
 ### Accessibility
+
 - Add `aria-current="page"` on the active bottom nav item.
 - Keep link text visible (not icon-only) for clarity and touch targets.
 - Ensure submenu toggles are keyboard accessible.
 - When a hidden item is the active page, highlight “More” in the bar and mark the hidden item as active in the submenu.
 
 ### Implementation Notes
+
 - Extend `NavBar` to render two nav variants:
   - Desktop top nav (existing structure + dropdown menus).
   - Mobile/tablet bottom nav (upward-expanding submenus).
@@ -138,6 +153,7 @@ Define the current navigation design and implementation for Budgeteur.
 - Ensure `static/app.js` does not conflict with the new layout (hamburger may be removed or hidden on small screens).
 
 ## Implementation Decisions (Ad-Hoc)
+
 - **Bottom nav styling:** Container uses `rounded-xl`; pill buttons use `rounded-lg` for a slightly tighter look.
 - **Bottom nav width/gutters:** Wrapper uses `max-w-screen-xl` with a consistent `px-4` gutter to match page containers on landscape.
 - **Z-index layering:** Bottom nav uses `z-40` so it sits above page content but below alerts.
@@ -146,6 +162,7 @@ Define the current navigation design and implementation for Budgeteur.
 - **Chart height responsiveness:** Dashboard chart containers use `min-h-[240px] sm:min-h-[300px] md:min-h-[340px] lg:min-h-[380px]` to keep axis labels visible on small/landscape screens.
 
 ### Future Enhancement (Optional)
+
 - Consider progressively revealing hidden items inline on tablet widths, and hiding “More” when there is sufficient space.
 
 ---

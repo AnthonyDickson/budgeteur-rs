@@ -11,6 +11,7 @@ Preserve the user's previous page when automatic logout occurs, so after re-auth
 - Covers log-in page rendering and log-in POST redirect target selection.
 
 Out of scope:
+
 - Manual log out flow (`GET /api/log_out`) remains unchanged.
 - Cross-origin or external redirects are not supported.
 

@@ -1,24 +1,22 @@
-//! Authentication middleware that validates cookies, extends sessions, and handles redirects.
+//! Authentication middleware that validates cookies, verifies sessions, and handles redirects.
 
 use axum::{
     extract::{FromRef, FromRequestParts, Request, State},
-    http::{StatusCode, header::SET_COOKIE},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
-use time::Duration;
+use kameo::actor::ActorRef;
+use time::UtcDateTime;
 
 use crate::{
     AppState,
     auth::{
-        build_log_in_redirect_url,
-        cookie::{extend_auth_cookie_duration_if_needed, get_token_from_cookies},
-        redirect::build_log_in_redirect_url_from_target,
+        SessionStore, build_log_in_redirect_url, cookie::get_token_from_cookies,
+        redirect::build_log_in_redirect_url_from_target, session::Extend,
     },
     endpoints,
-    timezone::get_local_offset,
 };
 
 /// The state needed for the auth middleware
@@ -26,18 +24,15 @@ use crate::{
 pub struct AuthState {
     /// The key to be used for signing and encrypting private cookies.
     pub cookie_key: Key,
-    /// The duration for which cookies used for authentication are valid.
-    pub cookie_duration: Duration,
-    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
-    pub local_timezone: String,
+    /// An in-memory store for managing sessions
+    pub session_actor: ActorRef<SessionStore>,
 }
 
 impl FromRef<AppState> for AuthState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
-            cookie_duration: state.cookie_duration,
-            local_timezone: state.local_timezone.clone(),
+            session_actor: state.session_actor.clone(),
         }
     }
 }
@@ -49,12 +44,8 @@ impl FromRef<AuthState> for Key {
     }
 }
 
-/// Middleware function that checks for a valid authorization cookie.
-/// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the log-in page is returned using `get_redirect`.
-///
-/// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
-///
-/// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
+/// Middleware function that checks for a valid authorization cookie and
+/// verifies the session via the session actor.
 #[inline]
 async fn auth_guard_internal(
     state: AuthState,
@@ -74,13 +65,6 @@ async fn auth_guard_internal(
         build_log_in_redirect_url_from_target(endpoints::DASHBOARD_VIEW)
             .unwrap_or_else(|| endpoints::LOG_IN_VIEW.to_owned())
     });
-    let local_offset = match get_local_offset(&state.local_timezone) {
-        Some(offset) => offset,
-        None => {
-            tracing::error!("Error getting local timezone. Redirecting to log in page.");
-            return get_redirect(&log_in_redirect_url);
-        }
-    };
 
     let (mut parts, body) = request.into_parts();
     let jar = match PrivateCookieJar::from_request_parts(&mut parts, &state).await {
@@ -90,44 +74,37 @@ async fn auth_guard_internal(
             return get_redirect(&log_in_redirect_url);
         }
     };
-    let user_id = match get_token_from_cookies(&jar) {
-        Ok(token) => token.user_id,
+    let token = match get_token_from_cookies(&jar) {
+        Ok(token) => token,
         Err(_) => return get_redirect(&log_in_redirect_url),
     };
 
-    parts.extensions.insert(user_id);
-    let request = Request::from_parts(parts, body);
-    let response = next.run(request).await;
-
-    let (mut parts, body) = response.into_parts();
-    let jar = match extend_auth_cookie_duration_if_needed(
-        jar.clone(),
-        Duration::minutes(5),
-        local_offset,
-    ) {
-        Ok(updated_jar) => updated_jar,
+    match state
+        .session_actor
+        .ask(Extend {
+            id: token.session_id,
+            now: UtcDateTime::now(),
+        })
+        .await
+    {
+        Ok(Some(_session)) => {
+            let request = Request::from_parts(parts, body);
+            next.run(request).await
+        }
+        Ok(None) => {
+            tracing::debug!("Session expired or missing. Redirecting to log in.");
+            get_redirect(&log_in_redirect_url)
+        }
         Err(err) => {
-            tracing::error!("Error extending cookie duration: {err:?}. Rolling back cookie jar.");
-            jar
+            tracing::error!("Error communicating with session actor: {err:?}");
+            get_redirect(&log_in_redirect_url)
         }
-    };
-    for (key, val) in jar.into_response().headers().iter() {
-        if key != SET_COOKIE {
-            continue;
-        }
-
-        parts.headers.append(key, val.to_owned());
     }
-
-    Response::from_parts(parts, body)
 }
 
 /// Middleware function that checks for a valid authorization cookie.
-/// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a redirect to the log-in page is returned.
-///
-/// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
-///
-/// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
+/// The request is executed normally if the session is valid, otherwise a
+/// redirect to the log-in page is returned.
 pub async fn auth_guard(State(state): State<AuthState>, request: Request, next: Next) -> Response {
     auth_guard_internal(state, request, next, |redirect_url| {
         Redirect::to(redirect_url).into_response()
@@ -136,18 +113,19 @@ pub async fn auth_guard(State(state): State<AuthState>, request: Request, next: 
 }
 
 /// Middleware function that checks for a valid authorization cookie.
-/// The user ID is placed into request and then the request executed normally if the cookie is valid, otherwise a HTMX redirect to the log-in page is returned.
-///
-/// **Note**: Route handlers can use the function argument `Extension(user_id): Extension<UserID>` to receive the user ID.
-///
-/// **Note**: The app state must contain an `axum_extra::extract::cookie::Key` for decrypting and verifying the cookie contents.
+/// The request is executed normally if the session is valid, otherwise an
+/// HTMX redirect to the log-in page is returned.
 pub async fn auth_guard_hx(
     State(state): State<AuthState>,
     request: Request,
     next: Next,
 ) -> Response {
     auth_guard_internal(state, request, next, |redirect_url| {
-        (HxRedirect(redirect_url.to_owned()), StatusCode::OK).into_response()
+        (
+            HxRedirect(redirect_url.to_owned()),
+            axum::http::StatusCode::OK,
+        )
+            .into_response()
     })
     .await
 }
@@ -163,20 +141,22 @@ mod auth_guard_tests {
     };
     use axum_extra::extract::{
         PrivateCookieJar,
-        cookie::{Cookie, Key, SameSite},
+        cookie::{Cookie, Key},
     };
     use axum_test::TestServer;
+    use kameo::actor::Spawn;
     use sha2::Digest;
-    use time::{Duration, OffsetDateTime};
+    use time::{Duration, OffsetDateTime, UtcDateTime};
 
     use crate::{
         Error,
         auth::{
-            AuthState, COOKIE_TOKEN, DEFAULT_COOKIE_DURATION, UserID, auth_guard, auth_guard_hx,
+            COOKIE_TOKEN, SessionStore, auth_guard, auth_guard_hx,
+            middleware::AuthState,
+            session::{Session, Set},
             set_auth_cookie,
         },
         endpoints::{self, format_endpoint},
-        timezone::get_local_offset,
     };
 
     async fn test_handler() -> Html<&'static str> {
@@ -187,21 +167,37 @@ mod auth_guard_tests {
         State(state): State<AuthState>,
         jar: PrivateCookieJar,
     ) -> Result<PrivateCookieJar, Error> {
-        let local_timezone = get_local_offset(&state.local_timezone).unwrap();
+        let session = Session::new(UtcDateTime::now());
 
-        set_auth_cookie(jar, UserID::new(1), state.cookie_duration, local_timezone)
+        state
+            .session_actor
+            .tell(Set {
+                session: session.clone(),
+            })
+            .await
+            .map_err(|err| {
+                Error::JSONSerializationError(format!(
+                    "Could not communicate with session actor: {err}"
+                ))
+            })?;
+
+        set_auth_cookie(
+            jar,
+            session.id,
+            OffsetDateTime::now_utc() + Duration::hours(24),
+        )
     }
 
     const TEST_LOG_IN_ROUTE_PATH: &str = "/log_in/{user_id}";
     const TEST_PROTECTED_ROUTE: &str = "/protected";
     const TEST_API_ROUTE: &str = "/api/protected";
 
-    fn get_test_server(cookie_duration: Duration) -> TestServer {
+    fn get_test_server() -> TestServer {
         let hash = sha2::Sha512::digest("nafstenoas");
+        let session_actor = SessionStore::spawn(SessionStore::new());
         let state = AuthState {
             cookie_key: Key::from(&hash),
-            cookie_duration,
-            local_timezone: "Etc/UTC".to_owned(),
+            session_actor,
         };
 
         let app = Router::new()
@@ -213,12 +209,12 @@ mod auth_guard_tests {
         TestServer::new(app)
     }
 
-    fn get_test_server_hx(cookie_duration: Duration) -> TestServer {
+    fn get_test_server_hx() -> TestServer {
         let hash = sha2::Sha512::digest("nafstenoas");
+        let session_actor = SessionStore::spawn(SessionStore::new());
         let state = AuthState {
             cookie_key: Key::from(&hash),
-            cookie_duration,
-            local_timezone: "Etc/UTC".to_owned(),
+            session_actor,
         };
 
         let app = Router::new()
@@ -231,7 +227,7 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn get_protected_route_with_valid_cookie() {
-        let server = get_test_server(DEFAULT_COOKIE_DURATION);
+        let server = get_test_server();
         let response = server
             .post(&format_endpoint(TEST_LOG_IN_ROUTE_PATH, 1))
             .await;
@@ -247,8 +243,8 @@ mod auth_guard_tests {
     }
 
     #[tokio::test]
-    async fn auth_guard_sets_auth_and_expiry_cookies() {
-        let server = get_test_server(DEFAULT_COOKIE_DURATION);
+    async fn protected_route_with_valid_cookie_returns_ok() {
+        let server = get_test_server();
         let response = server
             .post(&format_endpoint(TEST_LOG_IN_ROUTE_PATH, 1))
             .await;
@@ -256,54 +252,16 @@ mod auth_guard_tests {
         response.assert_status_ok();
         let jar = response.cookies();
 
-        let response = server.get(TEST_PROTECTED_ROUTE).add_cookies(jar).await;
-        let jar = response.cookies();
-        assert!(
-            jar.get(COOKIE_TOKEN).is_some(),
-            "expected token cookie to be set by auth guard"
-        );
-    }
-
-    #[track_caller]
-    fn assert_date_time_close(left: OffsetDateTime, right: OffsetDateTime) {
-        assert!(
-            (left - right).abs() < Duration::seconds(1),
-            "got date time {:?}, want {:?}",
-            left,
-            right
-        );
-    }
-
-    #[tokio::test]
-    async fn auth_guard_extends_valid_cookie_duration() {
-        let server = get_test_server(Duration::seconds(5));
-        let response = server
-            .post(&format_endpoint(TEST_LOG_IN_ROUTE_PATH, 1))
-            .await;
-
-        response.assert_status_ok();
-        let response_time = OffsetDateTime::now_utc();
-        let jar = response.cookies();
-        assert_date_time_close(
-            jar.get(COOKIE_TOKEN).unwrap().expires_datetime().unwrap(),
-            response_time + Duration::seconds(5),
-        );
-
-        let response = server.get(TEST_PROTECTED_ROUTE).add_cookies(jar).await;
-
-        let auth_cookie = response.cookie(COOKIE_TOKEN);
-        assert_date_time_close(
-            auth_cookie.expires_datetime().unwrap(),
-            response_time + Duration::minutes(5),
-        );
-        assert_eq!(auth_cookie.secure(), Some(true));
-        assert_eq!(auth_cookie.http_only(), Some(true));
-        assert_eq!(auth_cookie.same_site(), Some(SameSite::Strict));
+        server
+            .get(TEST_PROTECTED_ROUTE)
+            .add_cookies(jar)
+            .await
+            .assert_status_ok();
     }
 
     #[tokio::test]
     async fn get_protected_route_with_no_auth_cookie_redirects_to_log_in() {
-        let server = get_test_server(DEFAULT_COOKIE_DURATION);
+        let server = get_test_server();
         let response = server.get(TEST_PROTECTED_ROUTE).await;
 
         response.assert_status_see_other();
@@ -315,7 +273,7 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn get_protected_route_with_invalid_auth_cookie_redirects_to_log_in() {
-        let server = get_test_server(DEFAULT_COOKIE_DURATION);
+        let server = get_test_server();
         let response = server
             .get(TEST_PROTECTED_ROUTE)
             .add_cookie(Cookie::build((COOKIE_TOKEN, "FOOBAR")).build())
@@ -330,7 +288,7 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn get_protected_route_with_expired_auth_cookie_redirects_to_log_in() {
-        let server = get_test_server(DEFAULT_COOKIE_DURATION);
+        let server = get_test_server();
         let response = server
             .post(&format_endpoint(TEST_LOG_IN_ROUTE_PATH, 1))
             .await;
@@ -353,7 +311,7 @@ mod auth_guard_tests {
 
     #[tokio::test]
     async fn api_route_uses_hx_current_url_for_redirect() {
-        let server = get_test_server_hx(DEFAULT_COOKIE_DURATION);
+        let server = get_test_server_hx();
         let current_url = "/transactions?range=month&anchor=2025-10-05";
         let response = server
             .get(TEST_API_ROUTE)

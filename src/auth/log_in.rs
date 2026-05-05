@@ -11,21 +11,22 @@ use axum::{
 };
 use axum_extra::extract::{PrivateCookieJar, cookie::Key};
 use axum_htmx::HxRedirect;
+use kameo::actor::ActorRef;
 use maud::{Markup, html};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use time::Duration;
+use time::{OffsetDateTime, UtcDateTime};
 
 use crate::{
     AppState, Error,
     app_state::create_cookie_key,
     auth::{
-        DEFAULT_COOKIE_DURATION, User, UserID, get_user_by_id, invalidate_auth_cookie,
-        normalize_redirect_url, set_auth_cookie,
+        SessionStore, User, UserID, get_user_by_id, invalidate_auth_cookie, normalize_redirect_url,
+        session::{MAX_SESSION_AGE, Session, Set},
+        set_auth_cookie,
     },
     endpoints,
     html::{BUTTON_PRIMARY_STYLE, base, loading_spinner, password_input},
-    timezone::get_local_offset,
 };
 
 fn contianer(form_title: &str, form: &Markup) -> Markup {
@@ -67,23 +68,6 @@ fn log_in_form(password: &str, error_message: Option<&str>, redirect_url: Option
             }
 
             (password_input(password, 0, error_message, true))
-
-            div class="flex items-center gap-x-3"
-            {
-                input
-                    type="checkbox"
-                    name="remember_me"
-                    id="remember_me"
-                    tabindex="0"
-                    class="rounded-xs";
-
-                label
-                    for="remember_me"
-                    class="block text-sm font-medium text-gray-900 dark:text-white"
-                {
-                    "Keep me logged in for one week"
-                }
-            }
 
             button
                 type="submit" id="submit-button" tabindex="0"
@@ -131,33 +115,26 @@ pub async fn get_log_in_page(Query(query): Query<RedirectQuery>) -> Response {
     base("Log In", &[], &content).into_response()
 }
 
-/// How long the auth cookie should last if the user selects "remember me" at log-in.
-const REMEMBER_ME_COOKIE_DURATION: Duration = Duration::days(7);
-
 /// The state needed to perform a login.
 #[derive(Debug, Clone)]
 pub struct LoginState {
     /// The key to be used for signing and encrypting private cookies.
     pub cookie_key: Key,
-    /// The duration for which cookies used for authentication are valid.
-    pub cookie_duration: Duration,
-    /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
-    pub local_timezone: String,
     pub db_connection: Arc<Mutex<Connection>>,
+    pub session_actor: ActorRef<SessionStore>,
 }
 
 impl LoginState {
-    /// Create the cookie key from a string and set the default cookie duration.
+    /// Create the cookie key from a string.
     pub fn new(
         cookie_secret: &str,
-        local_timezone: &str,
         db_connection: Arc<Mutex<Connection>>,
+        session_actor: ActorRef<SessionStore>,
     ) -> Self {
         Self {
             cookie_key: create_cookie_key(cookie_secret),
-            cookie_duration: DEFAULT_COOKIE_DURATION,
-            local_timezone: local_timezone.to_owned(),
-            db_connection: db_connection.clone(),
+            db_connection,
+            session_actor,
         }
     }
 }
@@ -166,9 +143,8 @@ impl FromRef<AppState> for LoginState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             cookie_key: state.cookie_key.clone(),
-            cookie_duration: state.cookie_duration,
-            local_timezone: state.local_timezone.clone(),
             db_connection: state.db_connection.clone(),
+            session_actor: state.session_actor.clone(),
         }
     }
 }
@@ -184,18 +160,15 @@ pub const INVALID_CREDENTIALS_ERROR_MSG: &str = "Incorrect password.";
 
 /// Handler for log-in requests via the POST method.
 ///
-/// On a successful log-in request, the auth cookie set and the client is redirected to the dashboard page.
-/// Otherwise, the form is returned with an error message explaining the problem.
-///
-/// # Errors
-///
-/// This function will return an error in a few situations.
-/// - The password is not correct.
-/// - An internal error occurred when verifying the password.
+/// On a successful log-in request, a session is created, the auth cookie is
+/// set and the client is redirected.
+/// Otherwise, the form is returned with an error message explaining the
+/// problem.
 ///
 /// # Panics
 ///
-/// Panics if the lock for the database connection is already held by the same thread.
+/// Panics if the lock for the database connection is already held by the same
+/// thread.
 pub async fn post_log_in(
     State(state): State<LoginState>,
     jar: PrivateCookieJar,
@@ -247,20 +220,30 @@ pub async fn post_log_in(
         return log_in_form("", Some(INVALID_CREDENTIALS_ERROR_MSG), redirect_url).into_response();
     }
 
-    let cookie_duration = if user_data.remember_me.is_some() {
-        REMEMBER_ME_COOKIE_DURATION
-    } else {
-        state.cookie_duration
-    };
+    let now = UtcDateTime::now();
+    let session = Session::new(now);
 
-    let local_timezone = match get_local_offset(&state.local_timezone) {
-        Some(offset) => offset,
-        None => return Error::InvalidTimezoneError(state.local_timezone).into_response(),
-    };
+    if let Err(err) = state
+        .session_actor
+        .tell(Set {
+            session: session.clone(),
+        })
+        .await
+    {
+        tracing::error!("Error creating session: {err}");
+        return log_in_form(
+            "",
+            Some("An internal error occurred. Please try again later."),
+            redirect_url,
+        )
+        .into_response();
+    }
 
     let redirect_url = redirect_url.unwrap_or(endpoints::DASHBOARD_VIEW);
 
-    set_auth_cookie(jar.clone(), user.id, cookie_duration, local_timezone)
+    let cookie_expiry: OffsetDateTime = (now + MAX_SESSION_AGE).into();
+
+    set_auth_cookie(jar.clone(), session.id, cookie_expiry)
         .map(|updated_jar| {
             (
                 StatusCode::SEE_OTHER,
@@ -285,21 +268,10 @@ pub struct RedirectQuery {
 }
 
 /// The raw data entered by the user in the log-in form.
-///
-/// The password is stored as a plain string. There is no need for validation here since
-/// it will be compared against the password in the database, which has been verified.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct LogInData {
     /// Password entered during log-in.
     pub password: String,
-
-    /// Whether to extend the initial auth cookie duration.
-    ///
-    /// This value comes from a checkbox, so it either has a string value or is not set
-    /// (see the [MDN docs](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/checkbox#value_2)).
-    /// The `Some` variant should be interpreted as `true` irregardless of the
-    /// string value, and the `None` variant should be interpreted as `false`.
-    pub remember_me: Option<String>,
 
     /// Optional URL to redirect to after logging in.
     /// Only accepted from the log-in form submission.
@@ -320,9 +292,11 @@ mod log_in_page_tests {
         http::{StatusCode, header::CONTENT_TYPE},
     };
     use axum_extra::extract::PrivateCookieJar;
+    use kameo::actor::Spawn;
     use rusqlite::Connection;
 
     use crate::{
+        auth::SessionStore,
         auth::user::create_user_table,
         endpoints,
         test_utils::{assert_valid_html, parse_html_document, parse_html_fragment},
@@ -401,7 +375,6 @@ mod log_in_page_tests {
         let jar = PrivateCookieJar::new(state.cookie_key.clone());
         let form = LogInData {
             password: "wrongpassword".to_string(),
-            remember_me: None,
             redirect_url: None,
         };
         let response = post_log_in(State(state), jar, Form(form)).await;
@@ -469,7 +442,11 @@ mod log_in_page_tests {
                 .expect("Could not create test user");
         }
 
-        LoginState::new("foobar", "Etc/UTC", Arc::new(Mutex::new(connection)))
+        LoginState::new(
+            "foobar",
+            Arc::new(Mutex::new(connection)),
+            SessionStore::spawn(SessionStore::new()),
+        )
     }
 
     #[track_caller]
@@ -503,20 +480,16 @@ mod log_in_tests {
     use axum_extra::extract::{PrivateCookieJar, cookie::Cookie};
     use axum_htmx::HX_REDIRECT;
     use axum_test::TestServer;
-
+    use kameo::actor::Spawn;
     use rusqlite::Connection;
-    use time::{Duration, OffsetDateTime};
 
     use crate::{
         PasswordHash, ValidatedPassword,
-        auth::{COOKIE_TOKEN, User, UserID, create_user_table},
+        auth::{COOKIE_TOKEN, SessionStore, User, UserID, create_user_table},
         endpoints,
     };
 
-    use super::{
-        INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, REMEMBER_ME_COOKIE_DURATION,
-        post_log_in,
-    };
+    use super::{INVALID_CREDENTIALS_ERROR_MSG, LogInData, LoginState, post_log_in};
 
     #[tokio::test]
     async fn log_in_succeeds_with_valid_credentials() {
@@ -533,7 +506,6 @@ mod log_in_tests {
             state,
             LogInData {
                 password: "test".to_string(),
-                remember_me: None,
                 redirect_url: None,
             },
         )
@@ -559,7 +531,6 @@ mod log_in_tests {
             state,
             LogInData {
                 password: "test".to_string(),
-                remember_me: None,
                 redirect_url: Some(redirect_url.to_string()),
             },
         )
@@ -583,28 +554,12 @@ mod log_in_tests {
             state,
             LogInData {
                 password: "test".to_string(),
-                remember_me: None,
                 redirect_url: Some("https://example.com".to_string()),
             },
         )
         .await;
 
         assert_hx_redirect(&response, endpoints::DASHBOARD_VIEW);
-    }
-
-    /// Test helper macro to assert that two date times are within one second
-    /// of each other. Used instead of a function so that the file and line
-    /// number of the caller is included in the error message instead of the
-    /// helper.
-    macro_rules! assert_date_time_close {
-        ($left:expr, $right:expr$(,)?) => {
-            assert!(
-                ($left - $right).abs() < Duration::seconds(2),
-                "got date time {:?}, want {:?}",
-                $left,
-                $right
-            );
-        };
     }
 
     #[tokio::test]
@@ -625,47 +580,6 @@ mod log_in_tests {
 
     #[tokio::test]
     async fn form_deserialises() {
-        let state = get_test_app_config(None);
-        let app = Router::new()
-            .route(endpoints::LOG_IN_API, post(post_log_in))
-            .with_state(state);
-        let server = TestServer::new(app);
-        let form = [("password", "test"), ("remember_me", "on")];
-
-        let response = server.post(endpoints::LOG_IN_API).form(&form).await;
-
-        assert_ne!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
-    }
-
-    #[tokio::test]
-    async fn remember_me_extends_auth_cookie_through_form() {
-        let state = get_test_app_config(Some(&User {
-            id: UserID::new(1),
-            password_hash: PasswordHash::new(
-                ValidatedPassword::new_unchecked("test"),
-                PasswordHash::DEFAULT_COST,
-            )
-            .expect("Could not create test user"),
-        }));
-        let app = Router::new()
-            .route(endpoints::LOG_IN_API, post(post_log_in))
-            .with_state(state);
-        let server = TestServer::new(app);
-        let form = [("password", "test"), ("remember_me", "on")];
-
-        let response = server.post(endpoints::LOG_IN_API).form(&form).await;
-
-        assert_eq!(response.status_code(), StatusCode::SEE_OTHER);
-
-        let token_cookie = response.cookie(COOKIE_TOKEN);
-        assert_date_time_close!(
-            token_cookie.expires_datetime().unwrap(),
-            OffsetDateTime::now_utc() + REMEMBER_ME_COOKIE_DURATION
-        );
-    }
-
-    #[tokio::test]
-    async fn form_deserialises_without_remember_me() {
         let state = get_test_app_config(None);
         let app = Router::new()
             .route(endpoints::LOG_IN_API, post(post_log_in))
@@ -693,7 +607,6 @@ mod log_in_tests {
             state,
             LogInData {
                 password: "wrongpassword".to_string(),
-                remember_me: None,
                 redirect_url: None,
             },
         )
@@ -718,7 +631,11 @@ mod log_in_tests {
                 .expect("Could not create test user");
         }
 
-        LoginState::new("foobar", "Etc/UTC", Arc::new(Mutex::new(connection)))
+        LoginState::new(
+            "foobar",
+            Arc::new(Mutex::new(connection)),
+            SessionStore::spawn(SessionStore::new()),
+        )
     }
 
     async fn new_log_in_request(state: LoginState, log_in_form: LogInData) -> Response<Body> {
@@ -745,7 +662,7 @@ mod log_in_tests {
 
             match cookie.name() {
                 COOKIE_TOKEN => {
-                    assert!(cookie.expires_datetime() > Some(OffsetDateTime::now_utc()));
+                    assert!(cookie.expires_datetime() > Some(time::OffsetDateTime::now_utc()));
                     found_cookies.insert(cookie.name().to_string());
                 }
                 _ => panic!("Unexpected cookie found: {}", cookie.name()),
