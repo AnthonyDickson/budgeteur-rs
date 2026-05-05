@@ -24,9 +24,35 @@ use crate::{
         normalize_redirect_url, set_auth_cookie,
     },
     endpoints,
-    html::{BUTTON_PRIMARY_STYLE, base, loading_spinner, log_in_register, password_input},
+    html::{BUTTON_PRIMARY_STYLE, base, loading_spinner, password_input},
     timezone::get_local_offset,
 };
+
+fn contianer(form_title: &str, form: &Markup) -> Markup {
+    html! {
+        div class="flex flex-col items-center justify-center px-6 py-8 mx-auto"
+        {
+            a href="#" class="flex items-center mb-6 text-2xl font-semibold text-gray-900 dark:text-white"
+            {
+                img class="w-8 h-8 mr-2" src="/static/favicon-128x128.png" alt="logo";
+                "Budgeteur"
+            }
+
+            div class="w-full bg-white rounded shadow dark:border md:mt-0 sm:max-w-md xl:p-0 dark:bg-gray-800 dark:border-gray-700"
+            {
+                div class="p-6 space-y-4 md:space-y-6 sm:p-8"
+                {
+                    h1 class="text-xl font-bold leading-tight tracking-tight text-gray-900 md:text-2xl dark:text-white"
+                    {
+                        (form_title)
+                    }
+
+                    (form)
+                }
+            }
+        }
+    }
+}
 
 fn log_in_form(password: &str, error_message: Option<&str>, redirect_url: Option<&str>) -> Markup {
     html! {
@@ -81,16 +107,6 @@ fn log_in_form(password: &str, error_message: Option<&str>, redirect_url: Option
                   "Reset it here"
                 }
             }
-
-            p class="text-sm font-light text-gray-500 dark:text-gray-400" {
-                "Don't have a password? "
-                a
-                    href=(endpoints::REGISTER_VIEW) tabindex="0"
-                    class="font-semibold leading-6 text-blue-600 hover:text-blue-500 dark:text-blue-500 dark:hover:text-blue-400"
-                {
-                  "Register here"
-                }
-            }
         }
     }
 }
@@ -111,7 +127,7 @@ fn parse_redirect_url(raw_url: Option<&str>, source: &str) -> Option<String> {
 pub async fn get_log_in_page(Query(query): Query<RedirectQuery>) -> Response {
     let redirect_url = parse_redirect_url(query.redirect_url.as_deref(), "log-in query");
     let log_in_form = log_in_form("", None, redirect_url.as_deref());
-    let content = log_in_register("Log in to your account", &log_in_form);
+    let content = contianer("Log in to your account", &log_in_form);
     base("Log In", &[], &content).into_response()
 }
 
@@ -198,7 +214,7 @@ pub async fn post_log_in(
         Err(Error::NotFound) => {
             return log_in_form(
                 "",
-                Some("Password not set, go to the registration page and set your password"),
+                Some("Password not set, click the link below to reset it"),
                 redirect_url,
             )
             .into_response();
@@ -363,10 +379,10 @@ mod log_in_page_tests {
             }
         }
 
-        let register_link_selector = scraper::Selector::parse("a[href]").unwrap();
-        let links = form.select(&register_link_selector).collect::<Vec<_>>();
-        assert_eq!(links.len(), 2, "want 2 link, got {}", links.len());
-        let want_endpoints = [endpoints::FORGOT_PASSWORD_VIEW, endpoints::REGISTER_VIEW];
+        let link_selector = scraper::Selector::parse("a[href]").unwrap();
+        let links = form.select(&link_selector).collect::<Vec<_>>();
+        assert_eq!(links.len(), 1, "want 1 link, got {}", links.len());
+        let want_endpoints = [endpoints::FORGOT_PASSWORD_VIEW];
 
         for (link, endpoint) in zip(links, want_endpoints) {
             assert_eq!(

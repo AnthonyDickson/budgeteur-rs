@@ -60,29 +60,13 @@ impl User {
 pub fn create_user_table(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute(
         "CREATE TABLE IF NOT EXISTS user (
-                id INTEGER PRIMARY KEY,
+                id INTEGER PRIMARY KEY CHECK (id = 1),
                 password TEXT NOT NULL
                 )",
         (),
     )?;
 
     Ok(())
-}
-
-/// Create and insert a new user into the database.
-///
-/// # Errors
-///
-/// Returns a [Error::SqlError] if an SQL related error occurred.
-pub fn create_user(password_hash: PasswordHash, connection: &Connection) -> Result<User, Error> {
-    connection.execute(
-        "INSERT INTO user (password) VALUES (?1)",
-        (password_hash.as_ref(),),
-    )?;
-
-    let id = UserID::new(connection.last_insert_rowid() as u32);
-
-    Ok(User::new(id, password_hash))
 }
 
 /// Get the user from the database with an ID equal to `user_id`.
@@ -107,25 +91,11 @@ pub fn get_user_by_id(user_id: UserID, db_connection: &Connection) -> Result<Use
         .map_err(|error| error.into())
 }
 
-/// Get the number of users in the database.
-///
-/// # Errors
-///
-/// Returns a [Error::SqlError] if an SQL related error occurred.
-pub fn count_users(connection: &Connection) -> Result<u32, Error> {
-    connection
-        .query_row("SELECT COUNT(id) FROM user;", [], |row| row.get(0))
-        .map_err(|error| error.into())
-}
-
 #[cfg(test)]
 mod user_tests {
     use rusqlite::Connection;
 
-    use crate::{
-        PasswordHash,
-        auth::{UserID, count_users, create_user, get_user_by_id},
-    };
+    use crate::auth::{UserID, get_user_by_id};
 
     use super::{Error, create_user_table};
 
@@ -138,46 +108,11 @@ mod user_tests {
     }
 
     #[test]
-    fn insert_user_succeeds() {
-        let db_connection = get_db_connection();
-        let password_hash = PasswordHash::new_unchecked("hunter2");
-
-        let inserted_user = create_user(password_hash.clone(), &db_connection).unwrap();
-
-        assert!(inserted_user.id.as_u32() > 0);
-        assert_eq!(inserted_user.password_hash, password_hash);
-    }
-
-    #[test]
     fn get_user_fails_with_non_existent_id() {
         let db_connection = get_db_connection();
 
         let id = UserID::new(42);
 
         assert_eq!(get_user_by_id(id, &db_connection), Err(Error::NotFound));
-    }
-
-    #[test]
-    fn get_user_succeeds_with_existing_id() {
-        let db_connection = get_db_connection();
-        let test_user =
-            create_user(PasswordHash::new_unchecked("hunter2"), &db_connection).unwrap();
-
-        let retrieved_user = get_user_by_id(test_user.id, &db_connection).unwrap();
-
-        assert_eq!(retrieved_user, test_user);
-    }
-
-    #[test]
-    fn returns_correct_count() {
-        let db_connection = get_db_connection();
-
-        let count = count_users(&db_connection).expect("Could not get user count");
-        assert_eq!(0, count, "Want zero users before insertion, got {count}");
-
-        create_user(PasswordHash::new_unchecked("hunter2"), &db_connection).unwrap();
-
-        let count = count_users(&db_connection).expect("Could not get user count");
-        assert_eq!(1, count, "Want one user after insertion, got {count}");
     }
 }

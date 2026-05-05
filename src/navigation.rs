@@ -458,9 +458,7 @@ mod nav_bar_tests {
             endpoints::LOG_IN_API,
             endpoints::LOG_IN_VIEW,
             endpoints::LOG_OUT,
-            endpoints::REGISTER_VIEW,
             endpoints::TRANSACTIONS_API,
-            endpoints::USERS,
         ];
 
         for endpoint in cases {

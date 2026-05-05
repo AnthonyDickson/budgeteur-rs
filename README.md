@@ -52,11 +52,11 @@ docker compose up
 
 ### First-Time Usage
 
-Navigate to `https://<published URL>/register` and create a user account.
+Follow the instructions to [reset your password](#resetting-your-password).
 
 ### Resetting Your Password
 
-Run the following command:
+On the computer running the server, run the following command:
 
 ```shell
 docker compose -p budgeteur exec web reset_password --db-path /app/data/budgeteur.db
@@ -64,6 +64,9 @@ docker compose -p budgeteur exec web reset_password --db-path /app/data/budgeteu
 
 > [!TIP]
 > Refer to your `compose.yaml` for the host mount path, database filename and/or image tag.
+
+> [!TIP]
+> The above command assumes the service is already running. If it is not running, replace `exec` with `run`.
 
 The app only allows a single user and the following instructions will reset
 the password for that sole user account.
