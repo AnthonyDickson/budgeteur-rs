@@ -2,48 +2,56 @@
 
 ## Project Overview
 
-Budgeteur is a personal finance web app built with Rust (Axum + Maud + HTMX) backed by SQLite. It serves HTML pages directly (MPA with HTMX for interactivity). Single binary `server` handles everything; no JavaScript build step.
+Budgeteur is a personal finance web app built with Rust (Axum + Maud + HTMX) backed by SQLite. It serves HTML pages directly (MPA with HTMX for interactivity). The repo is a Cargo workspace with two crates: `server` (the web/mobile backend) and `tui` (a terminal client that connects to the server over HTTP).
 
 ## Build, Test, and Development Commands
 
 - `nix develop` — enter dev shell (Rust 1.95, bacon, Tailwind v4, `SECRET` env var).
-- `cargo run --bin create_test_db -- --output-path test.db` — create a local test database (first time only).
+- `cargo run -p budgeteur_rs --bin create_test_db -- --output-path test.db` — create a local test database (first time only).
 - `bacon` — watch task runner. Press `r` to run the server, `t` to run tests, `c` for clippy-all, `f` for format, `d` for docs. See `bacon.toml` for all jobs.
-- `cargo test` — run full test suite standalone.
-- `cargo test -q && cargo clippy -q && cargo fmt` — final quality check before committing.
+- `cargo test -p budgeteur_rs` — run server test suite. `cargo test --workspace` for everything.
+- `cargo test -q -p budgeteur_rs && cargo clippy -q --workspace --tests -- -D warnings && cargo fmt -- --check` — final quality check before committing.
+- `cargo run -p budgeteur_tui -- --url http://localhost:8080` — run the TUI client.
 - `dprint fmt` — format Markdown and other non-Rust files.
 - `./scripts/build_image.sh` — build Docker image, then `docker run --rm -p 8080:8080 -e SECRET=<YOUR-SECRET> -it ghcr.io/anthonydickson/budgeteur:dev`.
-- Server binary flags: `--db-path`, `--timezone`, `--address`, `--port`, `--log-path` (see `src/bin/server.rs:27-49`).
+- Server binary flags: `--db-path`, `--timezone`, `--address`, `--port`, `--log-path` (see `server/src/bin/server.rs:27-49`).
 
 ## Project Structure & Architecture
 
 ```
-src/
-  bin/
-    server.rs          # Entry point: parses CLI, sets up tracing, session actor, router
-    create_test_db.rs  # Creates test.db with all tables
-    reset_password.rs  # CLI tool for password resets
-  lib.rs               # Re-exports AppState, Error, build_router, initialize_db, etc.
-  app_state.rs         # AppState: cookie_key, db_connection (Arc<Mutex<Connection>>), session_actor, scheduler
-  routing.rs           # build_router(): unprotected routes, protected GET routes (auth_guard), protected mutating routes (auth_guard_hx)
-  endpoints.rs         # All route path constants + format_endpoint() helper
-  error.rs             # App-level Error enum with IntoResponse (page errors) and into_alert_response() (fragment errors)
-  db.rs                # initialize() creates all tables in a single transaction
-  html.rs              # Shared Maud components: base(), error_view(), form styles, buttons, currency formatting
-  alert.rs             # Alert enum (Success/Error) rendered as OOB HTMX swap into #alert-container
-  logging.rs           # Request/response logging middleware that redacts passwords
-  navigation.rs        # NavBar struct → bottom nav (mobile) + sidebar (desktop)
-  timezone.rs          # get_local_offset() for timezone-aware date handling
-  input.css            # Tailwind CSS input
-  account/             # CRUD pages + endpoints
-  auth/                # Login, logout, forgot password, middleware, cookie handling, sessions
-  csv_import/          # CSV file upload + transaction import
-  dashboard/           # Dashboard views: cards, charts, tables, aggregation
-  rule/                # CRUD for auto-tagging rules
-  tag/                 # CRUD for tags, excluded tags, preferences
-  transaction/         # Core transaction logic, CRUD pages/endpoints, quick tagging, form rendering
-    quick_tagging/     # Sub-module: HTMX-driven quick tagging workflow for untagged imports
-  test_utils/          # Shared test helpers: form assertions, HTML parsing, HTTP response helpers
+Cargo.toml              # Workspace manifest (members: server, tui)
+server/
+  Cargo.toml            # Server crate (budgeteur_rs)
+  src/
+    bin/
+      server.rs          # Entry point: parses CLI, sets up tracing, session actor, router
+      create_test_db.rs  # Creates test.db with all tables
+      reset_password.rs  # CLI tool for password resets
+    lib.rs               # Re-exports AppState, Error, build_router, initialize_db, etc.
+    app_state.rs         # AppState: cookie_key, db_connection (Arc<Mutex<Connection>>), session_actor, scheduler
+    routing.rs           # build_router(): unprotected routes, protected GET routes (auth_guard), protected mutating routes (auth_guard_hx)
+    endpoints.rs         # All route path constants + format_endpoint() helper
+    error.rs             # App-level Error enum with IntoResponse (page errors) and into_alert_response() (fragment errors)
+    db.rs                # initialize() creates all tables in a single transaction
+    html.rs              # Shared Maud components: base(), error_view(), form styles, buttons, currency formatting
+    alert.rs             # Alert enum (Success/Error) rendered as OOB HTMX swap into #alert-container
+    logging.rs           # Request/response logging middleware that redacts passwords
+    navigation.rs        # NavBar struct → bottom nav (mobile) + sidebar (desktop)
+    timezone.rs          # get_local_offset() for timezone-aware date handling
+    input.css            # Tailwind CSS input
+    account/             # CRUD pages + endpoints
+    auth/                # Login, logout, forgot password, middleware, cookie handling, sessions
+    csv_import/          # CSV file upload + transaction import
+    dashboard/           # Dashboard views: cards, charts, tables, aggregation
+    rule/                # CRUD for auto-tagging rules
+    tag/                 # CRUD for tags, excluded tags, preferences
+    transaction/         # Core transaction logic, CRUD pages/endpoints, quick tagging, form rendering
+      quick_tagging/     # Sub-module: HTMX-driven quick tagging workflow for untagged imports
+    test_utils/          # Shared test helpers: form assertions, HTML parsing, HTTP response helpers
+tui/
+  Cargo.toml            # TUI client crate (budgeteur_tui)
+  src/
+    main.rs             # Skeleton ratatui app following Elm Architecture
 migrations/            # SQL migration scripts for schema upgrades
 static/                # Built assets: main.css (Tailwind output), HTMX JS, ECharts JS, favicons
 docs/                  # Design and tech spec documents

@@ -41,14 +41,14 @@ independently; the cookie just needs to outlive the session.
 
 ## Key Files
 
-| File                     | Role                                                                                                           |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| File                     | Role                                                                                                 |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `src/auth/session.rs`    | `Session` struct, `SessionStore` actor, messages (`Set`, `Extend`, `Delete`, `ClearExpiredSessions`) |
-| `src/auth/token.rs`      | `Token { session_id: Uuid }` — serialized into the auth cookie                                                 |
-| `src/auth/cookie.rs`     | `set_auth_cookie()`, `invalidate_auth_cookie()`, `get_token_from_cookies()`                                    |
-| `src/auth/middleware.rs` | `auth_guard` / `auth_guard_hx` — extracts session ID, calls `Extend`, redirects on `None`                      |
-| `src/auth/log_in.rs`     | `post_log_in` — verifies password, creates session, sets cookie                                                |
-| `src/auth/log_out.rs`    | `get_log_out` — deletes session from actor, invalidates cookie                                                 |
+| `src/auth/token.rs`      | `Token { session_id: Uuid }` — serialized into the auth cookie                                       |
+| `src/auth/cookie.rs`     | `set_auth_cookie()`, `invalidate_auth_cookie()`, `get_token_from_cookies()`                          |
+| `src/auth/middleware.rs` | `auth_guard` / `auth_guard_hx` — extracts session ID, calls `Extend`, redirects on `None`            |
+| `src/auth/log_in.rs`     | `post_log_in` — verifies password, creates session, sets cookie                                      |
+| `src/auth/log_out.rs`    | `get_log_out` — deletes session from actor, invalidates cookie                                       |
 
 ## Design Decisions
 

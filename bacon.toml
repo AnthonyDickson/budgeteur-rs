@@ -77,7 +77,7 @@ on_success = "back"                               # so that we don't open the br
 command = [
   "tailwindcss",
   "-i",
-  "src/input.css",
+  "server/src/input.css",
   "-o",
   "static/main.css",
 ]
@@ -88,7 +88,7 @@ need_stdout = true
 command = [
   "tailwindcss",
   "-i",
-  "src/input.css",
+  "server/src/input.css",
   "-o",
   "static/main.css",
 ]
@@ -110,6 +110,8 @@ on_success = "job:run-server"
 command = [
   "cargo",
   "run",
+  "-p",
+  "budgeteur_rs",
   # put launch parameters for your program behind a `--` separator
   "--",
   "--db-path",

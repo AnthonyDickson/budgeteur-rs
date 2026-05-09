@@ -2,15 +2,9 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-- Reorganise project into workspaces?
-  - server: Existing HTMX MPA + new JSON API layer
-    - current `src/` folder
-  - tui: New client
-    - Add nix flake for easy distribution?
-  - budgeteur (lib): Shared types etc.
-  - How to manage deps such that building the TUI doesn't pull in server deps?
-- TUI Skeleton
-  - Ratatui
+- JSON endpoint for checking health
+  - use for connection status bar
+  - Use for docker compose?
 - Auth for TUI:
   - HMAC signature, shared secret
   - Signed JWT using assymmetric keys for passwordless access

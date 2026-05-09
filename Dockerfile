@@ -6,10 +6,14 @@ RUN apk add --no-cache musl-dev
 WORKDIR /build
 
 COPY Cargo.toml /build/Cargo.toml
+COPY server/Cargo.toml /build/server/Cargo.toml
+COPY tui/Cargo.toml /build/tui/Cargo.toml
 COPY Cargo.lock /build/Cargo.lock
-COPY src/ /build/src/
+COPY server/src/ /build/server/src/
+# Make skeleton TUI project to avoid copying in the whole TUI source
+RUN mkdir -p /build/tui/src && touch /build/tui/src/main.rs
 
-RUN cargo build --verbose --release --bin server --bin reset_password
+RUN cargo build --verbose --release -p budgeteur_rs --bin server --bin reset_password
 
 #==============================================================================#
 
@@ -19,10 +23,10 @@ RUN apk update
 RUN apk add --no-cache curl libgcc libstdc++
 
 WORKDIR /build
-COPY src/ /build/src
+COPY server/src/input.css /build/input.css
 RUN curl -sL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.18/tailwindcss-linux-x64-musl -o tailwindcss && \
   chmod +x tailwindcss && \
-  ./tailwindcss --input src/input.css --output static/main.css --minify
+  ./tailwindcss --input input.css --output static/main.css --minify
 
 #==============================================================================#
 
