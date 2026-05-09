@@ -18,7 +18,10 @@ use tower_http::trace::TraceLayer;
 use tower_livereload::LiveReloadLayer;
 use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberInitExt};
 
-use budgeteur_rs::{AppState, build_router, graceful_shutdown, initialize_db, logging_middleware};
+use budgeteur_rs::{
+    AppState, build_router, graceful_shutdown, initialize_db, logging_middleware,
+    start_session_actor,
+};
 
 /// The REST API server for budgeteur_rs.
 #[derive(Parser, Debug)]
@@ -79,7 +82,10 @@ async fn main() {
         eprint!("{} is not a valid timezone name.", args.timezone.unwrap());
         exit(1);
     };
-    let app_config = AppState::new(conn, &secret, &timezone);
+    let (session_actor, scheduler) = start_session_actor()
+        .await
+        .expect("Could not start session actor");
+    let app_config = AppState::new(conn, &secret, &timezone, session_actor, scheduler);
 
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));

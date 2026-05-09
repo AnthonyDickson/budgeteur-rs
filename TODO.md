@@ -2,8 +2,6 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-- Session actor and proper sessions instead of token just holding the user ID
-  - Use [Kameo](https://github.com/tqwewe/kameo)
 - Reorganise project into workspaces?
   - server: Existing HTMX MPA + new JSON API layer
     - current `src/` folder

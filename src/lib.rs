@@ -38,7 +38,9 @@ mod timezone;
 mod transaction;
 
 pub use app_state::AppState;
-pub use auth::{PasswordHash, User, UserID, ValidatedPassword, get_user_by_id};
+pub use auth::{
+    PasswordHash, User, UserID, ValidatedPassword, get_user_by_id, start_session_actor,
+};
 pub use db::initialize as initialize_db;
 pub use error::Error;
 pub use logging::{LOG_BODY_LENGTH_LIMIT, logging_middleware};

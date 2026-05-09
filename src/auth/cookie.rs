@@ -1,46 +1,35 @@
 //! Defines functions for handling user authentication with cookies.
 
-use std::cmp::max;
-
 use axum_extra::extract::{
     PrivateCookieJar,
     cookie::{Cookie, SameSite},
 };
-use time::{Duration, OffsetDateTime, UtcOffset};
+use time::{Duration, OffsetDateTime};
 
 use crate::{
     Error,
-    auth::{Token, UserID},
+    auth::{SessionId, Token},
 };
 
 /// The name of the cookie that will hold the auth token.
 pub const COOKIE_TOKEN: &str = "auth_token";
-/// The default duration for which auth cookies are valid.
-pub const DEFAULT_COOKIE_DURATION: Duration = Duration::minutes(5);
 
-/// Add an auth token to the cookie jar, indicating that a user is logged in and authenticated.
-///
-/// Sets the initial expiry of the cookie to `duration` from the current time.
-/// You can use [COOKIE_DURATION] for the default duration.
+/// Add a session token to the cookie jar, indicating that a user is logged in
+/// and authenticated.
 ///
 /// Returns the cookie jar with the cookie added.
 ///
 /// # Errors
 ///
-/// Returns a [Error::JSONSerializationError] if the expiry time cannot be formatted.
+/// Returns an [Error::JSONSerializationError] if the session ID cannot be
+/// serialized.
 pub fn set_auth_cookie(
     jar: PrivateCookieJar,
-    user_id: UserID,
-    duration: Duration,
-    local_timezone: UtcOffset,
+    session_id: SessionId,
+    expiry: OffsetDateTime,
 ) -> Result<PrivateCookieJar, Error> {
-    let expiry = OffsetDateTime::now_utc().to_offset(local_timezone) + duration;
-
     let token = {
-        let token = Token {
-            user_id,
-            expires_at: expiry,
-        };
+        let token = Token { session_id };
 
         serde_json::to_string(&token)
             .map_err(|err| Error::JSONSerializationError(err.to_string()))?
@@ -52,10 +41,10 @@ pub fn set_auth_cookie(
             .http_only(true)
             .same_site(SameSite::Strict)
             .secure(true)
-            // Explicitly set path to root to avoid issues with subpaths. For example, if the
-            // cookie is set from a subpath such as 'http://example.com/path1/path2', the
-            // browser will not send the cookie in requests for parent paths such as
-            // 'http://example.com/path1'.
+            // Explicitly set path to root to avoid issues with subpaths.
+            // For example, if the cookie is invalidated from a subpath such
+            // as 'http://example.com/api/logout', the browser will not
+            // invalidate the cookie for 'http://example.com/path1'.
             .path("/"),
     ))
 }
@@ -76,72 +65,6 @@ pub fn invalidate_auth_cookie(jar: PrivateCookieJar) -> PrivateCookieJar {
             // invalidate the cookie for 'http://example.com/path1'.
             .path("/"),
     )
-}
-
-/// Set the expiry of the auth cookie in `jar` to the latest of UTC now
-/// plus `duration` and the cookie's expiry.
-///
-/// # Errors
-///
-/// The cookie jar is not modified if an error is returned.
-///
-/// Returns:
-/// - [Error::CookieMissing] if the auth cookie or expiry cookie are not in the cookie jar.
-/// - [Error::InvalidDateFormat] if the new expiry date time cannot be formatted.
-///
-/// # Panics
-///
-/// Panics if adding `duration` to the current time overflows.
-/// See [time::Date::MAX] for more information.
-pub fn extend_auth_cookie_duration_if_needed(
-    jar: PrivateCookieJar,
-    duration: Duration,
-    local_timezone: UtcOffset,
-) -> Result<PrivateCookieJar, Error> {
-    let token = get_token_from_cookies(&jar)?;
-    let new_expiry = OffsetDateTime::now_utc().to_offset(local_timezone) + duration;
-    let expiry = max(token.expires_at, new_expiry);
-
-    set_auth_cookie_expiry(jar, expiry)
-}
-
-/// Sets the expires field of the auth cookie and the expires field and
-/// value of the expiry cookie in `jar` to `expiry`.
-///
-/// # Errors
-///
-/// If an error is returned, the cookie jar is not modified.
-///
-/// Returns a:
-/// - [Error::CookieMissing] if the auth cookie or expiry cookie are not in the cookie jar.
-/// - [Error::InvalidDateFormat] if the new expiry date time cannot be formatted.
-pub fn set_auth_cookie_expiry(
-    jar: PrivateCookieJar,
-    expiry: OffsetDateTime,
-) -> Result<PrivateCookieJar, Error> {
-    let mut token_cookie = jar.get(COOKIE_TOKEN).ok_or(Error::CookieMissing)?;
-
-    let token: Token = serde_json::from_str(token_cookie.value_trimmed())
-        .map_err(|err| Error::JSONSerializationError(err.to_string()))?;
-
-    let updated_token_string = serde_json::to_string(&Token {
-        user_id: token.user_id,
-        expires_at: expiry,
-    })
-    .map_err(|err| Error::JSONSerializationError(err.to_string()))?;
-
-    token_cookie.set_expires(expiry);
-    token_cookie.set_value(updated_token_string);
-
-    // Need to set the secure, http_only, and same_site flags again since they
-    // are not set in requests from clients (clients only send the
-    // key-value pair).
-    token_cookie.set_http_only(true);
-    token_cookie.set_same_site(SameSite::Strict);
-    token_cookie.set_secure(true);
-    token_cookie.set_path("/");
-
-    Ok(jar.add(token_cookie))
 }
 
 /// Extract the token from the token cookie.
@@ -167,147 +90,55 @@ mod tests {
         cookie::{Key, SameSite},
     };
     use sha2::{Digest, Sha512};
-    use time::{Duration, OffsetDateTime, UtcOffset};
+    use time::{Duration, OffsetDateTime};
+    use uuid::Uuid;
 
     use crate::{
         Error,
-        auth::{
-            COOKIE_TOKEN, DEFAULT_COOKIE_DURATION, Token, UserID, invalidate_auth_cookie,
-            set_auth_cookie,
-        },
+        auth::{COOKIE_TOKEN, SessionId, invalidate_auth_cookie, set_auth_cookie},
     };
 
-    use super::{
-        extend_auth_cookie_duration_if_needed, get_token_from_cookies, set_auth_cookie_expiry,
-    };
+    use super::get_token_from_cookies;
 
     #[test]
     fn can_set_cookie() {
-        let expected_token = Token {
-            user_id: UserID::new(1),
-            expires_at: OffsetDateTime::now_utc() + DEFAULT_COOKIE_DURATION,
-        };
+        let session_id = Uuid::new_v4();
         let jar = get_jar();
 
         let jar = set_auth_cookie(
             jar,
-            expected_token.user_id,
-            DEFAULT_COOKIE_DURATION,
-            UtcOffset::UTC,
+            session_id,
+            OffsetDateTime::now_utc() + Duration::hours(24),
         )
         .unwrap();
 
-        assert_auth_cookies_eq(jar, &expected_token);
+        assert_auth_cookies_eq(jar, session_id);
     }
 
     #[test]
     fn can_get_token_from_cookies() {
-        let expected = Token {
-            user_id: UserID::new(1),
-            expires_at: OffsetDateTime::now_utc() + DEFAULT_COOKIE_DURATION,
-        };
+        let session_id = Uuid::new_v4();
         let jar = set_auth_cookie(
             get_jar(),
-            expected.user_id,
-            DEFAULT_COOKIE_DURATION,
-            UtcOffset::UTC,
+            session_id,
+            OffsetDateTime::now_utc() + Duration::hours(24),
         )
         .unwrap();
 
         let actual = get_token_from_cookies(&jar).unwrap();
 
-        assert_eq!(actual.user_id, expected.user_id);
-        assert_date_time_close(expected.expires_at, actual.expires_at);
-    }
-
-    #[test]
-    fn can_set_cookie_expires() {
-        let expected = Token {
-            user_id: UserID::new(1),
-            expires_at: OffsetDateTime::now_utc() + Duration::days(10),
-        };
-        let jar = get_jar();
-        let jar = set_auth_cookie(
-            jar,
-            expected.user_id,
-            DEFAULT_COOKIE_DURATION,
-            UtcOffset::UTC,
-        )
-        .unwrap();
-
-        let updated_jar = set_auth_cookie_expiry(jar, expected.expires_at).unwrap();
-
-        assert_auth_cookies_eq(updated_jar, &expected);
-    }
-
-    #[test]
-    fn can_extend_cookie_duration() {
-        let user_id = UserID::new(1);
-        let jar = get_jar();
-        let jar = set_auth_cookie(jar, user_id, DEFAULT_COOKIE_DURATION, UtcOffset::UTC).unwrap();
-        let initial_token = get_token_from_cookies(&jar).unwrap();
-        let expected = Token {
-            user_id,
-            expires_at: initial_token.expires_at + DEFAULT_COOKIE_DURATION,
-        };
-
-        let jar = extend_auth_cookie_duration_if_needed(jar, Duration::minutes(10), UtcOffset::UTC)
-            .unwrap();
-
-        assert_auth_cookies_eq(jar, &expected);
-    }
-
-    #[test]
-    fn sets_secure_httponly_samesite_flags_if_missing() {
-        let user_id = UserID::new(1);
-        let jar = get_jar();
-        let jar = set_auth_cookie(jar, user_id, DEFAULT_COOKIE_DURATION, UtcOffset::UTC).unwrap();
-        let initial_token = get_token_from_cookies(&jar).unwrap();
-        let expected = Token {
-            user_id,
-            expires_at: initial_token.expires_at + DEFAULT_COOKIE_DURATION,
-        };
-        for mut cookie in jar.iter() {
-            cookie.set_secure(false);
-            cookie.set_http_only(false);
-            cookie.set_same_site(SameSite::None);
-        }
-
-        let jar = extend_auth_cookie_duration_if_needed(jar, Duration::minutes(10), UtcOffset::UTC)
-            .unwrap();
-
-        assert_auth_cookies_eq(jar, &expected);
-    }
-
-    #[test]
-    fn cookie_duration_does_not_change() {
-        let expected = Token {
-            user_id: UserID::new(1),
-            expires_at: OffsetDateTime::now_utc() + DEFAULT_COOKIE_DURATION,
-        };
-        let jar = set_auth_cookie(
-            get_jar(),
-            expected.user_id,
-            DEFAULT_COOKIE_DURATION,
-            UtcOffset::UTC,
-        )
-        .unwrap();
-        let stale_cookie = jar.get(COOKIE_TOKEN).unwrap();
-        let want = Some(stale_cookie.expires_datetime().unwrap());
-
-        // The initial cookie is set to expire in 5 minutes, so extending it by 5 seconds should not change the expiry.
-        let jar = extend_auth_cookie_duration_if_needed(jar, Duration::seconds(5), UtcOffset::UTC)
-            .unwrap();
-
-        let cookie = jar.get(COOKIE_TOKEN).unwrap();
-        assert_eq!(cookie.expires_datetime(), want);
+        assert_eq!(actual.session_id, session_id);
     }
 
     #[test]
     fn invalidate_auth_cookie_succeeds() {
-        let user_id = UserID::new(1);
-        let jar =
-            set_auth_cookie(get_jar(), user_id, DEFAULT_COOKIE_DURATION, UtcOffset::UTC).unwrap();
+        let session_id = Uuid::new_v4();
+        let jar = set_auth_cookie(
+            get_jar(),
+            session_id,
+            OffsetDateTime::now_utc() + Duration::hours(24),
+        )
+        .unwrap();
 
         let jar = invalidate_auth_cookie(jar);
         let cookie = jar.get(COOKIE_TOKEN).unwrap();
@@ -330,26 +161,11 @@ mod tests {
     }
 
     #[track_caller]
-    fn assert_date_time_close(expected: OffsetDateTime, actual: OffsetDateTime) {
-        assert!(
-            (expected - actual).abs() < Duration::seconds(1),
-            "got date time {:?}, want {:?}",
-            actual,
-            expected
-        );
-    }
-
-    #[track_caller]
-    fn assert_auth_cookies_eq(jar: PrivateCookieJar, expected_token: &Token) {
+    fn assert_auth_cookies_eq(jar: PrivateCookieJar, expected_session_id: SessionId) {
         let token_cookie = jar.get(COOKIE_TOKEN).unwrap();
         let actual_token = get_token_from_cookies(&jar).unwrap();
 
-        assert_eq!(actual_token.user_id, expected_token.user_id);
-        assert_date_time_close(actual_token.expires_at, expected_token.expires_at);
-        assert_date_time_close(
-            token_cookie.expires_datetime().unwrap(),
-            expected_token.expires_at,
-        );
+        assert_eq!(actual_token.session_id, expected_session_id);
         assert_eq!(token_cookie.http_only(), Some(true));
         assert_eq!(token_cookie.same_site(), Some(SameSite::Strict));
         assert_eq!(token_cookie.secure(), Some(true));

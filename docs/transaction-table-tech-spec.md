@@ -24,10 +24,10 @@ Grouping is layered rather than mutually exclusive:
    - The smallest interval size is weekly; daily intervals are not a supported mode.
 
 2. **Category Summary (Grouped Totals, optional)**
-    - Within each date interval, show a category breakdown list (tag totals + % of total income/expenses).
-    - Income categories are ordered by total descending; expense categories are ordered by absolute total descending.
-    - Include an “Other” row for `None` tags.
-    - Each category row can expand to reveal transactions grouped by day using the same transaction row layout.
+   - Within each date interval, show a category breakdown list (tag totals + % of total income/expenses).
+   - Income categories are ordered by total descending; expense categories are ordered by absolute total descending.
+   - Include an “Other” row for `None` tags.
+   - Each category row can expand to reveal transactions grouped by day using the same transaction row layout.
 
 The UI can toggle the category summary layer on/off without changing the underlying query semantics.
 

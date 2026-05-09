@@ -2,13 +2,13 @@
 
 use std::sync::{Arc, Mutex};
 
+use crate::auth::SessionStore;
 use axum::extract::FromRef;
 use axum_extra::extract::cookie::Key;
+use kameo::actor::ActorRef;
+use kameo_actors::scheduler::Scheduler;
 use rusqlite::Connection;
 use sha2::{Digest, Sha512};
-use time::Duration;
-
-use crate::auth::DEFAULT_COOKIE_DURATION;
 
 /// The state of the REST server.
 #[derive(Debug, Clone)]
@@ -16,28 +16,39 @@ pub struct AppState {
     /// The key to be used for signing and encrypting private cookies.
     pub cookie_key: Key,
 
-    /// The duration for which cookies used for authentication are valid.
-    pub cookie_duration: Duration,
-
     /// The local timezone as a canonical timezone name, e.g. "Pacific/Auckland".
     pub local_timezone: String,
 
     /// The database connection
     pub db_connection: Arc<Mutex<Connection>>,
+
+    /// An in-memory store for managing sessions
+    pub session_actor: ActorRef<SessionStore>,
+
+    /// An actor that schedules messages to actors. Primarily for clearing the
+    /// session store at a fixed interval.
+    pub scheduler: ActorRef<Scheduler>,
 }
 
 impl AppState {
     /// Create a new [AppState] with a SQLite database connection.
     ///
     /// `local_timezone` should be a valid, canonical timezone name, e.g. "Pacific/Auckland".
-    pub fn new(db_connection: Connection, cookie_secret: &str, local_timezone: &str) -> Self {
+    pub fn new(
+        db_connection: Connection,
+        cookie_secret: &str,
+        local_timezone: &str,
+        session_actor: ActorRef<SessionStore>,
+        scheduler: ActorRef<Scheduler>,
+    ) -> Self {
         let connection = Arc::new(Mutex::new(db_connection));
 
         Self {
             cookie_key: create_cookie_key(cookie_secret),
-            cookie_duration: DEFAULT_COOKIE_DURATION,
             local_timezone: local_timezone.to_owned(),
             db_connection: connection,
+            session_actor,
+            scheduler,
         }
     }
 }
