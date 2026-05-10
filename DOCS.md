@@ -11,6 +11,9 @@
       - [Running Tests](#running-tests)
       - [Build and View Documentation](#build-and-view-documentation)
     - [Building and Running the Docker Image Locally](#building-and-running-the-docker-image-locally)
+  - [TUI Client](#tui-client)
+    - [Running the TUI](#running-the-tui)
+    - [First-Time Setup](#first-time-setup-1)
   - [Code Style](#code-style)
     - [Error Handling](#error-handling)
 
@@ -101,6 +104,68 @@ docker run --rm -p 8080:8080 -e SECRET=<YOUR-SECRET> -it ghcr.io/anthonydickson/
 > [!NOTE]
 > Add `-v $(pwd):/app/data` to the above command (before `-it`) to persist
 > the app database after the container has stopped.
+
+## TUI Client
+
+The TUI client (`budgeteur_tui`) is a terminal application that connects to the
+Budgeteur server over the network. It uses Ed25519-signed JWTs for
+passwordless authentication — no browser cookies needed.
+
+### Running the TUI
+
+```shell
+cargo run -p budgeteur_tui -- --url http://localhost:3000
+```
+
+The server URL can also be set via `~/.config/budgeteur/config.toml`:
+
+```toml
+server_url = "http://192.168.1.100:3000"
+```
+
+CLI flags override the config file.
+
+### First-Time Setup
+
+1. Generate a keypair on the TUI machine:
+
+   ```shell
+   cargo run -p budgeteur_tui -- init
+   ```
+
+   This writes the private key to `~/.local/share/budgeteur/tui_private_key`
+   and prints the public key.
+
+2. Copy the printed public key to the server machine and create
+   `tui_public_keys.toml`:
+
+   ```toml
+   [[keys]]
+   label = "laptop"
+   public_key = "<paste-the-public-key-here>"
+   ```
+
+3. Start the server with the key file:
+
+   ```shell
+   cargo run -p budgeteur_rs --bin server -- \
+     --db-path test.db \
+     --tui-public-keys-path tui_public_keys.toml
+   ```
+
+4. Run the TUI:
+
+   ```shell
+   cargo run -p budgeteur_tui -- --url http://localhost:3000
+   ```
+
+The TUI signs a fresh JWT on each connection cycle and sends it as a `Bearer`
+token. The server validates the JWT signature and expiry against the configured
+public keys. If the JWT is invalid or expired, the server returns a `401`
+response.
+
+To revoke access, remove the key entry from `tui_public_keys.toml` and restart
+the server.
 
 ## Code Style
 

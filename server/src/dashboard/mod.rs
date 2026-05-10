@@ -6,8 +6,10 @@
 mod aggregation;
 mod cards;
 mod charts;
-mod handlers;
+pub(crate) mod handlers;
+pub(crate) mod json;
 mod tables;
-mod transaction;
+pub(crate) mod transaction;
 
 pub use handlers::{get_dashboard_page, update_excluded_tags};
+pub use json::get_dashboard_json;

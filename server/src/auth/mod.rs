@@ -1,3 +1,5 @@
+mod api_keys;
+mod api_middleware;
 mod cookie;
 mod forgot_password;
 mod log_in;
@@ -9,6 +11,8 @@ mod session;
 mod token;
 mod user;
 
+pub use api_keys::TuiKeyStore;
+pub use api_middleware::api_auth_guard;
 use cookie::{invalidate_auth_cookie, set_auth_cookie};
 pub use forgot_password::get_forgot_password_page;
 pub use log_in::{get_log_in_page, post_log_in};

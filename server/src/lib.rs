@@ -24,6 +24,7 @@ mod dashboard;
 mod db;
 mod endpoints;
 mod error;
+mod health;
 mod html;
 mod internal_server_error;
 mod logging;
@@ -39,7 +40,7 @@ mod transaction;
 
 pub use app_state::AppState;
 pub use auth::{
-    PasswordHash, User, UserID, ValidatedPassword, get_user_by_id, start_session_actor,
+    PasswordHash, TuiKeyStore, User, UserID, ValidatedPassword, get_user_by_id, start_session_actor,
 };
 pub use db::initialize as initialize_db;
 pub use error::Error;

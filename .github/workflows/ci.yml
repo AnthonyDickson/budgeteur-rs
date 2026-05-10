@@ -11,10 +11,10 @@ jobs:
     name: Build and Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -24,16 +24,16 @@ jobs:
 
       - name: Install Rust Toolchain
         run: |
-          rustup toolchain install 1.93 && \
-          rustup override set 1.93 && \
+          rustup toolchain install 1.95 && \
+          rustup override set 1.95 && \
           rustup component add clippy && \
           rustup component add rustfmt
 
       - name: Test
-        run: cargo test --verbose
+        run: cargo test --workspace --verbose
 
       - name: Lint
-        run: cargo clippy --all --tests -- -D warnings
+        run: cargo clippy --workspace --tests -- -D warnings
 
       - name: Check formatting
         run: cargo fmt --check

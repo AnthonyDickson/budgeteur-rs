@@ -2,23 +2,12 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-- Reorganise project into workspaces?
-  - server: Existing HTMX MPA + new JSON API layer
-    - current `src/` folder
-  - tui: New client
-    - Add nix flake for easy distribution?
-  - budgeteur (lib): Shared types etc.
-  - How to manage deps such that building the TUI doesn't pull in server deps?
-- TUI Skeleton
-  - Ratatui
-- Auth for TUI:
-  - HMAC signature, shared secret
-  - Signed JWT using assymmetric keys for passwordless access
-    - For this setup, it would be nice to have a separate `config` and `data` folders
-  - Config file for path, or just hardcode default and override via env var or CLI arg?
-
-While adding JSON endpoints, try to extract common behaviour and separate response types (HTML, JSON) to keep shared
-logic centralised.
+- Dashboard view
+- Transactions view
+- CSV import
+- Accounts view
+- Tags view
+- Auto-tagging rules view
 
 ## Stage One: Budgeting
 
