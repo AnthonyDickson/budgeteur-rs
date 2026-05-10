@@ -2,6 +2,23 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
+### Bugs to fix
+
+- [ ] **Critical:** Duplicate `TuiClaims` struct in `server/src/auth/api_keys.rs` and `tui/src/app.rs` — import from a shared location or re-export from server crate
+- [ ] **Critical:** No endpoint constant for `/api/v1/dashboard` in `endpoints.rs` + missing URI validation test
+- [ ] **High:** TUI provides no first-run UX when private key is missing — catch and print "run `budgeteur-tui init` first"
+- [ ] **High:** `TuiClaims::sub` comment says "we validate `sub` ourselves" but no validation occurs — validate or remove comment
+- [ ] **High:** Main loop spawns sync key-updates through `runtime.spawn()` — call `update()` directly, then spawn only the returned `Cmd`
+- [ ] **Medium:** Add `#[command(version)]` to TUI CLI so `--version` works
+- [ ] **Medium:** Pre-compute DER-encoded signing key in `init()` instead of re-encoding via `to_pkcs8_der()` on every JWT
+- [ ] **Medium:** `last_twelve_months` subtracts a flat 365 days — doesn't account for leap years
+- [ ] **Medium:** Group TUI JWT re-exports separately from session auth types in `lib.rs`
+- [ ] **Medium:** Health endpoint test only checks status code — add body shape assertions
+- [ ] **Low:** `api_auth_guard` returns same `"invalid or expired token"` for both empty key store and bad JWT — distinguish for debuggability
+- [ ] **Low:** `--tui-public-keys-path` defaults to relative `tui_public_keys.toml` — consider absolute path or document CWD dependency
+
+### Views
+
 - Dashboard view
 - Transactions view
 - CSV import
