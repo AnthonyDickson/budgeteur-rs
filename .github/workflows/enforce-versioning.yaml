@@ -21,12 +21,12 @@ jobs:
     
     steps:
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
-          python-version: 3.12
+          python-version: 3.14
 
       - name: Checkout Main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           sparse-checkout: Cargo.toml
@@ -35,12 +35,12 @@ jobs:
       - name: Read Version from Cargo.toml on Main
         id: main
         run: |
-          VERSION=$(python -c 'import tomllib; f = open("Cargo.toml", "rb"); print(tomllib.load(f)["package"]["version"])')
+          VERSION=$(python -c 'import tomllib; f = open("Cargo.toml", "rb"); print(tomllib.load(f)["workspace"]["package"]["version"])')
           echo "semver=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "${VERSION}"
 
       - name: Checkout Head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.BRANCH }}
           sparse-checkout: Cargo.toml
@@ -49,7 +49,7 @@ jobs:
       - name: Read Version from Cargo.toml on Head
         id: head
         run: |
-          VERSION=$(python -c 'import tomllib; f = open("Cargo.toml", "rb"); print(tomllib.load(f)["package"]["version"])')
+          VERSION=$(python -c 'import tomllib; f = open("Cargo.toml", "rb"); print(tomllib.load(f)["workspace"]["package"]["version"])')
           echo "semver=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "${VERSION}"
                     
@@ -65,7 +65,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.BRANCH }}
           # The checkout action will checkout as a detached head by default.
@@ -73,7 +73,7 @@ jobs:
           fetch-depth: 0
 
       - name: Log in to the Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}

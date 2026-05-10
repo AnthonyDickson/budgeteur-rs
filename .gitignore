@@ -28,3 +28,6 @@ static/main.css
 
 # Gemini CLI
 .gemini/
+
+# Test config
+tui_public_keys.toml

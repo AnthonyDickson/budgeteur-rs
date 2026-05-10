@@ -1,47 +1,7 @@
-[package]
-name = "budgeteur_rs"
+[workspace]
+resolver = "2"
+members = ["server", "tui"]
+
+[workspace.package]
 version = "0.30.0"
 edition = "2024"
-default-run = "server"
-
-[dependencies]
-axum = { version = "0.8.9", features = ["form", "macros", "multipart"] }
-axum-extra = { version = "0.12.6", features = [
-  "cookie-private",
-  "form",
-  "typed-header",
-] }
-axum-htmx = "0.8.1"
-axum-server = { version = "0.8.0" }
-bcrypt = "0.19.0"
-charming = "0.6.0"
-clap = { version = "4.6.1", features = ["derive"] }
-csv = "1.4.0"
-kameo = "0.20.0"
-kameo_actors = "0.5.0"
-maud = { version = "0.27.0", features = ["axum"] }
-md5 = "0.8.0"
-numfmt = "1.2.0"
-rpassword = "7.5.2"
-rusqlite = { version = "0.39.0", features = ["bundled", "time"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-serde_urlencoded = "0.7.1"
-sha2 = { version = "0.11.0" }
-sscanf = "0.5.0"
-thiserror = "2.0.18"
-time = { version = "0.3.47", features = ["serde", "local-offset"] }
-time-tz = "2.0.0"
-tokio = { version = "1.52.2", features = ["full"] }
-tower-http = { version = "0.6.8", features = ["trace", "fs"] }
-tower-livereload = "0.10.3" # For debug builds only
-tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-unicode-segmentation = "1.13.2"
-uuid = { version = "1.23.1", features = ["serde", "v4"] }
-zxcvbn = "3.1.1"
-
-[dev-dependencies]
-axum-test = "20.0.0"
-scraper = "0.26.0"
-serde_html_form = "0.4.0"

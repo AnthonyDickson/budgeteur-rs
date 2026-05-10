@@ -83,6 +83,93 @@ The app will assume all dates and times from the web client use the timezone as 
 The CLI will accept canonical timezones as specified in <https://en.wikipedia.org/w/index.php?title=List_of_tz_database_time_zones&oldid=1309592143#List>,
 e.g. "Pacific/Auckland".
 
+## TUI Client
+
+Budgeteur includes a terminal client (`budgeteur-tui`) that connects to the
+server from a different machine over the network. It uses Ed25519-signed JWTs
+for passwordless authentication.
+
+### Installation
+
+**Via Nix flakes:**
+
+```shell
+# Run directly
+nix run github:AnthonyDickson/budgeteur-rs#budgeteur-tui -- --url http://server:3000
+
+# Install permanently
+nix profile install github:AnthonyDickson/budgeteur-rs#budgeteur-tui
+
+# Pin to a specific release
+nix run github:AnthonyDickson/budgeteur-rs/v0.31.0#budgeteur-tui
+```
+
+**For NixOS / home-manager users**, add to your flake inputs:
+
+```nix
+inputs.budgeteur.url = "github:AnthonyDickson/budgeteur-rs";
+```
+
+Then install via `home.packages` or `environment.systemPackages`:
+
+```nix
+inputs.budgeteur.packages.${system}.budgeteur-tui
+```
+
+**From a pre-built binary (Linux x86_64):**
+
+Download `budgeteur-tui-linux-x86_64` from the [latest GitHub release](https://github.com/AnthonyDickson/budgeteur-rs/releases/latest), make it executable, and run:
+
+```shell
+chmod +x budgeteur-tui-linux-x86_64
+./budgeteur-tui-linux-x86_64 --url http://server:3000
+```
+
+**From source:**
+
+```shell
+cargo build --release -p budgeteur_tui
+```
+
+### First-Time Setup
+
+On the machine where you want to run the TUI:
+
+```shell
+budgeteur-tui init
+```
+
+This generates an Ed25519 keypair and prints the public key. Copy that key.
+
+On the server machine, create `tui_public_keys.toml`:
+
+```toml
+[[keys]]
+label = "laptop"
+public_key = "<paste-the-public-key-here>"
+```
+
+Start the server with the key file:
+
+```shell
+budgeteur_rs --db-path /app/data/budgeteur.db --tui-public-keys-path tui_public_keys.toml
+```
+
+Or via Docker Compose, mount the file and add the CLI flag.
+
+### Running
+
+```shell
+budgeteur-tui --url http://server-ip:3000
+```
+
+The server URL defaults to `http://localhost:3000`. You can also create a
+config file at `~/.config/budgeteur/config.toml`:
+
+```toml
+server_url = "http://192.168.1.100:3000"
+```
+
 ## Development
 
 If you are interested in compiling and/or modifying the source code, see [DOCS.md](/DOCS.md).

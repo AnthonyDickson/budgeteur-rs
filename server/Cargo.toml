@@ -1,0 +1,53 @@
+[package]
+name = "budgeteur_rs"
+version.workspace = true
+edition.workspace = true
+default-run = "server"
+
+[dependencies]
+axum = { version = "0.8", features = ["form", "json", "macros", "multipart"] }
+axum-extra = { version = "0.12", features = [
+  "cookie-private",
+  "form",
+  "typed-header",
+] }
+axum-htmx = "0.8"
+axum-server = { version = "0.8" }
+bcrypt = "0.19"
+charming = "0.6"
+clap = { version = "4", features = ["derive"] }
+csv = "1"
+ed25519-dalek = { version = "2", features = ["pkcs8"] }
+hex = "0.4"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+kameo = "0.20"
+kameo_actors = "0.5"
+maud = { version = "0.27", features = ["axum"] }
+md5 = "0.8"
+numfmt = "1"
+rpassword = "7"
+rusqlite = { version = "0.39", features = ["bundled", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_urlencoded = "0.7"
+sha2 = { version = "0.11" }
+sscanf = "0.5"
+thiserror = "2"
+time = { version = "0.3", features = ["serde", "local-offset"] }
+time-tz = "2"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace", "fs"] }
+tower-livereload = "0.10" # For debug builds only
+toml = "1.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+unicode-segmentation = "1"
+uuid = { version = "1", features = ["serde", "v4"] }
+zxcvbn = "3"
+
+[dev-dependencies]
+axum-test = "20"
+rand = "0.10"
+scraper = "0.27"
+serde_html_form = "0.4"
+tempfile = "3"

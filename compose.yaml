@@ -12,6 +12,7 @@ services:
         --db-path /app/data/budgeteur.db
         --log-path /app/data/debug.log
         --timezone Pacific/Auckland
+        --tui_public_keys_path /app/data/tui_public_keys.toml
     ports:
       # Change the port on the left if you want to change the port your PC
       # connects to.
@@ -26,3 +27,9 @@ services:
       # Replace ${PWD} with an absolute path to a directory where you want the
       # application database to be saved.
       - ${PWD}:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

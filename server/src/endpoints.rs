@@ -47,6 +47,8 @@ pub const EDIT_ACCOUNT: &str = DELETE_ACCOUNT;
 /// The route for static files.
 pub const STATIC: &str = "/static";
 
+/// The route for checking the server's health.
+pub const HEALTH: &str = "/api/health";
 /// The route to request a cup of coffee (experimental).
 pub const COFFEE: &str = "/api/coffee";
 /// The route for logging in a user.
@@ -163,6 +165,7 @@ mod endpoints_tests {
         assert_endpoint_is_valid_uri(endpoints::EDIT_ACCOUNT);
         assert_endpoint_is_valid_uri(endpoints::STATIC);
 
+        assert_endpoint_is_valid_uri(endpoints::HEALTH);
         assert_endpoint_is_valid_uri(endpoints::COFFEE);
         assert_endpoint_is_valid_uri(endpoints::LOG_IN_API);
         assert_endpoint_is_valid_uri(endpoints::LOG_OUT);
