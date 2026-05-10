@@ -95,8 +95,8 @@ jobs:
           echo "✅ Tag is unique, proceeding with build"
           echo -n "skip=false" >> "$GITHUB_OUTPUT"
 
-  publish-image-and-release:
-    name: Publish Docker Image and Create Release
+  build-docker:
+    name: Build and Push Docker Image
     runs-on: ubuntu-latest
     needs:
       - get-version
@@ -104,11 +104,10 @@ jobs:
     if: ${{ success() && needs.enforce-unique-tag.outputs.skip == 'false' }}
 
     permissions:
-      contents: write
       packages: write
       attestations: write
       id-token: write
-      
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -144,11 +143,59 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+  build-tui:
+    name: Build TUI Binary
+    runs-on: ubuntu-latest
+    needs:
+      - get-version
+      - enforce-unique-tag
+    if: ${{ success() && needs.enforce-unique-tag.outputs.skip == 'false' }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal
+
+      - name: Build TUI binary
+        run: cargo +1.95.0 build --release -p budgeteur_tui
+
+      - name: Rename binary for upload
+        run: mv target/release/budgeteur_tui budgeteur-tui-linux-x86_64
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v5
+        with:
+          name: budgeteur-tui-linux-x86_64
+          path: budgeteur-tui-linux-x86_64
+
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs:
+      - get-version
+      - enforce-unique-tag
+      - build-docker
+      - build-tui
+    if: ${{ success() && needs.enforce-unique-tag.outputs.skip == 'false' }}
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download TUI binary
+        uses: actions/download-artifact@v6
+        with:
+          name: budgeteur-tui-linux-x86_64
+
       - name: Create Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create v${{ needs.get-version.outputs.semver }} --generate-notes
+          gh release create v${{ needs.get-version.outputs.semver }} \
+            --generate-notes \
+            budgeteur-tui-linux-x86_64
 
 # TODO: Once stable (1.0.0), tag image twice, once with full semver and
 # again with the major version. This will allow me to pin to a major version

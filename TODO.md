@@ -2,9 +2,12 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-- Add pipeline job for building the TUI exe
-  - Decide where/how to publish it
-  - Update README.md
+- Dashboard view
+- Transactions view
+- CSV import
+- Accounts view
+- Tags view
+- Auto-tagging rules view
 
 ## Stage One: Budgeting
 

@@ -116,6 +116,15 @@ Then install via `home.packages` or `environment.systemPackages`:
 inputs.budgeteur.packages.${system}.budgeteur-tui
 ```
 
+**From a pre-built binary (Linux x86_64):**
+
+Download `budgeteur-tui-linux-x86_64` from the [latest GitHub release](https://github.com/AnthonyDickson/budgeteur-rs/releases/latest), make it executable, and run:
+
+```shell
+chmod +x budgeteur-tui-linux-x86_64
+./budgeteur-tui-linux-x86_64 --url http://server:3000
+```
+
 **From source:**
 
 ```shell
@@ -160,10 +169,6 @@ config file at `~/.config/budgeteur/config.toml`:
 ```toml
 server_url = "http://192.168.1.100:3000"
 ```
-
-The TUI signs a fresh JWT on startup and sends it as a `Bearer` token. The
-server validates it against the configured public keys. No password entry is
-needed after setup.
 
 ## Development
 
