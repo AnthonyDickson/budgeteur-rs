@@ -1,7 +1,9 @@
-use std::time::Duration;
+use serde::Deserialize;
 
 use crate::runtime::Cmd;
 use crossterm::event::KeyCode;
+use ed25519_dalek::SigningKey;
+use ed25519_dalek::pkcs8::EncodePrivateKey;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
@@ -9,22 +11,35 @@ use ratatui::{
     text::Text,
     widgets::{Block, Borders, Paragraph},
 };
-use reqwest::Client;
 
 // ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
 
-pub enum ConnectionStatus {
-    Connecting,
-    Connected,
-    Disconnected(String),
+pub enum Status {
+    Loading,
+    Error(String),
+    Ready(DashboardData),
 }
 
 pub struct Model {
-    pub url: String,
-    pub connection_status: ConnectionStatus,
+    status: Status,
     pub should_quit: bool,
+    signing_key: SigningKey,
+    #[expect(dead_code)]
+    server_url: String,
+}
+
+// ---------------------------------------------------------------------------
+// API response types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DashboardData {
+    total_balance: f64,
+    monthly_income: f64,
+    monthly_expenses: f64,
+    monthly_net: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -33,21 +48,22 @@ pub struct Model {
 
 pub enum Message {
     Key(KeyCode),
-    Tick,
-    ConnectionResult(Result<(), String>),
+    DashboardResult(Result<DashboardData, String>),
 }
 
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
-pub fn init(url: String) -> (Model, Cmd<Message>) {
+pub fn init(server_url: String, signing_key: SigningKey) -> (Model, Cmd<Message>) {
     let model = Model {
-        connection_status: ConnectionStatus::Connecting,
+        status: Status::Loading,
         should_quit: false,
-        url: url.clone(),
+        server_url: server_url.clone(),
+        signing_key,
     };
-    let cmd = Cmd::batch([check_connection(url), tick_after()]);
+
+    let cmd = fetch_dashboard(server_url, model.signing_key.clone());
     (model, cmd)
 }
 
@@ -62,13 +78,13 @@ pub fn update(model: &mut Model, msg: Message) -> Cmd<Message> {
             Cmd::none()
         }
         Message::Key(_) => Cmd::none(),
-        Message::Tick => Cmd::batch([check_connection(model.url.clone()), tick_after()]),
-        Message::ConnectionResult(Ok(())) => {
-            model.connection_status = ConnectionStatus::Connected;
+
+        Message::DashboardResult(Ok(data)) => {
+            model.status = Status::Ready(data);
             Cmd::none()
         }
-        Message::ConnectionResult(Err(e)) => {
-            model.connection_status = ConnectionStatus::Disconnected(e);
+        Message::DashboardResult(Err(e)) => {
+            model.status = Status::Error(e);
             Cmd::none()
         }
     }
@@ -85,16 +101,16 @@ pub fn view(model: &Model, f: &mut Frame) {
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(area);
 
-    let text = match &model.connection_status {
-        ConnectionStatus::Connecting => "● Connecting…".to_string(),
-        ConnectionStatus::Connected => "● Connected".to_string(),
-        ConnectionStatus::Disconnected(msg) => format!("● Disconnected: {msg}"),
-    };
-
-    let color = match &model.connection_status {
-        ConnectionStatus::Connecting => Color::Yellow,
-        ConnectionStatus::Connected => Color::Green,
-        ConnectionStatus::Disconnected(_) => Color::Red,
+    let (text, color) = match &model.status {
+        Status::Loading => ("● Loading…".to_string(), Color::Yellow),
+        Status::Ready(data) => (
+            format!(
+                "● Balance: ${:.2}  |  Net: ${:.2}/mo",
+                data.total_balance, data.monthly_net
+            ),
+            Color::Green,
+        ),
+        Status::Error(msg) => (format!("● {msg}"), Color::Red),
     };
 
     let status = Paragraph::new(Text::from(text).style(Style::default().fg(color))).block(
@@ -104,35 +120,88 @@ pub fn view(model: &Model, f: &mut Frame) {
     );
 
     f.render_widget(status, chunks[0]);
+
+    if let Status::Ready(data) = &model.status {
+        let details = format!(
+            "Total Balance: ${:.2}\n\nLast Month:\n  Income:   ${:.2}\n  Expenses: ${:.2}\n  Net:      ${:.2}",
+            data.total_balance, data.monthly_income, data.monthly_expenses, data.monthly_net
+        );
+        let detail_widget = Paragraph::new(details)
+            .block(Block::default().borders(Borders::ALL).title("Dashboard"));
+        f.render_widget(detail_widget, chunks[1]);
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
-const TICK_INTERVAL: Duration = Duration::from_secs(30);
+const TOKEN_EXPIRY_SECONDS: usize = 300;
 
-fn check_connection(url: String) -> Cmd<Message> {
+fn fetch_dashboard(server_url: String, signing_key: SigningKey) -> Cmd<Message> {
     Cmd::from(async move {
-        let client = Client::new();
-        let health_url = format!("{url}/api/health");
-        let result = match client
-            .get(&health_url)
-            .timeout(Duration::from_secs(5))
+        let header = match sign_auth_header(&signing_key) {
+            Ok(h) => h,
+            Err(e) => return Message::DashboardResult(Err(e)),
+        };
+
+        let client = reqwest::Client::new();
+        let url = format!("{server_url}/api/v1/dashboard");
+        match client
+            .get(&url)
+            .header("Authorization", &header)
+            .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
         {
-            Ok(resp) if resp.status().is_success() => Ok(()),
-            Ok(resp) => Err(format!("server returned {}", resp.status())),
-            Err(e) => Err(e.to_string()),
-        };
-        Message::ConnectionResult(result)
+            Ok(resp) if resp.status().is_success() => match resp.json::<DashboardData>().await {
+                Ok(data) => Message::DashboardResult(Ok(data)),
+                Err(e) => Message::DashboardResult(Err(format!("could not parse dashboard: {e}"))),
+            },
+            Ok(resp) if resp.status().as_u16() == 401 => Message::DashboardResult(Err(
+                "authentication failed — is your public key registered on the server?".into(),
+            )),
+            Ok(resp) => Message::DashboardResult(Err(format!("server returned {}", resp.status()))),
+            Err(e) => Message::DashboardResult(Err(format!("connection error: {e}"))),
+        }
     })
 }
 
-fn tick_after() -> Cmd<Message> {
-    Cmd::from(async {
-        tokio::time::sleep(TICK_INTERVAL).await;
-        Message::Tick
-    })
+fn sign_auth_header(signing_key: &SigningKey) -> Result<String, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("system clock error: {e}"))?
+        .as_secs() as usize;
+
+    let claims = auth_claims::TuiClaims {
+        sub: "tui-client".into(),
+        iat: now,
+        exp: now + TOKEN_EXPIRY_SECONDS,
+    };
+
+    let der = signing_key
+        .to_pkcs8_der()
+        .map_err(|e| format!("could not encode private key: {e}"))?;
+
+    let encoding_key = jsonwebtoken::EncodingKey::from_ed_der(der.as_bytes());
+
+    let token = jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA),
+        &claims,
+        &encoding_key,
+    )
+    .map_err(|e| format!("could not sign JWT: {e}"))?;
+
+    Ok(format!("Bearer {token}"))
+}
+
+mod auth_claims {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct TuiClaims {
+        pub sub: String,
+        pub iat: usize,
+        pub exp: usize,
+    }
 }

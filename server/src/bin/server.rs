@@ -2,6 +2,7 @@ use std::{
     env::{self},
     fs::OpenOptions,
     net::{Ipv4Addr, SocketAddr},
+    path::Path,
     process::exit,
     sync::Arc,
 };
@@ -19,7 +20,7 @@ use tower_livereload::LiveReloadLayer;
 use tracing_subscriber::{Layer, filter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use budgeteur_rs::{
-    AppState, build_router, graceful_shutdown, initialize_db, logging_middleware,
+    AppState, TuiKeyStore, build_router, graceful_shutdown, initialize_db, logging_middleware,
     start_session_actor,
 };
 
@@ -47,6 +48,10 @@ struct Args {
     /// File path to the application logs.
     #[arg(short, long, default_value = "debug.log")]
     log_path: String,
+
+    /// File path to the TUI public keys TOML file.
+    #[arg(long, default_value = "tui_public_keys.toml")]
+    tui_public_keys_path: String,
 }
 
 #[tokio::main]
@@ -85,7 +90,25 @@ async fn main() {
     let (session_actor, scheduler) = start_session_actor()
         .await
         .expect("Could not start session actor");
-    let app_config = AppState::new(conn, &secret, &timezone, session_actor, scheduler);
+    let tui_key_store =
+        TuiKeyStore::load(Path::new(&args.tui_public_keys_path)).unwrap_or_else(|e| {
+            tracing::warn!(
+                "Could not load TUI public keys from {}: {e}. TUI API access disabled.",
+                args.tui_public_keys_path
+            );
+            TuiKeyStore::empty()
+        });
+    if tui_key_store.has_keys() {
+        tracing::info!("Loaded TUI public keys from {}", args.tui_public_keys_path);
+    }
+    let app_config = AppState::new(
+        conn,
+        &secret,
+        &timezone,
+        session_actor,
+        scheduler,
+        tui_key_store,
+    );
 
     let handle = Handle::new();
     tokio::spawn(graceful_shutdown(handle.clone()));

@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::auth::SessionStore;
+use crate::auth::{SessionStore, TuiKeyStore};
 use axum::extract::FromRef;
 use axum_extra::extract::cookie::Key;
 use kameo::actor::ActorRef;
@@ -28,6 +28,9 @@ pub struct AppState {
     /// An actor that schedules messages to actors. Primarily for clearing the
     /// session store at a fixed interval.
     pub scheduler: ActorRef<Scheduler>,
+
+    /// Allowed Ed25519 public keys for TUI client authentication.
+    pub tui_key_store: TuiKeyStore,
 }
 
 impl AppState {
@@ -40,6 +43,7 @@ impl AppState {
         local_timezone: &str,
         session_actor: ActorRef<SessionStore>,
         scheduler: ActorRef<Scheduler>,
+        tui_key_store: TuiKeyStore,
     ) -> Self {
         let connection = Arc::new(Mutex::new(db_connection));
 
@@ -49,6 +53,7 @@ impl AppState {
             db_connection: connection,
             session_actor,
             scheduler,
+            tui_key_store,
         }
     }
 }

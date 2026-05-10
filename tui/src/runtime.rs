@@ -23,6 +23,7 @@ impl<Msg> Cmd<Msg> {
         Self(vec![Box::pin(fut)])
     }
 
+    #[expect(dead_code)]
     pub fn batch(cmds: impl IntoIterator<Item = Cmd<Msg>>) -> Self {
         Self(cmds.into_iter().flat_map(|c| c.0).collect())
     }

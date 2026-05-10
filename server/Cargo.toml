@@ -17,6 +17,9 @@ bcrypt = "0.19"
 charming = "0.6"
 clap = { version = "4", features = ["derive"] }
 csv = "1"
+ed25519-dalek = { version = "2", features = ["pkcs8"] }
+hex = "0.4"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 kameo = "0.20"
 kameo_actors = "0.5"
 maud = { version = "0.27", features = ["axum"] }
@@ -35,6 +38,7 @@ time-tz = "2"
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["trace", "fs"] }
 tower-livereload = "0.10" # For debug builds only
+toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-segmentation = "1"
@@ -43,5 +47,7 @@ zxcvbn = "3"
 
 [dev-dependencies]
 axum-test = "20"
+rand = "0.8"
 scraper = "0.26"
 serde_html_form = "0.4"
+tempfile = "3"

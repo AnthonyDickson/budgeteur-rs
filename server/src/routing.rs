@@ -16,11 +16,11 @@ use crate::{
         get_create_account_page, get_edit_account_page,
     },
     auth::{
-        auth_guard, auth_guard_hx, get_forgot_password_page, get_log_in_page, get_log_out,
-        post_log_in,
+        api_auth_guard, auth_guard, auth_guard_hx, get_forgot_password_page, get_log_in_page,
+        get_log_out, post_log_in,
     },
     csv_import::{get_import_page, import_transactions},
-    dashboard::{get_dashboard_page, update_excluded_tags},
+    dashboard::{get_dashboard_json, get_dashboard_page, update_excluded_tags},
     endpoints,
     health::get_health,
     internal_server_error::get_internal_server_error_page,
@@ -40,6 +40,9 @@ use crate::{
         get_quick_tagging_page, get_transactions_page, update_transactions_excluded_tags,
     },
 };
+
+/// The route path for the JSON API.
+const API_V1: &str = "/api/v1";
 
 /// Return a router with all the app's routes.
 pub fn build_router(state: AppState) -> Router {
@@ -133,9 +136,17 @@ pub fn build_router(state: AppState) -> Router {
 
     protected_routes
         .merge(unprotected_routes)
+        .merge(build_api_routes(state.clone()))
         .nest_service(endpoints::STATIC, ServeDir::new("static/"))
         .fallback(get_404_not_found)
         .with_state(state)
+}
+
+/// Protected JSON API routes for the TUI client.
+fn build_api_routes(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(&format!("{API_V1}/dashboard"), get(get_dashboard_json))
+        .layer(middleware::from_fn_with_state(state, api_auth_guard))
 }
 
 /// Attempt to get a cup of coffee from the server.

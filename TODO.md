@@ -2,14 +2,9 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-- Auth for TUI:
-  - HMAC signature, shared secret
-  - Signed JWT using assymmetric keys for passwordless access
-    - For this setup, it would be nice to have a separate `config` and `data` folders
-  - Config file for path, or just hardcode default and override via env var or CLI arg?
-
-While adding JSON endpoints, try to extract common behaviour and separate response types (HTML, JSON) to keep shared
-logic centralised.
+- Add pipeline job for building the TUI exe
+  - Decide where/how to publish it
+  - Update README.md
 
 ## Stage One: Budgeting
 

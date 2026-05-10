@@ -83,6 +83,56 @@ The app will assume all dates and times from the web client use the timezone as 
 The CLI will accept canonical timezones as specified in <https://en.wikipedia.org/w/index.php?title=List_of_tz_database_time_zones&oldid=1309592143#List>,
 e.g. "Pacific/Auckland".
 
+## TUI Client
+
+Budgeteur includes a terminal client (`budgeteur-tui`) that connects to the
+server from a different machine over the network. It uses Ed25519-signed JWTs
+for passwordless authentication.
+
+### First-Time Setup
+
+On the machine where you want to run the TUI:
+
+```shell
+cargo build --release -p budgeteur_tui
+./target/release/budgeteur-tui init
+```
+
+This generates an Ed25519 keypair and prints the public key. Copy that key.
+
+On the server machine, create `tui_public_keys.toml`:
+
+```toml
+[[keys]]
+label = "laptop"
+public_key = "<paste-the-public-key-here>"
+```
+
+Start the server with the key file:
+
+```shell
+budgeteur_rs --db-path /app/data/budgeteur.db --tui-public-keys-path tui_public_keys.toml
+```
+
+Or via Docker Compose, mount the file and add the CLI flag.
+
+### Running
+
+```shell
+./target/release/budgeteur-tui --url http://server-ip:3000
+```
+
+The server URL defaults to `http://localhost:3000`. You can also create a
+config file at `~/.config/budgeteur/config.toml`:
+
+```toml
+server_url = "http://192.168.1.100:3000"
+```
+
+The TUI signs a fresh JWT on each connection cycle and sends it as a
+`Bearer` token. The server validates it against the configured public keys.
+No password entry is needed after setup.
+
 ## Development
 
 If you are interested in compiling and/or modifying the source code, see [DOCS.md](/DOCS.md).
