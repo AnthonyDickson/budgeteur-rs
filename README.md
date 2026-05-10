@@ -89,13 +89,45 @@ Budgeteur includes a terminal client (`budgeteur-tui`) that connects to the
 server from a different machine over the network. It uses Ed25519-signed JWTs
 for passwordless authentication.
 
+### Installation
+
+**Via Nix flakes:**
+
+```shell
+# Run directly
+nix run github:AnthonyDickson/budgeteur-rs#budgeteur-tui -- --url http://server:3000
+
+# Install permanently
+nix profile install github:AnthonyDickson/budgeteur-rs#budgeteur-tui
+
+# Pin to a specific release
+nix run github:AnthonyDickson/budgeteur-rs/v0.31.0#budgeteur-tui
+```
+
+**For NixOS / home-manager users**, add to your flake inputs:
+
+```nix
+inputs.budgeteur.url = "github:AnthonyDickson/budgeteur-rs";
+```
+
+Then install via `home.packages` or `environment.systemPackages`:
+
+```nix
+inputs.budgeteur.packages.${system}.budgeteur-tui
+```
+
+**From source:**
+
+```shell
+cargo build --release -p budgeteur_tui
+```
+
 ### First-Time Setup
 
 On the machine where you want to run the TUI:
 
 ```shell
-cargo build --release -p budgeteur_tui
-./target/release/budgeteur-tui init
+budgeteur-tui init
 ```
 
 This generates an Ed25519 keypair and prints the public key. Copy that key.
@@ -119,7 +151,7 @@ Or via Docker Compose, mount the file and add the CLI flag.
 ### Running
 
 ```shell
-./target/release/budgeteur-tui --url http://server-ip:3000
+budgeteur-tui --url http://server-ip:3000
 ```
 
 The server URL defaults to `http://localhost:3000`. You can also create a
@@ -129,9 +161,9 @@ config file at `~/.config/budgeteur/config.toml`:
 server_url = "http://192.168.1.100:3000"
 ```
 
-The TUI signs a fresh JWT on each connection cycle and sends it as a
-`Bearer` token. The server validates it against the configured public keys.
-No password entry is needed after setup.
+The TUI signs a fresh JWT on startup and sends it as a `Bearer` token. The
+server validates it against the configured public keys. No password entry is
+needed after setup.
 
 ## Development
 
