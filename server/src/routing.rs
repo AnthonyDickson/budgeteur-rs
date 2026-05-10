@@ -22,6 +22,7 @@ use crate::{
     csv_import::{get_import_page, import_transactions},
     dashboard::{get_dashboard_page, update_excluded_tags},
     endpoints,
+    health::get_health,
     internal_server_error::get_internal_server_error_page,
     not_found::get_404_not_found,
     rule::{
@@ -43,6 +44,7 @@ use crate::{
 /// Return a router with all the app's routes.
 pub fn build_router(state: AppState) -> Router {
     let unprotected_routes = Router::new()
+        .route(endpoints::HEALTH, get(get_health))
         .route(endpoints::COFFEE, get(get_coffee))
         .route(endpoints::LOG_IN_VIEW, get(get_log_in_page))
         .route(endpoints::LOG_IN_API, post(post_log_in))

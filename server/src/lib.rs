@@ -24,6 +24,7 @@ mod dashboard;
 mod db;
 mod endpoints;
 mod error;
+mod health;
 mod html;
 mod internal_server_error;
 mod logging;

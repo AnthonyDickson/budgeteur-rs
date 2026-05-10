@@ -115,8 +115,9 @@ const TICK_INTERVAL: Duration = Duration::from_secs(30);
 fn check_connection(url: String) -> Cmd<Message> {
     Cmd::from(async move {
         let client = Client::new();
+        let health_url = format!("{url}/api/health");
         let result = match client
-            .get(&url)
+            .get(&health_url)
             .timeout(Duration::from_secs(5))
             .send()
             .await

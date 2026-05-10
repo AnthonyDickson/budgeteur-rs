@@ -2,9 +2,6 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-- JSON endpoint for checking health
-  - use for connection status bar
-  - Use for docker compose?
 - Auth for TUI:
   - HMAC signature, shared secret
   - Signed JWT using assymmetric keys for passwordless access
