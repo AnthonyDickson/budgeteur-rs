@@ -29,14 +29,14 @@
 
           nativeBuildInputs = [ rustToolchain ];
 
-          # Build only the TUI binary for the TUI package; the workspace
-          # is still fetched/checked in full for dependency resolution.
+          # Only build the TUI crate.  buildAndTestSubdir tells the hooks
+          # where to find the Cargo.toml and where to look for binaries
+          # (cargo uses a target-arch subdirectory, not plain target/release).
+          buildAndTestSubdir = "tui";
           cargoBuildFlags = [ "-p" "budgeteur_tui" ];
 
-          # Install only the TUI binary
           postInstall = ''
-            mkdir -p $out/bin
-            cp target/release/budgeteur_tui $out/bin/budgeteur-tui
+            mv $out/bin/budgeteur_tui $out/bin/budgeteur-tui
           '';
 
           meta = with pkgs.lib; {
