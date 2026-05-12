@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["server", "tui"]
+members = ["server", "tui", "shared"]
 
 [workspace.package]
 version = "0.30.0"

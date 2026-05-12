@@ -6,8 +6,10 @@
 
 use ed25519_dalek::VerifyingKey;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::path::Path;
+
+pub use budgeteur_shared::auth::TuiClaims;
 
 // ---------------------------------------------------------------------------
 // Config file format
@@ -26,21 +28,6 @@ pub struct TuiKeyEntry {
     pub label: String,
     /// Hex-encoded 32-byte Ed25519 public key.
     pub public_key: String,
-}
-
-// ---------------------------------------------------------------------------
-// JWT claims
-// ---------------------------------------------------------------------------
-
-/// Claims carried in TUI-issued JWTs.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TuiClaims {
-    /// Subject identifier — always `"tui-client"`.
-    pub sub: String,
-    /// Issued-at timestamp (Unix epoch seconds).
-    pub iat: usize,
-    /// Expiration timestamp (Unix epoch seconds).
-    pub exp: usize,
 }
 
 // ---------------------------------------------------------------------------

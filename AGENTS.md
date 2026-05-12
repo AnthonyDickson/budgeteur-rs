@@ -54,6 +54,13 @@ tui/
     app.rs              # Model, update, view, AuthenticatedClient, commands
     config.rs           # XDG config/data directory helpers
     runtime.rs          # Elm-style Cmd + Runtime for async effects
+shared/
+  Cargo.toml            # Shared library crate — types used by both server and TUI
+  src/
+    lib.rs              # Re-exports auth, dashboard, and routes modules
+    auth.rs             # TuiClaims (JWT claims structure)
+    dashboard.rs        # DashboardSummary (API response type)
+    routes.rs           # Shared API route path constants
 migrations/            # SQL migration scripts for schema upgrades
 static/                # Built assets: main.css, HTMX JS, ECharts JS, favicons
 docs/                  # Design and tech spec documents

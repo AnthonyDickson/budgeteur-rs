@@ -43,6 +43,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-segmentation = "1"
 uuid = { version = "1", features = ["serde", "v4"] }
+budgeteur_shared = { path = "../shared" }
 zxcvbn = "3"
 
 [dev-dependencies]

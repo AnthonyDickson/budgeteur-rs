@@ -4,8 +4,6 @@
 
 ### Bugs to fix
 
-- [ ] **Critical:** Duplicate `TuiClaims` struct in `server/src/auth/api_keys.rs` and `tui/src/app.rs` — import from a shared location or re-export from server crate
-- [ ] **Critical:** No endpoint constant for `/api/v1/dashboard` in `endpoints.rs` + missing URI validation test
 - [ ] **High:** TUI provides no first-run UX when private key is missing — catch and print "run `budgeteur-tui init` first"
 - [ ] **High:** `TuiClaims::sub` comment says "we validate `sub` ourselves" but no validation occurs — validate or remove comment
 - [ ] **High:** Main loop spawns sync key-updates through `runtime.spawn()` — call `update()` directly, then spawn only the returned `Cmd`

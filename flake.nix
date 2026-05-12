@@ -29,10 +29,9 @@
 
           nativeBuildInputs = [ rustToolchain ];
 
-          # Only build the TUI crate.  buildAndTestSubdir tells the hooks
-          # where to find the Cargo.toml and where to look for binaries
-          # (cargo uses a target-arch subdirectory, not plain target/release).
-          buildAndTestSubdir = "tui";
+          # Build the TUI crate from the workspace root so path dependencies
+          # (e.g., budgeteur_shared) resolve correctly.
+          buildAndTestSubdir = ".";
           cargoBuildFlags = [ "-p" "budgeteur_tui" ];
 
           postInstall = ''

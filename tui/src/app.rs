@@ -1,4 +1,5 @@
-use serde::Deserialize;
+use budgeteur_shared::auth::TuiClaims;
+use budgeteur_shared::dashboard::DashboardSummary;
 
 use crate::runtime::Cmd;
 use crossterm::event::KeyCode;
@@ -19,7 +20,7 @@ use ratatui::{
 pub enum Status {
     Loading,
     Error(String),
-    Ready(DashboardData),
+    Ready(DashboardSummary),
 }
 
 pub struct Model {
@@ -31,24 +32,12 @@ pub struct Model {
 }
 
 // ---------------------------------------------------------------------------
-// API response types
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct DashboardData {
-    total_balance: f64,
-    monthly_income: f64,
-    monthly_expenses: f64,
-    monthly_net: f64,
-}
-
-// ---------------------------------------------------------------------------
 // Message
 // ---------------------------------------------------------------------------
 
 pub enum Message {
     Key(KeyCode),
-    DashboardResult(Result<DashboardData, String>),
+    DashboardResult(Result<DashboardSummary, String>),
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +135,7 @@ fn fetch_dashboard(server_url: String, signing_key: SigningKey) -> Cmd<Message> 
         };
 
         let client = reqwest::Client::new();
-        let url = format!("{server_url}/api/v1/dashboard");
+        let url = format!("{server_url}{}", budgeteur_shared::routes::DASHBOARD);
         match client
             .get(&url)
             .header("Authorization", &header)
@@ -154,7 +143,7 @@ fn fetch_dashboard(server_url: String, signing_key: SigningKey) -> Cmd<Message> 
             .send()
             .await
         {
-            Ok(resp) if resp.status().is_success() => match resp.json::<DashboardData>().await {
+            Ok(resp) if resp.status().is_success() => match resp.json::<DashboardSummary>().await {
                 Ok(data) => Message::DashboardResult(Ok(data)),
                 Err(e) => Message::DashboardResult(Err(format!("could not parse dashboard: {e}"))),
             },
@@ -173,7 +162,7 @@ fn sign_auth_header(signing_key: &SigningKey) -> Result<String, String> {
         .map_err(|e| format!("system clock error: {e}"))?
         .as_secs() as usize;
 
-    let claims = auth_claims::TuiClaims {
+    let claims = TuiClaims {
         sub: "tui-client".into(),
         iat: now,
         exp: now + TOKEN_EXPIRY_SECONDS,
@@ -193,15 +182,4 @@ fn sign_auth_header(signing_key: &SigningKey) -> Result<String, String> {
     .map_err(|e| format!("could not sign JWT: {e}"))?;
 
     Ok(format!("Bearer {token}"))
-}
-
-mod auth_claims {
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Debug, Serialize, Deserialize)]
-    pub struct TuiClaims {
-        pub sub: String,
-        pub iat: usize,
-        pub exp: usize,
-    }
 }

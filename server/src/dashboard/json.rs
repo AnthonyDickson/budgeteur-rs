@@ -1,7 +1,6 @@
 //! JSON API handler for dashboard data. Returns a summary for the TUI client.
 
 use axum::{Json, extract::State, response::IntoResponse};
-use serde::Serialize;
 use time::{Date, Duration, OffsetDateTime};
 
 use crate::{
@@ -14,14 +13,7 @@ use crate::{
     timezone::get_local_offset,
 };
 
-/// Dashboard summary returned to the TUI client.
-#[derive(Debug, Serialize)]
-pub struct DashboardSummary {
-    pub total_balance: f64,
-    pub monthly_income: f64,
-    pub monthly_expenses: f64,
-    pub monthly_net: f64,
-}
+pub use budgeteur_shared::dashboard::DashboardSummary;
 
 /// Return a JSON summary of the dashboard for the TUI.
 pub async fn get_dashboard_json(
