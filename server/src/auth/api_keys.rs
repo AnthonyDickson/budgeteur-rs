@@ -9,7 +9,7 @@ use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::Deserialize;
 use std::path::Path;
 
-pub use budgeteur_shared::auth::TuiClaims;
+pub use budgeteur_shared::auth::{TUI_CLIENT_SUB, TuiClaims};
 
 // ---------------------------------------------------------------------------
 // Config file format
@@ -127,7 +127,9 @@ impl TuiKeyStore {
         for key in &self.keys {
             let decoding_key = DecodingKey::from_ed_der(&key.to_bytes());
 
-            if let Ok(data) = decode::<TuiClaims>(token, &decoding_key, &validation) {
+            if let Ok(data) = decode::<TuiClaims>(token, &decoding_key, &validation)
+                && data.claims.sub == TUI_CLIENT_SUB
+            {
                 return Some(data.claims);
             }
         }

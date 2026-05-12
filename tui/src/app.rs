@@ -1,4 +1,4 @@
-use budgeteur_shared::auth::TuiClaims;
+use budgeteur_shared::auth::{TUI_CLIENT_SUB, TuiClaims};
 use budgeteur_shared::dashboard::DashboardSummary;
 
 use crate::runtime::Cmd;
@@ -163,7 +163,7 @@ fn sign_auth_header(signing_key: &SigningKey) -> Result<String, String> {
         .as_secs() as usize;
 
     let claims = TuiClaims {
-        sub: "tui-client".into(),
+        sub: TUI_CLIENT_SUB.into(),
         iat: now,
         exp: now + TOKEN_EXPIRY_SECONDS,
     };
