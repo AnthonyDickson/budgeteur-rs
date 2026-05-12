@@ -158,13 +158,13 @@ mod tests {
     use super::*;
     use ed25519_dalek::{SigningKey, pkcs8::EncodePrivateKey};
     use jsonwebtoken::{EncodingKey, Header, encode};
-    use rand::RngCore;
+    use rand::Rng;
     use std::io::Write;
 
     /// Generate a fresh Ed25519 keypair for testing.
     fn generate_keypair() -> (SigningKey, ed25519_dalek::VerifyingKey) {
         let mut seed = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut seed);
+        rand::rng().fill_bytes(&mut seed);
         let signing_key = SigningKey::from_bytes(&seed);
         let verifying_key = signing_key.verifying_key();
         (signing_key, verifying_key)
