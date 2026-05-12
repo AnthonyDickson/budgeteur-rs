@@ -21,7 +21,7 @@ use runtime::Runtime;
 // ---------------------------------------------------------------------------
 
 #[derive(Parser)]
-#[command(name = "budgeteur-tui", about = "TUI client for Budgeteur")]
+#[command(name = "budgeteur-tui", about = "TUI client for Budgeteur", version)]
 struct Cli {
     /// Server URL (overrides config file).
     #[arg(long)]
