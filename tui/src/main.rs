@@ -160,12 +160,14 @@ async fn run(server_url: String) -> io::Result<()> {
         if event::poll(Duration::from_millis(100))?
             && let Event::Key(key) = event::read()?
         {
-            runtime.spawn(update(&mut model, Message::Key(key.code)));
+            let cmd = update(&mut model, Message::Key(key.code));
+            runtime.spawn(cmd);
         }
 
         // Completed async commands
         while let Ok(msg) = rx.try_recv() {
-            runtime.spawn(update(&mut model, msg));
+            let cmd = update(&mut model, msg);
+            runtime.spawn(cmd);
         }
     }
 

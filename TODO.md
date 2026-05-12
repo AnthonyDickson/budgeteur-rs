@@ -4,7 +4,6 @@
 
 ### Bugs to fix
 
-- [ ] **High:** Main loop spawns sync key-updates through `runtime.spawn()` — call `update()` directly, then spawn only the returned `Cmd`
 - [ ] **Medium:** Add `#[command(version)]` to TUI CLI so `--version` works
 - [ ] **Medium:** Pre-compute DER-encoded signing key in `init()` instead of re-encoding via `to_pkcs8_der()` on every JWT
 - [ ] **Medium:** `last_twelve_months` subtracts a flat 365 days — doesn't account for leap years
