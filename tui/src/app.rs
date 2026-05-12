@@ -26,7 +26,8 @@ pub enum Status {
 pub struct Model {
     status: Status,
     pub should_quit: bool,
-    signing_key: SigningKey,
+    #[expect(dead_code)]
+    signing_key_der: Vec<u8>,
     #[expect(dead_code)]
     server_url: String,
 }
@@ -45,14 +46,20 @@ pub enum Message {
 // ---------------------------------------------------------------------------
 
 pub fn init(server_url: String, signing_key: SigningKey) -> (Model, Cmd<Message>) {
+    let der = signing_key
+        .to_pkcs8_der()
+        .expect("could not encode signing key to PKCS#8 DER")
+        .as_bytes()
+        .to_vec();
+
     let model = Model {
         status: Status::Loading,
         should_quit: false,
         server_url: server_url.clone(),
-        signing_key,
+        signing_key_der: der.clone(),
     };
 
-    let cmd = fetch_dashboard(server_url, model.signing_key.clone());
+    let cmd = fetch_dashboard(server_url, der);
     (model, cmd)
 }
 
@@ -127,9 +134,9 @@ pub fn view(model: &Model, f: &mut Frame) {
 
 const TOKEN_EXPIRY_SECONDS: usize = 300;
 
-fn fetch_dashboard(server_url: String, signing_key: SigningKey) -> Cmd<Message> {
+fn fetch_dashboard(server_url: String, signing_key_der: Vec<u8>) -> Cmd<Message> {
     Cmd::from(async move {
-        let header = match sign_auth_header(&signing_key) {
+        let header = match sign_auth_header(&signing_key_der) {
             Ok(h) => h,
             Err(e) => return Message::DashboardResult(Err(e)),
         };
@@ -156,7 +163,7 @@ fn fetch_dashboard(server_url: String, signing_key: SigningKey) -> Cmd<Message> 
     })
 }
 
-fn sign_auth_header(signing_key: &SigningKey) -> Result<String, String> {
+fn sign_auth_header(signing_key_der: &[u8]) -> Result<String, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| format!("system clock error: {e}"))?
@@ -168,11 +175,7 @@ fn sign_auth_header(signing_key: &SigningKey) -> Result<String, String> {
         exp: now + TOKEN_EXPIRY_SECONDS,
     };
 
-    let der = signing_key
-        .to_pkcs8_der()
-        .map_err(|e| format!("could not encode private key: {e}"))?;
-
-    let encoding_key = jsonwebtoken::EncodingKey::from_ed_der(der.as_bytes());
+    let encoding_key = jsonwebtoken::EncodingKey::from_ed_der(signing_key_der);
 
     let token = jsonwebtoken::encode(
         &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA),

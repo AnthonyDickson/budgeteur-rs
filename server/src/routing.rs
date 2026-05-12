@@ -41,7 +41,6 @@ use crate::{
     },
 };
 
-
 /// Return a router with all the app's routes.
 pub fn build_router(state: AppState) -> Router {
     let unprotected_routes = Router::new()
