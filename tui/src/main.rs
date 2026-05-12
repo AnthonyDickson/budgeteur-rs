@@ -46,12 +46,24 @@ fn load_signing_key() -> io::Result<SigningKey> {
         )
     })?;
 
-    let hex_key = std::fs::read_to_string(&path).map_err(|e| {
-        io::Error::other(format!(
-            "could not read private key from {}: {e}",
-            path.display()
-        ))
-    })?;
+    let hex_key = match std::fs::read_to_string(&path) {
+        Ok(key) => key,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "no private key found at {}. run `budgeteur-tui init` first",
+                    path.display()
+                ),
+            ));
+        }
+        Err(e) => {
+            return Err(io::Error::other(format!(
+                "could not read private key from {}: {e}",
+                path.display()
+            )));
+        }
+    };
 
     let raw_key: [u8; 32] = hex::decode(hex_key.trim())
         .map_err(|e| {

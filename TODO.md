@@ -4,7 +4,6 @@
 
 ### Bugs to fix
 
-- [ ] **High:** TUI provides no first-run UX when private key is missing — catch and print "run `budgeteur-tui init` first"
 - [ ] **High:** `TuiClaims::sub` comment says "we validate `sub` ourselves" but no validation occurs — validate or remove comment
 - [ ] **High:** Main loop spawns sync key-updates through `runtime.spawn()` — call `update()` directly, then spawn only the returned `Cmd`
 - [ ] **Medium:** Add `#[command(version)]` to TUI CLI so `--version` works
