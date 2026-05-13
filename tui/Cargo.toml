@@ -18,4 +18,4 @@ ed25519-dalek = { version = "2", features = ["pkcs8"] }
 hex = "0.4"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 rand = "0.10"
-toml = "0.8"
+toml = "1.1"
