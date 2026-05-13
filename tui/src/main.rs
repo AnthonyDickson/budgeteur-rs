@@ -12,6 +12,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ed25519_dalek::SigningKey;
+use rand::Rng;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use runtime::Runtime;
 
@@ -70,14 +71,12 @@ fn load_signing_key() -> io::Result<SigningKey> {
 // ---------------------------------------------------------------------------
 
 fn run_init() -> Result<(), Box<dyn std::error::Error>> {
-    use rand::RngCore;
-
     let path = config::private_key_path().ok_or("could not determine XDG data directory")?;
     config::ensure_parent_dir(&path)?;
 
     // Generate fresh Ed25519 keypair.
     let mut seed = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut seed);
+    rand::rng().fill_bytes(&mut seed);
     let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
     let verifying_key = signing_key.verifying_key();
 
