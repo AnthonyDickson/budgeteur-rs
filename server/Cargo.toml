@@ -48,6 +48,6 @@ zxcvbn = "3"
 [dev-dependencies]
 axum-test = "20"
 rand = "0.10"
-scraper = "0.26"
+scraper = "0.27"
 serde_html_form = "0.4"
 tempfile = "3"
