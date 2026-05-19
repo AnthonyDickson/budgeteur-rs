@@ -1,88 +1,91 @@
-use budgeteur_shared::auth::{TUI_CLIENT_SUB, TuiClaims};
-use budgeteur_shared::dashboard::DashboardSummary;
-
-use crate::runtime::Cmd;
 use crossterm::event::KeyCode;
-use ed25519_dalek::SigningKey;
-use ed25519_dalek::pkcs8::EncodePrivateKey;
+use ed25519_dalek::{SigningKey, pkcs8::EncodePrivateKey};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
-    text::Text,
-    widgets::{Block, Borders, Paragraph},
+    layout::{Constraint, Layout, Rect},
+    style::Stylize,
+    text::{Line, Span, Text},
+    widgets::{Block, Paragraph, Wrap},
 };
+
+use crate::{dashboard, key_binding::KeyBinding, request::RequestContext, runtime::Cmd};
 
 // ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
 
-pub enum Status {
-    Loading,
-    Error(String),
-    Ready(DashboardSummary),
+pub enum PageModel {
+    Dashboard(dashboard::Model),
 }
 
 pub struct Model {
-    status: Status,
     pub should_quit: bool,
     #[expect(dead_code)]
-    signing_key_der: Vec<u8>,
-    #[expect(dead_code)]
-    server_url: String,
+    request_ctx: RequestContext,
+    page: PageModel,
+}
+
+/// Ratatui widget state for the active page, kept separate from [`Model`]
+/// to preserve TEA purity.
+pub enum ViewState {
+    Dashboard(dashboard::ViewState),
 }
 
 // ---------------------------------------------------------------------------
 // Message
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::large_enum_variant)]
 pub enum Message {
-    Key(KeyCode),
-    DashboardResult(Result<DashboardSummary, String>),
+    Quit,
+    DashboardMsg(dashboard::Message),
 }
 
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
-pub fn init(server_url: String, signing_key: SigningKey) -> (Model, Cmd<Message>) {
+pub fn init(server_url: String, signing_key: SigningKey) -> (Model, Cmd<Message>, ViewState) {
     let der = signing_key
         .to_pkcs8_der()
         .expect("could not encode signing key to PKCS#8 DER")
         .as_bytes()
         .to_vec();
 
+    let request_ctx = RequestContext {
+        base_url: server_url,
+        signing_key_der: der,
+    };
+    let (dashboard_model, dashboard_cmd, dashboard_view_state) = dashboard::init(&request_ctx);
+
     let model = Model {
-        status: Status::Loading,
         should_quit: false,
-        server_url: server_url.clone(),
-        signing_key_der: der.clone(),
+        request_ctx,
+        page: PageModel::Dashboard(dashboard_model),
     };
 
-    let cmd = fetch_dashboard(server_url, der);
-    (model, cmd)
+    let cmd = Cmd::map(dashboard_cmd, Message::DashboardMsg);
+    (model, cmd, ViewState::Dashboard(dashboard_view_state))
 }
 
 // ---------------------------------------------------------------------------
 // Update
 // ---------------------------------------------------------------------------
 
-pub fn update(model: &mut Model, msg: Message) -> Cmd<Message> {
+pub fn update(mut model: Model, msg: Message) -> (Model, Cmd<Message>) {
     match msg {
-        Message::Key(KeyCode::Char('q')) => {
+        Message::Quit => {
             model.should_quit = true;
-            Cmd::none()
+            (model, Cmd::none())
         }
-        Message::Key(_) => Cmd::none(),
-
-        Message::DashboardResult(Ok(data)) => {
-            model.status = Status::Ready(data);
-            Cmd::none()
-        }
-        Message::DashboardResult(Err(e)) => {
-            model.status = Status::Error(e);
-            Cmd::none()
-        }
+        Message::DashboardMsg(inner_msg) => match model.page {
+            PageModel::Dashboard(inner_model) => {
+                // TODO: pass request ctx
+                let (updated_model, cmd) = dashboard::update(inner_model, inner_msg);
+                model.page = PageModel::Dashboard(updated_model);
+                (model, cmd.map(Message::DashboardMsg))
+            }
+        },
     }
 }
 
@@ -90,99 +93,79 @@ pub fn update(model: &mut Model, msg: Message) -> Cmd<Message> {
 // View
 // ---------------------------------------------------------------------------
 
-pub fn view(model: &Model, f: &mut Frame) {
+pub fn view(model: &Model, view_state: &mut ViewState, f: &mut Frame) {
     let area = f.area();
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
-        .split(area);
+    let [page_area, status_bar_area] =
+        Layout::vertical([Constraint::Min(20), Constraint::Length(2)]).areas(area);
 
-    let (text, color) = match &model.status {
-        Status::Loading => ("● Loading…".to_string(), Color::Yellow),
-        Status::Ready(data) => (
-            format!(
-                "● Balance: ${:.2}  |  Net: ${:.2}/mo",
-                data.total_balance, data.monthly_net
-            ),
-            Color::Green,
-        ),
-        Status::Error(msg) => (format!("● {msg}"), Color::Red),
+    match (&model.page, &mut *view_state) {
+        (PageModel::Dashboard(dashboard_model), ViewState::Dashboard(inner_view_state)) => {
+            dashboard::view(dashboard_model, inner_view_state, page_area, f)
+        }
+    }
+
+    let mut bindings = match (&model.page, &view_state) {
+        (PageModel::Dashboard(_), ViewState::Dashboard(inner_view_state)) => {
+            dashboard::key_bindings(inner_view_state)
+        }
     };
+    bindings.extend(global_key_bindings());
+    draw_status_bar(bindings, status_bar_area, f);
+}
 
-    let status = Paragraph::new(Text::from(text).style(Style::default().fg(color))).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Budgeteur TUI"),
-    );
+fn draw_status_bar(bindings: Vec<KeyBinding>, area: Rect, f: &mut Frame) {
+    let mut spans: Vec<Span> = bindings
+        .into_iter()
+        .flat_map(|b| {
+            [
+                b.key.gray(),
+                " ".into(),
+                b.description.dark_gray(),
+                " • ".dark_gray(),
+            ]
+        })
+        .collect();
 
-    f.render_widget(status, chunks[0]);
+    // Remove trailing separator
+    spans.pop();
 
-    if let Status::Ready(data) = &model.status {
-        let details = format!(
-            "Total Balance: ${:.2}\n\nLast Month:\n  Income:   ${:.2}\n  Expenses: ${:.2}\n  Net:      ${:.2}",
-            data.total_balance, data.monthly_income, data.monthly_expenses, data.monthly_net
-        );
-        let detail_widget = Paragraph::new(details)
-            .block(Block::default().borders(Borders::ALL).title("Dashboard"));
-        f.render_widget(detail_widget, chunks[1]);
+    let paragraph = Paragraph::new(Text::from(Line::from(spans)))
+        .block(Block::default())
+        .left_aligned()
+        .wrap(Wrap { trim: false });
+    f.render_widget(paragraph, area);
+}
+
+// ---------------------------------------------------------------------------
+// Key event routing
+// ---------------------------------------------------------------------------
+
+/// Route a raw key event to an optional message. Mutates [`ViewState`]
+/// directly for navigation (j/k); returns a message for actions that need
+/// the async command pipeline.
+pub fn handle_key_event(view_state: &mut ViewState, key: KeyCode) -> Option<Message> {
+    // Global bindings
+    if let KeyCode::Char('q') = key {
+        return Some(Message::Quit);
+    }
+
+    // Page-level bindings
+    match view_state {
+        ViewState::Dashboard(view_state) => {
+            dashboard::handle_key(key, view_state).map(Message::DashboardMsg)
+        }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Commands
-// ---------------------------------------------------------------------------
-
-const TOKEN_EXPIRY_SECONDS: usize = 300;
-
-fn fetch_dashboard(server_url: String, signing_key_der: Vec<u8>) -> Cmd<Message> {
-    Cmd::from(async move {
-        let header = match sign_auth_header(&signing_key_der) {
-            Ok(h) => h,
-            Err(e) => return Message::DashboardResult(Err(e)),
-        };
-
-        let client = reqwest::Client::new();
-        let url = format!("{server_url}{}", budgeteur_shared::routes::DASHBOARD);
-        match client
-            .get(&url)
-            .header("Authorization", &header)
-            .timeout(std::time::Duration::from_secs(5))
-            .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => match resp.json::<DashboardSummary>().await {
-                Ok(data) => Message::DashboardResult(Ok(data)),
-                Err(e) => Message::DashboardResult(Err(format!("could not parse dashboard: {e}"))),
-            },
-            Ok(resp) if resp.status().as_u16() == 401 => Message::DashboardResult(Err(
-                "authentication failed — is your public key registered on the server?".into(),
-            )),
-            Ok(resp) => Message::DashboardResult(Err(format!("server returned {}", resp.status()))),
-            Err(e) => Message::DashboardResult(Err(format!("connection error: {e}"))),
-        }
-    })
-}
-
-fn sign_auth_header(signing_key_der: &[u8]) -> Result<String, String> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| format!("system clock error: {e}"))?
-        .as_secs() as usize;
-
-    let claims = TuiClaims {
-        sub: TUI_CLIENT_SUB.into(),
-        iat: now,
-        exp: now + TOKEN_EXPIRY_SECONDS,
-    };
-
-    let encoding_key = jsonwebtoken::EncodingKey::from_ed_der(signing_key_der);
-
-    let token = jsonwebtoken::encode(
-        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA),
-        &claims,
-        &encoding_key,
-    )
-    .map_err(|e| format!("could not sign JWT: {e}"))?;
-
-    Ok(format!("Bearer {token}"))
+fn global_key_bindings() -> Vec<KeyBinding> {
+    vec![
+        KeyBinding {
+            key: "r".to_owned(),
+            description: "refresh".to_owned(),
+        },
+        KeyBinding {
+            key: "q".to_owned(),
+            description: "quit".to_owned(),
+        },
+    ]
 }

@@ -4,6 +4,7 @@ use axum::{
     extract::{FromRef, State},
     response::{IntoResponse, Response},
 };
+use budgeteur_shared::currency::format_currency;
 use maud::{Markup, PreEscaped, html};
 use rusqlite::Connection;
 
@@ -14,7 +15,7 @@ use crate::{
     AppState, Error, endpoints,
     html::{
         BUTTON_PRIMARY_STYLE, FORM_DISMISS_LABEL_STYLE, FORM_RADIO_LABEL_STYLE, HeadElement,
-        LINK_STYLE, PAGE_CONTAINER_STYLE, base, format_currency,
+        LINK_STYLE, PAGE_CONTAINER_STYLE, base,
     },
     navigation::NavBar,
     tag::{Tag, get_all_tags},

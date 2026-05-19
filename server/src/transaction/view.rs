@@ -1,6 +1,7 @@
 //! HTML rendering for the transactions page.
 
 use axum::http::Uri;
+use budgeteur_shared::currency::format_currency;
 use maud::{Markup, html};
 use time::{Date, Month, format_description::BorrowedFormatItem, macros::format_description};
 use unicode_segmentation::UnicodeSegmentation;
@@ -9,7 +10,7 @@ use crate::{
     endpoints,
     html::{
         PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE, TABLE_HEADER_STYLE, TABLE_ROW_STYLE,
-        TAG_BADGE_STYLE, base, edit_delete_action_links, format_currency,
+        TAG_BADGE_STYLE, base, edit_delete_action_links,
     },
     navigation::NavBar,
     tag::{ExcludedTagsViewConfig, TagWithExclusion, excluded_tags_controls},

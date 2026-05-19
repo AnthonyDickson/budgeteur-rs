@@ -2,14 +2,33 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-### Views
-
 - Dashboard view
+  - Rearrange to put expenses by tag and untagged transaction on a third row that fills the height
+  - Set ignored tags similar to dashboard
+    - Popup to set ignored tags or tags & rules page?
+      - Argument for dashboard: the tag exclusion only applies to the dashboard currently
+      - Argument for tags & ruls page: this is a setting related to tags
+  - Add indication of chart period somewhere (1Y/last 12 months)
+  - Add row:
+    - Add chart for monthly expenses
+      - Check if ratatui supports stacked bar charts
+        - It does, just pass in a `Vec<Dataset>`, order matters (last is rendered last/on top)
+    - Add table for monthly breakdown of income, expenses, net income
+      - Monthly summary table can span two cols to reduce scrolling
+  - Quick tag from untagged transaction widget
+  - Handle case where the user has no data
+    - expenses by tag view: prompt user to add transactions and tag them
+  - Once accounts are set up to differentiate between liquid and fixed assets, and short term and long term liabilities,
+    update the savings stats to only count liquid assets and short term liabilities towards the savings. The net worth
+    calculation can continue to aggregate across all accounts.
 - Transactions view
 - CSV import
+  - Custom file picker
+  - Display as popup/dialog
 - Accounts view
 - Tags view
 - Auto-tagging rules view
+- Enforce a minimum screen size
 
 ## Stage One: Budgeting
 

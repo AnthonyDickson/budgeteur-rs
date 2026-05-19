@@ -1,10 +1,13 @@
 mod app;
 mod config;
+mod dashboard;
+mod key_binding;
+mod request;
 mod runtime;
 
 use std::{io, time::Duration};
 
-use app::{Message, init, update, view};
+use app::Message;
 use clap::Parser;
 use crossterm::{
     event::{self, Event},
@@ -139,7 +142,7 @@ async fn run(server_url: String) -> io::Result<()> {
 
     let (runtime, mut rx) = Runtime::<Message>::new();
 
-    let (mut model, initial_cmd) = init(server_url, signing_key);
+    let (mut model, initial_cmd, mut view_state) = app::init(server_url, signing_key);
     runtime.spawn(initial_cmd);
 
     enable_raw_mode()?;
@@ -150,7 +153,7 @@ async fn run(server_url: String) -> io::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     loop {
-        terminal.draw(|f| view(&model, f))?;
+        terminal.draw(|f| app::view(&model, &mut view_state, f))?;
 
         if model.should_quit {
             break;
@@ -159,14 +162,17 @@ async fn run(server_url: String) -> io::Result<()> {
         // Crossterm events
         if event::poll(Duration::from_millis(100))?
             && let Event::Key(key) = event::read()?
+            && let Some(msg) = app::handle_key_event(&mut view_state, key.code)
         {
-            let cmd = update(&mut model, Message::Key(key.code));
+            let cmd;
+            (model, cmd) = app::update(model, msg);
             runtime.spawn(cmd);
         }
 
         // Completed async commands
         while let Ok(msg) = rx.try_recv() {
-            let cmd = update(&mut model, msg);
+            let cmd;
+            (model, cmd) = app::update(model, msg);
             runtime.spawn(cmd);
         }
     }

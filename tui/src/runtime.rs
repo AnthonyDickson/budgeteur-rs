@@ -28,6 +28,22 @@ impl<Msg> Cmd<Msg> {
         Self(cmds.into_iter().flat_map(|c| c.0).collect())
     }
 
+    pub fn map<NewMsg, F>(self, f: F) -> Cmd<NewMsg>
+    where
+        Msg: Send + 'static,
+        F: FnOnce(Msg) -> NewMsg + Clone + Send + 'static,
+    {
+        Cmd(self
+            .0
+            .into_iter()
+            .map(|fut| {
+                let f = f.clone();
+                Box::pin(async move { f(fut.await) })
+                    as Pin<Box<dyn Future<Output = NewMsg> + Send>>
+            })
+            .collect())
+    }
+
     pub(self) fn into_futures(self) -> Vec<Pin<Box<dyn Future<Output = Msg> + Send>>> {
         self.0
     }
