@@ -89,6 +89,8 @@ Budgeteur includes a terminal client (`budgeteur-tui`) that connects to the
 server from a different machine over the network. It uses Ed25519-signed JWTs
 for passwordless authentication.
 
+![Screenshot of the dashboard page of the Budgeteur TUI](./assets/tui_sample.png)
+
 ### Installation
 
 **Via Nix flakes:**
