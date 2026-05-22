@@ -18,9 +18,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
-        with:
-          sparse-checkout: Cargo.toml
-          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -154,7 +151,7 @@ jobs:
         run: mv target/release/budgeteur_tui budgeteur-tui-linux-x86_64
 
       - name: Upload binary
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: budgeteur-tui-linux-x86_64
           path: budgeteur-tui-linux-x86_64
@@ -174,7 +171,7 @@ jobs:
 
     steps:
       - name: Download TUI binary
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: budgeteur-tui-linux-x86_64
 
