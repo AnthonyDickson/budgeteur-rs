@@ -3,6 +3,10 @@
 ## Side Quest: Multi-Client Support (TUI)
 
 - Add subcommand to print config path
+- Add argument for TUI to override the private key path.
+  Useful for testing dev version alongside prod version
+- Log full errors somewhere, keep errors in UI brief
+- Enforce that version in flake.nix matches that in Cargo.toml
 - Dashboard view
   - Rearrange to put expenses by tag and untagged transaction on a third row that fills the height
   - Set ignored tags similar to dashboard
@@ -30,6 +34,12 @@
 - Tags view
 - Auto-tagging rules view
 - Enforce a minimum screen size
+
+### Bugs
+
+- Dashboard:
+  - When there's no untagged transactions, the "A" in "Amount" gets cut off
+  - The refresh command shows twice
 
 ## Stage One: Budgeting
 

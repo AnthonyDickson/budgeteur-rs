@@ -25,10 +25,10 @@ RUN apk update
 RUN apk add --no-cache curl libgcc libstdc++
 
 WORKDIR /build
-COPY server/src/input.css /build/input.css
+COPY server/src /build/src
 RUN curl -sL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.18/tailwindcss-linux-x64-musl -o tailwindcss && \
   chmod +x tailwindcss && \
-  ./tailwindcss --input input.css --output static/main.css --minify
+  ./tailwindcss --input src/input.css --output static/main.css --minify
 
 #==============================================================================#
 
