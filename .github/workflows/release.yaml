@@ -66,18 +66,7 @@ jobs:
       - name: Check if tag exists
         id: tag-check
         run: |
-          ./scripts/check_source_changed.sh -c || exit_code=$?
-
-          if [[ -z $exit_code ]]; then
-            echo "⏩ Skipping Docker build and push."
-            echo -n "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          elif [[ $exit_code -eq 1 ]]; then
-            echo "ℹ️ Checking tag is unique before building."
-          else
-            echo "❗Unexpected exit code $exit_code"
-            exit 1
-          fi
+          echo "ℹ️ Checking tag is unique before building."
 
           exit_code=""
           RESULT=$(docker manifest inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.get-version.outputs.semver }} 2>&1 || exit_code=$?)
