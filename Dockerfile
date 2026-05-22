@@ -8,8 +8,10 @@ WORKDIR /build
 COPY Cargo.toml /build/Cargo.toml
 COPY server/Cargo.toml /build/server/Cargo.toml
 COPY tui/Cargo.toml /build/tui/Cargo.toml
+COPY shared/Cargo.toml /build/shared/Cargo.toml
 COPY Cargo.lock /build/Cargo.lock
 COPY server/src/ /build/server/src/
+COPY shared/src/ /build/shared/src/
 # Make skeleton TUI project to avoid copying in the whole TUI source
 RUN mkdir -p /build/tui/src && touch /build/tui/src/main.rs
 
