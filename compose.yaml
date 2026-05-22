@@ -12,7 +12,7 @@ services:
         --db-path /app/data/budgeteur.db
         --log-path /app/data/debug.log
         --timezone Pacific/Auckland
-        --tui_public_keys_path /app/data/tui_public_keys.toml
+        --tui-public-keys-path /app/data/tui_public_keys.toml
     ports:
       # Change the port on the left if you want to change the port your PC
       # connects to.

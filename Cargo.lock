@@ -388,7 +388,7 @@ dependencies = [
 
 [[package]]
 name = "budgeteur_rs"
-version = "0.30.0"
+version = "0.30.1"
 dependencies = [
  "axum",
  "axum-extra",
@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "budgeteur_shared"
-version = "0.30.0"
+version = "0.30.1"
 dependencies = [
  "numfmt",
  "serde",
@@ -444,7 +444,7 @@ dependencies = [
 
 [[package]]
 name = "budgeteur_tui"
-version = "0.30.0"
+version = "0.30.1"
 dependencies = [
  "budgeteur_shared",
  "clap",
