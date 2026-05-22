@@ -2,13 +2,14 @@
 //!
 //! See `expenses-by-tag-design-spec.md` for UI specifications.
 
+use budgeteur_shared::currency::format_currency;
 use maud::{Markup, html};
 use time::{Date, Month, format_description::BorrowedFormatItem, macros::format_description};
 
 use crate::{
     dashboard::aggregation::TagExpenseStats,
     endpoints,
-    html::{LINK_STYLE, currency_rounded_with_tooltip, format_currency},
+    html::{LINK_STYLE, currency_rounded_with_tooltip},
 };
 
 /// Uses 5.5% (not 5.0%) to align with percentage rounding:

@@ -1,10 +1,13 @@
 mod app;
 mod config;
+mod dashboard;
+mod key_binding;
+mod request;
 mod runtime;
 
 use std::{io, time::Duration};
 
-use app::{Message, init, update, view};
+use app::Message;
 use clap::Parser;
 use crossterm::{
     event::{self, Event},
@@ -21,7 +24,7 @@ use runtime::Runtime;
 // ---------------------------------------------------------------------------
 
 #[derive(Parser)]
-#[command(name = "budgeteur-tui", about = "TUI client for Budgeteur")]
+#[command(name = "budgeteur-tui", about = "TUI client for Budgeteur", version)]
 struct Cli {
     /// Server URL (overrides config file).
     #[arg(long)]
@@ -46,12 +49,24 @@ fn load_signing_key() -> io::Result<SigningKey> {
         )
     })?;
 
-    let hex_key = std::fs::read_to_string(&path).map_err(|e| {
-        io::Error::other(format!(
-            "could not read private key from {}: {e}",
-            path.display()
-        ))
-    })?;
+    let hex_key = match std::fs::read_to_string(&path) {
+        Ok(key) => key,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "no private key found at {}. run `budgeteur-tui init` first",
+                    path.display()
+                ),
+            ));
+        }
+        Err(e) => {
+            return Err(io::Error::other(format!(
+                "could not read private key from {}: {e}",
+                path.display()
+            )));
+        }
+    };
 
     let raw_key: [u8; 32] = hex::decode(hex_key.trim())
         .map_err(|e| {
@@ -127,7 +142,7 @@ async fn run(server_url: String) -> io::Result<()> {
 
     let (runtime, mut rx) = Runtime::<Message>::new();
 
-    let (mut model, initial_cmd) = init(server_url, signing_key);
+    let (mut model, initial_cmd, mut view_state) = app::init(server_url, signing_key);
     runtime.spawn(initial_cmd);
 
     enable_raw_mode()?;
@@ -138,7 +153,7 @@ async fn run(server_url: String) -> io::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     loop {
-        terminal.draw(|f| view(&model, f))?;
+        terminal.draw(|f| app::view(&model, &mut view_state, f))?;
 
         if model.should_quit {
             break;
@@ -147,13 +162,18 @@ async fn run(server_url: String) -> io::Result<()> {
         // Crossterm events
         if event::poll(Duration::from_millis(100))?
             && let Event::Key(key) = event::read()?
+            && let Some(msg) = app::handle_key_event(&mut view_state, key.code)
         {
-            runtime.spawn(update(&mut model, Message::Key(key.code)));
+            let cmd;
+            (model, cmd) = app::update(model, msg);
+            runtime.spawn(cmd);
         }
 
         // Completed async commands
         while let Ok(msg) = rx.try_recv() {
-            runtime.spawn(update(&mut model, msg));
+            let cmd;
+            (model, cmd) = app::update(model, msg);
+            runtime.spawn(cmd);
         }
     }
 

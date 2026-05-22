@@ -1,8 +1,5 @@
+use budgeteur_shared::currency::{format_currency, format_currency_rounded};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
-
-use std::sync::OnceLock;
-
-use numfmt::{Formatter, Precision};
 
 // In view_templates.rs
 
@@ -317,70 +314,6 @@ pub fn dollar_input_styles() -> HeadElement {
         "#
         .to_owned(),
     ))
-}
-
-pub fn format_currency(number: f64) -> String {
-    static POSITIVE_FMT: OnceLock<Formatter> = OnceLock::new();
-
-    let positive_fmt = POSITIVE_FMT.get_or_init(|| {
-        Formatter::currency("$")
-            .unwrap()
-            .precision(Precision::Decimals(2))
-    });
-
-    static NEGATIVE_FMT: OnceLock<Formatter> = OnceLock::new();
-
-    let negative_fmt = NEGATIVE_FMT.get_or_init(|| {
-        Formatter::currency("-$")
-            .unwrap()
-            .precision(Precision::Decimals(2))
-    });
-
-    let mut formatted_string = if number < 0.0 {
-        negative_fmt.fmt_string(number.abs())
-    } else if number > 0.0 {
-        positive_fmt.fmt_string(number)
-    } else {
-        // Zero is hardcoded as "0", so we must specify the formatted string for zero
-        "$0.00".to_owned()
-    };
-
-    // numfmt omits the last trailing zero, so we must add it ourselves
-    // For example, "12.30" is rendered as "12.3" so we append "0".
-    if formatted_string.as_bytes()[formatted_string.len() - 3] != b'.' {
-        formatted_string = format!("{formatted_string}0");
-    }
-
-    formatted_string
-}
-
-pub fn format_currency_rounded(number: f64) -> String {
-    static POSITIVE_FMT: OnceLock<Formatter> = OnceLock::new();
-
-    let positive_fmt = POSITIVE_FMT.get_or_init(|| {
-        Formatter::currency("$")
-            .unwrap()
-            .precision(Precision::Decimals(0))
-    });
-
-    static NEGATIVE_FMT: OnceLock<Formatter> = OnceLock::new();
-
-    let negative_fmt = NEGATIVE_FMT.get_or_init(|| {
-        Formatter::currency("-$")
-            .unwrap()
-            .precision(Precision::Decimals(0))
-    });
-
-    let number = number.round();
-
-    if number < 0.0 {
-        negative_fmt.fmt_string(number.abs())
-    } else if number > 0.0 {
-        positive_fmt.fmt_string(number)
-    } else {
-        // Zero is hardcoded as "0", so we must specify the formatted string for zero
-        "$0".to_owned()
-    }
 }
 
 /// Creates a span with `amount` rounded to the nearest whole number and a

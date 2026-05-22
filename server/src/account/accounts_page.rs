@@ -6,6 +6,7 @@ use axum::{
     extract::{FromRef, State},
     response::{IntoResponse, Response},
 };
+use budgeteur_shared::currency::format_currency;
 use maud::{Markup, html};
 use rusqlite::Connection;
 use time::{Date, format_description::BorrowedFormatItem, macros::format_description};
@@ -15,7 +16,7 @@ use crate::{
     endpoints::{self, format_endpoint},
     html::{
         LINK_STYLE, PAGE_CONTAINER_STYLE, TABLE_CELL_STYLE, TABLE_HEADER_STYLE, TABLE_ROW_STYLE,
-        base, edit_delete_action_links, format_currency,
+        base, edit_delete_action_links,
     },
     navigation::NavBar,
 };
@@ -346,6 +347,7 @@ mod get_all_accounts_tests {
 mod accounts_template_tests {
     use std::iter::zip;
 
+    use budgeteur_shared::currency::format_currency;
     use scraper::{ElementRef, Html, Selector};
     use time::macros::date;
 
@@ -355,7 +357,6 @@ mod accounts_template_tests {
             accounts_page::{AccountTableRow, accounts_view},
         },
         endpoints::{self, format_endpoint},
-        html::format_currency,
         test_utils::assert_valid_html,
     };
 
@@ -516,6 +517,7 @@ mod get_accounts_page_tests {
     };
 
     use axum::{extract::State, http::StatusCode};
+    use budgeteur_shared::currency::format_currency;
     use rusqlite::Connection;
     use scraper::{ElementRef, Html, Selector};
     use time::macros::date;
@@ -527,7 +529,6 @@ mod get_accounts_page_tests {
             create_account_table, get_accounts_page,
         },
         endpoints::{self, format_endpoint},
-        html::format_currency,
         test_utils::{assert_content_type, assert_valid_html, parse_html_document},
     };
 

@@ -4,7 +4,10 @@
 
 use rusqlite::Connection;
 
-use crate::{Error, tag::TagId};
+use crate::{
+    Error,
+    tag::{TagId, TagName},
+};
 
 const EXCLUDED_TAGS_TABLE: &str = "dashboard_excluded_tags";
 
@@ -91,6 +94,33 @@ pub fn get_excluded_tags(connection: &Connection) -> Result<Vec<TagId>, Error> {
         .collect::<Result<Vec<TagId>, rusqlite::Error>>()?;
 
     Ok(tag_ids)
+}
+
+/// Gets the list of tag names that are currently excluded from summary calculations.
+///
+/// # Arguments
+/// * `connection` - Database connection reference
+///
+/// # Returns
+/// Vector of tag names that should be excluded from summaries.
+///
+/// # Errors
+/// Returns [Error::SqlError] if:
+/// - Database connection fails
+/// - SQL query preparation or execution fails
+pub fn get_excluded_tag_names(connection: &Connection) -> Result<Vec<TagName>, Error> {
+    let mut stmt = connection.prepare(&format!(
+        "SELECT tag.name FROM {table} JOIN tag ON {table}.tag_id = tag.id",
+        table = EXCLUDED_TAGS_TABLE
+    ))?;
+
+    let excluded_tag_names = stmt
+        .query_map([], |row| {
+            row.get(0).map(|name: String| TagName::new_unchecked(&name))
+        })?
+        .collect::<Result<Vec<TagName>, rusqlite::Error>>()?;
+
+    Ok(excluded_tag_names)
 }
 
 #[cfg(test)]

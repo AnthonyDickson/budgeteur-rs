@@ -19,4 +19,6 @@ pub use excluded_tags::{
     excluded_tags_controls,
 };
 pub use list::get_tags_page;
-pub use preferences::{create_excluded_tags_table, get_excluded_tags, save_excluded_tags};
+pub use preferences::{
+    create_excluded_tags_table, get_excluded_tag_names, get_excluded_tags, save_excluded_tags,
+};

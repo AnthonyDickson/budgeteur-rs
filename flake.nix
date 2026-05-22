@@ -29,14 +29,13 @@
 
           nativeBuildInputs = [ rustToolchain ];
 
-          # Build only the TUI binary for the TUI package; the workspace
-          # is still fetched/checked in full for dependency resolution.
+          # Build the TUI crate from the workspace root so path dependencies
+          # (e.g., budgeteur_shared) resolve correctly.
+          buildAndTestSubdir = ".";
           cargoBuildFlags = [ "-p" "budgeteur_tui" ];
 
-          # Install only the TUI binary
           postInstall = ''
-            mkdir -p $out/bin
-            cp target/release/budgeteur_tui $out/bin/budgeteur-tui
+            mv $out/bin/budgeteur_tui $out/bin/budgeteur-tui
           '';
 
           meta = with pkgs.lib; {

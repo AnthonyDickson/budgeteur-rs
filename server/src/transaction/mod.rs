@@ -35,7 +35,7 @@ pub use edit_page::get_edit_transaction_page;
 pub use excluded_tags_endpoint::update_transactions_excluded_tags;
 pub use quick_tagging::{
     apply_quick_tagging_endpoint, create_quick_tagging_table, get_quick_tagging_page,
-    insert_untagged_transactions_for_import,
+    get_untagged_transactions, insert_untagged_transactions_for_import,
 };
 pub use transactions_page::get_transactions_page;
 

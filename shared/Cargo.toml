@@ -1,0 +1,9 @@
+[package]
+name = "budgeteur_shared"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+numfmt = "1"
+serde = { version = "1", features = ["derive"] }
+time = { version = "0.3", features = ["serde"] }
