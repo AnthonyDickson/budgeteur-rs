@@ -822,7 +822,7 @@ fn fetch_dashboard(server_url: String, signing_key_der: Vec<u8>) -> Cmd<Message>
                 "authentication failed — is your public key registered on the server?".into(),
             )),
             Ok(resp) => Message::FetchResult(Err(format!("server returned {}", resp.status()))),
-            Err(e) => Message::FetchResult(Err(format!("connection error: {e}"))),
+            Err(e) => Message::FetchResult(Err(format!("connection error: {e:#?}"))),
         }
     })
 }

@@ -13,7 +13,7 @@ hex = "0.4"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 rand = "0.10"
 ratatui = "0.30"
-reqwest = { version = "0.13", default-features = false, features = [ "json" ] }
+reqwest = { version = "0.13", default-features = false, features = [ "json", "rustls" ] }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 time = { version = "0.3", features = ["serde", "local-offset", "macros"] }
