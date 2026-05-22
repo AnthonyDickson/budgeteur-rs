@@ -2,6 +2,7 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
+- Add subcommand to print config path
 - Dashboard view
   - Rearrange to put expenses by tag and untagged transaction on a third row that fills the height
   - Set ignored tags similar to dashboard
