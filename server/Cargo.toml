@@ -26,7 +26,7 @@ maud = { version = "0.27", features = ["axum"] }
 md5 = "0.8"
 numfmt = "1"
 rpassword = "7"
-rusqlite = { version = "0.39", features = ["bundled", "time"] }
+rusqlite = { version = "0.40", features = ["bundled", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_urlencoded = "0.7"

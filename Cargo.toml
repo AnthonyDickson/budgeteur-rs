@@ -3,5 +3,5 @@ resolver = "2"
 members = ["server", "tui", "shared"]
 
 [workspace.package]
-version = "0.30.2"
+version = "0.30.3"
 edition = "2024"
