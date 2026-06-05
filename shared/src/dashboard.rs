@@ -49,7 +49,10 @@ pub struct SpendingPaceStats {
     /// This assumes the you will continue to spend at your typical rate.
     pub deviation_from_baseline: f64,
     /// The expected difference between the end of month expenses as a ratio.
-    pub deviation_from_baseline_ratio: f64,
+    ///
+    /// `None` indicates that the baseline is not meaningful, e.g. it is the
+    /// start of the month where the baseline is zero, and the current spending is zero.
+    pub deviation_from_baseline_ratio: Option<f64>,
     /// The mean monthly expentiture as an absolute value.
     pub mean_monthly_expenses: f64,
 }
