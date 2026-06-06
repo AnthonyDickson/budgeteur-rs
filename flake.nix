@@ -15,11 +15,11 @@
           inherit system overlays;
         };
 
-        rustToolchain = pkgs.rust-bin.stable."1.95.0".default;
+        rustToolchain = pkgs.rust-bin.stable."1.96.0".default;
 
         budgeteur = pkgs.rustPlatform.buildRustPackage {
           pname = "budgeteur";
-          version = "0.30.2";
+          version = "0.30.3";
 
           src = ./.;
 
@@ -65,7 +65,7 @@
 
         devShells.default = with pkgs; mkShell {
           buildInputs = [
-            rust-bin.stable."1.95.0".default
+            rust-bin.stable."1.96.0".default
             rust-analyzer
           ];
 
