@@ -19,7 +19,7 @@
 
         budgeteur = pkgs.rustPlatform.buildRustPackage {
           pname = "budgeteur";
-          version = "0.30.2";
+          version = "0.30.3";
 
           src = ./.;
 
