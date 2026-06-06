@@ -329,7 +329,6 @@ fn compute_spending_pace(
     mean_monthly_expenses: f64,
 ) -> SpendingPaceStats {
     let current_month = first_of_month(today);
-    let day_count = days_in_month(today.year(), today.month()) as usize;
 
     // Separate current-month expenses from historical ones.
     let (current_txns, historical_txns): (Vec<&Transaction>, Vec<&Transaction>) = transactions
@@ -337,45 +336,37 @@ fn compute_spending_pace(
         .filter(|t| t.amount < 0.0)
         .partition(|t| first_of_month(t.date) == current_month);
 
+    let current_month_days = days_in_month(today.year(), today.month()) as usize;
+
     let historical: Vec<f64> = {
-        let mut sum_by_day = vec![0.0; day_count];
-        let mut unique_months_seen_by_day: BTreeMap<usize, HashSet<(Month, i32)>> = BTreeMap::new();
-        for t in historical_txns {
-            let day = (t.date.day() - 1) as usize;
-            sum_by_day[day] = sum_by_day.get(day).copied().unwrap_or(0.0) + t.amount.abs();
+        let mut amounts_by_day: BTreeMap<usize, f64> = BTreeMap::new();
+        let mut months_by_day: BTreeMap<usize, HashSet<(Month, i32)>> = BTreeMap::new();
+        for t in &historical_txns {
+            let day_idx = t.date.day() as usize - 1;
+            *amounts_by_day.entry(day_idx).or_insert(0.0) += t.amount.abs();
+            months_by_day
+                .entry(day_idx)
+                .or_default()
+                .insert((t.date.month(), t.date.year()));
+        }
 
-            if let Some(unique_months) = unique_months_seen_by_day.get_mut(&day) {
-                unique_months.insert((t.date.month(), t.date.year()));
+        let mut historical = vec![0.0; current_month_days];
+        for day_idx in 1..current_month_days {
+            let total = amounts_by_day.get(&day_idx).copied().unwrap_or(0.0);
+            let month_count = months_by_day.get(&day_idx).map(|s| s.len()).unwrap_or(0);
+            let daily_avg = if month_count > 0 {
+                total / month_count as f64
             } else {
-                let mut unique_months = HashSet::new();
-                unique_months.insert((t.date.month(), t.date.year()));
-                unique_months_seen_by_day.insert(day, unique_months);
-            }
-        }
-
-        let mut sample_count_by_day = vec![0; day_count];
-        for (day, count) in sample_count_by_day.iter_mut().enumerate().take(day_count) {
-            *count = unique_months_seen_by_day
-                .get(&day)
-                .map(|s| s.len())
-                .unwrap_or(0);
-        }
-
-        let mut historical = vec![0.0; day_count];
-        for (day, (total, count)) in sum_by_day.iter().zip(sample_count_by_day).enumerate() {
-            let Some(previous_day) = day.checked_sub(1) else {
-                continue;
+                0.0
             };
-            let previous_total = historical.get(previous_day).copied().unwrap_or(0.0);
-            let todays_total = if count > 0 { total / count as f64 } else { 0.0 };
-            historical[day] = round_two_dp(todays_total + previous_total);
+            historical[day_idx] = round_two_dp(daily_avg + historical[day_idx - 1]);
         }
 
         historical
     };
 
     let (current, last_day_with_data) = {
-        let mut sum_by_day = vec![0.0; day_count];
+        let mut sum_by_day = vec![0.0; current_month_days];
         let mut last_day_with_data = current_month;
         for t in current_txns {
             let day = (t.date.day() - 1) as usize;
@@ -405,7 +396,11 @@ fn compute_spending_pace(
 
     let baseline = historical[last_day_with_data - 1];
     let deviation_from_baseline = current[last_day_with_data - 1] - baseline;
-    let deviation_from_baseline_ratio = deviation_from_baseline / baseline;
+    let deviation_from_baseline_ratio = if baseline != 0.0 {
+        Some(deviation_from_baseline / baseline)
+    } else {
+        None
+    };
 
     SpendingPaceStats {
         historical,
@@ -821,7 +816,7 @@ mod tests {
         assert_eq!(result.historical[1], 10.0);
         assert_eq!(result.current[0], 0.0);
         assert_eq!(result.deviation_from_baseline, 0.0);
-        assert!(result.deviation_from_baseline_ratio.is_nan());
+        assert!(result.deviation_from_baseline_ratio.is_none());
     }
 
     #[test]
@@ -836,10 +831,7 @@ mod tests {
         // Only current month transactions, no history
         assert!(result.historical.iter().all(|&x| x == 0.0));
         assert!(result.deviation_from_baseline > 0.0);
-        assert!(
-            result.deviation_from_baseline_ratio.is_infinite()
-                && result.deviation_from_baseline_ratio.is_sign_positive()
-        );
+        assert!(result.deviation_from_baseline_ratio.is_none());
     }
 
     // -----------------------------------------------------------------------

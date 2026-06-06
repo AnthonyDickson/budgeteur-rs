@@ -551,7 +551,8 @@ fn draw_spending_block(
     let [amount_area, chart_area] = block.inner(area).layout(&layout);
 
     let amount = match data.deviation_from_baseline_ratio {
-        x if x > 0.05 => Text::from(vec![
+        None => Text::from("NM".dark_gray()),
+        Some(x) if x > 0.05 => Text::from(vec![
             Line::from(vec![
                 "This month you are on track to spend ".dark_gray(),
                 format_currency_rounded(data.deviation_from_baseline.abs()).red(),
@@ -563,7 +564,7 @@ fn draw_spending_block(
             ])
             .dark_gray(),
         ]),
-        x if x < -0.05 => Text::from(vec![
+        Some(x) if x < -0.05 => Text::from(vec![
             Line::from(vec![
                 "This month you are on track to spend ".dark_gray(),
                 format_currency_rounded(data.deviation_from_baseline.abs()).gray(),
@@ -630,11 +631,15 @@ fn draw_spending_block(
             .name("Spending MTD")
             .marker(Marker::Braille)
             .graph_type(GraphType::Line)
-            .style(if data.deviation_from_baseline_ratio > 0.05 {
-                Color::Red
-            } else {
-                Color::Gray
-            })
+            .style(
+                if let Some(deviation_ratio) = data.deviation_from_baseline_ratio
+                    && deviation_ratio > 0.05
+                {
+                    Color::Red
+                } else {
+                    Color::Gray
+                },
+            )
             .data(&current_month_data),
     ];
 
