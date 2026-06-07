@@ -693,7 +693,7 @@ fn draw_savings_block(data: &SavingsStats, view_state: &ViewState, area: Rect, f
 
     // Trend
     let savings_trend = Line::from(vec![
-        "Last 3 Months ".dark_gray(),
+        "Last 12 Months ".dark_gray(),
         trend_prefix.set_style(trend_style),
         format_currency_rounded(data.trend.abs()).set_style(trend_style),
     ])

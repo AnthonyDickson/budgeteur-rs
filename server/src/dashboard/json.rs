@@ -422,14 +422,12 @@ fn compute_savings(
 ) -> SavingsStats {
     let balances = reconstruct_monthly_balances(total_balance, monthly_net);
 
-    // Trend: change over the last 3 months (or over all available if fewer).
-    let trend = if balances.len() >= 4 {
-        balances.last().unwrap() - balances[balances.len() - 4]
-    } else if balances.len() >= 2 {
-        balances.last().unwrap() - balances.first().unwrap()
-    } else {
-        0.0
-    };
+    // Trend: change over the last 12 months including the current month
+    let trend = balances
+        .last()
+        .copied()
+        .map(|last_balance| last_balance - balances[0])
+        .unwrap_or(0.0);
 
     let months_of_savings = if mean_monthly_expenses > 0.0 {
         (total_balance / mean_monthly_expenses) as u64
@@ -861,17 +859,5 @@ mod tests {
 
         // Then: months_of_savings is 0 (expenses must be positive to divide)
         assert_eq!(result.months_of_savings, 0);
-    }
-
-    #[test]
-    fn savings_trend_falls_back_when_less_than_4_months() {
-        // Given: only 2 months of data [100, 50], mean expenses 75
-        let monthly_net = vec![100.0, 50.0]; // 2 months
-
-        // When: calling compute_savings
-        let result = compute_savings(75.0, 150.0, &monthly_net);
-
-        // Then: trend = 150 - 100 = 50 (uses first+last instead of 3-month window)
-        assert_eq!(result.trend, 50.0);
     }
 }
