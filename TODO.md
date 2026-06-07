@@ -2,7 +2,6 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-- Change savings summary to TTM
 - Add subcommand to print config path
 - Add argument for TUI to override the private key path.
   Useful for testing dev version alongside prod version

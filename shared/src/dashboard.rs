@@ -62,7 +62,7 @@ pub struct SpendingPaceStats {
 pub struct SavingsStats {
     /// The total savings (liquid net worth)
     pub amount: f64,
-    /// How much savings have changed in the trailing 12 weeks (3 months)
+    /// How much savings have changed in the trailing 12 months
     pub trend: f64,
     /// How many months would the current savings last at the the monthly net income calculated over the last 12 months
     pub months_of_savings: u64,
