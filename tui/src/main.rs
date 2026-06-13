@@ -38,6 +38,8 @@ struct Cli {
 enum Command {
     /// Generate an Ed25519 keypair for passwordless auth.
     Init,
+    /// Print the config path
+    ConfigPath,
 }
 
 /// Load the Ed25519 signing key from the XDG data directory.
@@ -122,18 +124,26 @@ fn run_init() -> Result<(), Box<dyn std::error::Error>> {
 async fn main() -> io::Result<()> {
     let cli = Cli::parse();
 
-    if let Some(Command::Init) = cli.command {
-        if let Err(e) = run_init() {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
+    match cli.command {
+        Some(Command::Init) => {
+            if let Err(e) = run_init() {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+            Ok(())
         }
-        return Ok(());
+        Some(Command::ConfigPath) => {
+            config::config_path().inspect(|path| println!("{}", path.to_string_lossy()));
+
+            Ok(())
+        }
+        None => {
+            let cfg = config::Config::load();
+            let server_url = cli.url.unwrap_or(cfg.server_url);
+
+            run(server_url).await
+        }
     }
-
-    let cfg = config::Config::load();
-    let server_url = cli.url.unwrap_or(cfg.server_url);
-
-    run(server_url).await
 }
 
 /// Initialise the Elm-style runtime and run the TUI event loop.
