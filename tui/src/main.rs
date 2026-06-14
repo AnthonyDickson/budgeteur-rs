@@ -19,6 +19,8 @@ use rand::Rng;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use runtime::Runtime;
 
+use crate::config::{Config, ConfigOverrides};
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -30,6 +32,10 @@ struct Cli {
     #[arg(long)]
     url: Option<String>,
 
+    /// Private key path (overrides config file).
+    #[arg(long)]
+    key_path: Option<String>,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -37,35 +43,30 @@ struct Cli {
 #[derive(clap::Subcommand)]
 enum Command {
     /// Generate an Ed25519 keypair for passwordless auth.
-    Init,
+    Init {
+        #[arg(long)]
+        /// Where to save the generated private key.
+        private_key_path: Option<String>,
+    },
     /// Print the config path
     ConfigPath,
+    /// Print the private key path
+    KeyPath,
 }
 
 /// Load the Ed25519 signing key from the XDG data directory.
-fn load_signing_key() -> io::Result<SigningKey> {
-    let path = config::private_key_path().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "could not determine XDG data directory",
-        )
-    })?;
-
-    let hex_key = match std::fs::read_to_string(&path) {
+fn load_signing_key(key_path: String) -> io::Result<SigningKey> {
+    let hex_key = match std::fs::read_to_string(&key_path) {
         Ok(key) => key,
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
-                format!(
-                    "no private key found at {}. run `budgeteur-tui init` first",
-                    path.display()
-                ),
+                format!("no private key found at {key_path}. run `budgeteur-tui init` first"),
             ));
         }
         Err(e) => {
             return Err(io::Error::other(format!(
-                "could not read private key from {}: {e}",
-                path.display()
+                "could not read private key from {key_path}: {e}",
             )));
         }
     };
@@ -87,9 +88,9 @@ fn load_signing_key() -> io::Result<SigningKey> {
 // Init: key generation
 // ---------------------------------------------------------------------------
 
-fn run_init() -> Result<(), Box<dyn std::error::Error>> {
-    let path = config::private_key_path().ok_or("could not determine XDG data directory")?;
-    config::ensure_parent_dir(&path)?;
+fn run_init(private_key_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let path = std::path::Path::new(private_key_path);
+    config::ensure_parent_dir(path)?;
 
     // Generate fresh Ed25519 keypair.
     let mut seed = [0u8; 32];
@@ -98,7 +99,7 @@ fn run_init() -> Result<(), Box<dyn std::error::Error>> {
     let verifying_key = signing_key.verifying_key();
 
     // Write the private key as hex to the data directory.
-    std::fs::write(&path, hex::encode(signing_key.to_bytes()))?;
+    std::fs::write(path, hex::encode(signing_key.to_bytes()))?;
 
     // Print the public key for the user to copy to the server.
     let pub_key_hex = hex::encode(verifying_key.to_bytes());
@@ -125,8 +126,10 @@ async fn main() -> io::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Init) => {
-            if let Err(e) = run_init() {
+        Some(Command::Init { private_key_path }) => {
+            if let Err(e) =
+                run_init(&private_key_path.unwrap_or_else(config::default_private_key_path))
+            {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
@@ -137,18 +140,26 @@ async fn main() -> io::Result<()> {
 
             Ok(())
         }
-        None => {
-            let cfg = config::Config::load();
-            let server_url = cli.url.unwrap_or(cfg.server_url);
+        Some(Command::KeyPath) => {
+            let config = Config::resolve(ConfigOverrides::default());
+            println!("{}", config.private_key_path);
 
-            run(server_url).await
+            Ok(())
+        }
+        None => {
+            let config = Config::resolve(ConfigOverrides {
+                server_url: cli.url,
+                private_key_path: cli.key_path,
+            });
+
+            run(config.server_url, config.private_key_path).await
         }
     }
 }
 
 /// Initialise the Elm-style runtime and run the TUI event loop.
-async fn run(server_url: String) -> io::Result<()> {
-    let signing_key = load_signing_key()?;
+async fn run(server_url: String, key_path: String) -> io::Result<()> {
+    let signing_key = load_signing_key(key_path)?;
 
     let (runtime, mut rx) = Runtime::<Message>::new();
 

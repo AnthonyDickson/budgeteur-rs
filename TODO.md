@@ -2,9 +2,7 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-- Add subcommand to print config path
-- Add argument for TUI to override the private key path.
-  Useful for testing dev version alongside prod version
+- Check for existing private key with init command and prompt to ask whether the existing key should be overwritten
 - Log full errors somewhere, keep errors in UI brief
 - Enforce that version in flake.nix matches that in Cargo.toml
 - Dashboard view
