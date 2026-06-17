@@ -807,7 +807,10 @@ fn fetch_dashboard(server_url: String, signing_key_der: Vec<u8>) -> Cmd<Message>
     Cmd::from(async move {
         let header = match request::sign_auth_header(&signing_key_der) {
             Ok(h) => h,
-            Err(e) => return Message::FetchResult(Err(e)),
+            Err(e) => {
+                tracing::error!("could not sign JWT: {e}");
+                return Message::FetchResult(Err("authentication error".into()));
+            }
         };
 
         let client = reqwest::Client::new();
@@ -821,13 +824,31 @@ fn fetch_dashboard(server_url: String, signing_key_der: Vec<u8>) -> Cmd<Message>
         {
             Ok(resp) if resp.status().is_success() => match resp.json::<DashboardData>().await {
                 Ok(data) => Message::FetchResult(Ok(data)),
-                Err(e) => Message::FetchResult(Err(format!("could not parse dashboard: {e:?}"))),
+                Err(e) => {
+                    tracing::error!("could not parse dashboard: {e:?}");
+                    Message::FetchResult(Err("could not parse server response".into()))
+                }
             },
-            Ok(resp) if resp.status().as_u16() == 401 => Message::FetchResult(Err(
-                "authentication failed — is your public key registered on the server?".into(),
-            )),
-            Ok(resp) => Message::FetchResult(Err(format!("server returned {}", resp.status()))),
-            Err(e) => Message::FetchResult(Err(format!("connection error: {e:#?}"))),
+            Ok(resp) if resp.status().as_u16() == 401 => {
+                tracing::warn!("authentication failed (401)");
+                Message::FetchResult(Err(
+                    "authentication failed — is your public key registered on the server?".into(),
+                ))
+            }
+            Ok(resp) if resp.status().is_server_error() => {
+                let status = resp.status();
+                tracing::error!("server returned {status}");
+                Message::FetchResult(Err("server error — try again later".into()))
+            }
+            Ok(resp) => {
+                let status = resp.status();
+                tracing::error!("unexpected response: {status}");
+                Message::FetchResult(Err(format!("unexpected server response ({status})")))
+            }
+            Err(e) => {
+                tracing::error!("connection error: {e:#?}");
+                Message::FetchResult(Err("could not reach server — check your connection".into()))
+            }
         }
     })
 }

@@ -2,7 +2,6 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
-- Log full errors somewhere, keep errors in UI brief
 - Enforce that version in flake.nix matches that in Cargo.toml
 - Dashboard view
   - Rearrange to put expenses by tag and untagged transaction on a third row that fills the height

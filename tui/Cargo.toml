@@ -19,3 +19,5 @@ serde = { version = "1", features = ["derive"] }
 time = { version = "0.3", features = ["serde", "local-offset", "macros"] }
 tokio = { version = "1", features = ["full"] }
 toml = "1.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
