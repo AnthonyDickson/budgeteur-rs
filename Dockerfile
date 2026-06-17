@@ -19,7 +19,7 @@ RUN cargo build --verbose --release -p budgeteur_rs --bin server --bin reset_pas
 
 #==============================================================================#
 
-FROM alpine:3.23 AS tailwind
+FROM alpine:3.24 AS tailwind
 
 RUN apk update
 RUN apk add --no-cache curl libgcc libstdc++
@@ -32,7 +32,7 @@ RUN curl -sL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.
 
 #==============================================================================#
 
-FROM alpine:3.23 AS deploy
+FROM alpine:3.24 AS deploy
 
 WORKDIR /app
 
