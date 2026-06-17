@@ -92,6 +92,20 @@ fn run_init(private_key_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let path = std::path::Path::new(private_key_path);
     config::ensure_parent_dir(path)?;
 
+    if path.exists() {
+        println!(
+            "A private key already exists at: {}\nOverwrite? (y/N): ",
+            path.display()
+        );
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let input = input.trim().to_lowercase();
+        if input != "y" && input != "yes" {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
     // Generate fresh Ed25519 keypair.
     let mut seed = [0u8; 32];
     rand::rng().fill_bytes(&mut seed);
