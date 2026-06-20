@@ -173,6 +173,30 @@ async fn main() -> io::Result<()> {
 
 /// Initialise the Elm-style runtime and run the TUI event loop.
 async fn run(server_url: String, key_path: String) -> io::Result<()> {
+    let log_path = config::log_path();
+    let log_writer: Box<dyn std::io::Write + Send + Sync + 'static> =
+        match config::ensure_parent_dir(&log_path).and_then(|_| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+        }) {
+            Ok(file) => Box::new(file),
+            Err(e) => {
+                eprintln!(
+                    "Warning: could not open log file {}: {e}. Falling back to stderr.",
+                    log_path.display()
+                );
+                Box::new(std::io::stderr())
+            }
+        };
+
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::sync::Mutex::new(log_writer))
+        .with_ansi(false)
+        .init();
+
     let signing_key = load_signing_key(key_path)?;
 
     let (runtime, mut rx) = Runtime::<Message>::new();

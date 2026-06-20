@@ -125,3 +125,11 @@ pub fn ensure_parent_dir(path: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+/// Path to the TUI log file: `~/.local/share/budgeteur/tui.log`.
+/// Falls back to `./tui.log` if the XDG data directory is unavailable.
+pub fn log_path() -> PathBuf {
+    dirs::data_local_dir()
+        .map(|d| d.join("budgeteur").join("tui.log"))
+        .unwrap_or_else(|| PathBuf::from("tui.log"))
+}
