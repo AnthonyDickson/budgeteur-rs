@@ -435,7 +435,7 @@ dependencies = [
  "ed25519-dalek",
  "hex",
  "jsonwebtoken",
- "kameo",
+ "kameo 0.20.0",
  "kameo_actors",
  "maud",
  "md5",
@@ -2301,7 +2301,22 @@ dependencies = [
  "downcast-rs",
  "dyn-clone",
  "futures",
- "kameo_macros",
+ "kameo_macros 0.20.0",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "kameo"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aea00bfc3709c5b95be7c9a93289d0c3ff42cf9a3b77d532387242992705bca7"
+dependencies = [
+ "downcast-rs",
+ "dyn-clone",
+ "futures",
+ "kameo_macros 0.21.0",
  "serde",
  "tokio",
  "tracing",
@@ -2309,13 +2324,13 @@ dependencies = [
 
 [[package]]
 name = "kameo_actors"
-version = "0.5.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "220bdd75769f0a9b752a91123e58bf42f595e3c36ff4b13818d7a87d962076e6"
+checksum = "535f5db40b46b28085ddf4ba0391818e1b388548bf454e6d27a3b5cc805961fa"
 dependencies = [
  "futures",
  "glob",
- "kameo",
+ "kameo 0.21.1",
  "thiserror 2.0.18",
  "tokio",
 ]
@@ -2325,6 +2340,18 @@ name = "kameo_macros"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16c9002c9ecd16e1636f566c0bf62db48e70d86ed0d0a91b398955e883217a23"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "kameo_macros"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f200083477f64b12545688f8e0f562c31c1462827e163cb14dc2ed6c89eb888"
 dependencies = [
  "heck",
  "proc-macro2",

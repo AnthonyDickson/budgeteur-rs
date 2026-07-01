@@ -21,7 +21,7 @@ ed25519-dalek = { version = "2", features = ["pkcs8"] }
 hex = "0.4"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 kameo = "0.20"
-kameo_actors = "0.5"
+kameo_actors = "0.6"
 maud = { version = "0.27", features = ["axum"] }
 md5 = "0.8"
 numfmt = "1"
