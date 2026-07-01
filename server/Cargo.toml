@@ -47,7 +47,7 @@ budgeteur_shared = { path = "../shared" }
 zxcvbn = "3"
 
 [dev-dependencies]
-axum-test = "20"
+axum-test = "21"
 rand = "0.10"
 scraper = "0.27"
 serde_html_form = "0.4"
