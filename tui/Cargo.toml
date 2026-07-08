@@ -8,7 +8,7 @@ budgeteur_shared = { path = "../shared" }
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
 dirs = "6"
-ed25519-dalek = { version = "2", features = ["pkcs8"] }
+ed25519-dalek = { version = "3", features = ["pkcs8", "alloc"] }
 hex = "0.4"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 rand = "0.10"
