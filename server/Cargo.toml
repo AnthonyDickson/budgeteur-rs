@@ -17,7 +17,7 @@ bcrypt = "0.19"
 charming = "0.6"
 clap = { version = "4", features = ["derive"] }
 csv = "1"
-ed25519-dalek = { version = "2", features = ["pkcs8"] }
+ed25519-dalek = { version = "3", features = ["pkcs8", "alloc"] }
 hex = "0.4"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 kameo = "0.21"
