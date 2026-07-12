@@ -8,6 +8,10 @@
   };
 
   outputs = { nixpkgs, rust-overlay, flake-utils, ... }:
+    let
+      rust_version = "1.97.1";
+      budgeteur_version = "0.31.0";
+    in
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) ];
@@ -15,11 +19,11 @@
           inherit system overlays;
         };
 
-        rustToolchain = pkgs.rust-bin.stable."1.96.0".default;
+        rustToolchain = pkgs.rust-bin.stable.${rust_version}.default;
 
         budgeteur = pkgs.rustPlatform.buildRustPackage {
           pname = "budgeteur";
-          version = "0.31.0";
+          version = budgeteur_version;
 
           src = ./.;
 
@@ -65,7 +69,7 @@
 
         devShells.default = with pkgs; mkShell {
           buildInputs = [
-            rust-bin.stable."1.96.0".default
+            rust-bin.stable.${rust_version}.default
             rust-analyzer
           ];
 
