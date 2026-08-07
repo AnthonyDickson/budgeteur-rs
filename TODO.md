@@ -2,6 +2,7 @@
 
 ## Side Quest: Multi-Client Support (TUI)
 
+- Make logs less verbose, successful requests should have minimal logs
 - Enforce that version in flake.nix matches that in Cargo.toml
 - Dashboard view
   - Rearrange to put expenses by tag and untagged transaction on a third row that fills the height
