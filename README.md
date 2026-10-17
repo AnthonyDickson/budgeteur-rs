@@ -3,6 +3,9 @@
 [![Build & Test](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/ci.yml)
 [![Publish Image and Release](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/release.yaml/badge.svg?branch=main)](https://github.com/AnthonyDickson/budgeteur-rs/actions/workflows/release.yaml)
 
+> [!NOTE]
+> This project is no longer maintained. Please see the rewrite [budgeteur-fs](https://github.com/AnthonyDickson/budgeteur-fs/).
+
 ## About
 
 Budgeteur is a budgeting and personal finance web-app.
